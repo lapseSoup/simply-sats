@@ -7,16 +7,22 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@bsv/sdk": "^1.10.3",
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/cli": "^2.9.6",
+    "@tauri-apps/plugin-deep-link": "^2.4.6",
     "bip39": "^3.1.0",
+    "buffer": "^6.0.3",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "vite-plugin-node-polyfills": "^0.25.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

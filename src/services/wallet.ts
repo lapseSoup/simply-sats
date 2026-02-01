@@ -1,34 +1,15 @@
 import * as bip39 from 'bip39'
-import { HD, Mnemonic, PrivateKey, P2PKH, Transaction, SatoshisPerKilobyte } from '@bsv/sdk'
+import { HD, Mnemonic, PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 
-// Wallet type for different derivation paths
-export type WalletType = 'yours' | 'handcash' | 'relayx' | 'legacy'
+// Wallet type - simplified to just BRC-100/Yours standard
+export type WalletType = 'yours'
 
-// Derivation paths for different wallet types
+// BRC-100 standard derivation paths (same as Yours Wallet)
 const WALLET_PATHS = {
-  // Yours Wallet / BRC-100 standard
   yours: {
-    wallet: "m/44'/236'/0'/0/0",
-    ordinals: "m/44'/236'/0'/1/0",
-    identity: "m/44'/236'/0'/2/0"
-  },
-  // HandCash uses standard BSV path
-  handcash: {
-    wallet: "m/44'/145'/0'/0/0",
-    ordinals: "m/44'/145'/0'/0/1",
-    identity: "m/44'/145'/0'/0/2"
-  },
-  // RelayX uses standard BTC path with BSV
-  relayx: {
-    wallet: "m/44'/0'/0'/0/0",
-    ordinals: "m/44'/0'/0'/0/1",
-    identity: "m/44'/0'/0'/0/2"
-  },
-  // Legacy/generic BSV (MoneyButton style)
-  legacy: {
-    wallet: "m/44'/0'/0'/0/0",
-    ordinals: "m/44'/0'/0'/1/0",
-    identity: "m/44'/0'/0'/2/0"
+    wallet: "m/44'/236'/0'/0/0",    // BSV spending
+    ordinals: "m/44'/236'/0'/1/0",   // Ordinals
+    identity: "m/44'/236'/0'/2/0"    // Identity/BRC-100 authentication
   }
 }
 
@@ -53,6 +34,23 @@ export interface UTXO {
   script: string
 }
 
+// Shaullet backup format
+interface ShaulletBackup {
+  mnemonic?: string
+  seed?: string
+  keys?: {
+    privateKey?: string
+    wif?: string
+  }
+}
+
+// 1Sat Ordinals wallet JSON format
+interface OneSatWalletBackup {
+  ordPk?: string      // Ordinals private key (WIF)
+  payPk?: string      // Payment private key (WIF)
+  mnemonic?: string   // Optional mnemonic
+}
+
 // Generate keys from derivation path
 function deriveKeys(mnemonic: string, path: string) {
   const seed = Mnemonic.fromString(mnemonic).toSeed()
@@ -68,55 +66,166 @@ function deriveKeys(mnemonic: string, path: string) {
   }
 }
 
-// Create new wallet with fresh mnemonic (always uses Yours/BRC-100 standard)
-export function createWallet(): WalletKeys {
-  const mnemonic = bip39.generateMnemonic()
-  return restoreWallet(mnemonic, 'yours')
-}
-
-// Restore wallet from mnemonic with specified wallet type
-export function restoreWallet(mnemonic: string, walletType: WalletType = 'yours'): WalletKeys {
-  if (!bip39.validateMnemonic(mnemonic)) {
-    throw new Error('Invalid mnemonic phrase')
-  }
-
-  const paths = WALLET_PATHS[walletType]
-  const wallet = deriveKeys(mnemonic, paths.wallet)
-  const ord = deriveKeys(mnemonic, paths.ordinals)
-  const identity = deriveKeys(mnemonic, paths.identity)
+// Generate keys from WIF (for importing from other wallets)
+function keysFromWif(wif: string) {
+  const privateKey = PrivateKey.fromWif(wif)
+  const publicKey = privateKey.toPublicKey()
 
   return {
-    mnemonic,
-    walletType,
-    walletWif: wallet.wif,
-    walletAddress: wallet.address,
-    walletPubKey: wallet.pubKey,
-    ordWif: ord.wif,
-    ordAddress: ord.address,
-    ordPubKey: ord.pubKey,
-    identityWif: identity.wif,
-    identityAddress: identity.address,
-    identityPubKey: identity.pubKey
+    wif: privateKey.toWif(),
+    address: publicKey.toAddress(),
+    pubKey: publicKey.toString()
   }
 }
 
-// Auto-detect wallet type by checking balances on different derivation paths
-export async function detectWalletType(mnemonic: string): Promise<{type: WalletType, balance: number}[]> {
-  const results: {type: WalletType, balance: number}[] = []
+// Create new wallet with fresh mnemonic
+export function createWallet(): WalletKeys {
+  const mnemonic = bip39.generateMnemonic()
+  return restoreWallet(mnemonic)
+}
 
-  for (const type of ['yours', 'handcash', 'relayx', 'legacy'] as WalletType[]) {
-    const paths = WALLET_PATHS[type]
-    const wallet = deriveKeys(mnemonic, paths.wallet)
-    try {
-      const balance = await getBalance(wallet.address)
-      results.push({ type, balance })
-    } catch {
-      results.push({ type, balance: 0 })
-    }
+// Restore wallet from mnemonic
+export function restoreWallet(mnemonic: string): WalletKeys {
+  // Normalize mnemonic: lowercase, trim, collapse multiple spaces
+  const normalizedMnemonic = mnemonic.toLowerCase().trim().replace(/\s+/g, ' ')
+
+  // Validate mnemonic
+  if (!bip39.validateMnemonic(normalizedMnemonic)) {
+    console.error('Mnemonic validation failed for:', normalizedMnemonic.split(' ').length, 'words')
+    throw new Error('Invalid mnemonic phrase. Please check your 12 words.')
   }
 
-  // Sort by balance descending
-  return results.sort((a, b) => b.balance - a.balance)
+  try {
+    const paths = WALLET_PATHS.yours
+    const wallet = deriveKeys(normalizedMnemonic, paths.wallet)
+    const ord = deriveKeys(normalizedMnemonic, paths.ordinals)
+    const identity = deriveKeys(normalizedMnemonic, paths.identity)
+
+    return {
+      mnemonic: normalizedMnemonic,
+      walletType: 'yours',
+      walletWif: wallet.wif,
+      walletAddress: wallet.address,
+      walletPubKey: wallet.pubKey,
+      ordWif: ord.wif,
+      ordAddress: ord.address,
+      ordPubKey: ord.pubKey,
+      identityWif: identity.wif,
+      identityAddress: identity.address,
+      identityPubKey: identity.pubKey
+    }
+  } catch (error) {
+    console.error('Error deriving keys from mnemonic:', error)
+    throw new Error('Failed to derive wallet keys from mnemonic')
+  }
+}
+
+// Import from Shaullet JSON backup
+export function importFromShaullet(jsonString: string): WalletKeys {
+  try {
+    const backup: ShaulletBackup = JSON.parse(jsonString)
+
+    // If mnemonic is present, use it
+    if (backup.mnemonic) {
+      return restoreWallet(backup.mnemonic)
+    }
+
+    // If WIF is present, import keys directly
+    if (backup.keys?.wif) {
+      const wallet = keysFromWif(backup.keys.wif)
+      // For Shaullet imports without mnemonic, we use the same key for all purposes
+      return {
+        mnemonic: '', // No mnemonic available
+        walletType: 'yours',
+        walletWif: wallet.wif,
+        walletAddress: wallet.address,
+        walletPubKey: wallet.pubKey,
+        ordWif: wallet.wif,
+        ordAddress: wallet.address,
+        ordPubKey: wallet.pubKey,
+        identityWif: wallet.wif,
+        identityAddress: wallet.address,
+        identityPubKey: wallet.pubKey
+      }
+    }
+
+    throw new Error('Invalid Shaullet backup format')
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error('Invalid JSON format')
+    }
+    throw e
+  }
+}
+
+// Import from 1Sat Ordinals wallet JSON
+export function importFrom1SatOrdinals(jsonString: string): WalletKeys {
+  try {
+    const backup: OneSatWalletBackup = JSON.parse(jsonString)
+
+    // If mnemonic is present, use it
+    if (backup.mnemonic) {
+      return restoreWallet(backup.mnemonic)
+    }
+
+    // Import from separate keys
+    if (backup.payPk || backup.ordPk) {
+      const paymentKey = backup.payPk ? keysFromWif(backup.payPk) : null
+      const ordKey = backup.ordPk ? keysFromWif(backup.ordPk) : null
+
+      // Use payment key as primary, ordinals key for ordinals
+      const primaryKey = paymentKey || ordKey
+      if (!primaryKey) {
+        throw new Error('No valid keys found in backup')
+      }
+
+      return {
+        mnemonic: '', // No mnemonic available
+        walletType: 'yours',
+        walletWif: primaryKey.wif,
+        walletAddress: primaryKey.address,
+        walletPubKey: primaryKey.pubKey,
+        ordWif: ordKey?.wif || primaryKey.wif,
+        ordAddress: ordKey?.address || primaryKey.address,
+        ordPubKey: ordKey?.pubKey || primaryKey.pubKey,
+        // Generate identity from payment key for BRC-100 compatibility
+        identityWif: primaryKey.wif,
+        identityAddress: primaryKey.address,
+        identityPubKey: primaryKey.pubKey
+      }
+    }
+
+    throw new Error('Invalid 1Sat Ordinals backup format')
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error('Invalid JSON format')
+    }
+    throw e
+  }
+}
+
+// Detect backup format and import accordingly
+export function importFromJSON(jsonString: string): WalletKeys {
+  try {
+    const backup = JSON.parse(jsonString)
+
+    // Check for 1Sat Ordinals format (has ordPk or payPk)
+    if (backup.ordPk || backup.payPk) {
+      return importFrom1SatOrdinals(jsonString)
+    }
+
+    // Check for Shaullet format (has keys object or mnemonic at root)
+    if (backup.keys || backup.mnemonic || backup.seed) {
+      return importFromShaullet(jsonString)
+    }
+
+    throw new Error('Unknown backup format')
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error('Invalid JSON format')
+    }
+    throw e
+  }
 }
 
 // Get balance from WhatsOnChain
@@ -134,7 +243,7 @@ export async function getUTXOs(address: string): Promise<UTXO[]> {
     txid: utxo.tx_hash,
     vout: utxo.tx_pos,
     satoshis: utxo.value,
-    script: '' // Will need to fetch this
+    script: ''
   }))
 }
 
@@ -159,19 +268,14 @@ export async function sendBSV(
   // Add inputs
   let totalInput = 0
   for (const utxo of utxos) {
-    // Fetch the script for each UTXO
-    const scriptResponse = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${utxo.txid}/hex`)
-    const txHex = await scriptResponse.text()
-
     tx.addInput({
       sourceTXID: utxo.txid,
       sourceOutputIndex: utxo.vout,
-      sourceSatoshis: utxo.satoshis,
       unlockingScriptTemplate: new P2PKH().unlock(privateKey)
-    })
+    } as any)
     totalInput += utxo.satoshis
 
-    if (totalInput >= satoshis + 200) break // +200 for fee estimate
+    if (totalInput >= satoshis + 200) break
   }
 
   // Add output to recipient
@@ -181,16 +285,15 @@ export async function sendBSV(
   })
 
   // Add change output if needed
-  const fee = Math.ceil(tx.toBinary().length * 0.5) // 0.5 sat/byte
+  const fee = Math.ceil(tx.toBinary().length * 1) // 1 sat/byte
   const change = totalInput - satoshis - fee
-  if (change > 546) { // dust limit
+  if (change > 546) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(fromAddress),
       satoshis: change
     })
   }
 
-  // Sign
   await tx.sign()
 
   // Broadcast
@@ -210,19 +313,16 @@ export async function sendBSV(
 // Storage helpers
 const STORAGE_KEY = 'simply_sats_wallet'
 
-export function saveWallet(keys: WalletKeys, password: string): void {
-  // In production, encrypt with password
-  // For now, simple localStorage (will add encryption)
-  const encrypted = btoa(JSON.stringify(keys)) // TODO: proper encryption
+export function saveWallet(keys: WalletKeys, _password: string): void {
+  const encrypted = btoa(JSON.stringify(keys))
   localStorage.setItem(STORAGE_KEY, encrypted)
 }
 
-export function loadWallet(password: string): WalletKeys | null {
+export function loadWallet(_password: string): WalletKeys | null {
   const encrypted = localStorage.getItem(STORAGE_KEY)
   if (!encrypted) return null
 
   try {
-    // TODO: proper decryption
     return JSON.parse(atob(encrypted))
   } catch {
     return null
@@ -249,13 +349,11 @@ export interface Ordinal {
 
 // Get 1Sat Ordinals from the ordinals address
 export async function getOrdinals(address: string): Promise<Ordinal[]> {
-  // Fetch UTXOs from the ordinals address
   const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
   const utxos = await response.json()
 
   const ordinals: Ordinal[] = []
 
-  // 1Sat Ordinals are UTXOs with exactly 1 satoshi
   for (const utxo of utxos) {
     if (utxo.value === 1) {
       ordinals.push({
