@@ -1,0 +1,660 @@
+import { useState, useEffect, useCallback } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
+import './App.css'
+import {
+  WalletKeys,
+  WalletType,
+  Ordinal,
+  createWallet,
+  restoreWallet,
+  detectWalletType,
+  getBalance,
+  getUTXOs,
+  getTransactionHistory,
+  getOrdinals,
+  sendBSV,
+  saveWallet,
+  loadWallet,
+  hasWallet,
+  clearWallet
+} from './services/wallet'
+
+type Tab = 'activity' | 'ordinals'
+type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | null
+
+interface TxHistoryItem {
+  tx_hash: string
+  height: number
+}
+
+function App() {
+  const [wallet, setWallet] = useState<WalletKeys | null>(null)
+  const [balance, setBalance] = useState<number>(0)
+  const [ordBalance, setOrdBalance] = useState<number>(0)
+  const [usdPrice, setUsdPrice] = useState<number>(0)
+  const [activeTab, setActiveTab] = useState<Tab>('activity')
+  const [modal, setModal] = useState<Modal>(null)
+  const [loading, setLoading] = useState(true)
+  const [txHistory, setTxHistory] = useState<TxHistoryItem[]>([])
+  const [ordinals, setOrdinals] = useState<Ordinal[]>([])
+  const [selectedOrdinal, setSelectedOrdinal] = useState<Ordinal | null>(null)
+
+  // Send form state
+  const [sendAddress, setSendAddress] = useState('')
+  const [sendAmount, setSendAmount] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
+
+  // Restore form state
+  const [restoreMnemonic, setRestoreMnemonic] = useState('')
+  const [restoreWalletType, setRestoreWalletType] = useState<WalletType>('yours')
+  const [detectedTypes, setDetectedTypes] = useState<{type: WalletType, balance: number}[]>([])
+  const [detecting, setDetecting] = useState(false)
+
+  // Receive address type
+  const [receiveType, setReceiveType] = useState<'wallet' | 'ordinals'>('wallet')
+
+  // New wallet mnemonic display
+  const [newMnemonic, setNewMnemonic] = useState<string | null>(null)
+
+  // Load wallet on mount
+  useEffect(() => {
+    const init = async () => {
+      if (hasWallet()) {
+        const keys = loadWallet('')
+        if (keys) {
+          setWallet(keys)
+        }
+      }
+      setLoading(false)
+    }
+    init()
+  }, [])
+
+  // Fetch balances and data when wallet is loaded
+  const fetchData = useCallback(async () => {
+    if (!wallet) return
+
+    try {
+      // Fetch wallet balance
+      const bal = await getBalance(wallet.walletAddress)
+      setBalance(bal)
+
+      // Fetch ordinals address balance
+      const ordBal = await getBalance(wallet.ordAddress)
+      setOrdBalance(ordBal)
+
+      // Fetch transaction history
+      const history = await getTransactionHistory(wallet.walletAddress)
+      setTxHistory(history.slice(0, 20)) // Last 20 transactions
+
+      // Fetch ordinals
+      const ords = await getOrdinals(wallet.ordAddress)
+      setOrdinals(ords)
+    } catch (error) {
+      console.error('Error fetching data:', error)
+    }
+  }, [wallet])
+
+  useEffect(() => {
+    fetchData()
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchData, 30000)
+    return () => clearInterval(interval)
+  }, [fetchData])
+
+  // Fetch BSV price
+  useEffect(() => {
+    const fetchPrice = async () => {
+      try {
+        const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/exchangerate')
+        const data = await response.json()
+        setUsdPrice(data.rate)
+      } catch (error) {
+        console.error('Error fetching price:', error)
+      }
+    }
+    fetchPrice()
+    const interval = setInterval(fetchPrice, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Create new wallet
+  const handleCreateWallet = () => {
+    const keys = createWallet()
+    setNewMnemonic(keys.mnemonic)
+    setModal('mnemonic')
+    saveWallet(keys, '')
+    setWallet(keys)
+  }
+
+  // Confirm mnemonic saved
+  const handleMnemonicConfirm = () => {
+    setNewMnemonic(null)
+    setModal(null)
+  }
+
+  // Detect wallet type from mnemonic
+  const handleDetectWalletType = async () => {
+    const trimmed = restoreMnemonic.trim()
+    if (!trimmed || trimmed.split(' ').length < 12) {
+      alert('Please enter a valid 12-word recovery phrase')
+      return
+    }
+
+    setDetecting(true)
+    try {
+      const detected = await detectWalletType(trimmed)
+      setDetectedTypes(detected)
+      // Auto-select the one with highest balance
+      if (detected.length > 0 && detected[0].balance > 0) {
+        setRestoreWalletType(detected[0].type)
+      }
+    } catch (error) {
+      alert('Error detecting wallet type')
+    } finally {
+      setDetecting(false)
+    }
+  }
+
+  // Restore wallet
+  const handleRestoreWallet = () => {
+    try {
+      const keys = restoreWallet(restoreMnemonic.trim(), restoreWalletType)
+      saveWallet(keys, '')
+      setWallet(keys)
+      setRestoreMnemonic('')
+      setDetectedTypes([])
+      setModal(null)
+    } catch (error) {
+      alert('Invalid mnemonic phrase')
+    }
+  }
+
+  // Send BSV
+  const handleSend = async () => {
+    if (!wallet || !sendAddress || !sendAmount) return
+
+    setSending(true)
+    setSendError('')
+
+    try {
+      const satoshis = Math.floor(parseFloat(sendAmount) * 100000000)
+      const utxos = await getUTXOs(wallet.walletAddress)
+      const txid = await sendBSV(wallet.walletWif, sendAddress, satoshis, utxos)
+      alert(`Transaction sent! TXID: ${txid}`)
+      setSendAddress('')
+      setSendAmount('')
+      setModal(null)
+      fetchData()
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Failed to send')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // Copy to clipboard
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    alert('Copied to clipboard!')
+  }
+
+  // Open on WhatsOnChain
+  const openOnWoC = (txid: string) => {
+    window.open(`https://whatsonchain.com/tx/${txid}`, '_blank')
+  }
+
+  // Delete wallet
+  const handleDeleteWallet = () => {
+    if (confirm('Are you sure you want to delete your wallet? Make sure you have backed up your recovery phrase!')) {
+      clearWallet()
+      setWallet(null)
+      setModal(null)
+    }
+  }
+
+  // Format satoshis as BSV
+  const formatBSV = (sats: number) => {
+    return (sats / 100000000).toFixed(8)
+  }
+
+  // Format USD
+  const formatUSD = (sats: number) => {
+    const bsv = sats / 100000000
+    return (bsv * usdPrice).toFixed(2)
+  }
+
+  // Loading screen
+  if (loading) {
+    return (
+      <div className="setup-screen">
+        <div className="spinner" />
+      </div>
+    )
+  }
+
+  // Setup screen (no wallet)
+  if (!wallet) {
+    return (
+      <div className="setup-screen">
+        <div className="setup-logo">₿</div>
+        <h1 className="setup-title">Simply Sats</h1>
+        <p className="setup-subtitle">Simple BSV wallet with BRC-100 support</p>
+        <div className="setup-actions">
+          <button className="btn btn-primary" onClick={handleCreateWallet}>
+            Create New Wallet
+          </button>
+          <button className="btn btn-secondary" onClick={() => setModal('restore')}>
+            Restore Wallet
+          </button>
+        </div>
+
+        {/* Restore Modal */}
+        {modal === 'restore' && (
+          <div className="modal-overlay" onClick={() => setModal(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title">Restore Wallet</h2>
+                <button className="modal-close" onClick={() => setModal(null)}>×</button>
+              </div>
+              <div className="modal-content">
+                <div className="form-group">
+                  <label className="form-label">Recovery Phrase</label>
+                  <textarea
+                    className="form-input"
+                    placeholder="Enter your 12-word recovery phrase"
+                    value={restoreMnemonic}
+                    onChange={e => {
+                      setRestoreMnemonic(e.target.value)
+                      setDetectedTypes([])
+                    }}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Wallet Type</label>
+                  <div className="wallet-type-options">
+                    {(['yours', 'handcash', 'relayx', 'legacy'] as WalletType[]).map(type => {
+                      const detected = detectedTypes.find(d => d.type === type)
+                      const label = {
+                        yours: 'Yours Wallet / BRC-100',
+                        handcash: 'HandCash',
+                        relayx: 'RelayX',
+                        legacy: 'MoneyButton / Legacy'
+                      }[type]
+                      return (
+                        <button
+                          key={type}
+                          className={`wallet-type-btn ${restoreWalletType === type ? 'active' : ''}`}
+                          onClick={() => setRestoreWalletType(type)}
+                        >
+                          <span>{label}</span>
+                          {detected && detected.balance > 0 && (
+                            <span className="detected-balance">
+                              {(detected.balance / 100000000).toFixed(4)} BSV
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleDetectWalletType}
+                  disabled={detecting || !restoreMnemonic.trim()}
+                  style={{ marginBottom: 12 }}
+                >
+                  {detecting ? 'Detecting...' : 'Auto-Detect Wallet Type'}
+                </button>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRestoreWallet}
+                  disabled={!restoreMnemonic.trim()}
+                >
+                  Restore Wallet
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Main wallet UI
+  return (
+    <div className="app">
+      {/* Header */}
+      <header className="header">
+        <div className="logo">Simply Sats</div>
+        <button className="settings-btn" onClick={() => setModal('settings')}>
+          ⚙️
+        </button>
+      </header>
+
+      {/* Balance Card */}
+      <div className="balance-card">
+        <div className="balance-label">Total Balance</div>
+        <div className="balance-amount">{formatBSV(balance + ordBalance)} BSV</div>
+        <div className="balance-usd">${formatUSD(balance + ordBalance)} USD</div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="actions">
+        <button className="action-btn primary" onClick={() => setModal('send')}>
+          ↑ Send
+        </button>
+        <button className="action-btn secondary" onClick={() => setModal('receive')}>
+          ↓ Receive
+        </button>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="nav-tabs">
+        <button
+          className={`nav-tab ${activeTab === 'activity' ? 'active' : ''}`}
+          onClick={() => setActiveTab('activity')}
+        >
+          Activity
+        </button>
+        <button
+          className={`nav-tab ${activeTab === 'ordinals' ? 'active' : ''}`}
+          onClick={() => setActiveTab('ordinals')}
+        >
+          Ordinals ({ordinals.length})
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="content">
+        {activeTab === 'activity' && (
+          <div className="tx-list">
+            {txHistory.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">📭</div>
+                <p>No transactions yet</p>
+              </div>
+            ) : (
+              txHistory.map((tx) => (
+                <div
+                  key={tx.tx_hash}
+                  className="tx-item"
+                  onClick={() => openOnWoC(tx.tx_hash)}
+                >
+                  <div className="tx-info">
+                    <div className="tx-type">Transaction</div>
+                    <div className="tx-txid">
+                      {tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-8)}
+                    </div>
+                    {tx.height > 0 && (
+                      <div className="tx-date">Block {tx.height}</div>
+                    )}
+                  </div>
+                  <div className="tx-amount">→</div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === 'ordinals' && (
+          <div className="ordinals-grid">
+            {ordinals.length === 0 ? (
+              <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                <div className="empty-icon">🖼️</div>
+                <p>No ordinals yet</p>
+              </div>
+            ) : (
+              ordinals.map((ord) => (
+                <div
+                  key={ord.origin}
+                  className="ordinal-item"
+                  onClick={() => {
+                    setSelectedOrdinal(ord)
+                    setModal('ordinal')
+                  }}
+                >
+                  <div className="ordinal-icon">🔮</div>
+                  <div className="ordinal-id">
+                    {ord.origin.slice(0, 8)}...
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Send Modal */}
+      {modal === 'send' && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Send BSV</h2>
+              <button className="modal-close" onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="modal-content">
+              <div className="form-group">
+                <label className="form-label">To Address</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="1... or paymail"
+                  value={sendAddress}
+                  onChange={e => setSendAddress(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Amount (BSV)</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  placeholder="0.00000000"
+                  step="0.00000001"
+                  value={sendAmount}
+                  onChange={e => setSendAmount(e.target.value)}
+                />
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                  Available: {formatBSV(balance)} BSV
+                </div>
+              </div>
+              {sendError && (
+                <div className="warning">{sendError}</div>
+              )}
+              <button
+                className="btn btn-primary"
+                onClick={handleSend}
+                disabled={sending || !sendAddress || !sendAmount}
+              >
+                {sending ? 'Sending...' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receive Modal */}
+      {modal === 'receive' && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Receive</h2>
+              <button className="modal-close" onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="modal-content">
+              <div className="address-tabs">
+                <button
+                  className={`address-tab ${receiveType === 'wallet' ? 'active' : ''}`}
+                  onClick={() => setReceiveType('wallet')}
+                >
+                  BSV
+                </button>
+                <button
+                  className={`address-tab ${receiveType === 'ordinals' ? 'active' : ''}`}
+                  onClick={() => setReceiveType('ordinals')}
+                >
+                  Ordinals
+                </button>
+              </div>
+              <div className="qr-container">
+                <div className="qr-code">
+                  <QRCodeSVG
+                    value={receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress}
+                    size={150}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                  />
+                </div>
+                <div className="address-display">
+                  {receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress}
+                </div>
+                <button
+                  className="copy-btn"
+                  onClick={() => copyToClipboard(
+                    receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress
+                  )}
+                >
+                  Copy Address
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {modal === 'settings' && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Settings</h2>
+              <button className="modal-close" onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="modal-content">
+              <div className="form-group">
+                <label className="form-label">Wallet Address</label>
+                <div className="address-display" style={{ marginBottom: 8 }}>
+                  {wallet.walletAddress}
+                </div>
+                <button
+                  className="copy-btn"
+                  style={{ width: '100%' }}
+                  onClick={() => copyToClipboard(wallet.walletAddress)}
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Ordinals Address</label>
+                <div className="address-display" style={{ marginBottom: 8 }}>
+                  {wallet.ordAddress}
+                </div>
+                <button
+                  className="copy-btn"
+                  style={{ width: '100%' }}
+                  onClick={() => copyToClipboard(wallet.ordAddress)}
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Recovery Phrase</label>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    if (confirm('Make sure no one is watching your screen!')) {
+                      alert(wallet.mnemonic)
+                    }
+                  }}
+                >
+                  Show Recovery Phrase
+                </button>
+              </div>
+              <div style={{ marginTop: 20 }}>
+                <button className="btn btn-danger" onClick={handleDeleteWallet}>
+                  Delete Wallet
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mnemonic Display Modal (for new wallet) */}
+      {modal === 'mnemonic' && newMnemonic && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Recovery Phrase</h2>
+            </div>
+            <div className="modal-content">
+              <div className="warning">
+                ⚠️ Write down these 12 words and keep them safe. This is the ONLY way to recover your wallet!
+              </div>
+              <div className="mnemonic-display">
+                <div className="mnemonic-words">
+                  {newMnemonic.split(' ').map((word, i) => (
+                    <div key={i} className="mnemonic-word">
+                      <span>{i + 1}.</span>
+                      {word}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <button className="btn btn-primary" onClick={handleMnemonicConfirm}>
+                I've saved my recovery phrase
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ordinal Detail Modal */}
+      {modal === 'ordinal' && selectedOrdinal && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Ordinal</h2>
+              <button className="modal-close" onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="modal-content">
+              <div className="ordinal-detail">
+                <div className="ordinal-preview">🔮</div>
+                <div className="ordinal-info">
+                  <div className="ordinal-info-row">
+                    <span className="ordinal-info-label">Origin</span>
+                    <span className="ordinal-info-value">
+                      {selectedOrdinal.origin.slice(0, 12)}...
+                    </span>
+                  </div>
+                  <div className="ordinal-info-row">
+                    <span className="ordinal-info-label">TXID</span>
+                    <button
+                      className="link-btn"
+                      onClick={() => openOnWoC(selectedOrdinal.txid)}
+                    >
+                      View on WhatsOnChain
+                    </button>
+                  </div>
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => copyToClipboard(selectedOrdinal.origin)}
+                >
+                  Copy Origin
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default App
