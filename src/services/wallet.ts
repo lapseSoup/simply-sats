@@ -1,5 +1,12 @@
 import * as bip39 from 'bip39'
 import { HD, Mnemonic, PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
+import {
+  getBalanceFromDatabase,
+  getSpendableUtxosFromDatabase,
+  recordSentTransaction,
+  markUtxosSpent,
+  BASKETS
+} from './sync'
 
 // Wallet type - simplified to just BRC-100/Yours standard
 export type WalletType = 'yours'
@@ -228,29 +235,142 @@ export function importFromJSON(jsonString: string): WalletKeys {
   }
 }
 
-// Get balance from WhatsOnChain
+// Get balance from WhatsOnChain (legacy method)
 export async function getBalance(address: string): Promise<number> {
-  const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/balance`)
-  const data = await response.json()
-  return data.confirmed + data.unconfirmed
+  try {
+    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/balance`)
+    if (!response.ok) {
+      console.warn(`Failed to fetch balance for ${address}: ${response.status}`)
+      return 0
+    }
+    const data = await response.json()
+    if (typeof data.confirmed !== 'number' || typeof data.unconfirmed !== 'number') {
+      console.warn(`Unexpected balance response for ${address}:`, data)
+      return 0
+    }
+    return data.confirmed + data.unconfirmed
+  } catch (error) {
+    console.error(`Error fetching balance for ${address}:`, error)
+    return 0
+  }
 }
 
-// Get UTXOs from WhatsOnChain
+// Get balance from local database (BRC-100 method - faster!)
+export async function getBalanceFromDB(basket?: string): Promise<number> {
+  try {
+    return await getBalanceFromDatabase(basket)
+  } catch (error) {
+    console.warn('Database not ready, falling back to API')
+    return 0
+  }
+}
+
+// Get spendable UTXOs from local database
+export async function getUTXOsFromDB(basket = BASKETS.DEFAULT): Promise<UTXO[]> {
+  try {
+    const dbUtxos = await getSpendableUtxosFromDatabase(basket)
+    return dbUtxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.lockingScript
+    }))
+  } catch (error) {
+    console.warn('Database not ready')
+    return []
+  }
+}
+
+// Get UTXOs from WhatsOnChain with locking scripts
 export async function getUTXOs(address: string): Promise<UTXO[]> {
-  const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
-  const data = await response.json()
-  return data.map((utxo: any) => ({
-    txid: utxo.tx_hash,
-    vout: utxo.tx_pos,
-    satoshis: utxo.value,
-    script: ''
-  }))
+  try {
+    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
+    if (!response.ok) {
+      console.warn(`Failed to fetch UTXOs for ${address}: ${response.status}`)
+      return []
+    }
+    const data = await response.json()
+    if (!Array.isArray(data)) {
+      console.warn(`Unexpected UTXO response for ${address}:`, data)
+      return []
+    }
+
+    // Generate the P2PKH locking script for this address
+    const lockingScript = new P2PKH().lock(address)
+
+    return data.map((utxo: any) => ({
+      txid: utxo.tx_hash,
+      vout: utxo.tx_pos,
+      satoshis: utxo.value,
+      script: lockingScript.toHex()
+    }))
+  } catch (error) {
+    console.error(`Error fetching UTXOs for ${address}:`, error)
+    return []
+  }
 }
 
 // Get transaction history
 export async function getTransactionHistory(address: string): Promise<any[]> {
-  const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/history`)
-  return response.json()
+  try {
+    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/history`)
+    if (!response.ok) {
+      console.warn(`Failed to fetch history for ${address}: ${response.status}`)
+      return []
+    }
+    const data = await response.json()
+    // Handle case where API returns error object instead of array
+    if (!Array.isArray(data)) {
+      console.warn(`Unexpected history response for ${address}:`, data)
+      return []
+    }
+    return data
+  } catch (error) {
+    console.error(`Error fetching history for ${address}:`, error)
+    return []
+  }
+}
+
+// Calculate transaction fee for given inputs/outputs at exactly 100 sats/KB (0.1 sat/byte)
+export function calculateTxFee(numInputs: number, numOutputs: number): number {
+  // P2PKH tx sizes: ~10 bytes overhead + 148 bytes per input + 34 bytes per output
+  const txSize = 10 + (numInputs * 148) + (numOutputs * 34)
+  // 100 sats/KB = 0.1 sats/byte = txSize * 100 / 1000 = txSize / 10
+  // Use floor to get exactly 100 sats/KB, minimum 1 sat
+  return Math.max(1, Math.floor(txSize / 10))
+}
+
+// Calculate max sendable amount given UTXOs
+export function calculateMaxSend(utxos: UTXO[]): { maxSats: number; fee: number; numInputs: number } {
+  if (utxos.length === 0) {
+    return { maxSats: 0, fee: 0, numInputs: 0 }
+  }
+
+  const totalSats = utxos.reduce((sum, u) => sum + u.satoshis, 0)
+  const numInputs = utxos.length
+
+  // When sending max, we have 1 output (no change)
+  const fee = calculateTxFee(numInputs, 1)
+  const maxSats = Math.max(0, totalSats - fee)
+
+  return { maxSats, fee, numInputs }
+}
+
+// Broadcast a signed transaction
+async function broadcastTransaction(tx: Transaction): Promise<string> {
+  const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txhex: tx.toHex() })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Broadcast error:', errorText)
+    throw new Error(`Failed to broadcast: ${errorText}`)
+  }
+
+  return tx.id('hex')
 }
 
 // Build and sign a simple P2PKH transaction
@@ -261,53 +381,103 @@ export async function sendBSV(
   utxos: UTXO[]
 ): Promise<string> {
   const privateKey = PrivateKey.fromWif(wif)
-  const fromAddress = privateKey.toPublicKey().toAddress()
+  const publicKey = privateKey.toPublicKey()
+  const fromAddress = publicKey.toAddress()
+
+  // Generate locking script for the source address
+  const sourceLockingScript = new P2PKH().lock(fromAddress)
 
   const tx = new Transaction()
 
-  // Add inputs
+  // Collect inputs we'll use
+  const inputsToUse: UTXO[] = []
   let totalInput = 0
+
   for (const utxo of utxos) {
+    inputsToUse.push(utxo)
+    totalInput += utxo.satoshis
+
+    // Break if we have enough for amount + reasonable fee buffer
+    if (totalInput >= satoshis + 100) break
+  }
+
+  if (totalInput < satoshis) {
+    throw new Error('Insufficient funds')
+  }
+
+  // Calculate fee based on actual transaction size at 0.1 sat/byte
+  const numInputs = inputsToUse.length
+
+  // First calculate if we'll have meaningful change
+  const prelimChange = totalInput - satoshis
+  const willHaveChange = prelimChange > 100 // Need room for fee + non-dust change
+
+  const numOutputs = willHaveChange ? 2 : 1
+  const fee = calculateTxFee(numInputs, numOutputs)
+
+  const change = totalInput - satoshis - fee
+
+  if (change < 0) {
+    throw new Error(`Insufficient funds (need ${fee} sats for fee)`)
+  }
+
+  // Add inputs - pass sourceSatoshis and lockingScript to unlock() for signing
+  for (const utxo of inputsToUse) {
     tx.addInput({
       sourceTXID: utxo.txid,
       sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(privateKey)
-    } as any)
-    totalInput += utxo.satoshis
-
-    if (totalInput >= satoshis + 200) break
+      unlockingScriptTemplate: new P2PKH().unlock(
+        privateKey,
+        'all',
+        false,
+        utxo.satoshis,
+        sourceLockingScript
+      ),
+      sequence: 0xffffffff
+    })
   }
 
-  // Add output to recipient
+  // Add recipient output
   tx.addOutput({
     lockingScript: new P2PKH().lock(toAddress),
     satoshis
   })
 
-  // Add change output if needed
-  const fee = Math.ceil(tx.toBinary().length * 1) // 1 sat/byte
-  const change = totalInput - satoshis - fee
+  // Add change output if it's above dust threshold
   if (change > 546) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(fromAddress),
       satoshis: change
     })
   }
+  // If change <= 546, it goes to miners as extra fee (dust)
 
   await tx.sign()
+  const txid = await broadcastTransaction(tx)
 
-  // Broadcast
-  const broadcastResponse = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ txhex: tx.toHex() })
-  })
+  // Track transaction locally for BRC-100 compliance
+  try {
+    // Record the transaction
+    await recordSentTransaction(
+      txid,
+      tx.toHex(),
+      `Sent ${satoshis} sats to ${toAddress}`,
+      ['send']
+    )
 
-  if (!broadcastResponse.ok) {
-    throw new Error('Failed to broadcast transaction')
+    // Mark spent UTXOs
+    await markUtxosSpent(
+      inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
+      txid
+    )
+
+    console.log('Transaction tracked locally:', txid)
+  } catch (error) {
+    // Don't fail the send if tracking fails - tx is already broadcast
+    console.warn('Failed to track transaction locally:', error)
   }
 
-  return tx.id('hex')
+  return txid
 }
 
 // Storage helpers
@@ -349,23 +519,36 @@ export interface Ordinal {
 
 // Get 1Sat Ordinals from the ordinals address
 export async function getOrdinals(address: string): Promise<Ordinal[]> {
-  const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
-  const utxos = await response.json()
-
-  const ordinals: Ordinal[] = []
-
-  for (const utxo of utxos) {
-    if (utxo.value === 1) {
-      ordinals.push({
-        origin: `${utxo.tx_hash}_${utxo.tx_pos}`,
-        txid: utxo.tx_hash,
-        vout: utxo.tx_pos,
-        satoshis: 1
-      })
+  try {
+    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
+    if (!response.ok) {
+      console.warn(`Failed to fetch ordinals for ${address}: ${response.status}`)
+      return []
     }
-  }
+    const utxos = await response.json()
+    if (!Array.isArray(utxos)) {
+      console.warn(`Unexpected ordinals response for ${address}:`, utxos)
+      return []
+    }
 
-  return ordinals
+    const ordinals: Ordinal[] = []
+
+    for (const utxo of utxos) {
+      if (utxo.value === 1) {
+        ordinals.push({
+          origin: `${utxo.tx_hash}_${utxo.tx_pos}`,
+          txid: utxo.tx_hash,
+          vout: utxo.tx_pos,
+          satoshis: 1
+        })
+      }
+    }
+
+    return ordinals
+  } catch (error) {
+    console.error(`Error fetching ordinals for ${address}:`, error)
+    return []
+  }
 }
 
 // Get ordinal metadata from 1Sat Ordinals API
