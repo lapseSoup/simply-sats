@@ -9,14 +9,21 @@ import {
   getBalance,
   getUTXOs,
   getTransactionHistory,
+  getTransactionDetails,
+  calculateTxAmount,
   getOrdinals,
   sendBSV,
   saveWallet,
   loadWallet,
   hasWallet,
   clearWallet,
-  calculateMaxSend,
-  type UTXO
+  calculateExactFee,
+  calculateTxFee,
+  lockBSV,
+  unlockBSV,
+  getCurrentBlockHeight,
+  type UTXO,
+  type LockedUTXO
 } from './services/wallet'
 import {
   type BRC100Request,
@@ -29,7 +36,7 @@ import {
   getNetworkStatus
 } from './services/brc100'
 import { setupDeepLinkListener } from './services/deeplink'
-import { initDatabase, exportDatabase, importDatabase, getAllTransactions, addTransaction, type DatabaseBackup } from './services/database'
+import { initDatabase, exportDatabase, importDatabase, getAllTransactions, addTransaction, upsertTransaction, type DatabaseBackup } from './services/database'
 import {
   syncWallet,
   needsInitialSync,
@@ -83,8 +90,8 @@ const SimplySatsLogo = ({ size = 32 }: { size?: number }) => (
   </svg>
 )
 
-type Tab = 'activity' | 'ordinals'
-type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | 'brc100' | null
+type Tab = 'activity' | 'ordinals' | 'locks'
+type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | 'brc100' | 'lock' | null
 type RestoreMode = 'mnemonic' | 'json'
 
 interface TxHistoryItem {
@@ -102,8 +109,14 @@ interface NetworkInfo {
 
 function App() {
   const [wallet, setWallet] = useState<WalletKeys | null>(null)
-  const [balance, setBalance] = useState<number>(0)
-  const [ordBalance, setOrdBalance] = useState<number>(0)
+  const [balance, setBalance] = useState<number>(() => {
+    const cached = localStorage.getItem('simply_sats_cached_balance')
+    return cached ? parseInt(cached, 10) : 0
+  })
+  const [ordBalance, setOrdBalance] = useState<number>(() => {
+    const cached = localStorage.getItem('simply_sats_cached_ord_balance')
+    return cached ? parseInt(cached, 10) : 0
+  })
   const [usdPrice, setUsdPrice] = useState<number>(0)
   const [activeTab, setActiveTab] = useState<Tab>('activity')
   const [modal, setModal] = useState<Modal>(null)
@@ -118,6 +131,18 @@ function App() {
   const [sendAmount, setSendAmount] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+
+  // Lock form state
+  const [lockAmount, setLockAmount] = useState('')
+  const [lockBlocks, setLockBlocks] = useState('')
+  const [locking, setLocking] = useState(false)
+  const [lockError, setLockError] = useState('')
+  const [locks, setLocks] = useState<LockedUTXO[]>(() => {
+    const cached = localStorage.getItem('simply_sats_locks')
+    return cached ? JSON.parse(cached) : []
+  })
+  const [unlocking, setUnlocking] = useState<string | null>(null) // txid of lock being unlocked
+  const [unlockConfirm, setUnlockConfirm] = useState<LockedUTXO | 'all' | null>(null) // lock to confirm unlock
 
   // Restore form state
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('mnemonic')
@@ -177,14 +202,15 @@ function App() {
         await initDatabase()
         console.log('Database initialized successfully')
 
-        // Load transactions from database immediately
+        // Load transactions from database immediately (with amounts!)
         try {
           const dbTxs = await getAllTransactions(30)
           if (dbTxs.length > 0) {
             console.log('Loaded', dbTxs.length, 'transactions from database')
             setTxHistory(dbTxs.map(tx => ({
               tx_hash: tx.txid,
-              height: tx.blockHeight || 0
+              height: tx.blockHeight || 0,
+              amount: tx.amount  // Load cached amounts from database
             })))
           }
         } catch (e) {
@@ -440,9 +466,35 @@ function App() {
       if (ordHistory.length > 0) console.log('Ord history:', ordHistory)
       if (idHistory.length > 0) console.log('Identity history:', idHistory)
 
-      setBalance(bal + derivedBalance) // Include derived address balance
-      setOrdBalance(ordBal + idBal) // Include identity balance
-      setUtxos(walletUtxos)
+      const newBalance = bal + derivedBalance
+      const newOrdBalance = ordBal + idBal
+
+      // Get cached balance from localStorage (more reliable than state which may be stale)
+      const cachedBalance = parseInt(localStorage.getItem('simply_sats_cached_balance') || '0', 10)
+      const cachedOrdBalance = parseInt(localStorage.getItem('simply_sats_cached_ord_balance') || '0', 10)
+
+      // Only update balance if we got valid data OR if we know the balance really is 0
+      // Don't overwrite a good cached balance with 0 from rate limiting
+      if (newBalance > 0) {
+        // Got a real balance from API
+        setBalance(newBalance)
+        localStorage.setItem('simply_sats_cached_balance', String(newBalance))
+      } else if (cachedBalance === 0 && walletHistory.length === 0) {
+        // Balance is genuinely 0 (no transactions ever)
+        setBalance(0)
+      }
+      // If newBalance is 0 but we have a cached balance, keep the cached value (likely rate limited)
+
+      if (newOrdBalance > 0) {
+        setOrdBalance(newOrdBalance)
+        localStorage.setItem('simply_sats_cached_ord_balance', String(newOrdBalance))
+      } else if (cachedOrdBalance === 0 && ordHistory.length === 0) {
+        setOrdBalance(0)
+      }
+
+      if (walletUtxos.length > 0 || utxos.length === 0) {
+        setUtxos(walletUtxos)
+      }
 
       // Combine and dedupe transaction history from all addresses including derived
       const allHistory = [...walletHistory, ...ordHistory, ...idHistory, ...derivedHistory]
@@ -453,23 +505,101 @@ function App() {
       uniqueHistory.sort((a, b) => (b.height || 0) - (a.height || 0))
       console.log('Total unique transactions to display:', uniqueHistory.length, uniqueHistory)
 
-      // Save transactions to database for instant loading on next startup
-      for (const tx of uniqueHistory.slice(0, 30)) {
-        try {
-          await addTransaction({
-            txid: tx.tx_hash,
-            createdAt: Date.now(),
-            blockHeight: tx.height || undefined,
-            status: tx.height > 0 ? 'confirmed' : 'pending'
-          })
-        } catch (e) {
-          // Ignore duplicate errors - transaction already exists
+      // Load existing transactions from database to get cached amounts
+      let dbTxMap = new Map<string, { amount?: number; blockHeight?: number }>()
+      let dbOnlyTxs: TxHistoryItem[] = []
+      try {
+        const dbTxs = await getAllTransactions(100)
+        for (const dbTx of dbTxs) {
+          dbTxMap.set(dbTx.txid, { amount: dbTx.amount, blockHeight: dbTx.blockHeight })
+        }
+        console.log('Loaded', dbTxMap.size, 'transactions from database for amount lookup')
+
+        // Find transactions that are only in database (like local lock transactions)
+        const apiTxIds = new Set(uniqueHistory.map(t => t.tx_hash))
+        for (const dbTx of dbTxs) {
+          if (!apiTxIds.has(dbTx.txid)) {
+            dbOnlyTxs.push({
+              tx_hash: dbTx.txid,
+              height: dbTx.blockHeight || 0,
+              amount: dbTx.amount
+            })
+          }
+        }
+        if (dbOnlyTxs.length > 0) {
+          console.log('Found', dbOnlyTxs.length, 'database-only transactions (e.g. local locks)')
+        }
+      } catch (e) {
+        console.log('Could not load transactions from database')
+      }
+
+      // Merge database-only transactions with API transactions
+      // Prefer API version (has correct block height) over database version
+      const allTxs = [...uniqueHistory, ...dbOnlyTxs]
+      // Re-dedupe (keeps first occurrence, which is now API version)
+      const mergedHistory = allTxs.filter((tx, index, self) =>
+        index === self.findIndex(t => t.tx_hash === tx.tx_hash)
+      )
+      mergedHistory.sort((a, b) => (b.height || 0) - (a.height || 0))
+
+      // Fetch amounts for recent transactions - use database first, only fetch new ones from API
+      const recentTxs = mergedHistory.slice(0, 10)
+      const txsWithAmounts: TxHistoryItem[] = []
+
+      for (const tx of recentTxs) {
+        // Check if we have a non-null amount in database first
+        const dbData = dbTxMap.get(tx.tx_hash)
+        if (dbData?.amount != null) {  // Use != to check for both null and undefined
+          txsWithAmounts.push({ ...tx, amount: dbData.amount })
+        } else {
+          // Fetch transaction details to calculate amount (for new transactions or those without amounts)
+          try {
+            const details = await getTransactionDetails(tx.tx_hash)
+            if (details) {
+              const amount = await calculateTxAmount(details, wallet.walletAddress)
+              txsWithAmounts.push({ ...tx, amount })
+              // Save to database for next time (upsert preserves existing data)
+              await upsertTransaction({
+                txid: tx.tx_hash,
+                createdAt: Date.now(),
+                blockHeight: tx.height || undefined,
+                status: tx.height > 0 ? 'confirmed' : 'pending',
+                amount: amount
+              })
+              console.log('Fetched and saved amount for tx:', tx.tx_hash.slice(0, 8), amount, 'sats')
+            } else {
+              txsWithAmounts.push(tx)
+            }
+            // Small delay to avoid rate limiting
+            await new Promise(r => setTimeout(r, 150))
+          } catch {
+            txsWithAmounts.push(tx)
+          }
+        }
+      }
+
+      // Add remaining transactions - use database amounts if available
+      for (const tx of mergedHistory.slice(10, 30)) {
+        const dbData = dbTxMap.get(tx.tx_hash)
+        txsWithAmounts.push({ ...tx, amount: dbData?.amount })
+        // Save transaction to database if it doesn't exist yet (without amount)
+        if (!dbTxMap.has(tx.tx_hash)) {
+          try {
+            await addTransaction({
+              txid: tx.tx_hash,
+              createdAt: Date.now(),
+              blockHeight: tx.height || undefined,
+              status: tx.height > 0 ? 'confirmed' : 'pending'
+            })
+          } catch {
+            // Ignore duplicate errors
+          }
         }
       }
 
       // Only update if we got results - don't overwrite with empty data (rate limiting protection)
-      if (uniqueHistory.length > 0) {
-        setTxHistory(uniqueHistory.slice(0, 30))
+      if (txsWithAmounts.length > 0) {
+        setTxHistory(txsWithAmounts.slice(0, 30))
       } else if (txHistory.length === 0) {
         // Only set empty if we don't already have transactions
         setTxHistory([])
@@ -607,7 +737,10 @@ function App() {
     setSendError('')
 
     try {
-      const satoshis = Math.floor(parseFloat(sendAmount) * 100000000)
+      // Parse amount based on display mode (sats or BSV)
+      const satoshis = displayInSats
+        ? Math.round(parseFloat(sendAmount))
+        : Math.round(parseFloat(sendAmount) * 100000000)
       const utxos = await getUTXOs(wallet.walletAddress)
       const txid = await sendBSV(wallet.walletWif, sendAddress, satoshis, utxos)
       alert(`Transaction sent!\n\nTXID: ${txid.slice(0, 16)}...`)
@@ -619,6 +752,141 @@ function App() {
       setSendError(error instanceof Error ? error.message : 'Failed to send')
     } finally {
       setSending(false)
+    }
+  }
+
+  // Lock handler
+  const handleLock = async () => {
+    if (!wallet || !lockAmount || !lockBlocks) return
+
+    setLocking(true)
+    setLockError('')
+
+    try {
+      const satoshis = displayInSats
+        ? Math.round(parseFloat(lockAmount))
+        : Math.round(parseFloat(lockAmount) * 100000000)
+      const blocks = parseInt(lockBlocks)
+
+      if (blocks < 1) {
+        throw new Error('Lock must be at least 1 block')
+      }
+
+      // Get current block height
+      const currentHeight = networkInfo?.blockHeight || await getCurrentBlockHeight()
+      const unlockBlock = currentHeight + blocks
+
+      const walletUtxos = await getUTXOs(wallet.walletAddress)
+      const { txid, lockedUtxo } = await lockBSV(wallet.walletWif, satoshis, unlockBlock, walletUtxos)
+
+      // Save lock to local storage
+      const newLocks = [...locks, lockedUtxo]
+      setLocks(newLocks)
+      localStorage.setItem('simply_sats_locks', JSON.stringify(newLocks))
+
+      // Add to state immediately so it shows right away in Activity tab
+      // (The transaction is also recorded in the database by lockBSV with the amount)
+      const lockTxAmount = -satoshis  // Negative because we're locking/sending
+      setTxHistory(prev => [{
+        tx_hash: txid,
+        height: 0,
+        amount: lockTxAmount
+      }, ...prev])
+
+      alert(`Locked ${satoshis.toLocaleString()} sats until block ${unlockBlock}!\n\nTXID: ${txid.slice(0, 16)}...`)
+      setLockAmount('')
+      setLockBlocks('')
+      setModal(null)
+      fetchData()
+    } catch (error) {
+      setLockError(error instanceof Error ? error.message : 'Failed to lock')
+    } finally {
+      setLocking(false)
+    }
+  }
+
+  // Calculate unlock fee for a single lock
+  const getUnlockFee = () => calculateTxFee(1, 1)
+
+  // Get unlockable locks
+  const getUnlockableLocks = () => {
+    const currentHeight = networkInfo?.blockHeight || 0
+    return locks.filter(l => currentHeight >= l.unlockBlock)
+  }
+
+  // Unlock handler - performs the actual unlock
+  const performUnlock = async (lockedUtxo: LockedUTXO): Promise<{ success: boolean; txid?: string; amount?: number; error?: string }> => {
+    if (!wallet) return { success: false, error: 'No wallet' }
+
+    setUnlocking(lockedUtxo.txid)
+
+    try {
+      const currentHeight = networkInfo?.blockHeight || await getCurrentBlockHeight()
+
+      if (currentHeight < lockedUtxo.unlockBlock) {
+        const blocksRemaining = lockedUtxo.unlockBlock - currentHeight
+        throw new Error(`Cannot unlock yet. ${blocksRemaining} blocks remaining.`)
+      }
+
+      const txid = await unlockBSV(wallet.walletWif, lockedUtxo, currentHeight)
+
+      // Remove from locks
+      const newLocks = locks.filter(l => l.txid !== lockedUtxo.txid)
+      setLocks(newLocks)
+      localStorage.setItem('simply_sats_locks', JSON.stringify(newLocks))
+
+      // Add to state immediately so it shows right away in Activity tab
+      const fee = getUnlockFee()
+      const unlockTxAmount = lockedUtxo.satoshis - fee
+      setTxHistory(prev => [{
+        tx_hash: txid,
+        height: 0,
+        amount: unlockTxAmount
+      }, ...prev])
+
+      return { success: true, txid, amount: unlockTxAmount }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to unlock' }
+    } finally {
+      setUnlocking(null)
+    }
+  }
+
+  // Confirm and execute unlock
+  const handleConfirmUnlock = async () => {
+    if (!unlockConfirm) return
+
+    setUnlockConfirm(null)
+
+    if (unlockConfirm === 'all') {
+      // Unlock all unlockable locks
+      const unlockable = getUnlockableLocks()
+      let successCount = 0
+      let totalAmount = 0
+
+      for (const lock of unlockable) {
+        const result = await performUnlock(lock)
+        if (result.success) {
+          successCount++
+          totalAmount += result.amount || 0
+        }
+        // Small delay between transactions
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      if (successCount > 0) {
+        alert(`Unlocked ${successCount} lock${successCount > 1 ? 's' : ''} for ${totalAmount.toLocaleString()} sats!`)
+        fetchData()
+      }
+    } else {
+      // Unlock single lock
+      const result = await performUnlock(unlockConfirm)
+      if (result.success) {
+        alert(`Unlocked ${unlockConfirm.satoshis.toLocaleString()} sats!\n\nTXID: ${result.txid?.slice(0, 16)}...`)
+        fetchData()
+      } else {
+        alert(result.error)
+      }
     }
   }
 
@@ -696,7 +964,6 @@ function App() {
     }
   }
 
-  const formatBSV = (sats: number) => (sats / 100000000).toFixed(8)
   const formatBSVShort = (sats: number) => {
     const bsv = sats / 100000000
     if (bsv >= 1) return bsv.toFixed(4)
@@ -908,6 +1175,13 @@ function App() {
           Ordinals
           <span className="tab-count">{ordinals.length}</span>
         </button>
+        <button
+          className={`nav-tab ${activeTab === 'locks' ? 'active' : ''}`}
+          onClick={() => setActiveTab('locks')}
+        >
+          Locks
+          <span className="tab-count">{locks.length}</span>
+        </button>
       </div>
 
       {/* Content */}
@@ -921,27 +1195,32 @@ function App() {
                 <div className="empty-text">Your transaction history will appear here</div>
               </div>
             ) : (
-              txHistory.map((tx) => (
-                <div key={tx.tx_hash} className="tx-item" onClick={() => openOnWoC(tx.tx_hash)}>
-                  <div className="tx-icon">{tx.amount && tx.amount > 0 ? '📥' : tx.amount && tx.amount < 0 ? '📤' : '📄'}</div>
-                  <div className="tx-info">
-                    <div className="tx-type">{tx.amount && tx.amount > 0 ? 'Received' : tx.amount && tx.amount < 0 ? 'Sent' : 'Transaction'}</div>
-                    <div className="tx-meta">
-                      <span className="tx-hash">{tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}</span>
-                      {tx.height > 0 && <span>• Block {tx.height.toLocaleString()}</span>}
+              txHistory.map((tx) => {
+                const isLockTx = locks.some(l => l.txid === tx.tx_hash)
+                const txType = isLockTx ? 'Locked' : (tx.amount && tx.amount > 0 ? 'Received' : tx.amount && tx.amount < 0 ? 'Sent' : 'Transaction')
+                const txIcon = isLockTx ? '🔒' : (tx.amount && tx.amount > 0 ? '📥' : tx.amount && tx.amount < 0 ? '📤' : '📄')
+                return (
+                  <div key={tx.tx_hash} className="tx-item" onClick={() => openOnWoC(tx.tx_hash)}>
+                    <div className="tx-icon">{txIcon}</div>
+                    <div className="tx-info">
+                      <div className="tx-type">{txType}</div>
+                      <div className="tx-meta">
+                        <span className="tx-hash">{tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}</span>
+                        {tx.height > 0 && <span>• Block {tx.height.toLocaleString()}</span>}
+                      </div>
+                    </div>
+                    <div className="tx-amount">
+                      {tx.amount ? (
+                        <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
+                          {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats
+                        </div>
+                      ) : (
+                        <div className="tx-amount-value">View →</div>
+                      )}
                     </div>
                   </div>
-                  <div className="tx-amount">
-                    {tx.amount ? (
-                      <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
-                        {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats
-                      </div>
-                    ) : (
-                      <div className="tx-amount-value">View →</div>
-                    )}
-                  </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         )}
@@ -971,83 +1250,367 @@ function App() {
             )}
           </div>
         )}
+
+        {activeTab === 'locks' && (
+          <div className="locks-list">
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                onClick={() => setModal('lock')}
+              >
+                🔒 Lock BSV
+              </button>
+              {getUnlockableLocks().length > 1 && (
+                <button
+                  className="unlock-btn"
+                  style={{ padding: '8px 16px' }}
+                  onClick={() => setUnlockConfirm('all')}
+                >
+                  🔓 Unlock All ({getUnlockableLocks().length})
+                </button>
+              )}
+            </div>
+            {locks.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">🔓</div>
+                <div className="empty-title">No Locks Yet</div>
+                <div className="empty-text">Lock your BSV for a set number of blocks</div>
+              </div>
+            ) : (
+              locks.map((lock) => {
+                const currentHeight = networkInfo?.blockHeight || 0
+                const blocksRemaining = Math.max(0, lock.unlockBlock - currentHeight)
+                const isUnlockable = currentHeight >= lock.unlockBlock
+                const isUnlocking = unlocking === lock.txid
+
+                return (
+                  <div key={lock.txid} className="tx-item lock-item">
+                    <div className="tx-icon" onClick={() => openOnWoC(lock.txid)} style={{ cursor: 'pointer' }}>{isUnlockable ? '🔓' : '🔒'}</div>
+                    <div className="tx-info" onClick={() => openOnWoC(lock.txid)} style={{ cursor: 'pointer' }}>
+                      <div className="tx-type">
+                        {lock.satoshis.toLocaleString()} sats
+                      </div>
+                      <div className="tx-meta">
+                        {isUnlockable ? (
+                          <span className="unlock-ready">Ready to unlock!</span>
+                        ) : (
+                          <span>{blocksRemaining.toLocaleString()} blocks remaining</span>
+                        )}
+                        <span>• Block {lock.unlockBlock.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div className="tx-amount">
+                      {isUnlockable ? (
+                        <button
+                          className="unlock-btn"
+                          onClick={() => setUnlockConfirm(lock)}
+                          disabled={isUnlocking}
+                        >
+                          {isUnlocking ? '...' : 'Unlock'}
+                        </button>
+                      ) : (
+                        <div className="lock-progress">
+                          <div className="lock-progress-text">
+                            {Math.round(((lock.unlockBlock - currentHeight) / (lock.unlockBlock - (lock.createdAt ? Math.floor(lock.createdAt / 600000) : lock.unlockBlock - 100))) * 100)}%
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        )}
       </div>
 
       {/* Send Modal */}
-      {modal === 'send' && (
-        <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-handle" />
-            <div className="modal-header">
-              <h2 className="modal-title">Send BSV</h2>
-              <button className="modal-close" onClick={() => setModal(null)}>×</button>
-            </div>
-            <div className="modal-content">
-              <div className="form-group">
-                <label className="form-label">Recipient Address</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Enter BSV address"
-                  value={sendAddress}
-                  onChange={e => setSendAddress(e.target.value)}
-                />
+      {modal === 'send' && (() => {
+        // Parse amount based on display mode (sats or BSV)
+        const sendSats = displayInSats
+          ? Math.round(parseFloat(sendAmount || '0'))
+          : Math.round(parseFloat(sendAmount || '0') * 100000000)
+        const availableSats = balance
+
+        // Calculate number of inputs - use UTXOs if available, otherwise estimate from balance
+        const numInputs = utxos.length > 0 ? utxos.length : Math.max(1, Math.ceil(balance / 10000))
+        const totalUtxoValue = utxos.length > 0 ? utxos.reduce((sum, u) => sum + u.satoshis, 0) : balance
+
+        // Calculate fee - use exact calculation if UTXOs available, otherwise estimate
+        let fee = 0
+        if (sendSats > 0) {
+          if (utxos.length > 0) {
+            const feeInfo = calculateExactFee(sendSats, utxos)
+            fee = feeInfo.fee
+          } else {
+            // Estimate fee: check if this is max send (no change) or regular (with change)
+            const isMaxSend = sendSats >= totalUtxoValue - 50
+            const numOutputs = isMaxSend ? 1 : 2
+            fee = calculateTxFee(numInputs, numOutputs)
+          }
+        }
+
+        // Calculate max sendable with 1 output (no change)
+        const maxFee = calculateTxFee(numInputs, 1)
+        const maxSendSats = Math.max(0, totalUtxoValue - maxFee)
+
+        return (
+          <div className="modal-overlay" onClick={() => setModal(null)}>
+            <div className="modal send-modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title">Send BSV</h2>
+                <button className="modal-close" onClick={() => setModal(null)}>×</button>
               </div>
-              <div className="form-group">
-                <label className="form-label">Amount (BSV)</label>
-                <div className="input-with-action">
+              <div className="modal-content compact">
+                <div className="form-group">
+                  <label className="form-label">To</label>
+                  <input
+                    type="text"
+                    className="form-input mono"
+                    placeholder="Enter BSV address"
+                    value={sendAddress}
+                    onChange={e => setSendAddress(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Amount ({displayInSats ? 'sats' : 'BSV'})</label>
+                  <div className="input-with-action">
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder={displayInSats ? '0' : '0.00000000'}
+                      step={displayInSats ? '1' : '0.00000001'}
+                      value={sendAmount}
+                      onChange={e => setSendAmount(e.target.value)}
+                    />
+                    <button
+                      className="input-action"
+                      onClick={() => setSendAmount(displayInSats ? String(maxSendSats) : (maxSendSats / 100000000).toFixed(8))}
+                    >
+                      MAX
+                    </button>
+                  </div>
+                </div>
+
+                <div className="send-summary compact">
+                  <div className="send-summary-row">
+                    <span>Balance</span>
+                    <span>{availableSats.toLocaleString()} sats</span>
+                  </div>
+                  {sendSats > 0 && (
+                    <>
+                      <div className="send-summary-row">
+                        <span>Send</span>
+                        <span>{sendSats.toLocaleString()} sats</span>
+                      </div>
+                      <div className="send-summary-row">
+                        <span>Fee</span>
+                        <span>{fee} sats</span>
+                      </div>
+                      <div className="send-summary-row total">
+                        <span>Total</span>
+                        <span>{(sendSats + fee).toLocaleString()} sats</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {sendError && (
+                  <div className="warning compact">
+                    <span className="warning-icon">⚠️</span>
+                    <span className="warning-text">{sendError}</span>
+                  </div>
+                )}
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSend}
+                  disabled={sending || !sendAddress || !sendAmount || sendSats + fee > availableSats}
+                >
+                  {sending ? 'Sending...' : `Send ${sendSats > 0 ? sendSats.toLocaleString() + ' sats' : 'BSV'}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Lock Modal */}
+      {modal === 'lock' && (() => {
+        const lockSats = displayInSats
+          ? Math.round(parseFloat(lockAmount || '0'))
+          : Math.round(parseFloat(lockAmount || '0') * 100000000)
+        const blocks = parseInt(lockBlocks || '0')
+        const currentHeight = networkInfo?.blockHeight || 0
+        const unlockBlock = currentHeight + blocks
+
+        // Estimate unlock time (average 10 min per block)
+        const estimatedMinutes = blocks * 10
+        const estimatedHours = Math.floor(estimatedMinutes / 60)
+        const estimatedDays = Math.floor(estimatedHours / 24)
+
+        let timeEstimate = ''
+        if (estimatedDays > 0) {
+          timeEstimate = `~${estimatedDays} day${estimatedDays > 1 ? 's' : ''}`
+        } else if (estimatedHours > 0) {
+          timeEstimate = `~${estimatedHours} hour${estimatedHours > 1 ? 's' : ''}`
+        } else if (estimatedMinutes > 0) {
+          timeEstimate = `~${estimatedMinutes} min`
+        }
+
+        const fee = calculateTxFee(1, 2) // 1 input estimate, 2 outputs (lock + change)
+
+        return (
+          <div className="modal-overlay" onClick={() => setModal(null)}>
+            <div className="modal send-modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title">Lock BSV</h2>
+                <button className="modal-close" onClick={() => setModal(null)}>×</button>
+              </div>
+              <div className="modal-content compact">
+                <div className="form-group">
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Amount ({displayInSats ? 'sats' : 'BSV'})</span>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>{balance.toLocaleString()} available</span>
+                  </label>
                   <input
                     type="number"
                     className="form-input"
-                    placeholder="0.00000000"
-                    step="0.00000001"
-                    value={sendAmount}
-                    onChange={e => setSendAmount(e.target.value)}
-                    style={{ paddingRight: 60 }}
+                    placeholder=""
+                    step={displayInSats ? '1' : '0.00000001'}
+                    value={lockAmount}
+                    onChange={e => setLockAmount(e.target.value)}
                   />
-                  <button
-                    className="input-action"
-                    onClick={() => {
-                      const { maxSats } = calculateMaxSend(utxos)
-                      setSendAmount((maxSats / 100000000).toFixed(8))
-                    }}
-                  >
-                    MAX
-                  </button>
                 </div>
-                <div className="form-hint">
-                  Available: {formatBSV(balance)} BSV • Fee: ~{calculateMaxSend(utxos).fee} sats
+                <div className="form-group">
+                  <label className="form-label">Lock Duration (blocks)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder=""
+                    min="1"
+                    value={lockBlocks}
+                    onChange={e => setLockBlocks(e.target.value)}
+                  />
+                  <div className="form-hint">
+                    {blocks > 0 ? (
+                      <>Unlocks at block {unlockBlock.toLocaleString()} {timeEstimate && `(${timeEstimate})`}</>
+                    ) : (
+                      <>1 block ≈ 10 minutes</>
+                    )}
+                  </div>
                 </div>
+
+                <div className="send-summary compact">
+                  <div className="send-summary-row">
+                    <span>Current Block</span>
+                    <span>{currentHeight.toLocaleString()}</span>
+                  </div>
+                  {lockSats > 0 && blocks > 0 && (
+                    <>
+                      <div className="send-summary-row">
+                        <span>Lock Amount</span>
+                        <span>{lockSats.toLocaleString()} sats</span>
+                      </div>
+                      <div className="send-summary-row">
+                        <span>Unlock Block</span>
+                        <span>{unlockBlock.toLocaleString()}</span>
+                      </div>
+                      <div className="send-summary-row">
+                        <span>Fee</span>
+                        <span>~{fee} sats</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {lockError && (
+                  <div className="warning compact">
+                    <span className="warning-icon">⚠️</span>
+                    <span className="warning-text">{lockError}</span>
+                  </div>
+                )}
+                <button
+                  className="btn btn-primary"
+                  onClick={handleLock}
+                  disabled={locking || !lockAmount || !lockBlocks || lockSats <= 0 || blocks <= 0}
+                >
+                  {locking ? 'Locking...' : `🔒 Lock ${lockSats > 0 ? lockSats.toLocaleString() + ' sats' : 'BSV'}`}
+                </button>
               </div>
-              {sendError && (
-                <div className="warning">
-                  <span className="warning-icon">⚠️</span>
-                  <span className="warning-text">{sendError}</span>
-                </div>
-              )}
-              <button
-                className="btn btn-primary"
-                onClick={handleSend}
-                disabled={sending || !sendAddress || !sendAmount}
-              >
-                {sending ? 'Sending...' : 'Send BSV'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
+
+      {/* Unlock Confirmation Modal */}
+      {unlockConfirm && (() => {
+        const isAll = unlockConfirm === 'all'
+        const locksToUnlock = isAll ? getUnlockableLocks() : [unlockConfirm]
+        const totalSats = locksToUnlock.reduce((sum, l) => sum + l.satoshis, 0)
+        const totalFee = locksToUnlock.length * getUnlockFee()
+        const totalReceive = totalSats - totalFee
+
+        return (
+          <div className="modal-overlay" onClick={() => setUnlockConfirm(null)}>
+            <div className="modal send-modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title">Confirm Unlock</h2>
+                <button className="modal-close" onClick={() => setUnlockConfirm(null)}>×</button>
+              </div>
+              <div className="modal-content compact">
+                <div className="send-summary compact">
+                  <div className="send-summary-row">
+                    <span>Locks to Unlock</span>
+                    <span>{locksToUnlock.length}</span>
+                  </div>
+                  <div className="send-summary-row">
+                    <span>Total Locked</span>
+                    <span>{totalSats.toLocaleString()} sats</span>
+                  </div>
+                  <div className="send-summary-row">
+                    <span>Transaction Fee{locksToUnlock.length > 1 ? 's' : ''}</span>
+                    <span>-{totalFee.toLocaleString()} sats</span>
+                  </div>
+                  <div className="send-summary-row" style={{ fontWeight: 600, borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 8 }}>
+                    <span>You'll Receive</span>
+                    <span style={{ color: 'var(--success)' }}>+{totalReceive.toLocaleString()} sats</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                  <button
+                    className="btn"
+                    style={{ flex: 1, background: 'var(--surface-hover)' }}
+                    onClick={() => setUnlockConfirm(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="unlock-btn"
+                    style={{ flex: 1, padding: '12px 24px' }}
+                    onClick={handleConfirmUnlock}
+                    disabled={unlocking !== null}
+                  >
+                    {unlocking ? 'Unlocking...' : `🔓 Unlock ${totalReceive.toLocaleString()} sats`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Receive Modal */}
       {modal === 'receive' && (
         <div className="modal-overlay" onClick={() => setModal(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-handle" />
+          <div className="modal send-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">Receive</h2>
               <button className="modal-close" onClick={() => setModal(null)}>×</button>
             </div>
-            <div className="modal-content">
-              <div className="pill-tabs">
+            <div className="modal-content compact">
+              <div className="pill-tabs compact">
                 <button
                   className={`pill-tab ${receiveType === 'wallet' ? 'active' : ''}`}
                   onClick={() => setReceiveType('wallet')}
@@ -1064,52 +1627,52 @@ function App() {
                   className={`pill-tab ${receiveType === 'brc100' ? 'active' : ''}`}
                   onClick={() => setReceiveType('brc100')}
                 >
-                  BRC-100
+                  Identity
                 </button>
               </div>
 
               {receiveType === 'brc100' ? (
-                <div className="brc100-receive-compact">
-                  <div className="brc100-row">
-                    <div className="brc100-col">
-                      <div className="brc100-label">Address</div>
-                      <div className="qr-wrapper-small">
-                        <QRCodeSVG value={wallet.identityAddress} size={80} level="L" bgColor="#fff" fgColor="#000" />
+                <div className="qr-container compact">
+                  <div className="brc100-qr-row">
+                    <div className="brc100-qr-col">
+                      <div className="brc100-qr-label">Address</div>
+                      <div className="qr-wrapper compact">
+                        <QRCodeSVG value={wallet.identityAddress} size={90} level="L" bgColor="#fff" fgColor="#000" />
                       </div>
                       <button className="copy-btn-small" onClick={() => copyToClipboard(wallet.identityAddress, 'Address copied!')}>
                         📋 Copy
                       </button>
                     </div>
-                    <div className="brc100-col">
-                      <div className="brc100-label">Public Key</div>
-                      <div className="qr-wrapper-small">
-                        <QRCodeSVG value={wallet.identityPubKey} size={80} level="L" bgColor="#fff" fgColor="#000" />
+                    <div className="brc100-qr-col">
+                      <div className="brc100-qr-label">Public Key</div>
+                      <div className="qr-wrapper compact">
+                        <QRCodeSVG value={wallet.identityPubKey} size={90} level="L" bgColor="#fff" fgColor="#000" />
                       </div>
-                      <button className="copy-btn-small" onClick={() => copyToClipboard(wallet.identityPubKey, 'Public key copied!')}>
+                      <button className="copy-btn-small" onClick={() => copyToClipboard(wallet.identityPubKey, 'Key copied!')}>
                         📋 Copy
                       </button>
                     </div>
                   </div>
-                  <div className="brc100-hint-small">
-                    Address: direct receive • Public Key: derived addresses
+                  <div className="address-type-hint">
+                    BRC-100 identity for app connections
                   </div>
                 </div>
               ) : (
-                <div className="qr-container">
-                  <div className="qr-wrapper">
+                <div className="qr-container compact">
+                  <div className="qr-wrapper compact">
                     <QRCodeSVG
                       value={receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress}
-                      size={140}
+                      size={120}
                       level="M"
                       bgColor="#ffffff"
                       fgColor="#000000"
                     />
                   </div>
-                  <div className="address-display">
+                  <div className="address-display compact">
                     {receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress}
                   </div>
                   <button
-                    className="copy-btn"
+                    className="copy-btn compact"
                     onClick={() => copyToClipboard(
                       receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress,
                       'Address copied!'

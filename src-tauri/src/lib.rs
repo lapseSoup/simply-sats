@@ -14,6 +14,12 @@ fn include_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/001_initial.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 2,
+            description: "Add amount column to transactions",
+            sql: include_str!("../migrations/002_transaction_amount.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

@@ -13,7 +13,7 @@ import {
   getSpendableUTXOs,
   getLastSyncedHeight,
   updateSyncState,
-  addTransaction,
+  upsertTransaction,
   type UTXO as DBUtxo
 } from './database'
 
@@ -234,15 +234,17 @@ export async function recordSentTransaction(
   txid: string,
   rawTx: string,
   description: string,
-  labels: string[] = []
+  labels: string[] = [],
+  amount?: number
 ): Promise<void> {
-  await addTransaction({
+  await upsertTransaction({
     txid,
     rawTx,
     description,
     createdAt: Date.now(),
     status: 'pending',
-    labels
+    labels,
+    amount
   })
 }
 

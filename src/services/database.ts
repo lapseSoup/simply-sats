@@ -37,6 +37,7 @@ export interface Transaction {
   blockHeight?: number
   status: 'pending' | 'confirmed' | 'failed'
   labels?: string[]
+  amount?: number  // Net satoshis: positive = received, negative = sent
 }
 
 // Lock type (for time-locked outputs)
@@ -206,16 +207,85 @@ export async function getBalanceFromDB(basket?: string): Promise<number> {
 // ============================================
 
 /**
- * Add a new transaction
+ * Add a new transaction (won't overwrite if exists)
  */
 export async function addTransaction(tx: Omit<Transaction, 'id'>): Promise<string> {
   const database = getDatabase()
 
+  // Use INSERT OR IGNORE to not overwrite existing transactions
   await database.execute(
-    `INSERT OR REPLACE INTO transactions (txid, raw_tx, description, created_at, confirmed_at, block_height, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status]
+    `INSERT OR IGNORE INTO transactions (txid, raw_tx, description, created_at, confirmed_at, block_height, status, amount)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status, tx.amount ?? null]
   )
+
+  // If amount was provided and row already existed, update the amount
+  if (tx.amount !== undefined) {
+    await database.execute(
+      'UPDATE transactions SET amount = COALESCE(amount, $1) WHERE txid = $2 AND amount IS NULL',
+      [tx.amount, tx.txid]
+    )
+  }
+
+  // Add labels if provided
+  if (tx.labels && tx.labels.length > 0) {
+    for (const label of tx.labels) {
+      await database.execute(
+        'INSERT OR IGNORE INTO transaction_labels (txid, label) VALUES ($1, $2)',
+        [tx.txid, label]
+      )
+    }
+  }
+
+  return tx.txid
+}
+
+/**
+ * Add or update a transaction (will update fields if exists)
+ */
+export async function upsertTransaction(tx: Omit<Transaction, 'id'>): Promise<string> {
+  const database = getDatabase()
+
+  // First try to insert
+  await database.execute(
+    `INSERT OR IGNORE INTO transactions (txid, raw_tx, description, created_at, confirmed_at, block_height, status, amount)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status, tx.amount ?? null]
+  )
+
+  // Then update any provided fields (preserves existing data for null fields)
+  const updates: string[] = []
+  const params: any[] = []
+  let paramIndex = 1
+
+  if (tx.rawTx !== undefined) {
+    updates.push(`raw_tx = $${paramIndex++}`)
+    params.push(tx.rawTx)
+  }
+  if (tx.description !== undefined) {
+    updates.push(`description = $${paramIndex++}`)
+    params.push(tx.description)
+  }
+  if (tx.blockHeight !== undefined) {
+    updates.push(`block_height = $${paramIndex++}`)
+    params.push(tx.blockHeight)
+  }
+  if (tx.status !== undefined) {
+    updates.push(`status = $${paramIndex++}`)
+    params.push(tx.status)
+  }
+  if (tx.amount !== undefined) {
+    updates.push(`amount = $${paramIndex++}`)
+    params.push(tx.amount)
+  }
+
+  if (updates.length > 0) {
+    params.push(tx.txid)
+    await database.execute(
+      `UPDATE transactions SET ${updates.join(', ')} WHERE txid = $${paramIndex}`,
+      params
+    )
+  }
 
   // Add labels if provided
   if (tx.labels && tx.labels.length > 0) {
@@ -249,8 +319,21 @@ export async function getAllTransactions(limit = 30): Promise<Transaction[]> {
     createdAt: row.created_at,
     confirmedAt: row.confirmed_at,
     blockHeight: row.block_height,
-    status: row.status
+    status: row.status,
+    amount: row.amount
   }))
+}
+
+/**
+ * Update transaction amount
+ */
+export async function updateTransactionAmount(txid: string, amount: number): Promise<void> {
+  const database = getDatabase()
+
+  await database.execute(
+    'UPDATE transactions SET amount = $1 WHERE txid = $2',
+    [amount, txid]
+  )
 }
 
 /**
