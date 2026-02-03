@@ -522,6 +522,7 @@ export interface DatabaseBackup {
   baskets: Basket[]
   syncState: { address: string; height: number; syncedAt: number }[]
   derivedAddresses?: DerivedAddress[]  // Added in version 2
+  contacts?: Contact[]  // Added in version 3
 }
 
 /**
@@ -597,15 +598,19 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   // Get derived addresses
   const derivedAddresses = await getDerivedAddresses()
 
+  // Get contacts
+  const contacts = await getContacts()
+
   return {
-    version: 2,  // Updated to include derived addresses
+    version: 3,  // Updated to include contacts
     exportedAt: Date.now(),
     utxos,
     transactions,
     locks,
     baskets,
     syncState,
-    derivedAddresses
+    derivedAddresses,
+    contacts
   }
 }
 
@@ -689,6 +694,19 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
     console.log('Imported', backup.derivedAddresses.length, 'derived addresses')
   }
 
+  // Import contacts (if present - version 3+)
+  if (backup.contacts && backup.contacts.length > 0) {
+    await ensureContactsTable()
+    for (const contact of backup.contacts) {
+      await database.execute(
+        `INSERT OR REPLACE INTO contacts (pubkey, label, created_at)
+         VALUES ($1, $2, $3)`,
+        [contact.pubkey, contact.label, contact.createdAt]
+      )
+    }
+    console.log('Imported', backup.contacts.length, 'contacts')
+  }
+
   console.log('Database import complete')
 }
 
@@ -708,6 +726,13 @@ export async function clearDatabase(): Promise<void> {
   // Also clear derived addresses
   try {
     await database.execute('DELETE FROM derived_addresses')
+  } catch (e) {
+    // Table may not exist yet
+  }
+
+  // Also clear contacts
+  try {
+    await database.execute('DELETE FROM contacts')
   } catch (e) {
     // Table may not exist yet
   }
@@ -879,4 +904,137 @@ export async function exportSenderPubkeys(): Promise<string[]> {
 export async function getDerivedAddressCount(): Promise<number> {
   const derivedAddresses = await getDerivedAddresses()
   return derivedAddresses.length
+}
+
+// ============================================
+// Contacts (Sender Public Keys)
+// ============================================
+
+// Contact type - stores sender public keys with labels
+export interface Contact {
+  id?: number
+  pubkey: string
+  label: string
+  createdAt: number
+}
+
+/**
+ * Ensure contacts table exists
+ */
+export async function ensureContactsTable(): Promise<void> {
+  const database = getDatabase()
+
+  try {
+    await database.execute(`
+      CREATE TABLE IF NOT EXISTS contacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pubkey TEXT NOT NULL UNIQUE,
+        label TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `)
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_contacts_pubkey ON contacts(pubkey)')
+  } catch (e) {
+    console.error('Failed to ensure contacts table:', e)
+  }
+}
+
+/**
+ * Add a contact
+ */
+export async function addContact(contact: Omit<Contact, 'id'>): Promise<number> {
+  const database = getDatabase()
+
+  const result = await database.execute(
+    `INSERT OR REPLACE INTO contacts (pubkey, label, created_at)
+     VALUES ($1, $2, $3)`,
+    [contact.pubkey, contact.label, contact.createdAt]
+  )
+  return result.lastInsertId as number
+}
+
+/**
+ * Get all contacts
+ */
+export async function getContacts(): Promise<Contact[]> {
+  const database = getDatabase()
+
+  try {
+    const rows = await database.select<any[]>('SELECT * FROM contacts ORDER BY label ASC')
+
+    return rows.map(row => ({
+      id: row.id,
+      pubkey: row.pubkey,
+      label: row.label,
+      createdAt: row.created_at
+    }))
+  } catch (e) {
+    // Table may not exist yet
+    return []
+  }
+}
+
+/**
+ * Get a contact by pubkey
+ */
+export async function getContactByPubkey(pubkey: string): Promise<Contact | null> {
+  const database = getDatabase()
+
+  try {
+    const rows = await database.select<any[]>(
+      'SELECT * FROM contacts WHERE pubkey = $1',
+      [pubkey]
+    )
+
+    if (rows.length === 0) return null
+
+    const row = rows[0]
+    return {
+      id: row.id,
+      pubkey: row.pubkey,
+      label: row.label,
+      createdAt: row.created_at
+    }
+  } catch (e) {
+    return null
+  }
+}
+
+/**
+ * Update a contact's label
+ */
+export async function updateContactLabel(pubkey: string, label: string): Promise<void> {
+  const database = getDatabase()
+
+  await database.execute(
+    'UPDATE contacts SET label = $1 WHERE pubkey = $2',
+    [label, pubkey]
+  )
+}
+
+/**
+ * Delete a contact
+ */
+export async function deleteContact(pubkey: string): Promise<void> {
+  const database = getDatabase()
+
+  await database.execute('DELETE FROM contacts WHERE pubkey = $1', [pubkey])
+}
+
+/**
+ * Get next invoice number for a sender (increments for unique addresses)
+ */
+export async function getNextInvoiceNumber(senderPubkey: string): Promise<number> {
+  const database = getDatabase()
+
+  try {
+    // Count existing derived addresses for this sender
+    const rows = await database.select<{count: number}[]>(
+      'SELECT COUNT(*) as count FROM derived_addresses WHERE sender_pubkey = $1',
+      [senderPubkey]
+    )
+    return (rows[0]?.count || 0) + 1
+  } catch (e) {
+    return 1
+  }
 }

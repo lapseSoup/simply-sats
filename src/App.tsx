@@ -44,7 +44,7 @@ import {
   getNetworkStatus
 } from './services/brc100'
 import { setupDeepLinkListener } from './services/deeplink'
-import { initDatabase, exportDatabase, importDatabase, clearDatabase, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, type DatabaseBackup } from './services/database'
+import { initDatabase, exportDatabase, importDatabase, clearDatabase, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, ensureContactsTable, addContact, getContacts, getNextInvoiceNumber, type DatabaseBackup, type Contact } from './services/database'
 import {
   syncWallet,
   needsInitialSync,
@@ -285,6 +285,11 @@ function App() {
   const [senderPubKeyInput, setSenderPubKeyInput] = useState('')
   const [derivedReceiveAddress, setDerivedReceiveAddress] = useState('')
   const [showDeriveMode, setShowDeriveMode] = useState(false)
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [selectedContactId, setSelectedContactId] = useState<number | null>(null)
+  const [newContactLabel, setNewContactLabel] = useState('')
+  const [showAddContact, setShowAddContact] = useState(false)
+  const [currentInvoiceIndex, setCurrentInvoiceIndex] = useState<number>(1)
 
   // New wallet mnemonic display
   const [newMnemonic, setNewMnemonic] = useState<string | null>(null)
@@ -367,6 +372,12 @@ function App() {
         // Ensure derived_addresses table exists (migration)
         await ensureDerivedAddressesTable()
         console.log('Derived addresses table ready')
+
+        // Ensure contacts table exists
+        await ensureContactsTable()
+        const loadedContacts = await getContacts()
+        setContacts(loadedContacts)
+        console.log('Loaded', loadedContacts.length, 'contacts')
 
         // Load transactions from database immediately (with amounts!)
         try {
@@ -1240,9 +1251,23 @@ function App() {
   // Copy feedback state
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
 
-  const copyToClipboard = (text: string, label = 'Copied!') => {
-    navigator.clipboard.writeText(text)
-    showToast(label)
+  const copyToClipboard = async (text: string, label = 'Copied!') => {
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast(label)
+    } catch (err) {
+      console.error('Clipboard write failed:', err)
+      // Fallback: create a temporary textarea
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      showToast(label)
+    }
   }
 
   const showToast = (message: string, duration = 3000) => {
@@ -1262,14 +1287,15 @@ function App() {
   // BRC-100 derived address generation
   // Uses BRC-29 format invoice number for full compliance
   // This just computes the address - saving happens separately
-  const deriveReceiveAddress = useCallback((senderPubKey: string): string => {
+  // invoiceIndex parameter allows generating unique addresses for the same sender
+  const deriveReceiveAddress = useCallback((senderPubKey: string, invoiceIndex: number = 1): string => {
     if (!wallet || !senderPubKey || senderPubKey.length < 66) return ''
     try {
       const senderPub = PublicKey.fromString(senderPubKey)
       const receiverPriv = PrivateKey.fromWif(wallet.identityWif)
       // BRC-29 format: "2-3241645161d8-{protocolID} {keyID}"
-      // Using 'default' as keyID for deterministic derivation (both sides derive same address)
-      const invoiceNumber = '2-3241645161d8-simply-sats default'
+      // Using incremental index for unique addresses each time
+      const invoiceNumber = `2-3241645161d8-simply-sats ${invoiceIndex}`
       const address = deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
       return address
     } catch (e) {
@@ -1279,7 +1305,8 @@ function App() {
   }, [wallet])
 
   // Save derived address to database - called explicitly when user confirms
-  const saveDerivedAddress = useCallback(async (senderPubKey: string, address: string): Promise<boolean> => {
+  // invoiceIndex must match what was used in deriveReceiveAddress
+  const saveDerivedAddress = useCallback(async (senderPubKey: string, address: string, invoiceIndex: number, contactLabel?: string): Promise<boolean> => {
     if (!wallet || !senderPubKey || !address) {
       console.error('Save failed: missing data')
       return false
@@ -1287,7 +1314,7 @@ function App() {
     try {
       const senderPub = PublicKey.fromString(senderPubKey)
       const receiverPriv = PrivateKey.fromWif(wallet.identityWif)
-      const invoiceNumber = '2-3241645161d8-simply-sats default'
+      const invoiceNumber = `2-3241645161d8-simply-sats ${invoiceIndex}`
 
       // Derive the private key for spending
       const derivedPrivKey = deriveChildPrivateKey(receiverPriv, senderPub, invoiceNumber)
@@ -1298,7 +1325,7 @@ function App() {
         senderPubkey: senderPubKey,
         invoiceNumber,
         privateKeyWif: derivedPrivKey.toWif(),
-        label: `From ${senderPubKey.substring(0, 8)}...`,
+        label: contactLabel || `From ${senderPubKey.substring(0, 8)}...`,
         createdAt: Date.now()
       })
       console.log('Saved derived address to database:', address)
@@ -2189,10 +2216,14 @@ function App() {
                       <button
                         className="btn btn-secondary"
                         style={{ marginTop: 8 }}
-                        onClick={() => {
+                        onClick={async () => {
                           setShowDeriveMode(true)
                           setSenderPubKeyInput('')
                           setDerivedReceiveAddress('')
+                          setSelectedContactId(null)
+                          setShowAddContact(false)
+                          setNewContactLabel('')
+                          setCurrentInvoiceIndex(1)
                         }}
                       >
                         🔐 Generate Receive Address
@@ -2203,25 +2234,124 @@ function App() {
                     </>
                   ) : (
                     <>
-                      {/* Derive mode - enter sender's public key */}
+                      {/* Derive mode - enter sender's public key or select contact */}
                       <div className="form-group" style={{ width: '100%', marginBottom: 12 }}>
-                        <label className="form-label">Sender's Public Key</label>
+                        <label className="form-label">Sender (Contact)</label>
+                        {contacts.length > 0 && (
+                          <select
+                            className="form-input"
+                            value={selectedContactId || ''}
+                            onChange={async (e) => {
+                              const id = e.target.value ? parseInt(e.target.value) : null
+                              setSelectedContactId(id)
+                              if (id) {
+                                const contact = contacts.find(c => c.id === id)
+                                if (contact) {
+                                  setSenderPubKeyInput(contact.pubkey)
+                                  // Get next invoice number for unique address
+                                  const nextIndex = await getNextInvoiceNumber(contact.pubkey)
+                                  setCurrentInvoiceIndex(nextIndex)
+                                  setDerivedReceiveAddress(deriveReceiveAddress(contact.pubkey, nextIndex))
+                                }
+                              } else {
+                                setSenderPubKeyInput('')
+                                setDerivedReceiveAddress('')
+                                setCurrentInvoiceIndex(1)
+                              }
+                            }}
+                            style={{ marginBottom: 8 }}
+                          >
+                            <option value="">-- Select a contact --</option>
+                            {contacts.map(c => (
+                              <option key={c.id} value={c.id}>{c.label}</option>
+                            ))}
+                          </select>
+                        )}
                         <input
                           type="text"
                           className="form-input mono"
-                          placeholder="Enter sender's identity public key..."
+                          placeholder="Or enter sender's identity public key..."
                           value={senderPubKeyInput}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const val = e.target.value.trim()
                             setSenderPubKeyInput(val)
-                            setDerivedReceiveAddress(deriveReceiveAddress(val))
+                            setSelectedContactId(null)
+                            if (val.length >= 66) {
+                              // Get next invoice number for unique address
+                              const nextIndex = await getNextInvoiceNumber(val)
+                              setCurrentInvoiceIndex(nextIndex)
+                              setDerivedReceiveAddress(deriveReceiveAddress(val, nextIndex))
+                            } else {
+                              setDerivedReceiveAddress('')
+                              setCurrentInvoiceIndex(1)
+                            }
                           }}
                           style={{ fontSize: 11 }}
                         />
+                        {/* Add contact button */}
+                        {senderPubKeyInput.length >= 66 && !contacts.find(c => c.pubkey === senderPubKeyInput) && (
+                          <div style={{ marginTop: 8 }}>
+                            {!showAddContact ? (
+                              <button
+                                className="btn btn-small"
+                                onClick={() => setShowAddContact(true)}
+                                style={{ fontSize: 11, padding: '4px 8px' }}
+                              >
+                                ➕ Save as Contact
+                              </button>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  placeholder="Enter contact name..."
+                                  value={newContactLabel}
+                                  onChange={(e) => setNewContactLabel(e.target.value)}
+                                  style={{ fontSize: 14, padding: '10px 12px', width: '100%', boxSizing: 'border-box' }}
+                                  autoFocus
+                                />
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <button
+                                    className="btn btn-secondary"
+                                    onClick={() => {
+                                      setShowAddContact(false)
+                                      setNewContactLabel('')
+                                    }}
+                                    style={{ flex: 1 }}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    className="btn btn-primary"
+                                    onClick={async () => {
+                                      if (newContactLabel.trim()) {
+                                        await addContact({
+                                          pubkey: senderPubKeyInput,
+                                          label: newContactLabel.trim(),
+                                          createdAt: Date.now()
+                                        })
+                                        const updated = await getContacts()
+                                        setContacts(updated)
+                                        setShowAddContact(false)
+                                        setNewContactLabel('')
+                                        showToast('Contact saved!')
+                                      }
+                                    }}
+                                    style={{ flex: 1 }}
+                                  >
+                                    Save
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                       {derivedReceiveAddress ? (
                         <>
-                          <div className="brc100-qr-label" style={{ marginBottom: 8 }}>Derived Payment Address</div>
+                          <div className="brc100-qr-label" style={{ marginBottom: 8 }}>
+                            Derived Payment Address #{currentInvoiceIndex}
+                          </div>
                           <div className="qr-wrapper compact">
                             <QRCodeSVG value={derivedReceiveAddress} size={100} level="M" bgColor="#fff" fgColor="#000" />
                           </div>
@@ -2231,10 +2361,16 @@ function App() {
                           <button
                             className="copy-btn compact"
                             onClick={async () => {
+                              // Find contact label if exists
+                              const contact = contacts.find(c => c.pubkey === senderPubKeyInput)
                               // Save to database first, then copy
-                              const saved = await saveDerivedAddress(senderPubKeyInput, derivedReceiveAddress)
+                              const saved = await saveDerivedAddress(senderPubKeyInput, derivedReceiveAddress, currentInvoiceIndex, contact?.label)
                               if (saved) {
                                 copyToClipboard(derivedReceiveAddress, 'Address saved & copied!')
+                                // Increment for next time
+                                setCurrentInvoiceIndex(prev => prev + 1)
+                                // Generate next address preview
+                                setDerivedReceiveAddress(deriveReceiveAddress(senderPubKeyInput, currentInvoiceIndex + 1))
                               } else {
                                 copyToClipboard(derivedReceiveAddress, 'Address copied (save failed)')
                               }
@@ -2243,12 +2379,12 @@ function App() {
                             📋 Copy & Save Address
                           </button>
                           <div className="address-type-hint" style={{ marginTop: 4, fontSize: 10 }}>
-                            Click to save for syncing
+                            Each click generates a new unique address
                           </div>
                         </>
                       ) : (
                         <div className="address-type-hint" style={{ padding: '40px 0' }}>
-                          Enter sender's public key to generate a unique receive address
+                          {contacts.length > 0 ? 'Select a contact or enter public key' : 'Enter sender\'s public key to generate a unique receive address'}
                         </div>
                       )}
                       <button
@@ -2258,12 +2394,14 @@ function App() {
                           setShowDeriveMode(false)
                           setSenderPubKeyInput('')
                           setDerivedReceiveAddress('')
+                          setSelectedContactId(null)
+                          setShowAddContact(false)
                         }}
                       >
                         ← Back
                       </button>
                       <div className="address-type-hint">
-                        This address is unique to this sender (BRC-100)
+                        Each address is unique to this sender (BRC-100)
                       </div>
                     </>
                   )}
