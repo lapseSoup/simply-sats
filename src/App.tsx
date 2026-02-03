@@ -296,7 +296,7 @@ function App() {
 
   // Sync state
   const [syncing, setSyncing] = useState(false)
-  const [, setLastSyncTime] = useState<number | null>(null)
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null)
 
   // Network status
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null)
@@ -776,6 +776,13 @@ function App() {
     const interval = setInterval(fetchData, 60000)
     return () => clearInterval(interval)
   }, [wallet, fetchData])
+
+  // Refresh transaction history after sync completes
+  useEffect(() => {
+    if (lastSyncTime && wallet) {
+      fetchData()
+    }
+  }, [lastSyncTime]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start MessageBox listener for payment notifications
   useEffect(() => {
@@ -1466,7 +1473,10 @@ function App() {
           </div>
           <button
             className={`icon-btn ${syncing ? 'active' : ''}`}
-            onClick={() => performSync(false)}
+            onClick={async () => {
+              await performSync(false)
+              await fetchData()
+            }}
             title="Sync wallet"
           >
             🔄
@@ -2457,8 +2467,8 @@ function App() {
             <div className="modal-header">
               <h2 className="modal-title">Recovery Phrase</h2>
             </div>
-            <div className="modal-content">
-              <div className="warning">
+            <div className="modal-content compact">
+              <div className="warning compact">
                 <span className="warning-icon">⚠️</span>
                 <span className="warning-text">
                   Write down these 12 words and keep them safe. This is the ONLY way to recover your wallet!

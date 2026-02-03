@@ -544,10 +544,11 @@ body {
   background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(8px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 1000;
   padding: 20px;
+  overflow-y: auto;
 }
 
 .modal {
@@ -556,9 +557,11 @@ body {
   border-radius: var(--radius-xl);
   width: 100%;
   max-width: 420px;
-  max-height: 90vh;
+  max-height: calc(100vh - 40px);
   overflow-y: auto;
   animation: modalIn 0.25s ease;
+  margin: auto 0;
+  flex-shrink: 0;
 }
 
 @keyframes modalIn {
@@ -585,7 +588,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -620,7 +623,19 @@ body {
 }
 
 .modal-content.compact {
-  padding: 20px 24px 24px;
+  padding: 16px 20px 20px;
+}
+
+.modal-content.compact .form-group {
+  margin-bottom: 14px;
+}
+
+.modal-content.compact .form-label {
+  margin-bottom: 6px;
+}
+
+.modal-content.compact .form-input {
+  padding: 10px 14px;
 }
 
 /* ==================== FORM ELEMENTS ==================== */
@@ -712,8 +727,18 @@ textarea.form-input {
 }
 
 .send-summary.compact {
-  padding: 12px 16px;
-  margin-bottom: 16px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.send-summary.compact .send-summary-row {
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.send-summary.compact .send-summary-row.total {
+  margin-top: 6px;
+  padding-top: 8px;
 }
 
 .send-summary-row {
@@ -849,6 +874,8 @@ textarea.form-input {
 
 .qr-container.compact {
   gap: 12px;
+  min-height: 320px;
+  justify-content: center;
 }
 
 .qr-wrapper {
@@ -883,6 +910,7 @@ textarea.form-input {
   font-size: 12px;
   color: var(--text-tertiary);
   text-align: center;
+  min-height: 36px;
 }
 
 .copy-btn {
@@ -1044,32 +1072,34 @@ textarea.form-input {
 .mnemonic-display {
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  padding: 16px;
+  padding: 10px;
   border-radius: var(--radius-lg);
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .mnemonic-words {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
 }
 
 .mnemonic-word {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 4px;
+  padding: 5px 8px;
   background: var(--bg-secondary);
   border-radius: var(--radius-sm);
   font-size: 12px;
   font-family: 'SF Mono', Monaco, monospace;
+  overflow: hidden;
 }
 
 .mnemonic-word span {
   font-size: 10px;
   color: var(--text-muted);
-  min-width: 16px;
+  min-width: 18px;
+  flex-shrink: 0;
 }
 
 /* ==================== MNEMONIC INPUT WITH AUTOCOMPLETE ==================== */
@@ -1134,8 +1164,14 @@ textarea.form-input {
 }
 
 .warning.compact {
-  padding: 10px 14px;
-  margin-bottom: 16px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  gap: 8px;
+}
+
+.warning.compact .warning-text {
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .warning-icon {
