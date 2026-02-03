@@ -44,7 +44,7 @@ import {
   getNetworkStatus
 } from './services/brc100'
 import { setupDeepLinkListener } from './services/deeplink'
-import { initDatabase, exportDatabase, importDatabase, clearDatabase, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, ensureContactsTable, addContact, getContacts, getNextInvoiceNumber, type DatabaseBackup, type Contact } from './services/database'
+import { initDatabase, exportDatabase, importDatabase, clearDatabase, resetUTXOs, repairUTXOs, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, ensureContactsTable, addContact, getContacts, getNextInvoiceNumber, type DatabaseBackup, type Contact } from './services/database'
 import {
   syncWallet,
   needsInitialSync,
@@ -52,10 +52,8 @@ import {
   getBalanceFromDatabase
 } from './services/sync'
 import {
-  loadKnownSenders,
   addKnownSender,
   getKnownSenders,
-  getDerivedAddresses,
   debugFindInvoiceNumber,
   deriveSenderAddress,
   deriveChildPrivateKey
@@ -64,7 +62,6 @@ import {
   loadNotifications,
   checkForPayments,
   getPaymentNotifications,
-  deriveKeyFromNotification,
   startPaymentListener,
   type PaymentNotification
 } from './services/messageBox'
@@ -369,6 +366,12 @@ function App() {
         await initDatabase()
         console.log('Database initialized successfully')
 
+        // Repair any broken UTXOs from previous bugs
+        const repaired = await repairUTXOs()
+        if (repaired > 0) {
+          console.log(`Repaired ${repaired} UTXOs`)
+        }
+
         // Ensure derived_addresses table exists (migration)
         await ensureDerivedAddressesTable()
         console.log('Derived addresses table ready')
@@ -477,11 +480,17 @@ function App() {
   }, [])
 
   // Sync wallet with blockchain
-  const performSync = useCallback(async (isRestore = false) => {
+  const performSync = useCallback(async (isRestore = false, forceReset = false) => {
     if (!wallet || syncing) return
 
     setSyncing(true)
     try {
+      // If force reset, clear all UTXOs first for a clean slate
+      if (forceReset) {
+        console.log('Force reset requested - clearing UTXOs...')
+        await resetUTXOs()
+      }
+
       console.log('Starting wallet sync...')
       if (isRestore) {
         await restoreFromBlockchain(
@@ -508,6 +517,7 @@ function App() {
           getBalanceFromDatabase('locks'),
           getBalanceFromDatabase('derived')
         ])
+        console.log('[BALANCE] Basket balances after sync:', { default: defaultBal, ordinals: ordBal, identity: idBal, locks: lockBal, derived: derivedBal })
         setBasketBalances({
           default: defaultBal,
           ordinals: ordBal,
@@ -517,8 +527,52 @@ function App() {
         })
         // Also update main balance to include derived funds
         const totalBalance = defaultBal + derivedBal
+        console.log('[BALANCE] Total balance (default + derived):', totalBalance)
         setBalance(totalBalance)
         localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
+
+        // Check if any derived addresses received funds - if so, auto-generate next one
+        if (derivedBal > 0) {
+          const derivedAddrs = await getDerivedAddressesFromDB()
+          // Group by sender pubkey to check each sender's latest address
+          const senderMap = new Map<string, { address: string; invoiceNumber: string; index: number }>()
+          for (const addr of derivedAddrs) {
+            // Extract index from invoice number (format: "2-3241645161d8-simply-sats X")
+            const match = addr.invoiceNumber.match(/simply-sats (\d+)$/)
+            const index = match ? parseInt(match[1]) : 1
+            const existing = senderMap.get(addr.senderPubkey)
+            if (!existing || index > existing.index) {
+              senderMap.set(addr.senderPubkey, { address: addr.address, invoiceNumber: addr.invoiceNumber, index })
+            }
+          }
+          // For each sender, check if their latest address has balance - if so, generate next
+          for (const [senderPubkey, latest] of senderMap) {
+            try {
+              const addrBalance = await getBalance(latest.address)
+              if (addrBalance > 0 && wallet.identityWif) {
+                console.log(`[AUTO] Address ${latest.address} has ${addrBalance} sats, generating next address`)
+                const nextIndex = latest.index + 1
+                const receiverPriv = PrivateKey.fromWif(wallet.identityWif)
+                const senderPub = PublicKey.fromString(senderPubkey)
+                const nextInvoiceNumber = `2-3241645161d8-simply-sats ${nextIndex}`
+                const nextAddress = deriveSenderAddress(receiverPriv, senderPub, nextInvoiceNumber)
+                const nextPrivKey = deriveChildPrivateKey(receiverPriv, senderPub, nextInvoiceNumber)
+                // Save next address for tracking
+                await addDerivedAddress({
+                  address: nextAddress,
+                  senderPubkey: senderPubkey,
+                  invoiceNumber: nextInvoiceNumber,
+                  privateKeyWif: nextPrivKey.toWif(),
+                  label: `From ${senderPubkey.substring(0, 8)}...`,
+                  createdAt: Date.now()
+                })
+                console.log(`[AUTO] Generated next address: ${nextAddress}`)
+              }
+            } catch (e) {
+              console.error('Failed to check/generate next address:', e)
+            }
+          }
+        }
       } catch (e) {
         console.error('Failed to get basket balances:', e)
       }
@@ -556,286 +610,162 @@ function App() {
     checkSync()
   }, [wallet, performSync])
 
-  // Fetch balances and data
+  // Fetch balances and data - DATABASE FIRST approach
+  // Activity list comes from database, balance comes from database after sync
+  // API is only used to discover NEW transactions, not to refresh existing ones
   const fetchData = useCallback(async () => {
     if (!wallet) return
 
-    // Load known senders for derived address scanning
-    loadKnownSenders()
-
-    console.log('Fetching data for addresses:', {
-      wallet: wallet.walletAddress,
-      ord: wallet.ordAddress,
-      identity: wallet.identityAddress
-    })
+    console.log('Fetching data (database-first approach)...')
 
     try {
-      // Get derived addresses from known senders
-      const knownSenders = getKnownSenders()
-      console.log('Known senders:', knownSenders)
-      let derivedAddresses: { address: string; invoiceNumber?: string }[] = []
-      if (knownSenders.length > 0 && wallet.identityWif) {
-        try {
-          const identityPrivKey = PrivateKey.fromWif(wallet.identityWif)
-          const fullDerivedAddresses = getDerivedAddresses(identityPrivKey, knownSenders)
-          derivedAddresses = fullDerivedAddresses
-          console.log('Scanning', derivedAddresses.length, 'derived addresses from', knownSenders.length, 'known senders')
-          // Log first 10 derived addresses for debugging
-          console.log('First 10 derived addresses:', fullDerivedAddresses.slice(0, 10).map(d => ({
-            address: d.address,
-            invoiceNumber: d.invoiceNumber
-          })))
-        } catch (e) {
-          console.error('Failed to derive addresses:', e)
-        }
-      }
-
-      // Fetch all data in parallel for faster loading
-      const [bal, ordBal, idBal, walletUtxos, walletHistory, ordHistory, idHistory, ords] = await Promise.all([
-        getBalance(wallet.walletAddress),
-        getBalance(wallet.ordAddress),
-        getBalance(wallet.identityAddress),
-        getUTXOs(wallet.walletAddress),
-        getTransactionHistory(wallet.walletAddress),
-        getTransactionHistory(wallet.ordAddress),
-        getTransactionHistory(wallet.identityAddress),
-        getOrdinals(wallet.ordAddress)
+      // 1. Get balance from database (synced UTXOs are the source of truth)
+      const [defaultBal, derivedBal] = await Promise.all([
+        getBalanceFromDatabase('default'),
+        getBalanceFromDatabase('derived')
       ])
+      const totalBalance = defaultBal + derivedBal
+      console.log('Database balances:', { default: defaultBal, derived: derivedBal, total: totalBalance })
 
-      // Also fetch history for derived addresses (limit to 5 at a time to avoid rate limits)
-      let derivedBalance = 0
-      let derivedHistory: any[] = []
+      // Always use database balance - it's populated by sync
+      setBalance(totalBalance)
+      localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
 
-      // First, check addresses from MessageBox payment notifications (these are reliable)
-      const notifications = getPaymentNotifications()
-      if (notifications.length > 0 && wallet.identityWif) {
-        console.log('Checking', notifications.length, 'MessageBox payment addresses...')
-        const identityPrivKey = PrivateKey.fromWif(wallet.identityWif)
-
-        for (const notification of notifications.slice(0, 10)) {
-          try {
-            const { address } = deriveKeyFromNotification(identityPrivKey, notification)
-            const [nBal, nHistory] = await Promise.all([
-              getBalance(address),
-              getTransactionHistory(address)
-            ])
-            if (nBal > 0) {
-              console.log('Found balance at MessageBox derived address:', address, nBal, 'sats')
-              derivedBalance += nBal
-            }
-            derivedHistory = [...derivedHistory, ...nHistory]
-            // Small delay to avoid rate limiting
-            await new Promise(r => setTimeout(r, 200))
-          } catch (e) {
-            console.error('Failed to check MessageBox address:', e)
-          }
-        }
-      }
-
-      // Then scan derived addresses from known senders (brute force approach, less reliable)
-      // Only scan derived addresses if we have known senders, and limit to 5 to avoid rate limiting
-      const derivedToScan = derivedAddresses.slice(0, 5)
-      if (derivedToScan.length > 0) {
-        for (let i = 0; i < derivedToScan.length; i++) {
-          const derived = derivedToScan[i]
-          try {
-            // Add larger delay between requests to avoid rate limiting
-            if (i > 0) await new Promise(r => setTimeout(r, 500))
-            const [dBal, dHistory] = await Promise.all([
-              getBalance(derived.address),
-              getTransactionHistory(derived.address)
-            ])
-            derivedBalance += dBal
-            derivedHistory = [...derivedHistory, ...dHistory]
-            if (dBal > 0) console.log('Found balance at derived address:', derived.address, dBal, 'sats')
-          } catch (e) {
-            // Skip failed fetches (likely rate limited)
-            console.log('Rate limited on derived address scan, stopping early')
-            break
-          }
-        }
-      }
-
-      console.log('Fetched balances:', { wallet: bal, ord: ordBal, identity: idBal, derived: derivedBalance })
-      console.log('Fetched history counts:', {
-        wallet: walletHistory.length,
-        ord: ordHistory.length,
-        identity: idHistory.length,
-        derived: derivedHistory.length
-      })
-
-      // Log actual transaction data for debugging
-      if (walletHistory.length > 0) console.log('Wallet history:', walletHistory)
-      if (ordHistory.length > 0) console.log('Ord history:', ordHistory)
-      if (idHistory.length > 0) console.log('Identity history:', idHistory)
-
-      const newBalance = bal + derivedBalance
-      const newOrdBalance = ordBal + idBal
-
-      // Get cached balance from localStorage (more reliable than state which may be stale)
-      const cachedBalance = parseInt(localStorage.getItem('simply_sats_cached_balance') || '0', 10)
-      const cachedOrdBalance = parseInt(localStorage.getItem('simply_sats_cached_ord_balance') || '0', 10)
-
-      // Only update balance if we got valid data OR if we know the balance really is 0
-      // Don't overwrite a good cached balance with 0 from rate limiting
-      if (newBalance > 0) {
-        // Got a real balance from API
-        setBalance(newBalance)
-        localStorage.setItem('simply_sats_cached_balance', String(newBalance))
-      } else if (cachedBalance === 0 && walletHistory.length === 0) {
-        // Balance is genuinely 0 (no transactions ever)
-        setBalance(0)
-      }
-      // If newBalance is 0 but we have a cached balance, keep the cached value (likely rate limited)
-
-      if (newOrdBalance > 0) {
-        setOrdBalance(newOrdBalance)
-        localStorage.setItem('simply_sats_cached_ord_balance', String(newOrdBalance))
-      } else if (cachedOrdBalance === 0 && ordHistory.length === 0) {
-        setOrdBalance(0)
-      }
-
-      if (walletUtxos.length > 0 || utxos.length === 0) {
-        setUtxos(walletUtxos)
-      }
-
-      // Combine and dedupe transaction history from all addresses including derived
-      const allHistory = [...walletHistory, ...ordHistory, ...idHistory, ...derivedHistory]
-      const uniqueHistory = allHistory.filter((tx, index, self) =>
-        index === self.findIndex(t => t.tx_hash === tx.tx_hash)
-      )
-      // Sort by height (newest first)
-      uniqueHistory.sort((a, b) => (b.height || 0) - (a.height || 0))
-      console.log('Total unique transactions to display:', uniqueHistory.length, uniqueHistory)
-
-      // Load existing transactions from database to get cached amounts
-      let dbTxMap = new Map<string, { amount?: number; blockHeight?: number }>()
-      let dbOnlyTxs: TxHistoryItem[] = []
+      // 2. Get ordinals balance from API (less frequent updates needed)
       try {
-        const dbTxs = await getAllTransactions(100)
-        for (const dbTx of dbTxs) {
-          dbTxMap.set(dbTx.txid, { amount: dbTx.amount, blockHeight: dbTx.blockHeight })
-        }
-        console.log('Loaded', dbTxMap.size, 'transactions from database for amount lookup')
-
-        // Find transactions that are only in database (like local lock transactions)
-        const apiTxIds = new Set(uniqueHistory.map(t => t.tx_hash))
-        for (const dbTx of dbTxs) {
-          if (!apiTxIds.has(dbTx.txid)) {
-            dbOnlyTxs.push({
-              tx_hash: dbTx.txid,
-              height: dbTx.blockHeight || 0,
-              amount: dbTx.amount
-            })
-          }
-        }
-        if (dbOnlyTxs.length > 0) {
-          console.log('Found', dbOnlyTxs.length, 'database-only transactions (e.g. local locks)')
+        const [ordBal, idBal] = await Promise.all([
+          getBalance(wallet.ordAddress),
+          getBalance(wallet.identityAddress)
+        ])
+        const totalOrdBalance = ordBal + idBal
+        if (totalOrdBalance > 0) {
+          setOrdBalance(totalOrdBalance)
+          localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance))
         }
       } catch (e) {
-        console.log('Could not load transactions from database')
+        // Use cached value if rate limited
+        const cached = parseInt(localStorage.getItem('simply_sats_cached_ord_balance') || '0', 10)
+        if (cached > 0) setOrdBalance(cached)
       }
 
-      // Merge database-only transactions with API transactions
-      // Prefer API version (has correct block height) over database version
-      const allTxs = [...uniqueHistory, ...dbOnlyTxs]
-      // Re-dedupe (keeps first occurrence, which is now API version)
-      const mergedHistory = allTxs.filter((tx, index, self) =>
-        index === self.findIndex(t => t.tx_hash === tx.tx_hash)
-      )
-      // Sort: unconfirmed (height 0) first, then by descending block height, then by tx_pos (within same block)
-      mergedHistory.sort((a, b) => {
+      // 3. Get transaction history from DATABASE (stable, no flickering)
+      const dbTxs = await getAllTransactions(30)
+      const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
+        tx_hash: tx.txid,
+        height: tx.blockHeight || 0,
+        amount: tx.amount
+      }))
+
+      // Sort by block height (newest first), unconfirmed at top
+      dbTxHistory.sort((a, b) => {
         const aHeight = a.height || 0
         const bHeight = b.height || 0
-        // Unconfirmed transactions (height 0) go to the top
         if (aHeight === 0 && bHeight !== 0) return -1
         if (bHeight === 0 && aHeight !== 0) return 1
-        // Sort by descending height first
-        if (aHeight !== bHeight) return bHeight - aHeight
-        // For same block, sort by descending tx_pos (later transactions first)
-        const aPos = (a as any).tx_pos ?? 0
-        const bPos = (b as any).tx_pos ?? 0
-        return bPos - aPos
+        return bHeight - aHeight
       })
 
-      // Fetch amounts for recent transactions - use database first, only fetch new ones from API
-      const recentTxs = mergedHistory.slice(0, 10)
-      const txsWithAmounts: TxHistoryItem[] = []
+      // 4. Get all our addresses for amount calculation (wallet + derived)
+      const derivedAddrs = await getDerivedAddressesFromDB()
+      const allOurAddresses = [wallet.walletAddress, ...derivedAddrs.map(d => d.address)]
+      console.log('All our addresses for tx calculation:', allOurAddresses.length)
 
-      for (const tx of recentTxs) {
-        // Check if we have a non-null amount in database first
-        const dbData = dbTxMap.get(tx.tx_hash)
-        if (dbData?.amount != null) {  // Use != to check for both null and undefined
-          txsWithAmounts.push({ ...tx, amount: dbData.amount })
-        } else {
-          // Fetch transaction details to calculate amount (for new transactions or those without amounts)
-          try {
-            const details = await getTransactionDetails(tx.tx_hash)
-            if (details) {
-              const amount = await calculateTxAmount(details, wallet.walletAddress)
-              txsWithAmounts.push({ ...tx, amount })
-              // Save to database for next time (upsert preserves existing data)
-              await upsertTransaction({
-                txid: tx.tx_hash,
+      // 5. Check API for transactions and update missing data
+      const existingTxMap = new Map(dbTxs.map(tx => [tx.txid, tx]))
+      let newTxsFound = false
+
+      try {
+        const walletHistory = await getTransactionHistory(wallet.walletAddress)
+        for (const apiTx of walletHistory) {
+          const existingTx = existingTxMap.get(apiTx.tx_hash)
+
+          if (!existingTx) {
+            // New transaction found - add to database
+            console.log('Found new transaction:', apiTx.tx_hash.slice(0, 8))
+            newTxsFound = true
+            try {
+              // Fetch amount for this new transaction (check all our addresses)
+              const details = await getTransactionDetails(apiTx.tx_hash)
+              const amount = details ? await calculateTxAmount(details, allOurAddresses) : undefined
+
+              await addTransaction({
+                txid: apiTx.tx_hash,
                 createdAt: Date.now(),
-                blockHeight: tx.height || undefined,
-                status: tx.height > 0 ? 'confirmed' : 'pending',
-                amount: amount
+                blockHeight: apiTx.height || undefined,
+                status: apiTx.height > 0 ? 'confirmed' : 'pending',
+                amount
               })
-              console.log('Fetched and saved amount for tx:', tx.tx_hash.slice(0, 8), amount, 'sats')
-            } else {
-              txsWithAmounts.push(tx)
+
+              // Add to our display list
+              dbTxHistory.unshift({
+                tx_hash: apiTx.tx_hash,
+                height: apiTx.height || 0,
+                amount
+              })
+            } catch (e) {
+              console.error('Failed to save new transaction:', e)
             }
-            // Small delay to avoid rate limiting
-            await new Promise(r => setTimeout(r, 150))
-          } catch {
-            txsWithAmounts.push(tx)
+          } else {
+            // Existing transaction - update if missing block height or amount
+            const needsUpdate = (!existingTx.blockHeight && apiTx.height > 0) || existingTx.amount === undefined
+            if (needsUpdate) {
+              try {
+                let amount = existingTx.amount
+                if (amount === undefined) {
+                  const details = await getTransactionDetails(apiTx.tx_hash)
+                  amount = details ? await calculateTxAmount(details, allOurAddresses) : undefined
+                }
+
+                // Update in database using upsert to preserve existing data
+                await upsertTransaction({
+                  txid: apiTx.tx_hash,
+                  createdAt: existingTx.createdAt,
+                  blockHeight: apiTx.height || existingTx.blockHeight,
+                  status: apiTx.height > 0 ? 'confirmed' : existingTx.status,
+                  amount
+                })
+
+                // Update in display list
+                const displayTx = dbTxHistory.find(t => t.tx_hash === apiTx.tx_hash)
+                if (displayTx) {
+                  displayTx.height = apiTx.height || displayTx.height
+                  displayTx.amount = amount ?? displayTx.amount
+                }
+                console.log('Updated transaction with missing data:', apiTx.tx_hash.slice(0, 8))
+              } catch (e) {
+                console.error('Failed to update transaction:', e)
+              }
+            }
           }
         }
+      } catch (e) {
+        console.log('Could not check API for transactions (rate limited)')
       }
 
-      // Add remaining transactions - use database amounts if available
-      for (const tx of mergedHistory.slice(10, 30)) {
-        const dbData = dbTxMap.get(tx.tx_hash)
-        txsWithAmounts.push({ ...tx, amount: dbData?.amount })
-        // Save transaction to database if it doesn't exist yet (without amount)
-        if (!dbTxMap.has(tx.tx_hash)) {
-          try {
-            await addTransaction({
-              txid: tx.tx_hash,
-              createdAt: Date.now(),
-              blockHeight: tx.height || undefined,
-              status: tx.height > 0 ? 'confirmed' : 'pending'
-            })
-          } catch {
-            // Ignore duplicate errors
-          }
+      // 6. Update display
+      setTxHistory(dbTxHistory.slice(0, 30))
+
+      // 7. Get ordinals for display
+      try {
+        const ords = await getOrdinals(wallet.ordAddress)
+        setOrdinals(ords)
+      } catch (e) {
+        // Keep existing ordinals if rate limited
+      }
+
+      // 8. Get UTXOs for spending
+      try {
+        const walletUtxos = await getUTXOs(wallet.walletAddress)
+        if (walletUtxos.length > 0) {
+          setUtxos(walletUtxos)
         }
+      } catch (e) {
+        // Keep existing UTXOs if rate limited
       }
 
-      // Only update if we got results - don't overwrite with empty data (rate limiting protection)
-      if (txsWithAmounts.length > 0) {
-        // Final sort to ensure consistent ordering after all async processing
-        txsWithAmounts.sort((a, b) => {
-          const aHeight = a.height || 0
-          const bHeight = b.height || 0
-          // Unconfirmed transactions (height 0) go to the top
-          if (aHeight === 0 && bHeight !== 0) return -1
-          if (bHeight === 0 && aHeight !== 0) return 1
-          // Sort by descending height first (newest blocks first)
-          if (aHeight !== bHeight) return bHeight - aHeight
-          // For same block, sort by descending tx_pos (later transactions first)
-          const aPos = (a as any).tx_pos ?? 0
-          const bPos = (b as any).tx_pos ?? 0
-          return bPos - aPos
-        })
-        setTxHistory(txsWithAmounts.slice(0, 30))
-      } else if (txHistory.length === 0) {
-        // Only set empty if we don't already have transactions
-        setTxHistory([])
+      if (newTxsFound) {
+        console.log('New transactions found - you may want to sync to update balances')
       }
-
-      setOrdinals(ords)
     } catch (error) {
       console.error('Error fetching data:', error)
     }
@@ -2248,8 +2178,16 @@ function App() {
                                 const contact = contacts.find(c => c.id === id)
                                 if (contact) {
                                   setSenderPubKeyInput(contact.pubkey)
+                                  // Debug: log all saved addresses for this sender
+                                  const allDerived = await getDerivedAddressesFromDB()
+                                  const forSender = allDerived.filter(d => d.senderPubkey === contact.pubkey)
+                                  console.log('[DEBUG] Saved addresses for sender:', forSender.map(d => ({
+                                    address: d.address,
+                                    invoiceNumber: d.invoiceNumber
+                                  })))
                                   // Get next invoice number for unique address
                                   const nextIndex = await getNextInvoiceNumber(contact.pubkey)
+                                  console.log('[DEBUG] Next index:', nextIndex)
                                   setCurrentInvoiceIndex(nextIndex)
                                   setDerivedReceiveAddress(deriveReceiveAddress(contact.pubkey, nextIndex))
                                 }
@@ -2361,25 +2299,21 @@ function App() {
                           <button
                             className="copy-btn compact"
                             onClick={async () => {
+                              // Copy to clipboard first
+                              await copyToClipboard(derivedReceiveAddress, 'Address copied!')
                               // Find contact label if exists
                               const contact = contacts.find(c => c.pubkey === senderPubKeyInput)
-                              // Save to database first, then copy
+                              // Save current address to database (for sync tracking)
                               const saved = await saveDerivedAddress(senderPubKeyInput, derivedReceiveAddress, currentInvoiceIndex, contact?.label)
                               if (saved) {
-                                copyToClipboard(derivedReceiveAddress, 'Address saved & copied!')
-                                // Increment for next time
-                                setCurrentInvoiceIndex(prev => prev + 1)
-                                // Generate next address preview
-                                setDerivedReceiveAddress(deriveReceiveAddress(senderPubKeyInput, currentInvoiceIndex + 1))
-                              } else {
-                                copyToClipboard(derivedReceiveAddress, 'Address copied (save failed)')
+                                showToast('Address saved & copied!')
                               }
                             }}
                           >
                             📋 Copy & Save Address
                           </button>
                           <div className="address-type-hint" style={{ marginTop: 4, fontSize: 10 }}>
-                            Each click generates a new unique address
+                            New address after funds received
                           </div>
                         </>
                       ) : (
@@ -2656,6 +2590,22 @@ function App() {
               <div className="settings-section">
                 <div className="settings-section-title">Advanced</div>
                 <div className="settings-card">
+                  <div className="settings-row" onClick={async () => {
+                    if (confirm('Reset UTXO database and resync from blockchain? This fixes balance issues but may take a moment.')) {
+                      showToast('Resetting...')
+                      await performSync(false, true)  // false = not restore, true = force reset
+                      showToast('Reset complete!')
+                    }
+                  }}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">🔄</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Reset & Resync</div>
+                        <div className="settings-row-value">Clear UTXOs and sync fresh from blockchain</div>
+                      </div>
+                    </div>
+                    <span className="settings-row-arrow">→</span>
+                  </div>
                   <div className="settings-row" onClick={async () => {
                     if (!wallet?.identityWif) return
                     setMessageBoxStatus('checking')

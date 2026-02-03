@@ -346,17 +346,26 @@ export async function getTransactionDetails(txid: string): Promise<any | null> {
   }
 }
 
-// Calculate amount for a transaction relative to an address (positive = received, negative = sent)
+// Calculate amount for a transaction relative to an address or array of addresses (positive = received, negative = sent)
 // This is async because we may need to fetch previous tx details to get input amounts
-export async function calculateTxAmount(txDetails: any, address: string): Promise<number> {
+export async function calculateTxAmount(txDetails: any, addressOrAddresses: string | string[]): Promise<number> {
   if (!txDetails?.vin || !txDetails?.vout) return 0
+
+  // Normalize to array
+  const addresses = Array.isArray(addressOrAddresses) ? addressOrAddresses : [addressOrAddresses]
 
   let received = 0
   let sent = 0
 
-  // Sum outputs to our address (received)
+  // Helper to check if any of our addresses match
+  const isOurAddress = (addrList: string[] | undefined) => {
+    if (!addrList) return false
+    return addrList.some(addr => addresses.includes(addr))
+  }
+
+  // Sum outputs to our addresses (received)
   for (const vout of txDetails.vout) {
-    if (vout.scriptPubKey?.addresses?.includes(address)) {
+    if (isOurAddress(vout.scriptPubKey?.addresses)) {
       received += Math.round(vout.value * 100000000)
     }
   }
@@ -364,7 +373,7 @@ export async function calculateTxAmount(txDetails: any, address: string): Promis
   // Check inputs - WoC doesn't include prevout by default, so we need to fetch previous txs
   for (const vin of txDetails.vin) {
     // First check if prevout is available (some APIs include it)
-    if (vin.prevout?.scriptPubKey?.addresses?.includes(address)) {
+    if (isOurAddress(vin.prevout?.scriptPubKey?.addresses)) {
       sent += Math.round(vin.prevout.value * 100000000)
     } else if (vin.txid && vin.vout !== undefined) {
       // Fetch the previous transaction to check if the spent output was ours
@@ -372,7 +381,7 @@ export async function calculateTxAmount(txDetails: any, address: string): Promis
         const prevTx = await getTransactionDetails(vin.txid)
         if (prevTx?.vout?.[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]
-          if (prevOutput.scriptPubKey?.addresses?.includes(address)) {
+          if (isOurAddress(prevOutput.scriptPubKey?.addresses)) {
             sent += Math.round(prevOutput.value * 100000000)
           }
         }

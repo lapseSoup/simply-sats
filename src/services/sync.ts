@@ -89,23 +89,32 @@ function getLockingScript(address: string): string {
   return new P2PKH().lock(address).toHex()
 }
 
+// Simple counter for debugging sync order
+let syncCounter = 0
+
 /**
  * Sync a single address - fetches UTXOs and updates the database
+ * Now uses address field for precise tracking (no more locking script matching)
  */
 export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult> {
   const { address, basket } = addressInfo
+  const syncId = ++syncCounter
 
-  console.log(`[SYNC] Syncing address: ${address} (basket: ${basket})`)
+  console.log(`[SYNC #${syncId}] START: ${address.slice(0,12)}... (basket: ${basket})`)
+
+  // Generate locking script for this specific address
+  const lockingScript = getLockingScript(address)
 
   // Fetch current UTXOs from WhatsOnChain
   const wocUtxos = await fetchUtxosFromWoc(address)
-  console.log(`[SYNC] Found ${wocUtxos.length} UTXOs from WhatsOnChain for ${address}`)
+  console.log(`[SYNC] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`)
 
-  // Get existing spendable UTXOs from database
+  // Get existing spendable UTXOs from database FOR THIS SPECIFIC ADDRESS
   const existingUtxos = await getSpendableUTXOs()
   const existingMap = new Map<string, DBUtxo>()
   for (const utxo of existingUtxos) {
-    if (utxo.basket === basket) {
+    // Match by address field (new way) OR locking script (fallback for old records)
+    if (utxo.address === address || utxo.lockingScript === lockingScript) {
       existingMap.set(`${utxo.txid}:${utxo.vout}`, utxo)
     }
   }
@@ -120,20 +129,20 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   let spentUtxos = 0
   let totalBalance = 0
 
-  const lockingScript = getLockingScript(address)
-
-  // Add new UTXOs
+  // Add new UTXOs (with address field!)
   for (const wocUtxo of wocUtxos) {
     const key = `${wocUtxo.tx_hash}:${wocUtxo.tx_pos}`
     totalBalance += wocUtxo.value
 
     if (!existingMap.has(key)) {
-      // New UTXO - add to database
+      // New UTXO - add to database with address
+      console.log(`[SYNC] Adding UTXO: ${wocUtxo.tx_hash.slice(0,8)}:${wocUtxo.tx_pos} = ${wocUtxo.value} sats`)
       await addUTXO({
         txid: wocUtxo.tx_hash,
         vout: wocUtxo.tx_pos,
         satoshis: wocUtxo.value,
         lockingScript,
+        address,  // Store the address!
         basket,
         spendable: true,
         createdAt: Date.now(),
@@ -143,11 +152,11 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
     }
   }
 
-  // Mark spent UTXOs
+  // Mark spent UTXOs - only for UTXOs belonging to THIS address
   for (const [key, utxo] of existingMap) {
     if (!currentUtxoKeys.has(key)) {
-      // UTXO no longer exists - mark as spent
-      // Note: We don't know the spending txid without additional API calls
+      // UTXO no longer exists at this address - mark as spent
+      console.log(`[SYNC] Marking spent: ${key}`)
       await markUTXOSpent(utxo.txid, utxo.vout, 'unknown')
       spentUtxos++
     }
@@ -156,6 +165,8 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   // Update sync state
   const currentHeight = await getCurrentBlockHeight()
   await updateSyncState(address, currentHeight)
+
+  console.log(`[SYNC #${syncId}] DONE: ${newUtxos} new, ${spentUtxos} spent, ${totalBalance} sats`)
 
   return {
     address,
@@ -172,8 +183,14 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 export async function syncAllAddresses(addresses: AddressInfo[]): Promise<SyncResult[]> {
   const results: SyncResult[] = []
 
-  for (const addr of addresses) {
+  for (let i = 0; i < addresses.length; i++) {
+    const addr = addresses[i]
     try {
+      // Add delay between requests to avoid rate limiting (429 errors)
+      // Use longer delay (1 second) to be safe
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
       const result = await syncAddress(addr)
       results.push(result)
       console.log(`Synced ${addr.basket}: ${result.newUtxos} new, ${result.spentUtxos} spent, ${result.totalBalance} sats`)
@@ -194,24 +211,28 @@ export async function syncWallet(
   ordAddress: string,
   identityAddress: string
 ): Promise<{ total: number; results: SyncResult[] }> {
-  const addresses: AddressInfo[] = [
-    { address: walletAddress, basket: BASKETS.DEFAULT },
-    { address: ordAddress, basket: BASKETS.ORDINALS },
-    { address: identityAddress, basket: BASKETS.IDENTITY }
-  ]
-
-  // Also sync all tracked derived addresses
+  // Sync derived addresses FIRST (most important for correct balance)
   const derivedAddresses = await getDerivedAddressesFromDB()
   console.log('[SYNC] Found', derivedAddresses.length, 'derived addresses in database')
 
+  const addresses: AddressInfo[] = []
+
+  // Add derived addresses first (priority)
   for (const derived of derivedAddresses) {
-    console.log('[SYNC] Adding derived address to sync:', derived.address)
+    console.log('[SYNC] Adding derived address to sync (priority):', derived.address)
     addresses.push({
       address: derived.address,
       basket: BASKETS.DERIVED,
       wif: derived.privateKeyWif
     })
   }
+
+  // Then add main addresses
+  addresses.push(
+    { address: walletAddress, basket: BASKETS.DEFAULT },
+    { address: ordAddress, basket: BASKETS.ORDINALS },
+    { address: identityAddress, basket: BASKETS.IDENTITY }
+  )
 
   console.log('[SYNC] Total addresses to sync:', addresses.length)
   const results = await syncAllAddresses(addresses)
@@ -237,9 +258,13 @@ export async function getBalanceFromDatabase(basket?: string): Promise<number> {
   const utxos = await getSpendableUTXOs()
 
   if (basket) {
-    return utxos
-      .filter(u => u.basket === basket)
-      .reduce((sum, u) => sum + u.satoshis, 0)
+    const filtered = utxos.filter(u => u.basket === basket)
+    const balance = filtered.reduce((sum, u) => sum + u.satoshis, 0)
+    console.log(`[BALANCE] getBalanceFromDatabase('${basket}'): ${filtered.length} UTXOs, ${balance} sats`)
+    if (basket === 'derived' && filtered.length > 0) {
+      console.log('[BALANCE] Derived UTXOs:', filtered.map(u => ({ txid: u.txid.slice(0, 8), vout: u.vout, sats: u.satoshis, basket: u.basket })))
+    }
+    return balance
   }
 
   return utxos.reduce((sum, u) => sum + u.satoshis, 0)

@@ -18,6 +18,7 @@ export interface UTXO {
   vout: number
   satoshis: number
   lockingScript: string
+  address?: string  // The address this UTXO belongs to (optional for backwards compat)
   basket: string
   spendable: boolean
   createdAt: number
@@ -84,18 +85,94 @@ export function getDatabase(): Database {
 // ============================================
 
 /**
+ * Ensure the address column exists (migration)
+ */
+async function ensureAddressColumn(): Promise<void> {
+  const database = getDatabase()
+  try {
+    // Check if column exists by trying to select it
+    await database.select<any[]>('SELECT address FROM utxos LIMIT 1')
+  } catch {
+    // Column doesn't exist, add it
+    console.log('[DB] Adding address column to utxos table...')
+    await database.execute('ALTER TABLE utxos ADD COLUMN address TEXT')
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_utxos_address ON utxos(address)')
+  }
+}
+
+/**
  * Add a new UTXO to the database
+ *
+ * RULES:
+ * 1. If UTXO doesn't exist, INSERT it
+ * 2. If UTXO exists with 'derived' basket, keep 'derived' (it has correct key info)
+ * 3. If adding as 'derived' and existing is not, UPGRADE to 'derived'
+ * 4. ALWAYS ensure spendable=1 for regular UTXOs (not locks)
+ * 5. ALWAYS update address/locking_script when upgrading to derived
  */
 export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
   const database = getDatabase()
 
+  // Ensure migration is done
+  await ensureAddressColumn()
+
+  // Check if UTXO already exists - get ALL relevant fields
+  const existing = await database.select<any[]>(
+    'SELECT id, basket, address, spendable, spent_at FROM utxos WHERE txid = $1 AND vout = $2',
+    [utxo.txid, utxo.vout]
+  )
+
+  if (existing.length > 0) {
+    const ex = existing[0]
+    const spendableValue = utxo.spendable ? 1 : 0
+
+    // Case 1: Existing is 'derived' - keep derived, but ensure spendable is correct
+    if (ex.basket === 'derived') {
+      // Always update address if missing, and ensure spendable is set correctly
+      if (!ex.address || ex.spendable !== spendableValue) {
+        await database.execute(
+          'UPDATE utxos SET address = COALESCE($1, address), spendable = $2 WHERE id = $3',
+          [utxo.address, spendableValue, ex.id]
+        )
+      }
+      return ex.id
+    }
+
+    // Case 2: New is 'derived', existing is not - UPGRADE to derived
+    // This is the critical fix: we MUST update spendable along with basket
+    if (utxo.basket === 'derived') {
+      console.log(`[DB] Upgrading ${utxo.txid.slice(0,8)}:${utxo.vout} to derived, spendable=${spendableValue}`)
+      await database.execute(
+        'UPDATE utxos SET basket = $1, address = $2, locking_script = $3, spendable = $4, spent_at = NULL WHERE id = $5',
+        ['derived', utxo.address, utxo.lockingScript, spendableValue, ex.id]
+      )
+      return ex.id
+    }
+
+    // Case 3: Same or compatible basket - update address if needed, ensure spendable
+    if (!ex.address || ex.spendable !== spendableValue) {
+      await database.execute(
+        'UPDATE utxos SET address = COALESCE($1, address), spendable = $2 WHERE id = $3',
+        [utxo.address, spendableValue, ex.id]
+      )
+    }
+    return ex.id
+  }
+
+  // UTXO doesn't exist - INSERT it
+  console.log(`[DB] INSERT: ${utxo.txid.slice(0,8)}:${utxo.vout} ${utxo.satoshis}sats basket=${utxo.basket} spendable=${utxo.spendable}`)
   const result = await database.execute(
-    `INSERT INTO utxos (txid, vout, satoshis, locking_script, basket, spendable, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [utxo.txid, utxo.vout, utxo.satoshis, utxo.lockingScript, utxo.basket, utxo.spendable ? 1 : 0, utxo.createdAt]
+    `INSERT INTO utxos (txid, vout, satoshis, locking_script, address, basket, spendable, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [utxo.txid, utxo.vout, utxo.satoshis, utxo.lockingScript, utxo.address, utxo.basket, utxo.spendable ? 1 : 0, utxo.createdAt]
   )
 
   const utxoId = result.lastInsertId as number
+  console.log(`[DB] INSERT OK: id=${utxoId}`)
+
+  // Verify the insert by reading it back
+  const verify = await database.select<any[]>('SELECT id, basket, spendable FROM utxos WHERE id = $1', [utxoId])
+  console.log(`[DB] VERIFY: id=${verify[0]?.id} basket=${verify[0]?.basket} spendable=${verify[0]?.spendable}`)
 
   // Add tags if provided
   if (utxo.tags && utxo.tags.length > 0) {
@@ -137,6 +214,7 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true): Pr
       vout: row.vout,
       satoshis: row.satoshis,
       lockingScript: row.locking_script,
+      address: row.address || '',
       basket: row.basket,
       spendable: row.spendable === 1,
       createdAt: row.created_at,
@@ -150,13 +228,43 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true): Pr
 }
 
 /**
- * Get all spendable UTXOs
+ * Get all spendable UTXOs across all baskets
  */
 export async function getSpendableUTXOs(): Promise<UTXO[]> {
   const database = getDatabase()
 
+  // First show ALL UTXOs for debugging
+  const all = await database.select<any[]>('SELECT id, txid, vout, satoshis, basket, spendable, spent_at FROM utxos')
+  console.log(`[DB] ALL UTXOs (${all.length}):`, all.map(r => `${r.id}:${r.basket}:sp=${r.spendable}`).join(', '))
+
   const rows = await database.select<any[]>(
     'SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL'
+  )
+  console.log(`[DB] Spendable UTXOs (${rows.length}):`, rows.map(r => `${r.id}:${r.basket}`).join(', '))
+
+  return rows.map(row => ({
+    id: row.id,
+    txid: row.txid,
+    vout: row.vout,
+    satoshis: row.satoshis,
+    lockingScript: row.locking_script,
+    address: row.address || '',
+    basket: row.basket,
+    spendable: true,
+    createdAt: row.created_at,
+    tags: []
+  }))
+}
+
+/**
+ * Get spendable UTXOs for a specific address
+ */
+export async function getSpendableUTXOsByAddress(address: string): Promise<UTXO[]> {
+  const database = getDatabase()
+
+  const rows = await database.select<any[]>(
+    'SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND address = $1',
+    [address]
   )
 
   return rows.map(row => ({
@@ -165,6 +273,7 @@ export async function getSpendableUTXOs(): Promise<UTXO[]> {
     vout: row.vout,
     satoshis: row.satoshis,
     lockingScript: row.locking_script,
+    address: row.address || '',
     basket: row.basket,
     spendable: true,
     createdAt: row.created_at,
@@ -404,7 +513,7 @@ export async function getLocks(currentHeight: number): Promise<(Lock & { utxo: U
   const database = getDatabase()
 
   const rows = await database.select<any[]>(
-    `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket
+    `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket, u.address
      FROM locks l
      INNER JOIN utxos u ON l.utxo_id = u.id
      WHERE l.unlocked_at IS NULL
@@ -424,6 +533,7 @@ export async function getLocks(currentHeight: number): Promise<(Lock & { utxo: U
       vout: row.vout,
       satoshis: row.satoshis,
       lockingScript: row.locking_script,
+      address: row.address,
       basket: row.basket,
       spendable: currentHeight >= row.unlock_block,
       createdAt: row.created_at,
@@ -545,6 +655,7 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
       vout: row.vout,
       satoshis: row.satoshis,
       lockingScript: row.locking_script,
+      address: row.address,
       basket: row.basket,
       spendable: row.spendable === 1,
       createdAt: row.created_at,
@@ -740,6 +851,46 @@ export async function clearDatabase(): Promise<void> {
   console.log('Database cleared')
 }
 
+/**
+ * Clear UTXOs and sync state only (keeps derived addresses, contacts, transactions)
+ * Use this to force a fresh resync from blockchain
+ */
+export async function resetUTXOs(): Promise<void> {
+  const database = getDatabase()
+
+  console.log('[DB] Resetting UTXOs and sync state...')
+  await database.execute('DELETE FROM utxo_tags')
+  await database.execute('DELETE FROM locks')
+  await database.execute('DELETE FROM utxos')
+  await database.execute('DELETE FROM sync_state')
+
+  console.log('[DB] UTXOs reset complete - ready for fresh sync')
+}
+
+/**
+ * Repair UTXOs - fix any broken spendable flags
+ * Call this to fix UTXOs that should be spendable but aren't
+ */
+export async function repairUTXOs(): Promise<number> {
+  const database = getDatabase()
+
+  // Find UTXOs that are not in the locks basket but have spendable=0 and no spent_at
+  // These are likely broken from previous bugs
+  const result = await database.execute(
+    `UPDATE utxos SET spendable = 1
+     WHERE spendable = 0
+     AND spent_at IS NULL
+     AND basket != 'locks'`
+  )
+
+  const fixed = result.rowsAffected || 0
+  if (fixed > 0) {
+    console.log(`[DB] Repaired ${fixed} UTXOs - set spendable=1`)
+  }
+
+  return fixed
+}
+
 // ============================================
 // Derived Addresses (BRC-42/43)
 // ============================================
@@ -795,6 +946,12 @@ export async function ensureDerivedAddressesTable(): Promise<void> {
 export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>): Promise<number> {
   const database = getDatabase()
 
+  console.log('[DB] Saving derived address:', {
+    address: derivedAddr.address,
+    invoiceNumber: derivedAddr.invoiceNumber,
+    senderPubkey: derivedAddr.senderPubkey.substring(0, 16) + '...'
+  })
+
   const result = await database.execute(
     `INSERT OR REPLACE INTO derived_addresses (address, sender_pubkey, invoice_number, private_key_wif, label, created_at, last_synced_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -808,6 +965,11 @@ export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>)
       derivedAddr.lastSyncedAt || null
     ]
   )
+
+  // Verify the save by checking total count
+  const allAddresses = await getDerivedAddresses()
+  console.log('[DB] Total derived addresses after save:', allAddresses.length)
+
   return result.lastInsertId as number
 }
 
