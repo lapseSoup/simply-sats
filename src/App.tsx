@@ -317,6 +317,30 @@ function App() {
 
   // Known sender input state
   const [senderInput, setSenderInput] = useState('')
+
+  // Trusted origins for auto-approve (AI bots, etc.)
+  const [trustedOrigins, setTrustedOrigins] = useState<string[]>(() => {
+    const saved = localStorage.getItem('simply_sats_trusted_origins')
+    return saved ? JSON.parse(saved) : []
+  })
+  const [showTrustedOriginInput, setShowTrustedOriginInput] = useState(false)
+  const [trustedOriginInput, setTrustedOriginInput] = useState('')
+
+  // Save trusted origins to localStorage
+  const saveTrustedOrigins = (origins: string[]) => {
+    localStorage.setItem('simply_sats_trusted_origins', JSON.stringify(origins))
+    setTrustedOrigins(origins)
+  }
+
+  const addTrustedOrigin = (origin: string) => {
+    if (!trustedOrigins.includes(origin)) {
+      saveTrustedOrigins([...trustedOrigins, origin])
+    }
+  }
+
+  const removeTrustedOrigin = (origin: string) => {
+    saveTrustedOrigins(trustedOrigins.filter(o => o !== origin))
+  }
   const [showSenderInput, setShowSenderInput] = useState(false)
 
   // Debug invoice finder state
@@ -373,7 +397,19 @@ function App() {
 
   // Set up BRC-100 request handler
   useEffect(() => {
-    const handleIncomingRequest = (request: BRC100Request) => {
+    const handleIncomingRequest = async (request: BRC100Request) => {
+      // Check if this is from a trusted origin (auto-approve for AI bots)
+      const savedTrustedOrigins = JSON.parse(localStorage.getItem('simply_sats_trusted_origins') || '[]')
+      const isTrusted = request.origin && savedTrustedOrigins.includes(request.origin)
+
+      if (isTrusted && wallet) {
+        // Auto-approve for trusted origins
+        console.log(`Auto-approving request from trusted origin: ${request.origin}`)
+        approveRequest(request.id, wallet)
+        return
+      }
+
+      // Show approval modal for non-trusted requests
       setBrc100Request(request)
       setModal('brc100')
     }
@@ -2517,6 +2553,62 @@ function App() {
                         }}>{debugSearching ? 'Searching...' : 'Search'}</button>
                       </div>
                       {debugResult && <div style={{ marginTop: 8, padding: 10, background: 'var(--bg-tertiary)', borderRadius: 8, fontSize: 12, fontFamily: 'monospace' }}>{debugResult}</div>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* TRUSTED ORIGINS (AI Bots) */}
+              <div className="settings-section">
+                <div className="settings-section-title">Trusted Origins (Auto-Approve)</div>
+                <div className="settings-card">
+                  <div style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>
+                    Requests from these origins will be auto-approved without prompting. Use this for AI agents and bots that need autonomous wallet access.
+                  </div>
+                  {trustedOrigins.map(origin => (
+                    <div key={origin} className="settings-row">
+                      <div className="settings-row-left">
+                        <div className="settings-row-icon">🤖</div>
+                        <div className="settings-row-content">
+                          <div className="settings-row-label">{origin}</div>
+                          <div className="settings-row-value">Auto-approve enabled</div>
+                        </div>
+                      </div>
+                      <button className="app-disconnect" onClick={() => removeTrustedOrigin(origin)}>Remove</button>
+                    </div>
+                  ))}
+                  {!showTrustedOriginInput ? (
+                    <div className="settings-row" onClick={() => setShowTrustedOriginInput(true)}>
+                      <div className="settings-row-left">
+                        <div className="settings-row-icon">➕</div>
+                        <div className="settings-row-content">
+                          <div className="settings-row-label">Add Trusted Origin</div>
+                          <div className="settings-row-value">e.g., "ai-agent", "wrootz", "my-bot"</div>
+                        </div>
+                      </div>
+                      <span className="settings-row-arrow">+</span>
+                    </div>
+                  ) : (
+                    <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Origin name (e.g., ai-agent, wrootz)"
+                        value={trustedOriginInput}
+                        onChange={e => setTrustedOriginInput(e.target.value)}
+                        style={{ marginBottom: 8 }}
+                      />
+                      <div className="btn-group">
+                        <button className="btn btn-secondary" onClick={() => { setShowTrustedOriginInput(false); setTrustedOriginInput('') }}>Cancel</button>
+                        <button className="btn btn-primary" onClick={() => {
+                          if (trustedOriginInput.trim()) {
+                            addTrustedOrigin(trustedOriginInput.trim())
+                            setTrustedOriginInput('')
+                            setShowTrustedOriginInput(false)
+                            showToast(`Trusted origin "${trustedOriginInput.trim()}" added!`)
+                          }
+                        }}>Add</button>
+                      </div>
                     </div>
                   )}
                 </div>

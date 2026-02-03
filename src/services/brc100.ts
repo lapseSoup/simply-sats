@@ -286,7 +286,6 @@ export async function setupHttpServerListener(): Promise<() => void> {
         const params = request.params || {}
         const satoshis = params.satoshis
         const blocks = params.blocks
-        const metadata = params.metadata || {}
 
         if (!satoshis || satoshis <= 0) {
           await invoke('respond_to_brc100', {
@@ -903,38 +902,52 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
         const params = request.params || {}
         const satoshis = params.satoshis
         const blocks = params.blocks
-        const metadata = params.metadata || {}
+        const lockMetadata = params.metadata || {}
 
         try {
           const currentHeight = await getCurrentBlockHeight()
           const unlockBlock = currentHeight + blocks
 
-          // Get spendable UTXOs
-          const utxos = await getSpendableUTXOs()
-          if (utxos.length === 0) {
+          // Get spendable UTXOs from database and convert to wallet UTXO format
+          const dbUtxos = await getSpendableUTXOs()
+          if (dbUtxos.length === 0) {
             response.error = { code: -32000, message: 'No spendable UTXOs available' }
             break
           }
+
+          // Convert database UTXOs to wallet UTXOs (lockingScript -> script)
+          const walletUtxos = dbUtxos.map(u => ({
+            txid: u.txid,
+            vout: u.vout,
+            satoshis: u.satoshis,
+            script: u.lockingScript
+          }))
 
           // Use the wallet's native lockBSV function (OP_PUSH_TX)
           const result = await walletLockBSV(
             keys.walletWif,
             satoshis,
             unlockBlock,
-            utxos
+            walletUtxos
           )
 
-          // Track the lock in database
+          // First add the locked UTXO to the database
+          const utxoId = await addUTXO({
+            txid: result.txid,
+            vout: 0,
+            satoshis,
+            lockingScript: result.lockedUtxo.lockingScript,
+            basket: 'locks',
+            spendable: false,
+            createdAt: Date.now()
+          })
+
+          // Then track the lock referencing that UTXO
           await addLock({
-            utxo: {
-              txid: result.txid,
-              vout: 0,
-              satoshis,
-              lockingScript: result.lockedUtxo.lockingScript
-            },
+            utxoId,
             unlockBlock,
-            ordinalOrigin: metadata.ordinalOrigin || null,
-            app: metadata.app || 'wrootz'
+            ordinalOrigin: lockMetadata.ordinalOrigin || null,
+            createdAt: Date.now()
           })
 
           response.result = {
@@ -996,8 +1009,10 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
             currentHeight
           )
 
-          // Mark lock as unlocked in database
-          await markLockUnlocked(lock.utxo.txid, lock.utxo.vout, unlockTxid)
+          // Mark lock as unlocked in database (use lock.id, not txid/vout)
+          if (lock.id) {
+            await markLockUnlocked(lock.id)
+          }
 
           response.result = {
             txid: unlockTxid,

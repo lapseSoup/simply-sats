@@ -1,0 +1,403 @@
+/**
+ * Simply Sats SDK
+ *
+ * Node.js client for interacting with Simply Sats wallet via BRC-100 HTTP-JSON protocol.
+ * Designed for AI agents and automated systems that need programmatic BSV wallet access.
+ *
+ * Simply Sats runs on port 3322 by default.
+ */
+
+export interface SimplySatsConfig {
+  /** Base URL for Simply Sats HTTP server (default: http://127.0.0.1:3322) */
+  baseUrl?: string
+  /** Request timeout in ms (default: 120000) */
+  timeout?: number
+  /** Origin identifier for your app (for trusted origin auto-approval) */
+  origin?: string
+}
+
+export interface LockedUTXO {
+  txid: string
+  vout: number
+  satoshis: number
+  lockingScript: string
+  unlockBlock: number
+  publicKeyHex: string
+  createdAt: number
+}
+
+export interface LockResult {
+  txid: string
+  unlockBlock: number
+  lockedUtxo: LockedUTXO
+}
+
+export interface UnlockResult {
+  txid: string
+  amount: number
+}
+
+export interface LockedOutput {
+  outpoint: string
+  txid: string
+  vout: number
+  satoshis: number
+  unlockBlock: number
+  tags: string[]
+  spendable: boolean
+  blocksRemaining: number
+}
+
+export interface ListLocksResult {
+  locks: LockedOutput[]
+  currentHeight: number
+}
+
+export interface Output {
+  outpoint: string
+  satoshis: number
+  lockingScript: string
+  tags: string[]
+  spendable: boolean
+  customInstructions?: string
+}
+
+export interface ListOutputsResult {
+  outputs: Output[]
+  totalOutputs: number
+}
+
+export interface SignatureResult {
+  signature: string
+  publicKey: string
+}
+
+export interface ActionResult {
+  txid: string
+  rawTx?: string
+}
+
+export interface BRC100Error {
+  isError: true
+  code: number
+  message: string
+}
+
+/**
+ * Simply Sats SDK Client
+ *
+ * Provides programmatic access to Simply Sats wallet functionality via BRC-100 protocol.
+ *
+ * @example
+ * ```typescript
+ * import { SimplySats } from '@simply-sats/sdk'
+ *
+ * const wallet = new SimplySats({ origin: 'my-ai-bot' })
+ *
+ * // Check connection
+ * const version = await wallet.getVersion()
+ *
+ * // Lock BSV for 144 blocks (~1 day)
+ * const lock = await wallet.lockBSV({
+ *   satoshis: 10000,
+ *   blocks: 144,
+ *   metadata: { app: 'my-app' }
+ * })
+ *
+ * // List all locks
+ * const locks = await wallet.listLocks()
+ * ```
+ */
+export class SimplySats {
+  private baseUrl: string
+  private timeout: number
+  private origin: string
+
+  constructor(config: SimplySatsConfig = {}) {
+    this.baseUrl = config.baseUrl || 'http://127.0.0.1:3322'
+    this.timeout = config.timeout || 120000
+    this.origin = config.origin || 'sdk'
+  }
+
+  /**
+   * Make an HTTP request to Simply Sats
+   */
+  private async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+    try {
+      const response = await fetch(`${this.baseUrl}/${method}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Origin': this.origin
+        },
+        body: JSON.stringify(params),
+        signal: controller.signal
+      })
+
+      const data = await response.json()
+
+      // Check for BRC-100 error format
+      if (data.isError) {
+        throw new SimplySatsError(data.message, data.code)
+      }
+
+      return data as T
+    } catch (error) {
+      if (error instanceof SimplySatsError) throw error
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new SimplySatsError('Request timeout', -32000)
+        }
+        throw new SimplySatsError(error.message, -32000)
+      }
+      throw new SimplySatsError('Unknown error', -32000)
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  // ==================== Basic Info ====================
+
+  /**
+   * Get Simply Sats version
+   */
+  async getVersion(): Promise<string> {
+    const result = await this.request<{ version: string }>('getVersion')
+    return result.version
+  }
+
+  /**
+   * Get the network (mainnet/testnet)
+   */
+  async getNetwork(): Promise<string> {
+    const result = await this.request<{ network: string }>('getNetwork')
+    return result.network
+  }
+
+  /**
+   * Check if wallet is authenticated (has loaded keys)
+   */
+  async isAuthenticated(): Promise<boolean> {
+    const result = await this.request<{ authenticated: boolean }>('isAuthenticated')
+    return result.authenticated
+  }
+
+  /**
+   * Wait for wallet to be authenticated
+   */
+  async waitForAuthentication(): Promise<boolean> {
+    const result = await this.request<{ authenticated: boolean }>('waitForAuthentication')
+    return result.authenticated
+  }
+
+  /**
+   * Get current block height
+   */
+  async getHeight(): Promise<number> {
+    const result = await this.request<{ height: number }>('getHeight')
+    return result.height
+  }
+
+  // ==================== Key Operations ====================
+
+  /**
+   * Get public key from the wallet
+   */
+  async getPublicKey(options: { identityKey?: boolean } = {}): Promise<string> {
+    const result = await this.request<{ publicKey: string }>('getPublicKey', {
+      identityKey: options.identityKey || false
+    })
+    return result.publicKey
+  }
+
+  /**
+   * Create a signature for a message
+   */
+  async createSignature(options: {
+    data: string | Uint8Array
+    hashToDirectlySign?: string
+  }): Promise<SignatureResult> {
+    const params: Record<string, unknown> = {}
+
+    if (options.hashToDirectlySign) {
+      params.hashToDirectlySign = options.hashToDirectlySign
+    } else if (typeof options.data === 'string') {
+      params.data = Array.from(new TextEncoder().encode(options.data))
+    } else {
+      params.data = Array.from(options.data)
+    }
+
+    return this.request<SignatureResult>('createSignature', params)
+  }
+
+  // ==================== Transaction Operations ====================
+
+  /**
+   * Create a transaction action
+   */
+  async createAction(options: {
+    description?: string
+    outputs?: Array<{
+      lockingScript: string
+      satoshis: number
+      basket?: string
+      tags?: string[]
+    }>
+    inputs?: Array<{
+      outpoint: string
+      unlockingScript?: string
+      inputDescription?: string
+    }>
+    lockTime?: number
+  }): Promise<ActionResult> {
+    return this.request<ActionResult>('createAction', options)
+  }
+
+  /**
+   * List outputs (UTXOs) from the wallet
+   */
+  async listOutputs(options: {
+    basket?: string
+    tags?: string[]
+    limit?: number
+    offset?: number
+  } = {}): Promise<ListOutputsResult> {
+    return this.request<ListOutputsResult>('listOutputs', options)
+  }
+
+  // ==================== Timelock Operations ====================
+
+  /**
+   * Lock BSV using OP_PUSH_TX timelock
+   *
+   * Creates a time-locked output that can only be spent after the specified number of blocks.
+   *
+   * @param options.satoshis - Amount to lock in satoshis
+   * @param options.blocks - Number of blocks to lock for (144 blocks ~ 1 day)
+   * @param options.metadata - Optional metadata (ordinalOrigin, app name, etc.)
+   *
+   * @example
+   * ```typescript
+   * const lock = await wallet.lockBSV({
+   *   satoshis: 50000,
+   *   blocks: 144 * 7,  // ~1 week
+   *   metadata: {
+   *     app: 'wrootz',
+   *     ordinalOrigin: 'abc123_0'
+   *   }
+   * })
+   * console.log(`Locked at ${lock.txid}, unlocks at block ${lock.unlockBlock}`)
+   * ```
+   */
+  async lockBSV(options: {
+    satoshis: number
+    blocks: number
+    metadata?: {
+      ordinalOrigin?: string
+      app?: string
+      [key: string]: unknown
+    }
+  }): Promise<LockResult> {
+    return this.request<LockResult>('lockBSV', options)
+  }
+
+  /**
+   * Unlock a time-locked output
+   *
+   * Spends a previously locked output back to the wallet. Only works if
+   * the current block height has passed the unlock block.
+   *
+   * @param outpoint - The outpoint to unlock (format: "txid.vout")
+   *
+   * @example
+   * ```typescript
+   * const result = await wallet.unlockBSV('abc123...def.0')
+   * console.log(`Unlocked ${result.amount} sats in tx ${result.txid}`)
+   * ```
+   */
+  async unlockBSV(outpoint: string): Promise<UnlockResult> {
+    return this.request<UnlockResult>('unlockBSV', { outpoint })
+  }
+
+  /**
+   * List all locked outputs
+   *
+   * Returns all active locks with their unlock status.
+   *
+   * @example
+   * ```typescript
+   * const { locks, currentHeight } = await wallet.listLocks()
+   * for (const lock of locks) {
+   *   if (lock.spendable) {
+   *     console.log(`Lock ${lock.outpoint} is ready to unlock!`)
+   *   } else {
+   *     console.log(`Lock ${lock.outpoint} unlocks in ${lock.blocksRemaining} blocks`)
+   *   }
+   * }
+   * ```
+   */
+  async listLocks(): Promise<ListLocksResult> {
+    return this.request<ListLocksResult>('listLocks')
+  }
+
+  // ==================== Convenience Methods ====================
+
+  /**
+   * Check if Simply Sats is running and accessible
+   */
+  async ping(): Promise<boolean> {
+    try {
+      await this.getVersion()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Get wallet balance by summing spendable outputs
+   */
+  async getBalance(basket?: string): Promise<number> {
+    const { outputs } = await this.listOutputs({ basket })
+    return outputs
+      .filter(o => o.spendable)
+      .reduce((sum, o) => sum + o.satoshis, 0)
+  }
+
+  /**
+   * Get total locked balance
+   */
+  async getLockedBalance(): Promise<number> {
+    const { locks } = await this.listLocks()
+    return locks.reduce((sum, l) => sum + l.satoshis, 0)
+  }
+
+  /**
+   * Get spendable locked balance (locks that have matured)
+   */
+  async getSpendableLockedBalance(): Promise<number> {
+    const { locks } = await this.listLocks()
+    return locks
+      .filter(l => l.spendable)
+      .reduce((sum, l) => sum + l.satoshis, 0)
+  }
+}
+
+/**
+ * Error thrown by Simply Sats SDK
+ */
+export class SimplySatsError extends Error {
+  code: number
+
+  constructor(message: string, code: number) {
+    super(message)
+    this.name = 'SimplySatsError'
+    this.code = code
+  }
+}
+
+// Default export for convenience
+export default SimplySats

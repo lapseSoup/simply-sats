@@ -1,0 +1,46 @@
+{
+  "name": "@simply-sats/sdk",
+  "version": "0.1.0",
+  "description": "Node.js SDK for Simply Sats wallet - BRC-100 protocol client for BSV transactions",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "bsv",
+    "bitcoin",
+    "wallet",
+    "brc-100",
+    "simply-sats",
+    "timelock",
+    "op-push-tx"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kitclawd/simply-sats"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
