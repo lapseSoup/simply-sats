@@ -992,32 +992,6 @@ function App() {
     return locks.filter(l => currentHeight >= l.unlockBlock)
   }
 
-  // Restore orphaned lock (for recovery of locks that were deleted but still exist on-chain)
-  const restoreOrphanedLock = () => {
-    if (!wallet) return
-
-    // The orphaned lock data
-    const orphanedLock: LockedUTXO = {
-      txid: 'cc690942b2202d9c40fb6ed47177f36db46ae64bd3e25ec9eceeb1225953286f',
-      vout: 0,
-      satoshis: 218,
-      lockingScript: '03e7420eb17576a91441a8ed11c754517a2e2f7907eabf078a84ada6a488ac',
-      unlockBlock: 934631,
-      publicKeyHex: wallet.walletPubKey,
-      createdAt: Date.now()
-    }
-
-    // Check if already exists
-    if (locks.some(l => l.txid === orphanedLock.txid)) {
-      alert('This lock is already in your list!')
-      return
-    }
-
-    const newLocks = [...locks, orphanedLock]
-    setLocks(newLocks)
-    localStorage.setItem('simply_sats_locks', JSON.stringify(newLocks))
-    alert('Restored orphaned lock! You can now try to unlock it.')
-  }
 
   // Unlock handler - performs the actual unlock
   const performUnlock = async (lockedUtxo: LockedUTXO): Promise<{ success: boolean; txid?: string; amount?: number; error?: string }> => {
@@ -1157,10 +1131,31 @@ function App() {
     }
   }
 
-  const handleDeleteWallet = () => {
+  const handleDeleteWallet = async () => {
     if (confirm('Are you sure? Make sure you have backed up your recovery phrase!')) {
+      // Clear database
+      await clearDatabase()
+
+      // Clear ALL localStorage data
+      localStorage.removeItem('simply_sats_locks')
+      localStorage.removeItem('simply_sats_known_senders')
+      localStorage.removeItem('simply_sats_connected_apps')
+      localStorage.removeItem('simply_sats_display_sats')
+      localStorage.removeItem('simply_sats_cached_balance')
+      localStorage.removeItem('simply_sats_cached_ord_balance')
+
+      // Clear wallet from storage
       clearWallet()
+
+      // Reset ALL state
       setWallet(null)
+      setBalance(0)
+      setOrdBalance(0)
+      setTxHistory([])
+      setOrdinals([])
+      setLocks([])
+      setConnectedApps([])
+      setDisplayInSats(true)
       setModal(null)
     }
   }
@@ -1592,13 +1587,6 @@ function App() {
                 <div className="empty-icon">🔓</div>
                 <div className="empty-title">No Locks Yet</div>
                 <div className="empty-text">Lock your BSV for a set number of blocks</div>
-                <button
-                  className="action-btn"
-                  style={{ marginTop: 16, padding: '8px 16px', fontSize: '12px', opacity: 0.7 }}
-                  onClick={restoreOrphanedLock}
-                >
-                  Restore Lost Lock (218 sats)
-                </button>
               </div>
             ) : (
               locks.map((lock) => {
@@ -2039,77 +2027,69 @@ function App() {
       {modal === 'settings' && (
         <div className="modal-overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-handle" />
             <div className="modal-header">
               <h2 className="modal-title">Settings</h2>
               <button className="modal-close" onClick={() => setModal(null)}>×</button>
             </div>
             <div className="modal-content">
-              {/* Identity Card */}
-              <div className="identity-card">
-                <div className="identity-header">
-                  <div className="identity-avatar">🔑</div>
-                  <div className="identity-info">
-                    <div className="identity-label">BRC-100 Identity Key</div>
-                    <div className="identity-key">
-                      {wallet.identityPubKey.slice(0, 12)}...{wallet.identityPubKey.slice(-8)}
+              {/* WALLET SECTION */}
+              <div className="settings-section">
+                <div className="settings-section-title">Wallet</div>
+                <div className="settings-card">
+                  <div className="settings-row" onClick={() => copyToClipboard(wallet.walletAddress, 'Payment address copied!')}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">💳</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Payment Address</div>
+                        <div className="settings-row-value">{wallet.walletAddress.slice(0, 12)}...{wallet.walletAddress.slice(-6)}</div>
+                      </div>
                     </div>
+                    <span className="settings-row-arrow">📋</span>
+                  </div>
+                  <div className="settings-row" onClick={() => copyToClipboard(wallet.ordAddress, 'Ordinals address copied!')}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">🎨</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Ordinals Address</div>
+                        <div className="settings-row-value">{wallet.ordAddress.slice(0, 12)}...{wallet.ordAddress.slice(-6)}</div>
+                      </div>
+                    </div>
+                    <span className="settings-row-arrow">📋</span>
+                  </div>
+                  <div className="settings-row" onClick={() => copyToClipboard(wallet.identityPubKey, 'Identity key copied!')}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">🔑</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Identity Key</div>
+                        <div className="settings-row-value">{wallet.identityPubKey.slice(0, 12)}...{wallet.identityPubKey.slice(-6)}</div>
+                      </div>
+                    </div>
+                    <span className="settings-row-arrow">📋</span>
                   </div>
                 </div>
-                <button
-                  className="copy-btn"
-                  onClick={() => copyToClipboard(wallet.identityPubKey, 'Identity key copied!')}
-                >
-                  📋 Copy Identity Key
-                </button>
               </div>
 
-              {/* Addresses */}
-              <div className="form-group">
-                <label className="form-label">Payment Address</label>
-                <div className="address-display" style={{ marginBottom: 8 }}>
-                  {wallet.walletAddress}
-                </div>
-                <button className="copy-btn" onClick={() => copyToClipboard(wallet.walletAddress, 'Address copied!')}>
-                  📋 Copy
-                </button>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Ordinals Address</label>
-                <div className="address-display" style={{ marginBottom: 8 }}>
-                  {wallet.ordAddress}
-                </div>
-                <button className="copy-btn" onClick={() => copyToClipboard(wallet.ordAddress, 'Address copied!')}>
-                  📋 Copy
-                </button>
-              </div>
-
-              {/* Recovery Phrase */}
-              <div className="form-group">
-                <label className="form-label">Recovery Phrase</label>
-                {wallet.mnemonic ? (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => {
+              {/* SECURITY SECTION */}
+              <div className="settings-section">
+                <div className="settings-section-title">Security</div>
+                <div className="settings-card">
+                  {wallet.mnemonic && (
+                    <div className="settings-row" onClick={() => {
                       if (confirm('Make sure no one can see your screen!')) {
                         alert(wallet.mnemonic)
                       }
-                    }}
-                  >
-                    Show 12 Words
-                  </button>
-                ) : (
-                  <div className="form-hint">Imported from JSON (no mnemonic)</div>
-                )}
-              </div>
-
-              {/* Export Keys */}
-              <div className="form-group">
-                <label className="form-label">Wallet Keys Backup</label>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
+                    }}>
+                      <div className="settings-row-left">
+                        <div className="settings-row-icon">📝</div>
+                        <div className="settings-row-content">
+                          <div className="settings-row-label">Recovery Phrase</div>
+                          <div className="settings-row-value">12 words</div>
+                        </div>
+                      </div>
+                      <span className="settings-row-arrow">→</span>
+                    </div>
+                  )}
+                  <div className="settings-row" onClick={() => {
                     if (confirm('WARNING: Never share your private keys!')) {
                       const backup = JSON.stringify({
                         format: 'simply-sats',
@@ -2122,270 +2102,101 @@ function App() {
                         }
                       }, null, 2)
                       navigator.clipboard.writeText(backup)
-                      alert('Wallet keys copied to clipboard!')
+                      showToast('Keys copied to clipboard!')
                     }
-                  }}
-                >
-                  Export Wallet Keys
-                </button>
-              </div>
-
-              {/* Database Backup */}
-              <div className="form-group">
-                <label className="form-label">Full Database Backup</label>
-                <div className="form-hint" style={{ marginBottom: 8 }}>
-                  Includes UTXOs, transactions, baskets, and sync state
-                </div>
-                <div className="btn-group">
-                  <button
-                    className="btn btn-secondary"
-                    onClick={async () => {
-                      try {
-                        const dbBackup = await exportDatabase()
-                        const fullBackup = {
-                          format: 'simply-sats-full',
-                          wallet: {
-                            mnemonic: wallet.mnemonic || null,
-                            keys: {
-                              identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
-                              payment: { wif: wallet.walletWif, address: wallet.walletAddress },
-                              ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
-                            }
-                          },
-                          database: dbBackup
-                        }
-                        const backupJson = JSON.stringify(fullBackup, null, 2)
-
-                        // Use Tauri save dialog to write to file
-                        const filePath = await save({
-                          defaultPath: `simply-sats-backup-${new Date().toISOString().split('T')[0]}.json`,
-                          filters: [{ name: 'JSON', extensions: ['json'] }]
-                        })
-
-                        if (filePath) {
-                          await writeTextFile(filePath, backupJson)
-                          alert(`Full backup saved!\n\n${dbBackup.utxos.length} UTXOs\n${dbBackup.transactions.length} transactions\n\nSaved to: ${filePath}`)
-                        }
-                      } catch (err) {
-                        alert('Backup failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
-                      }
-                    }}
-                  >
-                    Export Full Backup
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={async () => {
-                      try {
-                        // Use Tauri open dialog to select backup file
-                        const filePath = await open({
-                          filters: [{ name: 'JSON', extensions: ['json'] }],
-                          multiple: false
-                        })
-
-                        if (!filePath || Array.isArray(filePath)) return
-
-                        const json = await readTextFile(filePath)
-                        const backup = JSON.parse(json)
-
-                        if (backup.format !== 'simply-sats-full' || !backup.database) {
-                          alert('Invalid backup format. Use "Export Full Backup" to create a valid backup.')
-                          return
-                        }
-                        if (!confirm(`Import ${backup.database.utxos.length} UTXOs and ${backup.database.transactions.length} transactions?\n\nThis will replace your current data!`)) {
-                          return
-                        }
-                        await importDatabase(backup.database as DatabaseBackup)
-                        alert('Database imported successfully! Syncing...')
-                        performSync(false)
-                      } catch (err) {
-                        alert('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
-                      }
-                    }}
-                  >
-                    Import Backup
-                  </button>
-                </div>
-              </div>
-
-              {/* Known Senders for BRC-42/43 */}
-              <div className="form-group">
-                <label className="form-label">Known Senders (BRC-42/43)</label>
-                <div className="form-hint" style={{ marginBottom: 8 }}>
-                  Add public keys of wallets that send to your identity key
-                </div>
-                {getKnownSenders().length > 0 && (
-                  <div className="app-list" style={{ marginBottom: 8 }}>
-                    {getKnownSenders().map(pubKey => (
-                      <div key={pubKey} className="app-item">
-                        <span className="app-name">{pubKey.slice(0, 12)}...{pubKey.slice(-8)}</span>
+                  }}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">🔐</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Export Private Keys</div>
+                        <div className="settings-row-value">Copy JSON to clipboard</div>
                       </div>
-                    ))}
+                    </div>
+                    <span className="settings-row-arrow">→</span>
                   </div>
-                )}
-                {showSenderInput ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="66 character hex public key"
-                      value={senderInput}
-                      onChange={e => setSenderInput(e.target.value)}
-                      style={{ fontFamily: 'monospace', fontSize: 11 }}
-                    />
-                    <div className="btn-group">
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => {
-                          setShowSenderInput(false)
-                          setSenderInput('')
-                        }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                          if (senderInput.length === 66) {
-                            addKnownSender(senderInput)
-                            setSenderInput('')
-                            setShowSenderInput(false)
-                            fetchData()
-                            showToast('Sender added!')
-                          } else {
-                            showToast('Invalid: must be 66 hex chars')
+                </div>
+              </div>
+
+              {/* BACKUP SECTION */}
+              <div className="settings-section">
+                <div className="settings-section-title">Backup</div>
+                <div className="settings-card">
+                  <div className="settings-row" onClick={async () => {
+                    try {
+                      const dbBackup = await exportDatabase()
+                      const fullBackup = {
+                        format: 'simply-sats-full',
+                        wallet: {
+                          mnemonic: wallet.mnemonic || null,
+                          keys: {
+                            identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
+                            payment: { wif: wallet.walletWif, address: wallet.walletAddress },
+                            ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
                           }
-                        }}
-                      >
-                        Add
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setShowSenderInput(true)}
-                  >
-                    Add Known Sender
-                  </button>
-                )}
-                {getKnownSenders().length > 0 && wallet.identityWif && (
-                  showDebugInput ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Target address (e.g. 172Hcm...)"
-                        value={debugAddressInput}
-                        onChange={e => setDebugAddressInput(e.target.value)}
-                        style={{ fontFamily: 'monospace', fontSize: 11 }}
-                      />
-                      <div className="btn-group">
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => {
-                            setShowDebugInput(false)
-                            setDebugAddressInput('')
-                            setDebugResult(null)
-                          }}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          className="btn btn-primary"
-                          disabled={debugSearching || !debugAddressInput}
-                          onClick={() => {
-                            if (!debugAddressInput) return
-                            const senders = getKnownSenders()
-                            if (senders.length === 0) {
-                              setDebugResult('❌ No known senders configured')
-                              return
-                            }
-                            setDebugSearching(true)
-                            setDebugResult('🔍 Searching ~2000 invoice numbers...')
-                            setTimeout(() => {
-                              try {
-                                const identityPrivKey = PrivateKey.fromWif(wallet.identityWif)
-                                for (const sender of senders) {
-                                  const result = debugFindInvoiceNumber(identityPrivKey, sender, debugAddressInput)
-                                  if (result.found) {
-                                    setDebugResult(`✅ FOUND!\n\nInvoice: "${result.invoiceNumber}"\nSender: ${sender.slice(0, 20)}...\nTested: ${result.testedCount}`)
-                                    setDebugSearching(false)
-                                    return
-                                  }
-                                }
-                                setDebugResult(`❌ Not found after ~2000 tests.\n\nPossible reasons:\n• Wrong sender public key\n• Different derivation protocol\n• Custom invoice format`)
-                              } catch (e) {
-                                setDebugResult('❌ Error: ' + (e instanceof Error ? e.message : 'Unknown'))
-                              }
-                              setDebugSearching(false)
-                            }, 100)
-                          }}
-                        >
-                          {debugSearching ? 'Searching...' : 'Search'}
-                        </button>
+                        },
+                        database: dbBackup
+                      }
+                      const backupJson = JSON.stringify(fullBackup, null, 2)
+                      const filePath = await save({
+                        defaultPath: `simply-sats-backup-${new Date().toISOString().split('T')[0]}.json`,
+                        filters: [{ name: 'JSON', extensions: ['json'] }]
+                      })
+                      if (filePath) {
+                        await writeTextFile(filePath, backupJson)
+                        showToast('Backup saved!')
+                      }
+                    } catch (err) {
+                      showToast('Backup failed')
+                    }
+                  }}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">💾</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Export Full Backup</div>
+                        <div className="settings-row-value">Wallet + transactions</div>
                       </div>
-                      {debugResult && (
-                        <div style={{
-                          marginTop: 8,
-                          padding: 12,
-                          background: 'var(--bg-tertiary)',
-                          borderRadius: 8,
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-all'
-                        }}>
-                          {debugResult}
-                        </div>
-                      )}
                     </div>
-                  ) : (
-                    <button
-                      className="btn btn-secondary"
-                      style={{ marginTop: 8 }}
-                      onClick={() => {
-                        setShowDebugInput(true)
-                        setDebugResult(null)
-                      }}
-                    >
-                      Debug: Find Invoice Number
-                    </button>
-                  )
-                )}
+                    <span className="settings-row-arrow">→</span>
+                  </div>
+                  <div className="settings-row" onClick={async () => {
+                    try {
+                      const filePath = await open({
+                        filters: [{ name: 'JSON', extensions: ['json'] }],
+                        multiple: false
+                      })
+                      if (!filePath || Array.isArray(filePath)) return
+                      const json = await readTextFile(filePath)
+                      const backup = JSON.parse(json)
+                      if (backup.format !== 'simply-sats-full' || !backup.database) {
+                        showToast('Invalid backup format')
+                        return
+                      }
+                      if (confirm(`Import ${backup.database.utxos.length} UTXOs and ${backup.database.transactions.length} transactions?`)) {
+                        await importDatabase(backup.database as DatabaseBackup)
+                        showToast('Backup imported!')
+                        performSync(false)
+                      }
+                    } catch (err) {
+                      showToast('Import failed')
+                    }
+                  }}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">📥</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Import Backup</div>
+                        <div className="settings-row-value">Restore from file</div>
+                      </div>
+                    </div>
+                    <span className="settings-row-arrow">→</span>
+                  </div>
+                </div>
               </div>
 
-              {/* MessageBox Payment Notifications */}
-              <div className="form-group">
-                <label className="form-label">MessageBox Payments (BRC-29)</label>
-                <div className="form-hint" style={{ marginBottom: 8 }}>
-                  Receives payment info from BSV Desktop and BRC-100 wallets
-                </div>
-                <div className="app-list" style={{ marginBottom: 8 }}>
-                  <div className="app-item">
-                    <span className="app-name">
-                      {messageBoxStatus === 'checking' ? '🔄' : messageBoxStatus === 'error' ? '❌' : '✅'} MessageBox
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                      {paymentNotifications.length} payment{paymentNotifications.length !== 1 ? 's' : ''} received
-                    </span>
-                  </div>
-                </div>
-                {paymentNotifications.length > 0 && (
-                  <div className="app-list" style={{ marginBottom: 8, fontSize: 11 }}>
-                    {paymentNotifications.slice(0, 5).map((p, i) => (
-                      <div key={i} className="app-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                        <span className="app-name">💰 {p.amount?.toLocaleString() || '?'} sats</span>
-                        <span style={{ color: 'var(--text-secondary)', fontSize: 10 }}>
-                          TX: {p.txid.slice(0, 12)}... • From: {p.senderPublicKey.slice(0, 12)}...
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button
-                  className="btn btn-secondary"
-                  onClick={async () => {
+              {/* ADVANCED SECTION */}
+              <div className="settings-section">
+                <div className="settings-section-title">Advanced</div>
+                <div className="settings-card">
+                  <div className="settings-row" onClick={async () => {
                     if (!wallet?.identityWif) return
                     setMessageBoxStatus('checking')
                     try {
@@ -2400,34 +2211,134 @@ function App() {
                       }
                       setMessageBoxStatus('idle')
                     } catch (e) {
-                      console.error('MessageBox check failed:', e)
                       setMessageBoxStatus('error')
                       showToast('MessageBox check failed')
                     }
-                  }}
-                >
-                  Check for Payments
-                </button>
+                  }}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">{messageBoxStatus === 'checking' ? '🔄' : '📬'}</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">MessageBox (BRC-29)</div>
+                        <div className="settings-row-value">{paymentNotifications.length} payment{paymentNotifications.length !== 1 ? 's' : ''} received</div>
+                      </div>
+                    </div>
+                    <span className="settings-row-arrow">↻</span>
+                  </div>
+                  {!showSenderInput ? (
+                    <div className="settings-row" onClick={() => setShowSenderInput(true)}>
+                      <div className="settings-row-left">
+                        <div className="settings-row-icon">👥</div>
+                        <div className="settings-row-content">
+                          <div className="settings-row-label">Known Senders (BRC-42/43)</div>
+                          <div className="settings-row-value">{getKnownSenders().length} configured</div>
+                        </div>
+                      </div>
+                      <span className="settings-row-arrow">+</span>
+                    </div>
+                  ) : (
+                    <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="66 character hex public key"
+                        value={senderInput}
+                        onChange={e => setSenderInput(e.target.value)}
+                        style={{ fontFamily: 'monospace', fontSize: 11, marginBottom: 8 }}
+                      />
+                      <div className="btn-group">
+                        <button className="btn btn-secondary" onClick={() => { setShowSenderInput(false); setSenderInput('') }}>Cancel</button>
+                        <button className="btn btn-primary" onClick={() => {
+                          if (senderInput.length === 66) {
+                            addKnownSender(senderInput)
+                            setSenderInput('')
+                            setShowSenderInput(false)
+                            fetchData()
+                            showToast('Sender added!')
+                          } else {
+                            showToast('Invalid: must be 66 hex chars')
+                          }
+                        }}>Add</button>
+                      </div>
+                    </div>
+                  )}
+                  {getKnownSenders().length > 0 && !showDebugInput && (
+                    <div className="settings-row" onClick={() => setShowDebugInput(true)}>
+                      <div className="settings-row-left">
+                        <div className="settings-row-icon">🔍</div>
+                        <div className="settings-row-content">
+                          <div className="settings-row-label">Debug Invoice Finder</div>
+                          <div className="settings-row-value">Search derived addresses</div>
+                        </div>
+                      </div>
+                      <span className="settings-row-arrow">→</span>
+                    </div>
+                  )}
+                  {showDebugInput && (
+                    <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Target address (e.g. 172Hcm...)"
+                        value={debugAddressInput}
+                        onChange={e => setDebugAddressInput(e.target.value)}
+                        style={{ fontFamily: 'monospace', fontSize: 11, marginBottom: 8 }}
+                      />
+                      <div className="btn-group">
+                        <button className="btn btn-secondary" onClick={() => { setShowDebugInput(false); setDebugAddressInput(''); setDebugResult(null) }}>Cancel</button>
+                        <button className="btn btn-primary" disabled={debugSearching || !debugAddressInput} onClick={() => {
+                          if (!debugAddressInput) return
+                          const senders = getKnownSenders()
+                          if (senders.length === 0) { setDebugResult('❌ No known senders'); return }
+                          setDebugSearching(true)
+                          setDebugResult('🔍 Searching...')
+                          setTimeout(() => {
+                            try {
+                              const identityPrivKey = PrivateKey.fromWif(wallet.identityWif)
+                              for (const sender of senders) {
+                                const result = debugFindInvoiceNumber(identityPrivKey, sender, debugAddressInput)
+                                if (result.found) {
+                                  setDebugResult(`✅ Found: "${result.invoiceNumber}"`)
+                                  setDebugSearching(false)
+                                  return
+                                }
+                              }
+                              setDebugResult('❌ Not found')
+                            } catch (e) {
+                              setDebugResult('❌ Error')
+                            }
+                            setDebugSearching(false)
+                          }, 100)
+                        }}>{debugSearching ? 'Searching...' : 'Search'}</button>
+                      </div>
+                      {debugResult && <div style={{ marginTop: 8, padding: 10, background: 'var(--bg-tertiary)', borderRadius: 8, fontSize: 12, fontFamily: 'monospace' }}>{debugResult}</div>}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Connected Apps */}
+              {/* CONNECTED APPS */}
               {connectedApps.length > 0 && (
-                <div className="form-group">
-                  <label className="form-label">Connected Apps</label>
-                  <div className="app-list">
+                <div className="settings-section">
+                  <div className="settings-section-title">Connected Apps</div>
+                  <div className="settings-card">
                     {connectedApps.map(app => (
-                      <div key={app} className="app-item">
-                        <span className="app-name">{app}</span>
-                        <button className="app-disconnect" onClick={() => disconnectApp(app)}>
-                          Disconnect
-                        </button>
+                      <div key={app} className="settings-row">
+                        <div className="settings-row-left">
+                          <div className="settings-row-icon">🔗</div>
+                          <div className="settings-row-content">
+                            <div className="settings-row-label">{app}</div>
+                          </div>
+                        </div>
+                        <button className="app-disconnect" onClick={() => disconnectApp(app)}>Disconnect</button>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="mt-3">
+              {/* DANGER ZONE */}
+              <div className="settings-section">
+                <div className="settings-section-title">Danger Zone</div>
                 <button className="btn btn-danger" onClick={handleDeleteWallet}>
                   Delete Wallet
                 </button>
