@@ -1,5 +1,5 @@
 import * as bip39 from 'bip39'
-import { HD, Mnemonic, PrivateKey, P2PKH, Transaction, Script, LockingScript, UnlockingScript, TransactionSignature, Hash } from '@bsv/sdk'
+import { HD, Mnemonic, PrivateKey, PublicKey, P2PKH, Transaction, Script, LockingScript, UnlockingScript, TransactionSignature, Hash } from '@bsv/sdk'
 import {
   getBalanceFromDatabase,
   getSpendableUtxosFromDatabase,
@@ -11,12 +11,13 @@ import {
 // Wallet type - simplified to just BRC-100/Yours standard
 export type WalletType = 'yours'
 
-// BRC-100 standard derivation paths (same as Yours Wallet)
+// BRC-100 standard derivation paths (matching Yours Wallet exactly)
+// See: https://github.com/yours-org/yours-wallet/blob/main/src/utils/constants.ts
 const WALLET_PATHS = {
   yours: {
-    wallet: "m/44'/236'/0'/0/0",    // BSV spending
-    ordinals: "m/44'/236'/0'/1/0",   // Ordinals
-    identity: "m/44'/236'/0'/2/0"    // Identity/BRC-100 authentication
+    wallet: "m/44'/236'/0'/1/0",    // BSV spending (DEFAULT_WALLET_PATH)
+    ordinals: "m/44'/236'/1'/0/0",   // Ordinals (DEFAULT_ORD_PATH)
+    identity: "m/0'/236'/0'/0/0"     // Identity/BRC-100 authentication (DEFAULT_IDENTITY_PATH)
   }
 }
 
@@ -383,12 +384,73 @@ export async function calculateTxAmount(txDetails: any, address: string): Promis
   return received - sent
 }
 
-// Calculate transaction fee for given inputs/outputs at exactly 100 sat/KB
+// Default fee rate: 0.071 sat/byte (71 sat/KB) - most miners accept this
+const DEFAULT_FEE_RATE = 0.071
+
+// Get the current fee rate from settings or use default
+export function getFeeRate(): number {
+  const stored = localStorage.getItem('simply_sats_fee_rate')
+  if (stored) {
+    const rate = parseFloat(stored)
+    if (!isNaN(rate) && rate > 0) return rate
+  }
+  return DEFAULT_FEE_RATE
+}
+
+// Set the fee rate (in sats/byte)
+export function setFeeRate(rate: number): void {
+  localStorage.setItem('simply_sats_fee_rate', String(rate))
+}
+
+// Get fee rate in sats/KB for display
+export function getFeeRatePerKB(): number {
+  return Math.round(getFeeRate() * 1000)
+}
+
+// Set fee rate from sats/KB input
+export function setFeeRateFromKB(ratePerKB: number): void {
+  setFeeRate(ratePerKB / 1000)
+}
+
+// Calculate fee from exact byte size
+export function feeFromBytes(bytes: number, customFeeRate?: number): number {
+  const rate = customFeeRate ?? getFeeRate()
+  return Math.max(1, Math.ceil(bytes * rate))
+}
+
+// Calculate varint size for a given length
+function varintSize(n: number): number {
+  if (n < 0xfd) return 1
+  if (n <= 0xffff) return 3
+  if (n <= 0xffffffff) return 5
+  return 9
+}
+
+// Standard P2PKH sizes
+const P2PKH_INPUT_SIZE = 148  // outpoint 36 + scriptlen 1 + scriptsig ~107 + sequence 4
+const P2PKH_OUTPUT_SIZE = 34  // value 8 + scriptlen 1 + script 25
+const TX_OVERHEAD = 10        // version 4 + locktime 4 + input count ~1 + output count ~1
+
+// Calculate transaction fee for standard P2PKH inputs/outputs
 export function calculateTxFee(numInputs: number, numOutputs: number, extraBytes = 0): number {
-  // P2PKH tx sizes: ~10 bytes overhead + 148 bytes per input + 34 bytes per output
-  const txSize = 10 + (numInputs * 148) + (numOutputs * 34) + extraBytes
-  // 100 sat/KB = 0.1 sat/byte, use ceiling to ensure we meet minimum
-  return Math.max(1, Math.ceil(txSize * 100 / 1000))
+  const txSize = TX_OVERHEAD + (numInputs * P2PKH_INPUT_SIZE) + (numOutputs * P2PKH_OUTPUT_SIZE) + extraBytes
+  return feeFromBytes(txSize)
+}
+
+// Calculate the exact fee for a lock transaction using actual script size
+export function calculateLockFee(numInputs: number, timelockScriptSize?: number): number {
+  // If no script size provided, use the actual size from our timelock script
+  // The script is built from LOCKUP_PREFIX + pkh (20 bytes) + nLockTime (3-4 bytes) + LOCKUP_SUFFIX
+  // Actual measured size is ~1090 bytes
+  const scriptSize = timelockScriptSize ?? 1090
+
+  // Lock output: value (8) + varint for script length + script
+  const lockOutputSize = 8 + varintSize(scriptSize) + scriptSize
+  // Change output: standard P2PKH
+  const changeOutputSize = P2PKH_OUTPUT_SIZE
+
+  const txSize = TX_OVERHEAD + (numInputs * P2PKH_INPUT_SIZE) + lockOutputSize + changeOutputSize
+  return feeFromBytes(txSize)
 }
 
 // Calculate max sendable amount given UTXOs
@@ -614,7 +676,7 @@ export async function sendBSV(
     throw new Error('Insufficient funds')
   }
 
-  // Calculate fee based on actual transaction size at 0.1 sat/byte
+  // Calculate fee based on actual transaction size using configured fee rate
   const numInputs = inputsToUse.length
 
   // First calculate if we'll have meaningful change
@@ -822,6 +884,18 @@ function createTimelockScript(publicKeyHash: string, blockHeight: number): Scrip
   return Script.fromASM(scriptASM)
 }
 
+/**
+ * Get the exact size of a timelock script for a given public key and block height
+ * This allows accurate fee calculation before creating the transaction
+ */
+export function getTimelockScriptSize(publicKeyHex: string, blockHeight: number): number {
+  const publicKey = PublicKey.fromString(publicKeyHex)
+  const publicKeyHashBytes = publicKey.toHash() as number[]
+  const publicKeyHashHex = publicKeyHashBytes.map(b => b.toString(16).padStart(2, '0')).join('')
+  const script = createTimelockScript(publicKeyHashHex, blockHeight)
+  return script.toBinary().length
+}
+
 
 /**
  * Lock BSV until a specific block height using OP_PUSH_TX technique
@@ -863,11 +937,10 @@ export async function lockBSV(
     throw new Error('Insufficient funds')
   }
 
-  // Calculate fee - timelock script is much larger than standard P2PKH
+  // Calculate fee using actual script size
   const numInputs = inputsToUse.length
-  const numOutputs = 2 // lock output + change
   const timelockScriptSize = timelockScript.toBinary().length
-  const fee = calculateTxFee(numInputs, numOutputs, timelockScriptSize - 25) // extra bytes for timelock script
+  const fee = calculateLockFee(numInputs, timelockScriptSize)
   const change = totalInput - satoshis - fee
 
   if (change < 0) {
@@ -962,14 +1035,20 @@ export async function unlockBSV(
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
 
-  // Calculate fee for 1 input, 1 output (unlock script is larger due to preimage)
-  // Preimage is ~180 bytes, signature ~72 bytes, pubkey 33 bytes = ~285 bytes unlocking script
-  const unlockScriptSize = 300
-  const fee = Math.ceil((148 + unlockScriptSize + 34) * 0.05) // ~25 sats
+  // Calculate fee for unlock transaction
+  // The unlock tx is large because the preimage contains the full locking script (~1090 bytes)
+  // Actual measured size is ~1290 bytes
+  const lockingScriptSize = lockedUtxo.lockingScript.length / 2 // hex to bytes
+  // TX structure: version(4) + inputCount(1) + outpoint(36) + unlockScript + sequence(4) +
+  //               outputCount(1) + output(34) + locktime(4)
+  // Unlock script: sig(~73) + pubkey(34) + preimage(~180 + lockingScriptSize)
+  const unlockScriptSize = 73 + 34 + 180 + lockingScriptSize
+  const txSize = 4 + 1 + 36 + 3 + unlockScriptSize + 4 + 1 + 34 + 4 // ~3 bytes for varint
+  const fee = feeFromBytes(txSize)
   const outputSats = lockedUtxo.satoshis - fee
 
   if (outputSats <= 0) {
-    throw new Error('Insufficient funds to cover unlock fee')
+    throw new Error(`Insufficient funds to cover unlock fee (need ${fee} sats)`)
   }
 
   // Parse the locking script
@@ -1105,13 +1184,17 @@ export async function generateUnlockTxHex(
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
 
-  // Calculate fee for unlock (larger due to preimage in unlock script)
-  const unlockScriptSize = 300
-  const fee = Math.ceil((148 + unlockScriptSize + 34) * 0.05)
+  // Calculate fee for unlock transaction
+  // The unlock tx is large because the preimage contains the full locking script (~1090 bytes)
+  // Actual measured size is ~1290 bytes
+  const lockingScriptSize = lockedUtxo.lockingScript.length / 2 // hex to bytes
+  const unlockScriptSize = 73 + 34 + 180 + lockingScriptSize
+  const txSize = 4 + 1 + 36 + 3 + unlockScriptSize + 4 + 1 + 34 + 4
+  const fee = feeFromBytes(txSize)
   const outputSats = lockedUtxo.satoshis - fee
 
   if (outputSats <= 0) {
-    throw new Error('Insufficient funds to cover unlock fee')
+    throw new Error(`Insufficient funds to cover unlock fee (need ${fee} sats)`)
   }
 
   // Parse the locking script
@@ -1184,5 +1267,186 @@ export async function generateUnlockTxHex(
     txHex: tx.toHex(),
     txid: tx.id('hex'),
     outputSats
+  }
+}
+
+// Timelock script signature - the first 32-byte constant from LOCKUP_PREFIX
+// When assembled, it becomes 0x20 (push 32 bytes) followed by this hex
+const TIMELOCK_SCRIPT_SIGNATURE = '2097dfd76851bf465e8f715593b217714858bbe9570ff3bd5e33840a34e20ff026'
+
+/**
+ * Parse a timelock script to extract the unlock block height and public key hash
+ * Returns null if the script is not a recognized timelock script
+ */
+function parseTimelockScript(scriptHex: string): { unlockBlock: number; publicKeyHash: string } | null {
+  // Check if script starts with our timelock signature
+  if (!scriptHex.startsWith(TIMELOCK_SCRIPT_SIGNATURE)) {
+    return null
+  }
+
+  try {
+    // Script structure after the prefix constants:
+    // LOCKUP_PREFIX (known pattern) + publicKeyHash (20 bytes) + nLockTime (variable) + LOCKUP_SUFFIX
+    //
+    // The script ASM is: PREFIX pkh nLockTime SUFFIX
+    // After PREFIX (which is multiple constants totaling 134 bytes when assembled):
+    // - 0x14 (push 20 bytes) + 20-byte pkh = 21 bytes
+    // - Variable push for nLockTime (1-5 bytes depending on value)
+
+    // The prefix when assembled is a fixed pattern. After the three 32-byte constants and two zeros:
+    // 0x20 (32 bytes) + const1 + 0x21 (33 bytes) + const2 + 0x20 (32 bytes) + const3 + 0x00 + 0x00
+    // Total prefix hex length: 2 + 64 + 2 + 66 + 2 + 64 + 2 + 2 = 204 chars (102 bytes)
+    const prefixHexLen = 204
+
+    // After prefix comes: 0x14 (1 byte) + pkh (20 bytes) = 42 hex chars
+    const pkhStart = prefixHexLen
+    const pkhPushByte = scriptHex.substring(pkhStart, pkhStart + 2)
+
+    if (pkhPushByte !== '14') {
+      // Not the expected 20-byte push
+      return null
+    }
+
+    const publicKeyHash = scriptHex.substring(pkhStart + 2, pkhStart + 2 + 40)
+
+    // After pkh comes the nLockTime push
+    const nLockTimeStart = pkhStart + 42
+    const nLockTimePushByte = scriptHex.substring(nLockTimeStart, nLockTimeStart + 2)
+    const pushLen = parseInt(nLockTimePushByte, 16)
+
+    if (pushLen > 4) {
+      // nLockTime shouldn't be more than 4 bytes
+      return null
+    }
+
+    const nLockTimeHex = scriptHex.substring(nLockTimeStart + 2, nLockTimeStart + 2 + pushLen * 2)
+
+    // Convert little-endian hex to number
+    const bytes = nLockTimeHex.match(/.{2}/g) || []
+    const unlockBlock = parseInt(bytes.reverse().join(''), 16)
+
+    return { unlockBlock, publicKeyHash }
+  } catch (error) {
+    console.error('Error parsing timelock script:', error)
+    return null
+  }
+}
+
+/**
+ * Check if a UTXO is still unspent
+ */
+async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
+  try {
+    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`)
+    if (!response.ok) return false
+
+    const txData = await response.json()
+    const output = txData.vout?.[vout]
+
+    // If the output has a spent txid, it's been spent
+    if (output?.spent) {
+      return false
+    }
+
+    // Also check via the direct spent endpoint
+    const spentResponse = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/${vout}/spent`)
+    if (spentResponse.ok) {
+      const spentData = await spentResponse.json()
+      // If we get spending info, it's spent
+      if (spentData && spentData.txid) {
+        return false
+      }
+    }
+
+    return true
+  } catch {
+    // Assume unspent if we can't determine
+    return true
+  }
+}
+
+/**
+ * Scan transaction history to detect locked UTXOs
+ * This is used during wallet restoration to reconstruct the locks list
+ */
+export async function detectLockedUtxos(
+  walletAddress: string,
+  publicKeyHex: string
+): Promise<LockedUTXO[]> {
+  console.log('Scanning transaction history for locked UTXOs...')
+
+  const detectedLocks: LockedUTXO[] = []
+
+  try {
+    // Get transaction history for the wallet address
+    const history = await getTransactionHistory(walletAddress)
+
+    if (!history || history.length === 0) {
+      console.log('No transaction history found')
+      return []
+    }
+
+    console.log(`Checking ${history.length} transactions for locks...`)
+
+    // Calculate expected public key hash from the provided public key
+    const publicKey = PublicKey.fromString(publicKeyHex)
+    const expectedPkhBytes = publicKey.toHash() as number[]
+    const expectedPkh = expectedPkhBytes.map(b => b.toString(16).padStart(2, '0')).join('')
+
+    // Check each transaction for timelock outputs
+    for (const historyItem of history) {
+      const txid = historyItem.tx_hash
+
+      try {
+        const txDetails = await getTransactionDetails(txid)
+        if (!txDetails?.vout) continue
+
+        // Check each output for timelock script
+        for (let vout = 0; vout < txDetails.vout.length; vout++) {
+          const output = txDetails.vout[vout]
+          const scriptHex = output.scriptPubKey?.hex
+
+          if (!scriptHex) continue
+
+          const parsed = parseTimelockScript(scriptHex)
+          if (!parsed) continue
+
+          // Verify the lock belongs to this wallet
+          if (parsed.publicKeyHash !== expectedPkh) {
+            console.log(`Found lock but PKH doesn't match (different wallet)`)
+            continue
+          }
+
+          // Check if still unspent
+          const unspent = await isUtxoUnspent(txid, vout)
+          if (!unspent) {
+            console.log(`Lock ${txid}:${vout} has been spent (unlocked)`)
+            continue
+          }
+
+          const satoshis = Math.round(output.value * 100000000)
+
+          console.log(`Found active lock: ${txid}:${vout} - ${satoshis} sats until block ${parsed.unlockBlock}`)
+
+          detectedLocks.push({
+            txid,
+            vout,
+            satoshis,
+            lockingScript: scriptHex,
+            unlockBlock: parsed.unlockBlock,
+            publicKeyHex,
+            createdAt: txDetails.time ? txDetails.time * 1000 : Date.now()
+          })
+        }
+      } catch (error) {
+        console.warn(`Error processing tx ${txid}:`, error)
+      }
+    }
+
+    console.log(`Detected ${detectedLocks.length} active lock(s)`)
+    return detectedLocks
+  } catch (error) {
+    console.error('Error detecting locked UTXOs:', error)
+    return []
   }
 }

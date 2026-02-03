@@ -19,10 +19,16 @@ import {
   clearWallet,
   calculateExactFee,
   calculateTxFee,
+  calculateLockFee,
+  getTimelockScriptSize,
   lockBSV,
   unlockBSV,
-  generateUnlockTxHex,
+  // generateUnlockTxHex, // Commented out - was for TX debug button
   getCurrentBlockHeight,
+  detectLockedUtxos,
+  getFeeRatePerKB,
+  setFeeRateFromKB,
+  feeFromBytes,
   type UTXO,
   type LockedUTXO
 } from './services/wallet'
@@ -280,6 +286,9 @@ function App() {
     const saved = localStorage.getItem('simply_sats_display_sats')
     return saved === 'true'
   })
+
+  // Fee rate setting (sats/KB)
+  const [feeRateKB, setFeeRateKB] = useState<number>(() => getFeeRatePerKB())
 
   // BRC-100 request state
   const [brc100Request, setBrc100Request] = useState<BRC100Request | null>(null)
@@ -660,15 +669,19 @@ function App() {
       const mergedHistory = allTxs.filter((tx, index, self) =>
         index === self.findIndex(t => t.tx_hash === tx.tx_hash)
       )
-      // Sort: unconfirmed (height 0) first, then by descending block height
+      // Sort: unconfirmed (height 0) first, then by descending block height, then by tx_pos (within same block)
       mergedHistory.sort((a, b) => {
         const aHeight = a.height || 0
         const bHeight = b.height || 0
         // Unconfirmed transactions (height 0) go to the top
         if (aHeight === 0 && bHeight !== 0) return -1
         if (bHeight === 0 && aHeight !== 0) return 1
-        // Otherwise sort by descending height
-        return bHeight - aHeight
+        // Sort by descending height first
+        if (aHeight !== bHeight) return bHeight - aHeight
+        // For same block, sort by descending tx_pos (later transactions first)
+        const aPos = (a as any).tx_pos ?? 0
+        const bPos = (b as any).tx_pos ?? 0
+        return bPos - aPos
       })
 
       // Fetch amounts for recent transactions - use database first, only fetch new ones from API
@@ -728,6 +741,20 @@ function App() {
 
       // Only update if we got results - don't overwrite with empty data (rate limiting protection)
       if (txsWithAmounts.length > 0) {
+        // Final sort to ensure consistent ordering after all async processing
+        txsWithAmounts.sort((a, b) => {
+          const aHeight = a.height || 0
+          const bHeight = b.height || 0
+          // Unconfirmed transactions (height 0) go to the top
+          if (aHeight === 0 && bHeight !== 0) return -1
+          if (bHeight === 0 && aHeight !== 0) return 1
+          // Sort by descending height first (newest blocks first)
+          if (aHeight !== bHeight) return bHeight - aHeight
+          // For same block, sort by descending tx_pos (later transactions first)
+          const aPos = (a as any).tx_pos ?? 0
+          const bPos = (b as any).tx_pos ?? 0
+          return bPos - aPos
+        })
         setTxHistory(txsWithAmounts.slice(0, 30))
       } else if (txHistory.length === 0) {
         // Only set empty if we don't already have transactions
@@ -856,6 +883,16 @@ function App() {
       setTimeout(async () => {
         try {
           await restoreFromBlockchain(keys.walletAddress, keys.ordAddress, keys.identityAddress)
+
+          // Detect and restore locked UTXOs from transaction history
+          console.log('Scanning for locked UTXOs...')
+          const detectedLocks = await detectLockedUtxos(keys.walletAddress, keys.walletPubKey)
+          if (detectedLocks.length > 0) {
+            console.log(`Restored ${detectedLocks.length} locked UTXO(s)`)
+            setLocks(detectedLocks)
+            localStorage.setItem('simply_sats_locks', JSON.stringify(detectedLocks))
+          }
+
           setLastSyncTime(Date.now())
         } catch (err) {
           console.error('Restore sync failed:', err)
@@ -896,6 +933,16 @@ function App() {
       setTimeout(async () => {
         try {
           await restoreFromBlockchain(keys.walletAddress, keys.ordAddress, keys.identityAddress)
+
+          // Detect and restore locked UTXOs from transaction history
+          console.log('Scanning for locked UTXOs...')
+          const detectedLocks = await detectLockedUtxos(keys.walletAddress, keys.walletPubKey)
+          if (detectedLocks.length > 0) {
+            console.log(`Restored ${detectedLocks.length} locked UTXO(s)`)
+            setLocks(detectedLocks)
+            localStorage.setItem('simply_sats_locks', JSON.stringify(detectedLocks))
+          }
+
           setLastSyncTime(Date.now())
         } catch (err) {
           console.error('Restore sync failed:', err)
@@ -1084,6 +1131,7 @@ function App() {
     }
   }
 
+  /* TX Export function - kept for potential future use
   // Export raw unlock transaction hex for manual miner submission
   const handleExportUnlockTx = async (lockedUtxo: LockedUTXO) => {
     if (!wallet) return
@@ -1108,6 +1156,7 @@ function App() {
       alert(`Failed to generate transaction: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
+  */
 
   // Copy feedback state
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
@@ -1621,6 +1670,7 @@ function App() {
                           >
                             {isUnlocking ? '...' : 'Unlock'}
                           </button>
+                          {/* TX button removed - was for debug raw hex export
                           <button
                             className="unlock-btn"
                             onClick={() => handleExportUnlockTx(lock)}
@@ -1630,6 +1680,7 @@ function App() {
                           >
                             TX
                           </button>
+                          */}
                         </div>
                       ) : (
                         <div className="lock-progress">
@@ -1780,7 +1831,14 @@ function App() {
           timeEstimate = `~${estimatedMinutes} min`
         }
 
-        const fee = calculateTxFee(1, 2) // 1 input estimate, 2 outputs (lock + change)
+        // Calculate exact fee using actual script size
+        let fee = 0
+        if (wallet && blocks > 0) {
+          const scriptSize = getTimelockScriptSize(wallet.walletPubKey, unlockBlock)
+          fee = calculateLockFee(1, scriptSize)
+        } else {
+          fee = calculateLockFee(1) // Fallback estimate
+        }
 
         return (
           <div className="modal-overlay" onClick={() => setModal(null)}>
@@ -1793,7 +1851,9 @@ function App() {
                 <div className="form-group">
                   <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>Amount ({displayInSats ? 'sats' : 'BSV'})</span>
-                    <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>{balance.toLocaleString()} available</span>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>
+                      {displayInSats ? balance.toLocaleString() : (balance / 100000000).toFixed(8)} available
+                    </span>
                   </label>
                   <input
                     type="number"
@@ -1840,7 +1900,7 @@ function App() {
                       </div>
                       <div className="send-summary-row">
                         <span>Fee</span>
-                        <span>~{fee} sats</span>
+                        <span>{fee} sats</span>
                       </div>
                     </>
                   )}
@@ -2065,6 +2125,48 @@ function App() {
                       </div>
                     </div>
                     <span className="settings-row-arrow">📋</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* TRANSACTION SECTION */}
+              <div className="settings-section">
+                <div className="settings-section-title">Transactions</div>
+                <div className="settings-card">
+                  <div className="settings-row">
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon">⛽</div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Fee Rate</div>
+                        <div className="settings-row-value">
+                          <input
+                            type="number"
+                            min="1"
+                            max="1000"
+                            value={feeRateKB}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 71
+                              setFeeRateKB(val)
+                              setFeeRateFromKB(val)
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              width: '60px',
+                              padding: '4px 8px',
+                              border: '1px solid var(--border)',
+                              borderRadius: '6px',
+                              background: 'var(--bg-primary)',
+                              color: 'var(--text-primary)',
+                              fontSize: '13px',
+                              textAlign: 'right'
+                            }}
+                          /> sats/KB
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                    Default: 71 sats/KB. Most miners accept 50-100. Lower = cheaper, higher = faster confirmation.
                   </div>
                 </div>
               </div>
@@ -2457,13 +2559,12 @@ function App() {
                     </span>
                   </div>
                   {brc100Request.params.outputs && (() => {
-                    // Calculate exact fee based on transaction size
+                    // Calculate exact fee based on transaction size using configured fee rate
                     // P2PKH: ~10 bytes overhead + 148 bytes per input + 34 bytes per output
                     const numOutputs = brc100Request.params.outputs.length + 1 // outputs + change
                     const numInputs = Math.ceil((brc100Request.params.outputs.reduce((sum: number, o: any) => sum + (o.satoshis || 0), 0) + 200) / 10000) || 1
                     const txSize = 10 + (numInputs * 148) + (numOutputs * 34)
-                    // 100 sats/KB = 0.1 sats/byte
-                    const fee = Math.max(1, Math.floor(txSize / 10))
+                    const fee = feeFromBytes(txSize)
                     const outputAmount = brc100Request.params.outputs.reduce((sum: number, o: any) => sum + (o.satoshis || 0), 0)
 
                     return (
