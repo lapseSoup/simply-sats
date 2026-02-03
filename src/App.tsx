@@ -55,7 +55,8 @@ import {
   addKnownSender,
   getKnownSenders,
   getDerivedAddresses,
-  debugFindInvoiceNumber
+  debugFindInvoiceNumber,
+  deriveSenderAddress
 } from './services/keyDerivation'
 import {
   loadNotifications,
@@ -65,7 +66,7 @@ import {
   startPaymentListener,
   type PaymentNotification
 } from './services/messageBox'
-import { PrivateKey } from '@bsv/sdk'
+import { PrivateKey, PublicKey } from '@bsv/sdk'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs'
@@ -277,6 +278,11 @@ function App() {
 
   // Receive address type
   const [receiveType, setReceiveType] = useState<'wallet' | 'ordinals' | 'brc100'>('wallet')
+
+  // BRC-100 derived address state
+  const [senderPubKeyInput, setSenderPubKeyInput] = useState('')
+  const [derivedReceiveAddress, setDerivedReceiveAddress] = useState('')
+  const [showDeriveMode, setShowDeriveMode] = useState(false)
 
   // New wallet mnemonic display
   const [newMnemonic, setNewMnemonic] = useState<string | null>(null)
@@ -1187,6 +1193,26 @@ function App() {
     }
   }
 
+  // BRC-100 derived address generation
+  // Uses BRC-29 format invoice number for full compliance
+  const deriveReceiveAddress = useCallback((senderPubKey: string): string => {
+    if (!wallet || !senderPubKey || senderPubKey.length < 66) return ''
+    try {
+      const senderPub = PublicKey.fromString(senderPubKey)
+      const receiverPriv = PrivateKey.fromWif(wallet.identityWif)
+      // BRC-29 format: "2-3241645161d8-{protocolID} {keyID}"
+      // Using 'default' as keyID for deterministic derivation (both sides derive same address)
+      const invoiceNumber = '2-3241645161d8-simply-sats default'
+      const address = deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
+      // Add sender to known senders for future UTXO scanning
+      addKnownSender(senderPubKey)
+      return address
+    } catch (e) {
+      console.error('Failed to derive address:', e)
+      return ''
+    }
+  }, [wallet])
+
   const handleDeleteWallet = async () => {
     if (confirm('Are you sure? Make sure you have backed up your recovery phrase!')) {
       // Clear database
@@ -2026,7 +2052,12 @@ function App() {
                 </button>
                 <button
                   className={`pill-tab ${receiveType === 'brc100' ? 'active' : ''}`}
-                  onClick={() => setReceiveType('brc100')}
+                  onClick={() => {
+                    setReceiveType('brc100')
+                    setShowDeriveMode(false)
+                    setSenderPubKeyInput('')
+                    setDerivedReceiveAddress('')
+                  }}
                 >
                   Identity
                 </button>
@@ -2034,29 +2065,92 @@ function App() {
 
               {receiveType === 'brc100' ? (
                 <div className="qr-container compact">
-                  <div className="brc100-qr-row">
-                    <div className="brc100-qr-col">
-                      <div className="brc100-qr-label">Address</div>
+                  {!showDeriveMode ? (
+                    <>
+                      {/* Default mode - show identity public key */}
+                      <div className="brc100-qr-label" style={{ marginBottom: 8 }}>Your Identity Public Key</div>
                       <div className="qr-wrapper compact">
-                        <QRCodeSVG value={wallet.identityAddress} size={90} level="L" bgColor="#fff" fgColor="#000" />
+                        <QRCodeSVG value={wallet.identityPubKey} size={100} level="L" bgColor="#fff" fgColor="#000" />
                       </div>
-                      <button className="copy-btn-small" onClick={() => copyToClipboard(wallet.identityAddress, 'Address copied!')}>
-                        📋 Copy
-                      </button>
-                    </div>
-                    <div className="brc100-qr-col">
-                      <div className="brc100-qr-label">Public Key</div>
-                      <div className="qr-wrapper compact">
-                        <QRCodeSVG value={wallet.identityPubKey} size={90} level="L" bgColor="#fff" fgColor="#000" />
+                      <div className="address-display compact" style={{ marginTop: 12 }}>
+                        {wallet.identityPubKey}
                       </div>
-                      <button className="copy-btn-small" onClick={() => copyToClipboard(wallet.identityPubKey, 'Key copied!')}>
-                        📋 Copy
+                      <button
+                        className="copy-btn compact"
+                        onClick={() => copyToClipboard(wallet.identityPubKey, 'Public key copied!')}
+                      >
+                        📋 Copy Public Key
                       </button>
-                    </div>
-                  </div>
-                  <div className="address-type-hint">
-                    BRC-100 identity for app connections
-                  </div>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ marginTop: 8 }}
+                        onClick={() => {
+                          setShowDeriveMode(true)
+                          setSenderPubKeyInput('')
+                          setDerivedReceiveAddress('')
+                        }}
+                      >
+                        🔐 Generate Receive Address
+                      </button>
+                      <div className="address-type-hint">
+                        Share your public key with sender for BRC-100 payments
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* Derive mode - enter sender's public key */}
+                      <div className="form-group" style={{ width: '100%', marginBottom: 12 }}>
+                        <label className="form-label">Sender's Public Key</label>
+                        <input
+                          type="text"
+                          className="form-input mono"
+                          placeholder="Enter sender's identity public key..."
+                          value={senderPubKeyInput}
+                          onChange={(e) => {
+                            const val = e.target.value.trim()
+                            setSenderPubKeyInput(val)
+                            setDerivedReceiveAddress(deriveReceiveAddress(val))
+                          }}
+                          style={{ fontSize: 11 }}
+                        />
+                      </div>
+                      {derivedReceiveAddress ? (
+                        <>
+                          <div className="brc100-qr-label" style={{ marginBottom: 8 }}>Derived Payment Address</div>
+                          <div className="qr-wrapper compact">
+                            <QRCodeSVG value={derivedReceiveAddress} size={100} level="M" bgColor="#fff" fgColor="#000" />
+                          </div>
+                          <div className="address-display compact" style={{ marginTop: 12 }}>
+                            {derivedReceiveAddress}
+                          </div>
+                          <button
+                            className="copy-btn compact"
+                            onClick={() => copyToClipboard(derivedReceiveAddress, 'Address copied!')}
+                          >
+                            📋 Copy Address
+                          </button>
+                        </>
+                      ) : (
+                        <div className="address-type-hint" style={{ padding: '40px 0' }}>
+                          Enter sender's public key to generate a unique receive address
+                        </div>
+                      )}
+                      <button
+                        className="btn btn-secondary"
+                        style={{ marginTop: 8 }}
+                        onClick={() => {
+                          setShowDeriveMode(false)
+                          setSenderPubKeyInput('')
+                          setDerivedReceiveAddress('')
+                        }}
+                      >
+                        ← Back
+                      </button>
+                      <div className="address-type-hint">
+                        This address is unique to this sender (BRC-100)
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="qr-container compact">

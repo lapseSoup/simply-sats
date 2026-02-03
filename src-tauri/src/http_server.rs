@@ -73,6 +73,10 @@ pub async fn start_server(app_handle: AppHandle, brc100_state: SharedBRC100State
         .route("/createSignature", post(handle_create_signature))
         .route("/createAction", post(handle_create_action))
         .route("/listOutputs", post(handle_list_outputs))
+        // Simply Sats native locking (OP_PUSH_TX timelock)
+        .route("/lockBSV", post(handle_lock_bsv))
+        .route("/unlockBSV", post(handle_unlock_bsv))
+        .route("/listLocks", post(handle_list_locks))
         .layer(cors)
         .with_state(state);
 
@@ -154,6 +158,30 @@ async fn handle_list_outputs(
 ) -> (StatusCode, Json<serde_json::Value>) {
     println!("listOutputs request: {:?}", args);
     forward_to_frontend(state, "listOutputs", args).await
+}
+
+async fn handle_lock_bsv(
+    State(state): State<AppState>,
+    Json(args): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    println!("lockBSV request: {:?}", args);
+    forward_to_frontend(state, "lockBSV", args).await
+}
+
+async fn handle_unlock_bsv(
+    State(state): State<AppState>,
+    Json(args): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    println!("unlockBSV request: {:?}", args);
+    forward_to_frontend(state, "unlockBSV", args).await
+}
+
+async fn handle_list_locks(
+    State(state): State<AppState>,
+    Json(args): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    println!("listLocks request: {:?}", args);
+    forward_to_frontend(state, "listLocks", args).await
 }
 
 async fn forward_to_frontend(

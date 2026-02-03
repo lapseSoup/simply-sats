@@ -1,8 +1,8 @@
 import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
-import type { WalletKeys, UTXO } from './wallet'
-import { getUTXOs, calculateTxFee } from './wallet'
+import type { WalletKeys, UTXO, LockedUTXO } from './wallet'
+import { getUTXOs, calculateTxFee, lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV } from './wallet'
 import {
   getSpendableUTXOs,
   getUTXOsByBasket,
@@ -25,7 +25,7 @@ import {
 // BRC-100 Protocol Types
 export interface BRC100Request {
   id: string
-  type: 'getPublicKey' | 'createSignature' | 'createAction' | 'getNetwork' | 'getVersion' | 'isAuthenticated' | 'getHeight' | 'listOutputs'
+  type: 'getPublicKey' | 'createSignature' | 'createAction' | 'getNetwork' | 'getVersion' | 'isAuthenticated' | 'getHeight' | 'listOutputs' | 'lockBSV' | 'unlockBSV' | 'listLocks'
   params?: any
   origin?: string // The app requesting (e.g., "wrootz.com")
 }
@@ -129,7 +129,8 @@ export async function setupHttpServerListener(): Promise<() => void> {
       // If no wallet is loaded, return error for requests that need it
       if (!currentWalletKeys) {
         if (request.type === 'getPublicKey' || request.type === 'createSignature' ||
-            request.type === 'createAction' || request.type === 'listOutputs') {
+            request.type === 'createAction' || request.type === 'listOutputs' ||
+            request.type === 'lockBSV' || request.type === 'unlockBSV' || request.type === 'listLocks') {
           try {
             await invoke('respond_to_brc100', {
               requestId: request.id,
@@ -245,6 +246,84 @@ export async function setupHttpServerListener(): Promise<() => void> {
           })
           return
         }
+      }
+
+      // Handle listLocks - returns all time-locked outputs
+      if (request.type === 'listLocks' && currentWalletKeys) {
+        try {
+          const currentHeight = await getCurrentBlockHeight()
+          const locks = await getLocksFromDB(currentHeight)
+
+          const lockOutputs: LockedOutput[] = locks.map(lock => ({
+            outpoint: `${lock.utxo.txid}.${lock.utxo.vout}`,
+            txid: lock.utxo.txid,
+            vout: lock.utxo.vout,
+            satoshis: lock.utxo.satoshis,
+            unlockBlock: lock.unlockBlock,
+            tags: [`unlock_${lock.unlockBlock}`, ...(lock.ordinalOrigin ? [`ordinal_${lock.ordinalOrigin}`] : [])],
+            spendable: currentHeight >= lock.unlockBlock,
+            blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
+          }))
+
+          await invoke('respond_to_brc100', {
+            requestId: request.id,
+            response: { result: { locks: lockOutputs, currentHeight } }
+          })
+          return
+        } catch (e) {
+          console.error('Failed to list locks:', e)
+          await invoke('respond_to_brc100', {
+            requestId: request.id,
+            response: { error: { code: -32000, message: 'Failed to list locks' } }
+          })
+          return
+        }
+      }
+
+      // Handle lockBSV - creates time-locked output using OP_PUSH_TX
+      // This requires user approval as it spends funds
+      if (request.type === 'lockBSV' && currentWalletKeys) {
+        const params = request.params || {}
+        const satoshis = params.satoshis
+        const blocks = params.blocks
+        const metadata = params.metadata || {}
+
+        if (!satoshis || satoshis <= 0) {
+          await invoke('respond_to_brc100', {
+            requestId: request.id,
+            response: { error: { code: -32602, message: 'Invalid satoshis amount' } }
+          })
+          return
+        }
+
+        if (!blocks || blocks <= 0) {
+          await invoke('respond_to_brc100', {
+            requestId: request.id,
+            response: { error: { code: -32602, message: 'Invalid blocks duration' } }
+          })
+          return
+        }
+
+        // This will be handled by the pending request flow for user approval
+        // Don't auto-process - let it fall through to be queued for approval
+      }
+
+      // Handle unlockBSV - spends time-locked output back to wallet
+      // This requires user approval as it spends funds
+      if (request.type === 'unlockBSV' && currentWalletKeys) {
+        const params = request.params || {}
+        const outpoint = params.outpoint
+
+        if (!outpoint) {
+          await invoke('respond_to_brc100', {
+            requestId: request.id,
+            response: { error: { code: -32602, message: 'Missing outpoint parameter' } }
+          })
+          return
+        }
+
+        // This will be handled by the pending request flow for user approval
+        // Don't auto-process - let it fall through to be queued for approval
       }
 
       // Store as pending and notify UI for requests that need approval
@@ -814,6 +893,120 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
               code: -32000,
               message: error instanceof Error ? error.message : 'Transaction failed'
             }
+          }
+        }
+        break
+      }
+
+      case 'lockBSV': {
+        // Native lock using OP_PUSH_TX timelock
+        const params = request.params || {}
+        const satoshis = params.satoshis
+        const blocks = params.blocks
+        const metadata = params.metadata || {}
+
+        try {
+          const currentHeight = await getCurrentBlockHeight()
+          const unlockBlock = currentHeight + blocks
+
+          // Get spendable UTXOs
+          const utxos = await getSpendableUTXOs()
+          if (utxos.length === 0) {
+            response.error = { code: -32000, message: 'No spendable UTXOs available' }
+            break
+          }
+
+          // Use the wallet's native lockBSV function (OP_PUSH_TX)
+          const result = await walletLockBSV(
+            keys.walletWif,
+            satoshis,
+            unlockBlock,
+            utxos
+          )
+
+          // Track the lock in database
+          await addLock({
+            utxo: {
+              txid: result.txid,
+              vout: 0,
+              satoshis,
+              lockingScript: result.lockedUtxo.lockingScript
+            },
+            unlockBlock,
+            ordinalOrigin: metadata.ordinalOrigin || null,
+            app: metadata.app || 'wrootz'
+          })
+
+          response.result = {
+            txid: result.txid,
+            unlockBlock,
+            lockedUtxo: result.lockedUtxo
+          }
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Lock failed'
+          }
+        }
+        break
+      }
+
+      case 'unlockBSV': {
+        // Unlock a time-locked output
+        const params = request.params || {}
+        const outpoint = params.outpoint
+
+        try {
+          const currentHeight = await getCurrentBlockHeight()
+          const locks = await getLocksFromDB(currentHeight)
+
+          // Find the lock by outpoint
+          const [txid, voutStr] = outpoint.split('.')
+          const vout = parseInt(voutStr) || 0
+          const lock = locks.find(l => l.utxo.txid === txid && l.utxo.vout === vout)
+
+          if (!lock) {
+            response.error = { code: -32000, message: 'Lock not found' }
+            break
+          }
+
+          if (currentHeight < lock.unlockBlock) {
+            response.error = {
+              code: -32000,
+              message: `Lock not yet spendable. ${lock.unlockBlock - currentHeight} blocks remaining`
+            }
+            break
+          }
+
+          // Build LockedUTXO for the unlock function
+          const lockedUtxo: LockedUTXO = {
+            txid: lock.utxo.txid,
+            vout: lock.utxo.vout,
+            satoshis: lock.utxo.satoshis,
+            lockingScript: lock.utxo.lockingScript,
+            unlockBlock: lock.unlockBlock,
+            publicKeyHex: keys.walletPubKey,
+            createdAt: Date.now()
+          }
+
+          // Use the wallet's native unlockBSV function
+          const unlockTxid = await walletUnlockBSV(
+            keys.walletWif,
+            lockedUtxo,
+            currentHeight
+          )
+
+          // Mark lock as unlocked in database
+          await markLockUnlocked(lock.utxo.txid, lock.utxo.vout, unlockTxid)
+
+          response.result = {
+            txid: unlockTxid,
+            amount: lock.utxo.satoshis
+          }
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Unlock failed'
           }
         }
         break
