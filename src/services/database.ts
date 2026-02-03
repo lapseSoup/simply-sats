@@ -673,3 +673,20 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
 
   console.log('Database import complete')
 }
+
+/**
+ * Clear all data from database (for new wallet creation)
+ */
+export async function clearDatabase(): Promise<void> {
+  const database = getDatabase()
+
+  await database.execute('DELETE FROM utxo_tags')
+  await database.execute('DELETE FROM transaction_labels')
+  await database.execute('DELETE FROM locks')
+  await database.execute('DELETE FROM utxos')
+  await database.execute('DELETE FROM transactions')
+  await database.execute('DELETE FROM baskets')
+  await database.execute('DELETE FROM sync_state')
+
+  console.log('Database cleared')
+}

@@ -1,5 +1,5 @@
 import * as bip39 from 'bip39'
-import { HD, Mnemonic, PrivateKey, P2PKH, Transaction, Script, OP, LockingScript, UnlockingScript, TransactionSignature, Hash } from '@bsv/sdk'
+import { HD, Mnemonic, PrivateKey, P2PKH, Transaction, Script, LockingScript, UnlockingScript, TransactionSignature, Hash } from '@bsv/sdk'
 import {
   getBalanceFromDatabase,
   getSpendableUtxosFromDatabase,
@@ -772,7 +772,9 @@ export async function getOrdinalDetails(origin: string): Promise<any> {
 }
 
 // ============================================
-// Time Lock (CLTV) Functions
+// Time Lock Functions (OP_PUSH_TX technique)
+// Based on jdh7190's bsv-lock: https://github.com/jdh7190/bsv-lock
+// Uses sCrypt-compiled script that validates preimage on-chain
 // ============================================
 
 export interface LockedUTXO {
@@ -785,46 +787,45 @@ export interface LockedUTXO {
   createdAt: number
 }
 
+// sCrypt-compiled timelock script components from bsv-lock
+// This script uses OP_PUSH_TX to validate the transaction preimage on-chain,
+// checking that nLockTime >= the specified block height
+const LOCKUP_PREFIX = `97dfd76851bf465e8f715593b217714858bbe9570ff3bd5e33840a34e20ff026 02ba79df5f8ae7604a9830f03c7933028186aede0675a16f025dc4f8be8eec0382 1008ce7480da41702918d1ec8e6849ba32b4d65b1e40dc669c31a1e6306b266c 0 0`
+const LOCKUP_SUFFIX = `OP_NOP 0 OP_PICK 0065cd1d OP_LESSTHAN OP_VERIFY 0 OP_PICK OP_4 OP_ROLL OP_DROP OP_3 OP_ROLL OP_3 OP_ROLL OP_3 OP_ROLL OP_1 OP_PICK OP_3 OP_ROLL OP_DROP OP_2 OP_ROLL OP_2 OP_ROLL OP_DROP OP_DROP OP_NOP OP_5 OP_PICK 41 OP_NOP OP_1 OP_PICK OP_7 OP_PICK OP_7 OP_PICK 0ac407f0e4bd44bfc207355a778b046225a7068fc59ee7eda43ad905aadbffc800 6c266b30e6a1319c66dc401e5bd6b432ba49688eecd118297041da8074ce0810 OP_9 OP_PICK OP_6 OP_PICK OP_NOP OP_6 OP_PICK OP_HASH256 0 OP_PICK OP_NOP 0 OP_PICK OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT 00 OP_CAT OP_BIN2NUM OP_1 OP_ROLL OP_DROP OP_NOP OP_7 OP_PICK OP_6 OP_PICK OP_6 OP_PICK OP_6 OP_PICK OP_6 OP_PICK OP_NOP OP_3 OP_PICK OP_6 OP_PICK OP_4 OP_PICK OP_7 OP_PICK OP_MUL OP_ADD OP_MUL 414136d08c5ed2bf3ba048afe6dcaebafeffffffffffffffffffffffffffffff00 OP_1 OP_PICK OP_1 OP_PICK OP_NOP OP_1 OP_PICK OP_1 OP_PICK OP_MOD 0 OP_PICK 0 OP_LESSTHAN OP_IF 0 OP_PICK OP_2 OP_PICK OP_ADD OP_ELSE 0 OP_PICK OP_ENDIF OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_NOP OP_2 OP_ROLL OP_DROP OP_1 OP_ROLL OP_1 OP_PICK OP_1 OP_PICK OP_2 OP_DIV OP_GREATERTHAN OP_IF 0 OP_PICK OP_2 OP_PICK OP_SUB OP_2 OP_ROLL OP_DROP OP_1 OP_ROLL OP_ENDIF OP_3 OP_PICK OP_SIZE OP_NIP OP_2 OP_PICK OP_SIZE OP_NIP OP_3 OP_PICK 20 OP_NUM2BIN OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_1 OP_SPLIT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT OP_SWAP OP_CAT 20 OP_2 OP_PICK OP_SUB OP_SPLIT OP_NIP OP_4 OP_3 OP_PICK OP_ADD OP_2 OP_PICK OP_ADD 30 OP_1 OP_PICK OP_CAT OP_2 OP_CAT OP_4 OP_PICK OP_CAT OP_8 OP_PICK OP_CAT OP_2 OP_CAT OP_3 OP_PICK OP_CAT OP_2 OP_PICK OP_CAT OP_7 OP_PICK OP_CAT 0 OP_PICK OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_NOP 0 OP_PICK OP_7 OP_PICK OP_CHECKSIG OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_NOP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_NOP OP_VERIFY OP_5 OP_PICK OP_NOP 0 OP_PICK OP_NOP 0 OP_PICK OP_SIZE OP_NIP OP_1 OP_PICK OP_1 OP_PICK OP_4 OP_SUB OP_SPLIT OP_DROP OP_1 OP_PICK OP_8 OP_SUB OP_SPLIT OP_NIP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_NOP OP_NOP 0 OP_PICK 00 OP_CAT OP_BIN2NUM OP_1 OP_ROLL OP_DROP OP_NOP OP_1 OP_ROLL OP_DROP OP_NOP 0065cd1d OP_LESSTHAN OP_VERIFY OP_5 OP_PICK OP_NOP 0 OP_PICK OP_NOP 0 OP_PICK OP_SIZE OP_NIP OP_1 OP_PICK OP_1 OP_PICK 28 OP_SUB OP_SPLIT OP_DROP OP_1 OP_PICK 2c OP_SUB OP_SPLIT OP_NIP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_NOP OP_NOP 0 OP_PICK 00 OP_CAT OP_BIN2NUM OP_1 OP_ROLL OP_DROP OP_NOP OP_1 OP_ROLL OP_DROP OP_NOP ffffffff00 OP_LESSTHAN OP_VERIFY OP_5 OP_PICK OP_NOP 0 OP_PICK OP_NOP 0 OP_PICK OP_SIZE OP_NIP OP_1 OP_PICK OP_1 OP_PICK OP_4 OP_SUB OP_SPLIT OP_DROP OP_1 OP_PICK OP_8 OP_SUB OP_SPLIT OP_NIP OP_1 OP_ROLL OP_DROP OP_1 OP_ROLL OP_DROP OP_NOP OP_NOP 0 OP_PICK 00 OP_CAT OP_BIN2NUM OP_1 OP_ROLL OP_DROP OP_NOP OP_1 OP_ROLL OP_DROP OP_NOP OP_2 OP_PICK OP_GREATERTHANOREQUAL OP_VERIFY OP_6 OP_PICK OP_HASH160 OP_1 OP_PICK OP_EQUAL OP_VERIFY OP_7 OP_PICK OP_7 OP_PICK OP_CHECKSIG OP_NIP OP_NIP OP_NIP OP_NIP OP_NIP OP_NIP OP_NIP OP_NIP`
+
+// Helper: convert integer to little-endian hex
+function int2Hex(n: number): string {
+  if (n === 0) return '00'
+  let hex = n.toString(16)
+  if (hex.length % 2) hex = '0' + hex
+  // Reverse bytes for little-endian
+  const bytes = hex.match(/.{2}/g) || []
+  return bytes.reverse().join('')
+}
+
+// Helper: convert little-endian hex to integer (kept for potential future use in extracting block height from scripts)
+function _hex2Int(hex: string): number {
+  const bytes = hex.match(/.{2}/g) || []
+  const reversed = bytes.reverse().join('')
+  return parseInt(reversed, 16)
+}
+// Export to prevent unused warning
+export { _hex2Int as hex2Int }
+
 /**
- * Create a CLTV (CheckLockTimeVerify) locking script
- * Script: <locktime> OP_CHECKLOCKTIMEVERIFY OP_DROP OP_DUP OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+ * Create the OP_PUSH_TX timelock locking script
+ * This script validates the transaction preimage on-chain and checks nLockTime
  */
-function createCLTVLockingScript(unlockBlock: number, publicKeyHash: number[]): Script {
-  const script = new Script()
-
-  // Push the lock time (block height)
-  // BIP-65: locktime must be encoded as the minimum number of bytes
-  if (unlockBlock <= 16) {
-    script.writeOpCode(OP.OP_1 - 1 + unlockBlock) // OP_1 through OP_16
-  } else {
-    // Convert to little-endian bytes, removing leading zeros
-    const bytes: number[] = []
-    let n = unlockBlock
-    while (n > 0) {
-      bytes.push(n & 0xff)
-      n >>= 8
-    }
-    // If high bit is set, add a 0x00 byte to keep it positive
-    if (bytes.length > 0 && (bytes[bytes.length - 1] & 0x80) !== 0) {
-      bytes.push(0)
-    }
-    script.writeBin(bytes)
-  }
-
-  script.writeOpCode(OP.OP_NOP2) // OP_NOP2 is OP_CHECKLOCKTIMEVERIFY (BIP-65)
-  script.writeOpCode(OP.OP_DROP)
-  script.writeOpCode(OP.OP_DUP)
-  script.writeOpCode(OP.OP_HASH160)
-  script.writeBin(publicKeyHash)
-  script.writeOpCode(OP.OP_EQUALVERIFY)
-  script.writeOpCode(OP.OP_CHECKSIG)
-
-  return script
+function createTimelockScript(publicKeyHash: string, blockHeight: number): Script {
+  const nLockTimeHex = int2Hex(blockHeight)
+  const scriptASM = `${LOCKUP_PREFIX} ${publicKeyHash} ${nLockTimeHex} ${LOCKUP_SUFFIX}`
+  return Script.fromASM(scriptASM)
 }
 
 
 /**
- * Lock BSV until a specific block height using CLTV
+ * Lock BSV until a specific block height using OP_PUSH_TX technique
+ * Based on jdh7190's bsv-lock implementation
  */
 export async function lockBSV(
   wif: string,
@@ -836,11 +837,12 @@ export async function lockBSV(
   const publicKey = privateKey.toPublicKey()
   const fromAddress = publicKey.toAddress()
 
-  // Get public key hash for the CLTV script
-  const publicKeyHash = publicKey.toHash() as number[]
+  // Get public key hash as hex string for the timelock script
+  const publicKeyHashBytes = publicKey.toHash() as number[]
+  const publicKeyHashHex = publicKeyHashBytes.map(b => b.toString(16).padStart(2, '0')).join('')
 
-  // Create the CLTV locking script
-  const cltvLockingScript = createCLTVLockingScript(unlockBlock, publicKeyHash)
+  // Create the OP_PUSH_TX timelock locking script
+  const timelockScript = createTimelockScript(publicKeyHashHex, unlockBlock)
 
   // Generate locking script for the source address (for signing inputs)
   const sourceLockingScript = new P2PKH().lock(fromAddress)
@@ -854,17 +856,18 @@ export async function lockBSV(
   for (const utxo of utxos) {
     inputsToUse.push(utxo)
     totalInput += utxo.satoshis
-    if (totalInput >= satoshis + 200) break
+    if (totalInput >= satoshis + 500) break // timelock script is larger, need more for fees
   }
 
   if (totalInput < satoshis) {
     throw new Error('Insufficient funds')
   }
 
-  // Calculate fee - CLTV output is ~5 bytes larger than standard P2PKH (39 vs 34 bytes)
+  // Calculate fee - timelock script is much larger than standard P2PKH
   const numInputs = inputsToUse.length
   const numOutputs = 2 // lock output + change
-  const fee = calculateTxFee(numInputs, numOutputs, 5) // extra bytes for CLTV script
+  const timelockScriptSize = timelockScript.toBinary().length
+  const fee = calculateTxFee(numInputs, numOutputs, timelockScriptSize - 25) // extra bytes for timelock script
   const change = totalInput - satoshis - fee
 
   if (change < 0) {
@@ -888,8 +891,7 @@ export async function lockBSV(
   }
 
   // Add locked output (output 0)
-  // Convert Script binary to number array for LockingScript
-  const lockScriptBin = cltvLockingScript.toBinary()
+  const lockScriptBin = timelockScript.toBinary()
   const lockScriptBytes: number[] = []
   for (let i = 0; i < lockScriptBin.length; i++) {
     lockScriptBytes.push(lockScriptBin[i])
@@ -914,7 +916,7 @@ export async function lockBSV(
     txid,
     vout: 0,
     satoshis,
-    lockingScript: cltvLockingScript.toHex(),
+    lockingScript: timelockScript.toHex(),
     unlockBlock,
     publicKeyHex: publicKey.toString(),
     createdAt: Date.now()
@@ -941,13 +943,10 @@ export async function lockBSV(
 }
 
 /**
- * Unlock a locked UTXO
+ * Unlock a locked UTXO using OP_PUSH_TX technique
  *
- * The locking script is: <locktime> OP_NOP2 OP_DROP <P2PKH>
- * In BSV post-Genesis, OP_NOP2 is a no-op at consensus level.
- *
- * We use manual signing to ensure the preimage is constructed correctly
- * for this non-standard script.
+ * The solution script is: <signature> <publicKey> <preimage>
+ * The preimage is the BIP-143 sighash preimage that the script validates on-chain
  */
 export async function unlockBSV(
   wif: string,
@@ -963,36 +962,35 @@ export async function unlockBSV(
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
 
-  // Calculate fee for 1 input, 1 output
-  const fee = calculateTxFee(1, 1, 5)
+  // Calculate fee for 1 input, 1 output (unlock script is larger due to preimage)
+  // Preimage is ~180 bytes, signature ~72 bytes, pubkey 33 bytes = ~285 bytes unlocking script
+  const unlockScriptSize = 300
+  const fee = Math.ceil((148 + unlockScriptSize + 34) * 0.05) // ~25 sats
   const outputSats = lockedUtxo.satoshis - fee
 
   if (outputSats <= 0) {
     throw new Error('Insufficient funds to cover unlock fee')
   }
 
-  // Parse the FULL locking script - this is what we sign against
-  const fullLockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
+  // Parse the locking script
+  const lockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
 
   // SIGHASH_ALL | SIGHASH_FORKID for BSV
   const sigHashType = TransactionSignature.SIGHASH_ALL | TransactionSignature.SIGHASH_FORKID
   const inputSequence = 0xfffffffe // < 0xffffffff to enable nLockTime
 
-  // Build transaction first
+  // Build transaction
   const tx = new Transaction()
   tx.version = 1
   tx.lockTime = lockedUtxo.unlockBlock
 
-  // Create custom unlock template with manual signing
+  // Create custom unlock template that builds the preimage solution
   const customUnlockTemplate = {
     sign: async (tx: Transaction, inputIndex: number): Promise<UnlockingScript> => {
-      console.log('Signing input', inputIndex)
-      console.log('Source TXID:', lockedUtxo.txid)
-      console.log('Source vout:', lockedUtxo.vout)
-      console.log('Source satoshis:', lockedUtxo.satoshis)
-      console.log('Locking script:', lockedUtxo.lockingScript)
+      console.log('Building OP_PUSH_TX unlock for input', inputIndex)
+      console.log('nLockTime:', tx.lockTime)
 
-      // Build the preimage for BIP-143 style signing (BSV uses this)
+      // Build the BIP-143 preimage - this is what the sCrypt script validates
       const preimage = TransactionSignature.format({
         sourceTXID: lockedUtxo.txid,
         sourceOutputIndex: lockedUtxo.vout,
@@ -1002,45 +1000,42 @@ export async function unlockBSV(
         inputIndex: inputIndex,
         outputs: tx.outputs,
         inputSequence: inputSequence,
-        subscript: fullLockingScript,  // The script being signed
+        subscript: lockingScript,
         lockTime: tx.lockTime,
         scope: sigHashType
       })
 
-      const preimageArr = preimage as number[]
-      console.log('Preimage hex:', preimageArr.map(b => b.toString(16).padStart(2, '0')).join(''))
+      const preimageBytes = preimage as number[]
+      console.log('Preimage length:', preimageBytes.length)
 
-      // For BSV transaction signing, we need double SHA256 of the preimage.
-      // But privateKey.sign() does single SHA256 internally.
-      // So we pass the SINGLE SHA256 hash, and the SDK will hash it again.
+      // Sign the preimage hash
+      // The SDK's sign() does single SHA256 internally, so pass single hash
       const singleHash = Hash.sha256(preimage) as number[]
-      console.log('Single SHA256:', singleHash.map(b => b.toString(16).padStart(2, '0')).join(''))
-
-      // Sign the single hash - the SDK will do another SHA256 internally,
-      // resulting in the correct double-SHA256 sighash
       const signature = privateKey.sign(singleHash)
 
-      // Get DER-encoded signature and append sighash type
+      // Get DER-encoded signature with sighash type
       const sigDER = signature.toDER() as number[]
       const sigWithHashType: number[] = [...sigDER, sigHashType]
 
       // Get compressed public key
       const pubKeyBytes = publicKey.encode(true) as number[]
 
-      console.log('Signature (with hashtype):', sigWithHashType.map(b => b.toString(16).padStart(2, '0')).join(''))
-      console.log('Public key:', pubKeyBytes.map(b => b.toString(16).padStart(2, '0')).join(''))
+      console.log('Signature length:', sigWithHashType.length)
+      console.log('PubKey length:', pubKeyBytes.length)
 
-      // Build unlocking script: <sig> <pubkey>
+      // Build unlocking script: <signature> <publicKey> <preimage>
+      // This is the format expected by the sCrypt timelock script
       const unlockScript = new Script()
       unlockScript.writeBin(sigWithHashType)
       unlockScript.writeBin(pubKeyBytes)
+      unlockScript.writeBin(preimageBytes)
 
       const scriptBytes = unlockScript.toBinary() as number[]
-      console.log('Unlocking script:', scriptBytes.map(b => b.toString(16).padStart(2, '0')).join(''))
+      console.log('Unlocking script length:', scriptBytes.length)
 
       return UnlockingScript.fromBinary(scriptBytes)
     },
-    estimateLength: async (): Promise<number> => 107
+    estimateLength: async (): Promise<number> => 300 // sig + pubkey + preimage
   }
 
   // Add input with our custom unlock template
@@ -1100,8 +1095,7 @@ export async function getCurrentBlockHeight(): Promise<number> {
 
 /**
  * Generate the raw unlock transaction hex without broadcasting.
- * This can be used to submit the transaction manually to miners
- * who are willing to accept non-standard scripts.
+ * Uses OP_PUSH_TX technique with preimage in the solution.
  */
 export async function generateUnlockTxHex(
   wif: string,
@@ -1111,30 +1105,31 @@ export async function generateUnlockTxHex(
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
 
-  // Calculate fee for 1 input, 1 output
-  const fee = calculateTxFee(1, 1, 5)
+  // Calculate fee for unlock (larger due to preimage in unlock script)
+  const unlockScriptSize = 300
+  const fee = Math.ceil((148 + unlockScriptSize + 34) * 0.05)
   const outputSats = lockedUtxo.satoshis - fee
 
   if (outputSats <= 0) {
     throw new Error('Insufficient funds to cover unlock fee')
   }
 
-  // Parse the FULL locking script - this is what we sign against
-  const fullLockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
+  // Parse the locking script
+  const lockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
 
   // SIGHASH_ALL | SIGHASH_FORKID for BSV
   const sigHashType = TransactionSignature.SIGHASH_ALL | TransactionSignature.SIGHASH_FORKID
-  const inputSequence = 0xfffffffe // < 0xffffffff to enable nLockTime
+  const inputSequence = 0xfffffffe
 
-  // Build transaction first
+  // Build transaction
   const tx = new Transaction()
   tx.version = 1
   tx.lockTime = lockedUtxo.unlockBlock
 
-  // Create custom unlock template with manual signing
+  // Create unlock template with preimage
   const customUnlockTemplate = {
     sign: async (tx: Transaction, inputIndex: number): Promise<UnlockingScript> => {
-      // Build the preimage for BIP-143 style signing (BSV uses this)
+      // Build the BIP-143 preimage
       const preimage = TransactionSignature.format({
         sourceTXID: lockedUtxo.txid,
         sourceOutputIndex: lockedUtxo.vout,
@@ -1144,36 +1139,33 @@ export async function generateUnlockTxHex(
         inputIndex: inputIndex,
         outputs: tx.outputs,
         inputSequence: inputSequence,
-        subscript: fullLockingScript,
+        subscript: lockingScript,
         lockTime: tx.lockTime,
         scope: sigHashType
       })
 
-      // For BSV transaction signing, we need double SHA256 of the preimage.
-      // But privateKey.sign() does single SHA256 internally.
-      // So we pass the SINGLE SHA256 hash, and the SDK will hash it again.
+      const preimageBytes = preimage as number[]
+
+      // Sign the preimage hash
       const singleHash = Hash.sha256(preimage) as number[]
       const signature = privateKey.sign(singleHash)
 
-      // Get DER-encoded signature and append sighash type
       const sigDER = signature.toDER() as number[]
       const sigWithHashType: number[] = [...sigDER, sigHashType]
-
-      // Get compressed public key
       const pubKeyBytes = publicKey.encode(true) as number[]
 
-      // Build unlocking script: <sig> <pubkey>
+      // Build unlocking script: <signature> <publicKey> <preimage>
       const unlockScript = new Script()
       unlockScript.writeBin(sigWithHashType)
       unlockScript.writeBin(pubKeyBytes)
+      unlockScript.writeBin(preimageBytes)
 
       const scriptBytes = unlockScript.toBinary() as number[]
       return UnlockingScript.fromBinary(scriptBytes)
     },
-    estimateLength: async (): Promise<number> => 107
+    estimateLength: async (): Promise<number> => 300
   }
 
-  // Add input with our custom unlock template
   tx.addInput({
     sourceTXID: lockedUtxo.txid,
     sourceOutputIndex: lockedUtxo.vout,
@@ -1181,13 +1173,11 @@ export async function generateUnlockTxHex(
     unlockingScriptTemplate: customUnlockTemplate
   })
 
-  // Add output back to our address
   tx.addOutput({
     lockingScript: new P2PKH().lock(toAddress),
     satoshis: outputSats
   })
 
-  // Sign the transaction (calls our custom template)
   await tx.sign()
 
   return {

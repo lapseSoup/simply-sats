@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import './App.css'
 import type { WalletKeys, Ordinal } from './services/wallet'
@@ -37,7 +37,7 @@ import {
   getNetworkStatus
 } from './services/brc100'
 import { setupDeepLinkListener } from './services/deeplink'
-import { initDatabase, exportDatabase, importDatabase, getAllTransactions, addTransaction, upsertTransaction, type DatabaseBackup } from './services/database'
+import { initDatabase, exportDatabase, importDatabase, clearDatabase, getAllTransactions, addTransaction, upsertTransaction, type DatabaseBackup } from './services/database'
 import {
   syncWallet,
   needsInitialSync,
@@ -61,6 +61,12 @@ import {
 } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { save, open } from '@tauri-apps/plugin-dialog'
+import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs'
+import { wordlists } from 'bip39'
+
+// BIP39 English wordlist for autocomplete
+const BIP39_WORDLIST = wordlists.english
 
 // Custom SVG Logo - Modern "S" with satoshi dots representing the smallest unit of Bitcoin
 const SimplySatsLogo = ({ size = 32 }: { size?: number }) => (
@@ -93,7 +99,7 @@ const SimplySatsLogo = ({ size = 32 }: { size?: number }) => (
 
 type Tab = 'activity' | 'ordinals' | 'locks'
 type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | 'brc100' | 'lock' | null
-type RestoreMode = 'mnemonic' | 'json'
+type RestoreMode = 'mnemonic' | 'json' | 'fullbackup'
 
 interface TxHistoryItem {
   tx_hash: string
@@ -106,6 +112,119 @@ interface NetworkInfo {
   blockHeight: number
   overlayHealthy: boolean
   overlayNodeCount: number
+}
+
+// Mnemonic Input with Autocomplete
+interface MnemonicInputProps {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+}
+
+function MnemonicInput({ value, onChange, placeholder }: MnemonicInputProps) {
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const getCurrentWord = (): { word: string; startIndex: number; endIndex: number } => {
+    const textarea = textareaRef.current
+    if (!textarea) return { word: '', startIndex: 0, endIndex: 0 }
+
+    const cursorPos = textarea.selectionStart
+    const text = value
+
+    // Find word boundaries
+    let startIndex = cursorPos
+    while (startIndex > 0 && text[startIndex - 1] !== ' ') {
+      startIndex--
+    }
+
+    let endIndex = cursorPos
+    while (endIndex < text.length && text[endIndex] !== ' ') {
+      endIndex++
+    }
+
+    return {
+      word: text.slice(startIndex, endIndex).toLowerCase(),
+      startIndex,
+      endIndex
+    }
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value
+    onChange(newValue)
+
+    // Get current word being typed
+    setTimeout(() => {
+      const { word } = getCurrentWord()
+
+      if (word.length >= 1) {
+        const matches = BIP39_WORDLIST.filter(w => w.startsWith(word)).slice(0, 6)
+        setSuggestions(matches)
+        setShowSuggestions(matches.length > 0)
+        setSelectedIndex(0)
+      } else {
+        setSuggestions([])
+        setShowSuggestions(false)
+      }
+    }, 0)
+  }
+
+  const selectSuggestion = (suggestion: string) => {
+    const { startIndex, endIndex } = getCurrentWord()
+    const newValue = value.slice(0, startIndex) + suggestion + ' ' + value.slice(endIndex).trimStart()
+    onChange(newValue)
+    setSuggestions([])
+    setShowSuggestions(false)
+    textareaRef.current?.focus()
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSuggestions || suggestions.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIndex(prev => (prev + 1) % suggestions.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIndex(prev => (prev - 1 + suggestions.length) % suggestions.length)
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      selectSuggestion(suggestions[selectedIndex])
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false)
+    }
+  }
+
+  return (
+    <div className="mnemonic-input-container">
+      <textarea
+        ref={textareaRef}
+        className="form-input"
+        placeholder={placeholder}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+      />
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="mnemonic-suggestions">
+          {suggestions.map((suggestion, index) => (
+            <div
+              key={suggestion}
+              className={`mnemonic-suggestion ${index === selectedIndex ? 'selected' : ''}`}
+              onClick={() => selectSuggestion(suggestion)}
+              onMouseEnter={() => setSelectedIndex(index)}
+            >
+              {suggestion}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function App() {
@@ -679,12 +798,29 @@ function App() {
   }, [])
 
   // Wallet actions
-  const handleCreateWallet = () => {
+  const handleCreateWallet = async () => {
+    // Clear old wallet data from database
+    await clearDatabase()
+
+    // Clear localStorage data
+    localStorage.removeItem('simply_sats_locks')
+    localStorage.removeItem('simply_sats_known_senders')
+    localStorage.removeItem('simply_sats_connected_apps')
+    localStorage.removeItem('simply_sats_display_sats')
+
     const keys = createWallet()
     setNewMnemonic(keys.mnemonic)
     setModal('mnemonic')
     saveWallet(keys, '')
     setWallet(keys)
+
+    // Reset UI state
+    setBalance(0)
+    setOrdBalance(0)
+    setTxHistory([])
+    setOrdinals([])
+    setLocks([])
+    setConnectedApps([])
   }
 
   const handleMnemonicConfirm = () => {
@@ -694,11 +830,27 @@ function App() {
 
   const handleRestoreFromMnemonic = async () => {
     try {
+      // Clear old wallet data from database
+      await clearDatabase()
+
+      // Clear localStorage data
+      localStorage.removeItem('simply_sats_locks')
+      localStorage.removeItem('simply_sats_known_senders')
+      localStorage.removeItem('simply_sats_connected_apps')
+
       const keys = restoreWallet(restoreMnemonic.trim())
       saveWallet(keys, '')
       setWallet(keys)
       setRestoreMnemonic('')
       setModal(null)
+
+      // Reset UI state
+      setBalance(0)
+      setOrdBalance(0)
+      setTxHistory([])
+      setOrdinals([])
+      setLocks([])
+      setConnectedApps([])
 
       setSyncing(true)
       setTimeout(async () => {
@@ -718,11 +870,27 @@ function App() {
 
   const handleRestoreFromJSON = async () => {
     try {
+      // Clear old wallet data from database
+      await clearDatabase()
+
+      // Clear localStorage data
+      localStorage.removeItem('simply_sats_locks')
+      localStorage.removeItem('simply_sats_known_senders')
+      localStorage.removeItem('simply_sats_connected_apps')
+
       const keys = importFromJSON(restoreJSON.trim())
       saveWallet(keys, '')
       setWallet(keys)
       setRestoreJSON('')
       setModal(null)
+
+      // Reset UI state
+      setBalance(0)
+      setOrdBalance(0)
+      setTxHistory([])
+      setOrdinals([])
+      setLocks([])
+      setConnectedApps([])
 
       setSyncing(true)
       setTimeout(async () => {
@@ -1109,18 +1277,26 @@ function App() {
                   >
                     JSON Backup
                   </button>
+                  <button
+                    className={`pill-tab ${restoreMode === 'fullbackup' ? 'active' : ''}`}
+                    onClick={() => setRestoreMode('fullbackup')}
+                  >
+                    Full Backup
+                  </button>
                 </div>
 
                 {restoreMode === 'mnemonic' && (
                   <>
                     <div className="form-group">
                       <label className="form-label">12-Word Recovery Phrase</label>
-                      <textarea
-                        className="form-input"
-                        placeholder="word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12"
+                      <MnemonicInput
                         value={restoreMnemonic}
-                        onChange={e => setRestoreMnemonic(e.target.value)}
+                        onChange={setRestoreMnemonic}
+                        placeholder="Start typing your seed words..."
                       />
+                      <div className="form-hint">
+                        Type each word and use arrow keys + Enter to select from suggestions
+                      </div>
                     </div>
                     <button
                       className="btn btn-primary"
@@ -1153,6 +1329,69 @@ function App() {
                       disabled={!restoreJSON.trim()}
                     >
                       Import Wallet
+                    </button>
+                  </>
+                )}
+
+                {restoreMode === 'fullbackup' && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Full Backup File</label>
+                      <div className="form-hint" style={{ marginBottom: 12 }}>
+                        Restore from a Simply Sats full backup file (.json) including wallet keys, UTXOs, and transaction history.
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={async () => {
+                        try {
+                          const filePath = await open({
+                            filters: [{ name: 'JSON', extensions: ['json'] }],
+                            multiple: false
+                          })
+
+                          if (!filePath || Array.isArray(filePath)) return
+
+                          const json = await readTextFile(filePath)
+                          const backup = JSON.parse(json)
+
+                          if (backup.format !== 'simply-sats-full' || !backup.wallet) {
+                            alert('Invalid backup format. This should be a Simply Sats full backup file.')
+                            return
+                          }
+
+                          // Restore wallet from backup
+                          if (backup.wallet.mnemonic) {
+                            // Restore from mnemonic in backup
+                            const keys = await restoreWallet(backup.wallet.mnemonic)
+                            setWallet({ ...keys, mnemonic: backup.wallet.mnemonic })
+                            setWalletKeys(keys)
+                          } else if (backup.wallet.keys) {
+                            // Fallback to WIF keys
+                            const keys = await importFromJSON(JSON.stringify(backup.wallet.keys))
+                            setWallet(keys)
+                            setWalletKeys(keys)
+                          } else {
+                            alert('Backup does not contain wallet keys.')
+                            return
+                          }
+
+                          // Import database if present
+                          if (backup.database) {
+                            await importDatabase(backup.database as DatabaseBackup)
+                          }
+
+                          setModal(null)
+                          alert(`Wallet restored from backup!\n\n${backup.database?.utxos?.length || 0} UTXOs\n${backup.database?.transactions?.length || 0} transactions`)
+
+                          // Trigger sync to update balances
+                          performSync(false)
+                        } catch (err) {
+                          alert('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
+                        }
+                      }}
+                    >
+                      Select Backup File
                     </button>
                   </>
                 )}
@@ -1915,8 +2154,18 @@ function App() {
                           },
                           database: dbBackup
                         }
-                        navigator.clipboard.writeText(JSON.stringify(fullBackup, null, 2))
-                        alert(`Full backup copied!\n\n${dbBackup.utxos.length} UTXOs\n${dbBackup.transactions.length} transactions`)
+                        const backupJson = JSON.stringify(fullBackup, null, 2)
+
+                        // Use Tauri save dialog to write to file
+                        const filePath = await save({
+                          defaultPath: `simply-sats-backup-${new Date().toISOString().split('T')[0]}.json`,
+                          filters: [{ name: 'JSON', extensions: ['json'] }]
+                        })
+
+                        if (filePath) {
+                          await writeTextFile(filePath, backupJson)
+                          alert(`Full backup saved!\n\n${dbBackup.utxos.length} UTXOs\n${dbBackup.transactions.length} transactions\n\nSaved to: ${filePath}`)
+                        }
                       } catch (err) {
                         alert('Backup failed: ' + (err instanceof Error ? err.message : 'Unknown error'))
                       }
@@ -1927,10 +2176,18 @@ function App() {
                   <button
                     className="btn btn-secondary"
                     onClick={async () => {
-                      const json = prompt('Paste your full backup JSON:')
-                      if (!json) return
                       try {
+                        // Use Tauri open dialog to select backup file
+                        const filePath = await open({
+                          filters: [{ name: 'JSON', extensions: ['json'] }],
+                          multiple: false
+                        })
+
+                        if (!filePath || Array.isArray(filePath)) return
+
+                        const json = await readTextFile(filePath)
                         const backup = JSON.parse(json)
+
                         if (backup.format !== 'simply-sats-full' || !backup.database) {
                           alert('Invalid backup format. Use "Export Full Backup" to create a valid backup.')
                           return
@@ -1942,7 +2199,7 @@ function App() {
                         alert('Database imported successfully! Syncing...')
                         performSync(false)
                       } catch (err) {
-                        alert('Import failed: ' + (err instanceof Error ? err.message : 'Invalid JSON'))
+                        alert('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
                       }
                     }}
                   >

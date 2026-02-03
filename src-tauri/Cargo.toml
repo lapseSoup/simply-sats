@@ -22,6 +22,8 @@ tokio = { version = "1", features = ["full"] }
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
 tauri-plugin-sql = { version = "2.3.1", features = ["sqlite"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 
 [profile.release]
 panic = "abort"
