@@ -14,6 +14,8 @@ import {
   getLastSyncedHeight,
   updateSyncState,
   upsertTransaction,
+  getDerivedAddresses as getDerivedAddressesFromDB,
+  updateDerivedAddressSyncTime,
   type UTXO as DBUtxo
 } from './database'
 
@@ -25,7 +27,8 @@ export const BASKETS = {
   DEFAULT: 'default',      // Main spending wallet
   ORDINALS: 'ordinals',    // Ordinal inscriptions
   IDENTITY: 'identity',    // BRC-100 identity key
-  LOCKS: 'locks'           // Time-locked outputs
+  LOCKS: 'locks',          // Time-locked outputs
+  DERIVED: 'derived'       // Received via derived addresses (BRC-42/43)
 } as const
 
 // Address info for syncing
@@ -181,7 +184,7 @@ export async function syncAllAddresses(addresses: AddressInfo[]): Promise<SyncRe
 }
 
 /**
- * Full wallet sync - syncs all three address types
+ * Full wallet sync - syncs all three address types plus derived addresses
  */
 export async function syncWallet(
   walletAddress: string,
@@ -194,7 +197,26 @@ export async function syncWallet(
     { address: identityAddress, basket: BASKETS.IDENTITY }
   ]
 
+  // Also sync all tracked derived addresses
+  const derivedAddresses = await getDerivedAddressesFromDB()
+  for (const derived of derivedAddresses) {
+    addresses.push({
+      address: derived.address,
+      basket: BASKETS.DERIVED,
+      wif: derived.privateKeyWif
+    })
+  }
+
   const results = await syncAllAddresses(addresses)
+
+  // Update sync timestamps for derived addresses
+  for (const derived of derivedAddresses) {
+    const result = results.find(r => r.address === derived.address)
+    if (result) {
+      await updateDerivedAddressSyncTime(derived.address)
+    }
+  }
+
   const total = results.reduce((sum, r) => sum + r.totalBalance, 0)
 
   return { total, results }

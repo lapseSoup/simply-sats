@@ -43,7 +43,7 @@ import {
   getNetworkStatus
 } from './services/brc100'
 import { setupDeepLinkListener } from './services/deeplink'
-import { initDatabase, exportDatabase, importDatabase, clearDatabase, getAllTransactions, addTransaction, upsertTransaction, type DatabaseBackup } from './services/database'
+import { initDatabase, exportDatabase, importDatabase, clearDatabase, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, type DatabaseBackup } from './services/database'
 import {
   syncWallet,
   needsInitialSync,
@@ -56,7 +56,8 @@ import {
   getKnownSenders,
   getDerivedAddresses,
   debugFindInvoiceNumber,
-  deriveSenderAddress
+  deriveSenderAddress,
+  deriveChildPrivateKey
 } from './services/keyDerivation'
 import {
   loadNotifications,
@@ -360,6 +361,10 @@ function App() {
       try {
         await initDatabase()
         console.log('Database initialized successfully')
+
+        // Ensure derived_addresses table exists (migration)
+        await ensureDerivedAddressesTable()
+        console.log('Derived addresses table ready')
 
         // Load transactions from database immediately (with amounts!)
         try {
@@ -1240,6 +1245,24 @@ function App() {
       // Using 'default' as keyID for deterministic derivation (both sides derive same address)
       const invoiceNumber = '2-3241645161d8-simply-sats default'
       const address = deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
+
+      // Also derive the private key for spending and save to database
+      const derivedPrivKey = deriveChildPrivateKey(receiverPriv, senderPub, invoiceNumber)
+
+      // Save derived address to database for syncing
+      addDerivedAddress({
+        address,
+        senderPubkey: senderPubKey,
+        invoiceNumber,
+        privateKeyWif: derivedPrivKey.toWif(),
+        label: `From ${senderPubKey.substring(0, 8)}...`,
+        createdAt: Date.now()
+      }).then(() => {
+        console.log('Saved derived address to database:', address)
+      }).catch((err) => {
+        console.error('Failed to save derived address:', err)
+      })
+
       // Add sender to known senders for future UTXO scanning
       addKnownSender(senderPubKey)
       return address

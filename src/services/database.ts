@@ -687,6 +687,160 @@ export async function clearDatabase(): Promise<void> {
   await database.execute('DELETE FROM transactions')
   await database.execute('DELETE FROM baskets')
   await database.execute('DELETE FROM sync_state')
+  // Also clear derived addresses
+  try {
+    await database.execute('DELETE FROM derived_addresses')
+  } catch (e) {
+    // Table may not exist yet
+  }
 
   console.log('Database cleared')
+}
+
+// ============================================
+// Derived Addresses (BRC-42/43)
+// ============================================
+
+// Derived address type
+export interface DerivedAddress {
+  id?: number
+  address: string
+  senderPubkey: string
+  invoiceNumber: string
+  privateKeyWif: string
+  label?: string
+  createdAt: number
+  lastSyncedAt?: number
+}
+
+/**
+ * Run derived_addresses migration if table doesn't exist
+ */
+export async function ensureDerivedAddressesTable(): Promise<void> {
+  const database = getDatabase()
+
+  try {
+    await database.execute(`
+      CREATE TABLE IF NOT EXISTS derived_addresses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        address TEXT NOT NULL UNIQUE,
+        sender_pubkey TEXT NOT NULL,
+        invoice_number TEXT NOT NULL,
+        private_key_wif TEXT NOT NULL,
+        label TEXT,
+        created_at INTEGER NOT NULL,
+        last_synced_at INTEGER,
+        UNIQUE(sender_pubkey, invoice_number)
+      )
+    `)
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_derived_addresses_address ON derived_addresses(address)')
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_derived_addresses_sender ON derived_addresses(sender_pubkey)')
+
+    // Also ensure 'derived' basket exists
+    await database.execute(
+      "INSERT OR IGNORE INTO baskets (name, description, created_at) VALUES ('derived', 'Received via derived addresses (BRC-42/43)', $1)",
+      [Date.now()]
+    )
+  } catch (e) {
+    console.error('Failed to ensure derived_addresses table:', e)
+  }
+}
+
+/**
+ * Add a derived address to track
+ */
+export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>): Promise<number> {
+  const database = getDatabase()
+
+  const result = await database.execute(
+    `INSERT OR REPLACE INTO derived_addresses (address, sender_pubkey, invoice_number, private_key_wif, label, created_at, last_synced_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      derivedAddr.address,
+      derivedAddr.senderPubkey,
+      derivedAddr.invoiceNumber,
+      derivedAddr.privateKeyWif,
+      derivedAddr.label || null,
+      derivedAddr.createdAt,
+      derivedAddr.lastSyncedAt || null
+    ]
+  )
+
+  return result.lastInsertId as number
+}
+
+/**
+ * Get all tracked derived addresses
+ */
+export async function getDerivedAddresses(): Promise<DerivedAddress[]> {
+  const database = getDatabase()
+
+  try {
+    const rows = await database.select<any[]>('SELECT * FROM derived_addresses ORDER BY created_at DESC')
+
+    return rows.map(row => ({
+      id: row.id,
+      address: row.address,
+      senderPubkey: row.sender_pubkey,
+      invoiceNumber: row.invoice_number,
+      privateKeyWif: row.private_key_wif,
+      label: row.label,
+      createdAt: row.created_at,
+      lastSyncedAt: row.last_synced_at
+    }))
+  } catch (e) {
+    // Table may not exist yet
+    return []
+  }
+}
+
+/**
+ * Get a derived address by its address string
+ */
+export async function getDerivedAddressByAddress(address: string): Promise<DerivedAddress | null> {
+  const database = getDatabase()
+
+  try {
+    const rows = await database.select<any[]>(
+      'SELECT * FROM derived_addresses WHERE address = $1',
+      [address]
+    )
+
+    if (rows.length === 0) return null
+
+    const row = rows[0]
+    return {
+      id: row.id,
+      address: row.address,
+      senderPubkey: row.sender_pubkey,
+      invoiceNumber: row.invoice_number,
+      privateKeyWif: row.private_key_wif,
+      label: row.label,
+      createdAt: row.created_at,
+      lastSyncedAt: row.last_synced_at
+    }
+  } catch (e) {
+    return null
+  }
+}
+
+/**
+ * Update last synced time for a derived address
+ */
+export async function updateDerivedAddressSyncTime(address: string): Promise<void> {
+  const database = getDatabase()
+
+  await database.execute(
+    'UPDATE derived_addresses SET last_synced_at = $1 WHERE address = $2',
+    [Date.now(), address]
+  )
+}
+
+/**
+ * Delete a derived address
+ */
+export async function deleteDerivedAddress(address: string): Promise<void> {
+  const database = getDatabase()
+
+  await database.execute('DELETE FROM derived_addresses WHERE address = $1', [address])
 }
