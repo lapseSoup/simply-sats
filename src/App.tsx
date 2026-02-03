@@ -44,7 +44,7 @@ import {
   getNetworkStatus
 } from './services/brc100'
 import { setupDeepLinkListener } from './services/deeplink'
-import { initDatabase, exportDatabase, importDatabase, clearDatabase, resetUTXOs, repairUTXOs, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, ensureContactsTable, addContact, getContacts, getNextInvoiceNumber, type DatabaseBackup, type Contact } from './services/database'
+import { initDatabase, exportDatabase, importDatabase, clearDatabase, resetUTXOs, repairUTXOs, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, ensureContactsTable, addContact, getContacts, getNextInvoiceNumber, getSpendableUTXOs, type DatabaseBackup, type Contact } from './services/database'
 import {
   syncWallet,
   needsInitialSync,
@@ -674,72 +674,150 @@ function App() {
       const existingTxMap = new Map(dbTxs.map(tx => [tx.txid, tx]))
       let newTxsFound = false
 
+      // Helper function to process transaction history from any address
+      const processApiTx = async (apiTx: { tx_hash: string; height: number }) => {
+        const existingTx = existingTxMap.get(apiTx.tx_hash)
+
+        if (!existingTx) {
+          // New transaction found - add to database
+          console.log('Found new transaction:', apiTx.tx_hash.slice(0, 8))
+          newTxsFound = true
+          try {
+            // Fetch amount for this new transaction (check all our addresses)
+            const details = await getTransactionDetails(apiTx.tx_hash)
+            const amount = details ? await calculateTxAmount(details, allOurAddresses) : undefined
+
+            await addTransaction({
+              txid: apiTx.tx_hash,
+              createdAt: Date.now(),
+              blockHeight: apiTx.height || undefined,
+              status: apiTx.height > 0 ? 'confirmed' : 'pending',
+              amount
+            })
+
+            // Add to our display list
+            dbTxHistory.unshift({
+              tx_hash: apiTx.tx_hash,
+              height: apiTx.height || 0,
+              amount
+            })
+          } catch (e) {
+            console.error('Failed to save new transaction:', e)
+          }
+        } else {
+          // Existing transaction - update if missing block height or amount
+          // Check for null, undefined, or NaN amounts
+          const amountMissing = existingTx.amount === undefined || existingTx.amount === null
+          const needsUpdate = (!existingTx.blockHeight && apiTx.height > 0) || amountMissing
+          if (needsUpdate) {
+            try {
+              let amount = existingTx.amount
+              if (amountMissing) {
+                const details = await getTransactionDetails(apiTx.tx_hash)
+                amount = details ? await calculateTxAmount(details, allOurAddresses) : undefined
+                console.log(`Calculated amount for ${apiTx.tx_hash.slice(0, 8)}: ${amount}`)
+              }
+
+              // Update in database using upsert to preserve existing data
+              await upsertTransaction({
+                txid: apiTx.tx_hash,
+                createdAt: existingTx.createdAt,
+                blockHeight: apiTx.height || existingTx.blockHeight,
+                status: apiTx.height > 0 ? 'confirmed' : existingTx.status,
+                amount
+              })
+
+              // Update in display list
+              const displayTx = dbTxHistory.find(t => t.tx_hash === apiTx.tx_hash)
+              if (displayTx) {
+                displayTx.height = apiTx.height || displayTx.height
+                displayTx.amount = amount ?? displayTx.amount
+              }
+              console.log('Updated transaction with missing data:', apiTx.tx_hash.slice(0, 8))
+            } catch (e) {
+              console.error('Failed to update transaction:', e)
+            }
+          }
+        }
+      }
+
       try {
+        // Check wallet address history
         const walletHistory = await getTransactionHistory(wallet.walletAddress)
         for (const apiTx of walletHistory) {
-          const existingTx = existingTxMap.get(apiTx.tx_hash)
+          await processApiTx(apiTx)
+        }
 
-          if (!existingTx) {
-            // New transaction found - add to database
-            console.log('Found new transaction:', apiTx.tx_hash.slice(0, 8))
-            newTxsFound = true
-            try {
-              // Fetch amount for this new transaction (check all our addresses)
-              const details = await getTransactionDetails(apiTx.tx_hash)
-              const amount = details ? await calculateTxAmount(details, allOurAddresses) : undefined
-
-              await addTransaction({
-                txid: apiTx.tx_hash,
-                createdAt: Date.now(),
-                blockHeight: apiTx.height || undefined,
-                status: apiTx.height > 0 ? 'confirmed' : 'pending',
-                amount
-              })
-
-              // Add to our display list
-              dbTxHistory.unshift({
-                tx_hash: apiTx.tx_hash,
-                height: apiTx.height || 0,
-                amount
-              })
-            } catch (e) {
-              console.error('Failed to save new transaction:', e)
+        // Also check derived address history (for received payments)
+        for (const derivedAddr of derivedAddrs) {
+          try {
+            await new Promise(resolve => setTimeout(resolve, 500)) // Rate limit
+            const derivedHistory = await getTransactionHistory(derivedAddr.address)
+            for (const apiTx of derivedHistory) {
+              await processApiTx(apiTx)
             }
-          } else {
-            // Existing transaction - update if missing block height or amount
-            const needsUpdate = (!existingTx.blockHeight && apiTx.height > 0) || existingTx.amount === undefined
-            if (needsUpdate) {
-              try {
-                let amount = existingTx.amount
-                if (amount === undefined) {
-                  const details = await getTransactionDetails(apiTx.tx_hash)
-                  amount = details ? await calculateTxAmount(details, allOurAddresses) : undefined
-                }
-
-                // Update in database using upsert to preserve existing data
-                await upsertTransaction({
-                  txid: apiTx.tx_hash,
-                  createdAt: existingTx.createdAt,
-                  blockHeight: apiTx.height || existingTx.blockHeight,
-                  status: apiTx.height > 0 ? 'confirmed' : existingTx.status,
-                  amount
-                })
-
-                // Update in display list
-                const displayTx = dbTxHistory.find(t => t.tx_hash === apiTx.tx_hash)
-                if (displayTx) {
-                  displayTx.height = apiTx.height || displayTx.height
-                  displayTx.amount = amount ?? displayTx.amount
-                }
-                console.log('Updated transaction with missing data:', apiTx.tx_hash.slice(0, 8))
-              } catch (e) {
-                console.error('Failed to update transaction:', e)
-              }
-            }
+          } catch (e) {
+            // Continue if rate limited on one derived address
           }
         }
       } catch (e) {
         console.log('Could not check API for transactions (rate limited)')
+      }
+
+      // 5b. Fix any transactions in database that have missing amounts
+      // Uses local UTXO database first (no API needed), then falls back to API
+      const spendableUtxos = await getSpendableUTXOs()
+
+      for (const tx of dbTxs) {
+        // Check if we have UTXOs from this transaction in our database
+        const utxosFromTx = spendableUtxos.filter((u: any) => u.txid === tx.txid)
+
+        // Fix missing amounts or amount=0 when we have UTXOs proving funds received
+        const amountMissing = tx.amount === undefined || tx.amount === null || (typeof tx.amount !== 'number')
+        const amountZeroButHasUtxos = tx.amount === 0 && utxosFromTx.length > 0
+
+        if (amountMissing || amountZeroButHasUtxos) {
+          if (utxosFromTx.length > 0) {
+            // Calculate from local UTXOs - no API call needed
+            const amount = utxosFromTx.reduce((sum: number, u: any) => sum + u.satoshis, 0)
+            await upsertTransaction({
+              txid: tx.txid,
+              createdAt: tx.createdAt,
+              blockHeight: tx.blockHeight,
+              status: tx.status,
+              amount
+            })
+            const displayTx = dbTxHistory.find(t => t.tx_hash === tx.txid)
+            if (displayTx) {
+              displayTx.amount = amount
+            }
+          } else {
+            // No local UTXOs - try API as fallback
+            try {
+              const details = await getTransactionDetails(tx.txid)
+              if (details) {
+                const amount = await calculateTxAmount(details, allOurAddresses)
+                if (amount !== 0) {
+                  await upsertTransaction({
+                    txid: tx.txid,
+                    createdAt: tx.createdAt,
+                    blockHeight: tx.blockHeight,
+                    status: tx.status,
+                    amount
+                  })
+                  const displayTx = dbTxHistory.find(t => t.tx_hash === tx.txid)
+                  if (displayTx) {
+                    displayTx.amount = amount
+                  }
+                }
+              }
+            } catch {
+              // Rate limited - will retry on next sync
+            }
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 300))
+          }
+        }
       }
 
       // 6. Update display

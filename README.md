@@ -70,10 +70,6 @@ npm run tauri build
 - Recovery phrase is the only way to restore your wallet
 - Derived address private keys are computed from your seed phrase + sender's public key
 
-## Known Issues
-
-- **Combined balance bug**: UTXOs received at derived addresses (BRC-42/43) may not show in the combined balance. Use Settings > Advanced > Reset & Resync to fix.
-
 ## License
 
 MIT

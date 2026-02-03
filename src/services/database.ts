@@ -126,12 +126,17 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
     const ex = existing[0]
     const spendableValue = utxo.spendable ? 1 : 0
 
-    // Case 1: Existing is 'derived' - keep derived, but ensure spendable is correct
+    // CRITICAL: If we're re-syncing a UTXO that exists on-chain, it's NOT spent!
+    // Always clear spent_at and ensure spendable is correct when adding a UTXO
+    // that was found on the blockchain
+
+    // Case 1: Existing is 'derived' - keep derived, but ensure it's spendable and not marked spent
     if (ex.basket === 'derived') {
-      // Always update address if missing, and ensure spendable is set correctly
-      if (!ex.address || ex.spendable !== spendableValue) {
+      // Always ensure spendable=1 and spent_at=NULL for UTXOs found on chain
+      if (!ex.address || ex.spendable !== spendableValue || ex.spent_at !== null) {
+        console.log(`[DB] Updating derived UTXO ${utxo.txid.slice(0,8)}:${utxo.vout} - clearing spent_at, spendable=${spendableValue}`)
         await database.execute(
-          'UPDATE utxos SET address = COALESCE($1, address), spendable = $2 WHERE id = $3',
+          'UPDATE utxos SET address = COALESCE($1, address), spendable = $2, spent_at = NULL WHERE id = $3',
           [utxo.address, spendableValue, ex.id]
         )
       }
@@ -139,7 +144,6 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
     }
 
     // Case 2: New is 'derived', existing is not - UPGRADE to derived
-    // This is the critical fix: we MUST update spendable along with basket
     if (utxo.basket === 'derived') {
       console.log(`[DB] Upgrading ${utxo.txid.slice(0,8)}:${utxo.vout} to derived, spendable=${spendableValue}`)
       await database.execute(
@@ -149,10 +153,10 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
       return ex.id
     }
 
-    // Case 3: Same or compatible basket - update address if needed, ensure spendable
-    if (!ex.address || ex.spendable !== spendableValue) {
+    // Case 3: Same or compatible basket - update address if needed, ensure spendable and not spent
+    if (!ex.address || ex.spendable !== spendableValue || ex.spent_at !== null) {
       await database.execute(
-        'UPDATE utxos SET address = COALESCE($1, address), spendable = $2 WHERE id = $3',
+        'UPDATE utxos SET address = COALESCE($1, address), spendable = $2, spent_at = NULL WHERE id = $3',
         [utxo.address, spendableValue, ex.id]
       )
     }
@@ -233,14 +237,9 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true): Pr
 export async function getSpendableUTXOs(): Promise<UTXO[]> {
   const database = getDatabase()
 
-  // First show ALL UTXOs for debugging
-  const all = await database.select<any[]>('SELECT id, txid, vout, satoshis, basket, spendable, spent_at FROM utxos')
-  console.log(`[DB] ALL UTXOs (${all.length}):`, all.map(r => `${r.id}:${r.basket}:sp=${r.spendable}`).join(', '))
-
   const rows = await database.select<any[]>(
     'SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL'
   )
-  console.log(`[DB] Spendable UTXOs (${rows.length}):`, rows.map(r => `${r.id}:${r.basket}`).join(', '))
 
   return rows.map(row => ({
     id: row.id,
