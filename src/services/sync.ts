@@ -95,8 +95,11 @@ function getLockingScript(address: string): string {
 export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult> {
   const { address, basket } = addressInfo
 
+  console.log(`[SYNC] Syncing address: ${address} (basket: ${basket})`)
+
   // Fetch current UTXOs from WhatsOnChain
   const wocUtxos = await fetchUtxosFromWoc(address)
+  console.log(`[SYNC] Found ${wocUtxos.length} UTXOs from WhatsOnChain for ${address}`)
 
   // Get existing spendable UTXOs from database
   const existingUtxos = await getSpendableUTXOs()
@@ -199,7 +202,10 @@ export async function syncWallet(
 
   // Also sync all tracked derived addresses
   const derivedAddresses = await getDerivedAddressesFromDB()
+  console.log('[SYNC] Found', derivedAddresses.length, 'derived addresses in database')
+
   for (const derived of derivedAddresses) {
+    console.log('[SYNC] Adding derived address to sync:', derived.address)
     addresses.push({
       address: derived.address,
       basket: BASKETS.DERIVED,
@@ -207,6 +213,7 @@ export async function syncWallet(
     })
   }
 
+  console.log('[SYNC] Total addresses to sync:', addresses.length)
   const results = await syncAllAddresses(addresses)
 
   // Update sync timestamps for derived addresses
@@ -240,9 +247,9 @@ export async function getBalanceFromDatabase(basket?: string): Promise<number> {
 
 /**
  * Get UTXOs for spending from database
- * Returns UTXOs from the default basket, sorted by value (smallest first for coin selection)
+ * Returns UTXOs from the specified basket, sorted by value (smallest first for coin selection)
  */
-export async function getSpendableUtxosFromDatabase(basket = BASKETS.DEFAULT): Promise<DBUtxo[]> {
+export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEFAULT): Promise<DBUtxo[]> {
   const allUtxos = await getSpendableUTXOs()
   return allUtxos
     .filter(u => u.basket === basket)

@@ -521,6 +521,7 @@ export interface DatabaseBackup {
   locks: Lock[]
   baskets: Basket[]
   syncState: { address: string; height: number; syncedAt: number }[]
+  derivedAddresses?: DerivedAddress[]  // Added in version 2
 }
 
 /**
@@ -593,14 +594,18 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
     syncedAt: row.last_synced_at
   }))
 
+  // Get derived addresses
+  const derivedAddresses = await getDerivedAddresses()
+
   return {
-    version: 1,
+    version: 2,  // Updated to include derived addresses
     exportedAt: Date.now(),
     utxos,
     transactions,
     locks,
     baskets,
-    syncState
+    syncState,
+    derivedAddresses
   }
 }
 
@@ -669,6 +674,19 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
       'INSERT INTO sync_state (address, last_synced_height, last_synced_at) VALUES ($1, $2, $3)',
       [sync.address, sync.height, sync.syncedAt]
     )
+  }
+
+  // Import derived addresses (if present - version 2+)
+  if (backup.derivedAddresses && backup.derivedAddresses.length > 0) {
+    await ensureDerivedAddressesTable()
+    for (const derived of backup.derivedAddresses) {
+      await database.execute(
+        `INSERT OR REPLACE INTO derived_addresses (address, sender_pubkey, invoice_number, private_key_wif, label, created_at, last_synced_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [derived.address, derived.senderPubkey, derived.invoiceNumber, derived.privateKeyWif, derived.label || null, derived.createdAt, derived.lastSyncedAt || null]
+      )
+    }
+    console.log('Imported', backup.derivedAddresses.length, 'derived addresses')
   }
 
   console.log('Database import complete')
@@ -765,7 +783,6 @@ export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>)
       derivedAddr.lastSyncedAt || null
     ]
   )
-
   return result.lastInsertId as number
 }
 
@@ -843,4 +860,23 @@ export async function deleteDerivedAddress(address: string): Promise<void> {
   const database = getDatabase()
 
   await database.execute('DELETE FROM derived_addresses WHERE address = $1', [address])
+}
+
+/**
+ * Export just the sender public keys for easy recovery
+ * User only needs: 12 words + this list of sender pubkeys
+ */
+export async function exportSenderPubkeys(): Promise<string[]> {
+  const derivedAddresses = await getDerivedAddresses()
+  // Return unique sender pubkeys
+  const pubkeys = new Set(derivedAddresses.map(d => d.senderPubkey))
+  return Array.from(pubkeys)
+}
+
+/**
+ * Get count of derived addresses for UI display
+ */
+export async function getDerivedAddressCount(): Promise<number> {
+  const derivedAddresses = await getDerivedAddresses()
+  return derivedAddresses.length
 }

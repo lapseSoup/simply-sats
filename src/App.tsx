@@ -12,7 +12,8 @@ import {
   getTransactionDetails,
   calculateTxAmount,
   getOrdinals,
-  sendBSV,
+  sendBSVMultiKey,
+  getAllSpendableUTXOs,
   saveWallet,
   loadWallet,
   hasWallet,
@@ -43,7 +44,7 @@ import {
   getNetworkStatus
 } from './services/brc100'
 import { setupDeepLinkListener } from './services/deeplink'
-import { initDatabase, exportDatabase, importDatabase, clearDatabase, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, type DatabaseBackup } from './services/database'
+import { initDatabase, exportDatabase, importDatabase, clearDatabase, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, type DatabaseBackup } from './services/database'
 import {
   syncWallet,
   needsInitialSync,
@@ -313,6 +314,7 @@ function App() {
     default: 0,
     ordinals: 0,
     identity: 0,
+    derived: 0,
     locks: 0
   })
 
@@ -488,18 +490,24 @@ function App() {
 
       // Update basket balances from database
       try {
-        const [defaultBal, ordBal, idBal, lockBal] = await Promise.all([
+        const [defaultBal, ordBal, idBal, lockBal, derivedBal] = await Promise.all([
           getBalanceFromDatabase('default'),
           getBalanceFromDatabase('ordinals'),
           getBalanceFromDatabase('identity'),
-          getBalanceFromDatabase('locks')
+          getBalanceFromDatabase('locks'),
+          getBalanceFromDatabase('derived')
         ])
         setBasketBalances({
           default: defaultBal,
           ordinals: ordBal,
           identity: idBal,
-          locks: lockBal
+          locks: lockBal,
+          derived: derivedBal
         })
+        // Also update main balance to include derived funds
+        const totalBalance = defaultBal + derivedBal
+        setBalance(totalBalance)
+        localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
       } catch (e) {
         console.error('Failed to get basket balances:', e)
       }
@@ -510,7 +518,7 @@ function App() {
     }
   }, [wallet, syncing])
 
-  // Check if initial sync is needed
+  // Check if initial sync is needed and auto-sync on load
   useEffect(() => {
     if (!wallet) return
 
@@ -523,6 +531,14 @@ function App() {
       if (needsSync) {
         console.log('Initial sync needed, starting...')
         performSync(true)
+      } else {
+        // Even if main addresses don't need sync, check derived addresses
+        // This ensures derived funds show up without manual sync
+        const derivedAddrs = await getDerivedAddressesFromDB()
+        if (derivedAddrs.length > 0) {
+          console.log('Auto-syncing', derivedAddrs.length, 'derived addresses...')
+          performSync(false)
+        }
       }
     }
 
@@ -1020,13 +1036,22 @@ function App() {
       const satoshis = displayInSats
         ? Math.round(parseFloat(sendAmount))
         : Math.round(parseFloat(sendAmount) * 100000000)
-      const utxos = await getUTXOs(wallet.walletAddress)
-      const txid = await sendBSV(wallet.walletWif, sendAddress, satoshis, utxos)
+
+      // Get all spendable UTXOs from both default and derived baskets
+      const allUtxos = await getAllSpendableUTXOs(wallet.walletWif)
+
+      if (allUtxos.length === 0) {
+        throw new Error('No spendable UTXOs found')
+      }
+
+      // Use multi-key send which handles UTXOs from different addresses
+      const txid = await sendBSVMultiKey(wallet.walletWif, sendAddress, satoshis, allUtxos)
       alert(`Transaction sent!\n\nTXID: ${txid.slice(0, 16)}...`)
       setSendAddress('')
       setSendAmount('')
       setModal(null)
-      fetchData()
+      // Refresh balances
+      performSync(false)
     } catch (error) {
       setSendError(error instanceof Error ? error.message : 'Failed to send')
     } finally {
@@ -1236,6 +1261,7 @@ function App() {
 
   // BRC-100 derived address generation
   // Uses BRC-29 format invoice number for full compliance
+  // This just computes the address - saving happens separately
   const deriveReceiveAddress = useCallback((senderPubKey: string): string => {
     if (!wallet || !senderPubKey || senderPubKey.length < 66) return ''
     try {
@@ -1245,30 +1271,44 @@ function App() {
       // Using 'default' as keyID for deterministic derivation (both sides derive same address)
       const invoiceNumber = '2-3241645161d8-simply-sats default'
       const address = deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
+      return address
+    } catch (e) {
+      console.error('Failed to derive address:', e)
+      return ''
+    }
+  }, [wallet])
 
-      // Also derive the private key for spending and save to database
+  // Save derived address to database - called explicitly when user confirms
+  const saveDerivedAddress = useCallback(async (senderPubKey: string, address: string): Promise<boolean> => {
+    if (!wallet || !senderPubKey || !address) {
+      console.error('Save failed: missing data')
+      return false
+    }
+    try {
+      const senderPub = PublicKey.fromString(senderPubKey)
+      const receiverPriv = PrivateKey.fromWif(wallet.identityWif)
+      const invoiceNumber = '2-3241645161d8-simply-sats default'
+
+      // Derive the private key for spending
       const derivedPrivKey = deriveChildPrivateKey(receiverPriv, senderPub, invoiceNumber)
 
-      // Save derived address to database for syncing
-      addDerivedAddress({
+      // Save to database
+      await addDerivedAddress({
         address,
         senderPubkey: senderPubKey,
         invoiceNumber,
         privateKeyWif: derivedPrivKey.toWif(),
         label: `From ${senderPubKey.substring(0, 8)}...`,
         createdAt: Date.now()
-      }).then(() => {
-        console.log('Saved derived address to database:', address)
-      }).catch((err) => {
-        console.error('Failed to save derived address:', err)
       })
+      console.log('Saved derived address to database:', address)
 
-      // Add sender to known senders for future UTXO scanning
+      // Add sender to known senders
       addKnownSender(senderPubKey)
-      return address
-    } catch (e) {
-      console.error('Failed to derive address:', e)
-      return ''
+      return true
+    } catch (err) {
+      console.error('Failed to save derived address:', err)
+      return false
     }
   }, [wallet])
 
@@ -1612,6 +1652,12 @@ function App() {
           <span className="basket-chip-icon">🔒</span>
           <span className="basket-chip-value">{basketBalances.locks.toLocaleString()}</span>
         </div>
+        {basketBalances.derived > 0 && (
+          <div className="basket-chip">
+            <span className="basket-chip-icon">🔗</span>
+            <span className="basket-chip-value">{basketBalances.derived.toLocaleString()}</span>
+          </div>
+        )}
       </div>
 
       {/* Navigation Tabs */}
@@ -2184,10 +2230,21 @@ function App() {
                           </div>
                           <button
                             className="copy-btn compact"
-                            onClick={() => copyToClipboard(derivedReceiveAddress, 'Address copied!')}
+                            onClick={async () => {
+                              // Save to database first, then copy
+                              const saved = await saveDerivedAddress(senderPubKeyInput, derivedReceiveAddress)
+                              if (saved) {
+                                copyToClipboard(derivedReceiveAddress, 'Address saved & copied!')
+                              } else {
+                                copyToClipboard(derivedReceiveAddress, 'Address copied (save failed)')
+                              }
+                            }}
                           >
-                            📋 Copy Address
+                            📋 Copy & Save Address
                           </button>
+                          <div className="address-type-hint" style={{ marginTop: 4, fontSize: 10 }}>
+                            Click to save for syncing
+                          </div>
                         </>
                       ) : (
                         <div className="address-type-hint" style={{ padding: '40px 0' }}>

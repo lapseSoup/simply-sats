@@ -7,6 +7,7 @@ import {
   markUtxosSpent,
   BASKETS
 } from './sync'
+import { getDerivedAddresses } from './database'
 
 // Wallet type - simplified to just BRC-100/Yours standard
 export type WalletType = 'yours'
@@ -745,6 +746,164 @@ export async function sendBSV(
     console.log('Transaction tracked locally:', txid)
   } catch (error) {
     // Don't fail the send if tracking fails - tx is already broadcast
+    console.warn('Failed to track transaction locally:', error)
+  }
+
+  return txid
+}
+
+// Extended UTXO type that includes WIF for multi-key spending
+export interface ExtendedUTXO extends UTXO {
+  wif: string
+  address: string
+}
+
+/**
+ * Get all spendable UTXOs from both default and derived baskets
+ * Returns UTXOs with their associated WIFs for signing
+ */
+export async function getAllSpendableUTXOs(walletWif: string): Promise<ExtendedUTXO[]> {
+  const result: ExtendedUTXO[] = []
+
+  // Get UTXOs from default basket
+  const defaultUtxos = await getSpendableUtxosFromDatabase(BASKETS.DEFAULT)
+  const walletPrivKey = PrivateKey.fromWif(walletWif)
+  const walletAddress = walletPrivKey.toPublicKey().toAddress()
+
+  for (const u of defaultUtxos) {
+    result.push({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.lockingScript,
+      wif: walletWif,
+      address: walletAddress
+    })
+  }
+
+  // Get UTXOs from derived basket with their WIFs
+  const derivedUtxos = await getSpendableUtxosFromDatabase(BASKETS.DERIVED)
+  const derivedAddresses = await getDerivedAddresses()
+
+  for (const u of derivedUtxos) {
+    // Find the derived address entry that matches this UTXO's locking script
+    const derivedAddr = derivedAddresses.find(d => {
+      const derivedLockingScript = new P2PKH().lock(d.address).toHex()
+      return derivedLockingScript === u.lockingScript
+    })
+
+    if (derivedAddr) {
+      result.push({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.lockingScript,
+        wif: derivedAddr.privateKeyWif,
+        address: derivedAddr.address
+      })
+    }
+  }
+
+  // Sort by satoshis (smallest first for efficient coin selection)
+  return result.sort((a, b) => a.satoshis - b.satoshis)
+}
+
+/**
+ * Send BSV using UTXOs from multiple addresses/keys
+ * Supports spending from both default wallet and derived addresses
+ */
+export async function sendBSVMultiKey(
+  changeWif: string,  // WIF for change output (usually wallet WIF)
+  toAddress: string,
+  satoshis: number,
+  utxos: ExtendedUTXO[]
+): Promise<string> {
+  const changePrivKey = PrivateKey.fromWif(changeWif)
+  const changeAddress = changePrivKey.toPublicKey().toAddress()
+
+  const tx = new Transaction()
+
+  // Collect inputs we'll use
+  const inputsToUse: ExtendedUTXO[] = []
+  let totalInput = 0
+
+  for (const utxo of utxos) {
+    inputsToUse.push(utxo)
+    totalInput += utxo.satoshis
+
+    // Break if we have enough for amount + reasonable fee buffer
+    if (totalInput >= satoshis + 100) break
+  }
+
+  if (totalInput < satoshis) {
+    throw new Error('Insufficient funds')
+  }
+
+  // Calculate fee
+  const numInputs = inputsToUse.length
+  const prelimChange = totalInput - satoshis
+  const willHaveChange = prelimChange > 100
+  const numOutputs = willHaveChange ? 2 : 1
+  const fee = calculateTxFee(numInputs, numOutputs)
+
+  const change = totalInput - satoshis - fee
+
+  if (change < 0) {
+    throw new Error(`Insufficient funds (need ${fee} sats for fee)`)
+  }
+
+  // Add inputs - each with its own key
+  for (const utxo of inputsToUse) {
+    const inputPrivKey = PrivateKey.fromWif(utxo.wif)
+    const inputLockingScript = new P2PKH().lock(utxo.address)
+
+    tx.addInput({
+      sourceTXID: utxo.txid,
+      sourceOutputIndex: utxo.vout,
+      unlockingScriptTemplate: new P2PKH().unlock(
+        inputPrivKey,
+        'all',
+        false,
+        utxo.satoshis,
+        inputLockingScript
+      ),
+      sequence: 0xffffffff
+    })
+  }
+
+  // Add recipient output
+  tx.addOutput({
+    lockingScript: new P2PKH().lock(toAddress),
+    satoshis
+  })
+
+  // Add change output if it's above dust threshold
+  if (change > 546) {
+    tx.addOutput({
+      lockingScript: new P2PKH().lock(changeAddress),
+      satoshis: change
+    })
+  }
+
+  await tx.sign()
+  const txid = await broadcastTransaction(tx)
+
+  // Track transaction locally
+  try {
+    await recordSentTransaction(
+      txid,
+      tx.toHex(),
+      `Sent ${satoshis} sats to ${toAddress}`,
+      ['send']
+    )
+
+    await markUtxosSpent(
+      inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
+      txid
+    )
+
+    console.log('Transaction tracked locally:', txid)
+  } catch (error) {
     console.warn('Failed to track transaction locally:', error)
   }
 
