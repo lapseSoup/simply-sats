@@ -21,6 +21,7 @@ import {
   calculateTxFee,
   lockBSV,
   unlockBSV,
+  generateUnlockTxHex,
   getCurrentBlockHeight,
   type UTXO,
   type LockedUTXO
@@ -540,7 +541,16 @@ function App() {
       const mergedHistory = allTxs.filter((tx, index, self) =>
         index === self.findIndex(t => t.tx_hash === tx.tx_hash)
       )
-      mergedHistory.sort((a, b) => (b.height || 0) - (a.height || 0))
+      // Sort: unconfirmed (height 0) first, then by descending block height
+      mergedHistory.sort((a, b) => {
+        const aHeight = a.height || 0
+        const bHeight = b.height || 0
+        // Unconfirmed transactions (height 0) go to the top
+        if (aHeight === 0 && bHeight !== 0) return -1
+        if (bHeight === 0 && aHeight !== 0) return 1
+        // Otherwise sort by descending height
+        return bHeight - aHeight
+      })
 
       // Fetch amounts for recent transactions - use database first, only fetch new ones from API
       const recentTxs = mergedHistory.slice(0, 10)
@@ -814,6 +824,33 @@ function App() {
     return locks.filter(l => currentHeight >= l.unlockBlock)
   }
 
+  // Restore orphaned lock (for recovery of locks that were deleted but still exist on-chain)
+  const restoreOrphanedLock = () => {
+    if (!wallet) return
+
+    // The orphaned lock data
+    const orphanedLock: LockedUTXO = {
+      txid: 'cc690942b2202d9c40fb6ed47177f36db46ae64bd3e25ec9eceeb1225953286f',
+      vout: 0,
+      satoshis: 218,
+      lockingScript: '03e7420eb17576a91441a8ed11c754517a2e2f7907eabf078a84ada6a488ac',
+      unlockBlock: 934631,
+      publicKeyHex: wallet.walletPubKey,
+      createdAt: Date.now()
+    }
+
+    // Check if already exists
+    if (locks.some(l => l.txid === orphanedLock.txid)) {
+      alert('This lock is already in your list!')
+      return
+    }
+
+    const newLocks = [...locks, orphanedLock]
+    setLocks(newLocks)
+    localStorage.setItem('simply_sats_locks', JSON.stringify(newLocks))
+    alert('Restored orphaned lock! You can now try to unlock it.')
+  }
+
   // Unlock handler - performs the actual unlock
   const performUnlock = async (lockedUtxo: LockedUTXO): Promise<{ success: boolean; txid?: string; amount?: number; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet' }
@@ -856,37 +893,77 @@ function App() {
   const handleConfirmUnlock = async () => {
     if (!unlockConfirm) return
 
+    // Capture the value before clearing
+    const toUnlock = unlockConfirm
     setUnlockConfirm(null)
 
-    if (unlockConfirm === 'all') {
-      // Unlock all unlockable locks
-      const unlockable = getUnlockableLocks()
-      let successCount = 0
-      let totalAmount = 0
+    try {
+      if (toUnlock === 'all') {
+        // Unlock all unlockable locks
+        const unlockable = getUnlockableLocks()
+        let successCount = 0
+        let totalAmount = 0
+        const errors: string[] = []
 
-      for (const lock of unlockable) {
-        const result = await performUnlock(lock)
-        if (result.success) {
-          successCount++
-          totalAmount += result.amount || 0
+        for (const lock of unlockable) {
+          const result = await performUnlock(lock)
+          if (result.success) {
+            successCount++
+            totalAmount += result.amount || 0
+          } else {
+            errors.push(result.error || 'Unknown error')
+          }
+          // Small delay between transactions
+          await new Promise(r => setTimeout(r, 500))
         }
-        // Small delay between transactions
-        await new Promise(r => setTimeout(r, 500))
-      }
 
-      if (successCount > 0) {
-        alert(`Unlocked ${successCount} lock${successCount > 1 ? 's' : ''} for ${totalAmount.toLocaleString()} sats!`)
-        fetchData()
-      }
-    } else {
-      // Unlock single lock
-      const result = await performUnlock(unlockConfirm)
-      if (result.success) {
-        alert(`Unlocked ${unlockConfirm.satoshis.toLocaleString()} sats!\n\nTXID: ${result.txid?.slice(0, 16)}...`)
-        fetchData()
+        if (successCount > 0) {
+          showToast(`Unlocked ${successCount} lock${successCount > 1 ? 's' : ''} for ${totalAmount.toLocaleString()} sats!`, 5000)
+          fetchData()
+        } else if (errors.length > 0) {
+          alert(`Failed to unlock:\n\n${errors[0]}`)
+        }
       } else {
-        alert(result.error)
+        // Unlock single lock
+        console.log('Unlocking single lock:', toUnlock)
+        const result = await performUnlock(toUnlock)
+        console.log('Unlock result:', result)
+        if (result.success) {
+          showToast(`Unlocked ${toUnlock.satoshis.toLocaleString()} sats!`, 5000)
+          fetchData()
+        } else {
+          // Show detailed error
+          alert(`Failed to unlock:\n\n${result.error || 'Unknown error'}`)
+        }
       }
+    } catch (error) {
+      console.error('Unlock error:', error)
+      alert(`Unlock failed:\n\n${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  // Export raw unlock transaction hex for manual miner submission
+  const handleExportUnlockTx = async (lockedUtxo: LockedUTXO) => {
+    if (!wallet) return
+
+    try {
+      const { txHex, txid, outputSats } = await generateUnlockTxHex(wallet.walletWif, lockedUtxo)
+
+      // Copy to clipboard and show info
+      navigator.clipboard.writeText(txHex)
+
+      const message = `Raw Transaction Hex copied to clipboard!\n\n` +
+        `TXID: ${txid}\n` +
+        `Output: ${outputSats} sats\n\n` +
+        `This transaction uses OP_NOP2 which is rejected by most nodes due to policy (not consensus).\n\n` +
+        `To broadcast, you can:\n` +
+        `1. Contact a miner directly (GorillaPool, TAAL)\n` +
+        `2. Use a miner's mAPI with policy bypass\n` +
+        `3. Post in BSV dev communities for help`
+
+      alert(message)
+    } catch (error) {
+      alert(`Failed to generate transaction: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -898,9 +975,9 @@ function App() {
     showToast(label)
   }
 
-  const showToast = (message: string) => {
+  const showToast = (message: string, duration = 3000) => {
     setCopyFeedback(message)
-    setTimeout(() => setCopyFeedback(null), 1500)
+    setTimeout(() => setCopyFeedback(null), duration)
   }
 
   const openOnWoC = async (txid: string) => {
@@ -1276,6 +1353,13 @@ function App() {
                 <div className="empty-icon">🔓</div>
                 <div className="empty-title">No Locks Yet</div>
                 <div className="empty-text">Lock your BSV for a set number of blocks</div>
+                <button
+                  className="action-btn"
+                  style={{ marginTop: 16, padding: '8px 16px', fontSize: '12px', opacity: 0.7 }}
+                  onClick={restoreOrphanedLock}
+                >
+                  Restore Lost Lock (218 sats)
+                </button>
               </div>
             ) : (
               locks.map((lock) => {
@@ -1302,13 +1386,24 @@ function App() {
                     </div>
                     <div className="tx-amount">
                       {isUnlockable ? (
-                        <button
-                          className="unlock-btn"
-                          onClick={() => setUnlockConfirm(lock)}
-                          disabled={isUnlocking}
-                        >
-                          {isUnlocking ? '...' : 'Unlock'}
-                        </button>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button
+                            className="unlock-btn"
+                            onClick={() => setUnlockConfirm(lock)}
+                            disabled={isUnlocking}
+                          >
+                            {isUnlocking ? '...' : 'Unlock'}
+                          </button>
+                          <button
+                            className="unlock-btn"
+                            onClick={() => handleExportUnlockTx(lock)}
+                            disabled={isUnlocking}
+                            title="Export raw TX hex for manual miner submission"
+                            style={{ fontSize: '10px', padding: '4px 6px' }}
+                          >
+                            TX
+                          </button>
+                        </div>
                       ) : (
                         <div className="lock-progress">
                           <div className="lock-progress-text">
@@ -1550,6 +1645,7 @@ function App() {
         const totalSats = locksToUnlock.reduce((sum, l) => sum + l.satoshis, 0)
         const totalFee = locksToUnlock.length * getUnlockFee()
         const totalReceive = totalSats - totalFee
+        const cantUnlock = totalReceive <= 0
 
         return (
           <div className="modal-overlay" onClick={() => setUnlockConfirm(null)}>
@@ -1559,6 +1655,14 @@ function App() {
                 <button className="modal-close" onClick={() => setUnlockConfirm(null)}>×</button>
               </div>
               <div className="modal-content compact">
+                {cantUnlock && (
+                  <div className="warning compact" style={{ marginBottom: 12 }}>
+                    <span className="warning-icon">⚠️</span>
+                    <span className="warning-text">
+                      Locked amount is less than the unlock fee. Cannot unlock.
+                    </span>
+                  </div>
+                )}
                 <div className="send-summary compact">
                   <div className="send-summary-row">
                     <span>Locks to Unlock</span>
@@ -1574,7 +1678,7 @@ function App() {
                   </div>
                   <div className="send-summary-row" style={{ fontWeight: 600, borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 8 }}>
                     <span>You'll Receive</span>
-                    <span style={{ color: 'var(--success)' }}>+{totalReceive.toLocaleString()} sats</span>
+                    <span style={{ color: cantUnlock ? 'var(--error)' : 'var(--success)' }}>{cantUnlock ? 'Insufficient' : `+${totalReceive.toLocaleString()} sats`}</span>
                   </div>
                 </div>
 
@@ -1588,11 +1692,11 @@ function App() {
                   </button>
                   <button
                     className="unlock-btn"
-                    style={{ flex: 1, padding: '12px 24px' }}
+                    style={{ flex: 1, padding: '12px 24px', opacity: cantUnlock ? 0.5 : 1 }}
                     onClick={handleConfirmUnlock}
-                    disabled={unlocking !== null}
+                    disabled={unlocking !== null || cantUnlock}
                   >
-                    {unlocking ? 'Unlocking...' : `🔓 Unlock ${totalReceive.toLocaleString()} sats`}
+                    {unlocking ? 'Unlocking...' : cantUnlock ? 'Cannot Unlock' : `🔓 Unlock ${totalReceive.toLocaleString()} sats`}
                   </button>
                 </div>
               </div>

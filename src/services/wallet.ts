@@ -1,5 +1,5 @@
 import * as bip39 from 'bip39'
-import { HD, Mnemonic, PrivateKey, P2PKH, Transaction, Script, OP, LockingScript, UnlockingScript, TransactionSignature } from '@bsv/sdk'
+import { HD, Mnemonic, PrivateKey, P2PKH, Transaction, Script, OP, LockingScript, UnlockingScript, TransactionSignature, Hash } from '@bsv/sdk'
 import {
   getBalanceFromDatabase,
   getSpendableUtxosFromDatabase,
@@ -407,22 +407,142 @@ export function calculateMaxSend(utxos: UTXO[]): { maxSats: number; fee: number;
   return { maxSats, fee, numInputs }
 }
 
-// Broadcast a signed transaction
+// Broadcast a signed transaction - try multiple endpoints for non-standard scripts
 async function broadcastTransaction(tx: Transaction): Promise<string> {
-  const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ txhex: tx.toHex() })
-  })
+  const txhex = tx.toHex()
+  console.log('Broadcasting transaction:', txhex)
 
-  if (!response.ok) {
+  const errors: string[] = []
+
+  // Try WhatsOnChain first
+  try {
+    console.log('Trying WhatsOnChain...')
+    const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ txhex })
+    })
+
+    if (response.ok) {
+      console.log('WhatsOnChain broadcast successful!')
+      return tx.id('hex')
+    }
+
     const errorText = await response.text()
-    console.error('Broadcast error:', errorText)
-    throw new Error(`Failed to broadcast: ${errorText}`)
+    console.warn('WoC broadcast failed:', errorText)
+    errors.push(`WoC: ${errorText}`)
+  } catch (error) {
+    console.warn('WoC error:', error)
+    errors.push(`WoC: ${error}`)
   }
 
-  return tx.id('hex')
+  // Try GorillaPool ARC with skipScriptFlags in JSON body to bypass DISCOURAGE_UPGRADABLE_NOPS policy
+  try {
+    console.log('Trying GorillaPool ARC with skipScriptFlags in body...')
+    const arcResponse = await fetch('https://arc.gorillapool.io/v1/tx', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-SkipScriptFlags': 'DISCOURAGE_UPGRADABLE_NOPS'
+      },
+      body: JSON.stringify({
+        rawTx: txhex,
+        skipScriptFlags: ['DISCOURAGE_UPGRADABLE_NOPS']
+      })
+    })
+
+    const arcResult = await arcResponse.json()
+    console.log('GorillaPool ARC response:', arcResult)
+
+    // ARC returns status 200 even for errors, check txStatus
+    if (arcResult.txid && (arcResult.txStatus === 'SEEN_ON_NETWORK' || arcResult.txStatus === 'ACCEPTED')) {
+      console.log('ARC broadcast successful! txid:', arcResult.txid)
+      return arcResult.txid
+    } else if (arcResult.txid && !arcResult.detail) {
+      // Sometimes ARC returns just txid on success
+      console.log('ARC broadcast possibly successful, txid:', arcResult.txid)
+      return arcResult.txid
+    } else {
+      const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
+      console.warn('ARC rejected transaction:', errorMsg)
+      errors.push(`ARC: ${errorMsg}`)
+    }
+  } catch (error) {
+    console.warn('GorillaPool ARC error:', error)
+    errors.push(`ARC: ${error}`)
+  }
+
+  // Try ARC with plain text format but with skipscriptflags header
+  try {
+    console.log('Trying GorillaPool ARC (plain text with header)...')
+    const arcResponse2 = await fetch('https://arc.gorillapool.io/v1/tx', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain',
+        'X-SkipScriptFlags': 'DISCOURAGE_UPGRADABLE_NOPS'
+      },
+      body: txhex
+    })
+
+    const arcResult2 = await arcResponse2.json()
+    console.log('GorillaPool ARC (plain) response:', arcResult2)
+
+    if (arcResult2.txid && (arcResult2.txStatus === 'SEEN_ON_NETWORK' || arcResult2.txStatus === 'ACCEPTED')) {
+      console.log('ARC broadcast successful! txid:', arcResult2.txid)
+      return arcResult2.txid
+    } else if (arcResult2.txid && !arcResult2.detail) {
+      console.log('ARC broadcast possibly successful, txid:', arcResult2.txid)
+      return arcResult2.txid
+    } else {
+      const errorMsg = arcResult2.detail || arcResult2.extraInfo || arcResult2.title || 'Unknown ARC error'
+      console.warn('ARC (plain) rejected transaction:', errorMsg)
+      errors.push(`ARC2: ${errorMsg}`)
+    }
+  } catch (error) {
+    console.warn('GorillaPool ARC (plain) error:', error)
+    errors.push(`ARC2: ${error}`)
+  }
+
+  // Try GorillaPool mAPI as fallback
+  try {
+    console.log('Trying GorillaPool mAPI...')
+    const mapiResponse = await fetch('https://mapi.gorillapool.io/mapi/tx', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ rawtx: txhex })
+    })
+
+    const result = await mapiResponse.json()
+    console.log('GorillaPool mAPI response:', result)
+
+    // mAPI wraps response in payload
+    if (result.payload) {
+      const payload = typeof result.payload === 'string' ? JSON.parse(result.payload) : result.payload
+      console.log('mAPI payload:', payload)
+
+      // Check for success - returnResult must be "success"
+      if (payload.returnResult === 'success' && payload.txid) {
+        console.log('mAPI broadcast successful! txid:', payload.txid)
+        return payload.txid
+      } else {
+        // Failed - extract error message
+        const errorMsg = payload.resultDescription || payload.returnResult || 'Unknown mAPI error'
+        console.warn('mAPI rejected transaction:', errorMsg)
+        errors.push(`mAPI: ${errorMsg}`)
+      }
+    } else {
+      errors.push(`mAPI: No payload in response`)
+    }
+  } catch (error) {
+    console.warn('mAPI error:', error)
+    errors.push(`mAPI: ${error}`)
+  }
+
+  throw new Error(`Failed to broadcast: ${errors.join(' | ')}`)
 }
+
 
 // Calculate exact fee by selecting UTXOs for a given amount
 export function calculateExactFee(
@@ -821,13 +941,20 @@ export async function lockBSV(
 }
 
 /**
- * Unlock a CLTV-locked UTXO after the lock time has passed
+ * Unlock a locked UTXO
+ *
+ * The locking script is: <locktime> OP_NOP2 OP_DROP <P2PKH>
+ * In BSV post-Genesis, OP_NOP2 is a no-op at consensus level.
+ *
+ * We use manual signing to ensure the preimage is constructed correctly
+ * for this non-standard script.
  */
 export async function unlockBSV(
   wif: string,
   lockedUtxo: LockedUTXO,
   currentBlockHeight: number
 ): Promise<string> {
+  // Check block height for user feedback
   if (currentBlockHeight < lockedUtxo.unlockBlock) {
     throw new Error(`Cannot unlock yet. Current block: ${currentBlockHeight}, Unlock block: ${lockedUtxo.unlockBlock}`)
   }
@@ -836,72 +963,92 @@ export async function unlockBSV(
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
 
-  const tx = new Transaction()
-
-  // Set nLockTime to the unlock block height (required for CLTV)
-  tx.lockTime = lockedUtxo.unlockBlock
-
   // Calculate fee for 1 input, 1 output
-  const fee = calculateTxFee(1, 1)
+  const fee = calculateTxFee(1, 1, 5)
   const outputSats = lockedUtxo.satoshis - fee
 
-  if (outputSats <= 546) {
-    throw new Error('Output would be dust after fee')
+  if (outputSats <= 0) {
+    throw new Error('Insufficient funds to cover unlock fee')
   }
 
-  // Parse the locking script
-  const lockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
+  // Parse the FULL locking script - this is what we sign against
+  const fullLockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
 
-  // Sighash type: ALL | FORKID
+  // SIGHASH_ALL | SIGHASH_FORKID for BSV
   const sigHashType = TransactionSignature.SIGHASH_ALL | TransactionSignature.SIGHASH_FORKID
+  const inputSequence = 0xfffffffe // < 0xffffffff to enable nLockTime
 
-  // Create a custom unlock template for CLTV
-  const cltvUnlock = {
+  // Build transaction first
+  const tx = new Transaction()
+  tx.version = 1
+  tx.lockTime = lockedUtxo.unlockBlock
+
+  // Create custom unlock template with manual signing
+  const customUnlockTemplate = {
     sign: async (tx: Transaction, inputIndex: number): Promise<UnlockingScript> => {
-      // Get the preimage for signing
+      console.log('Signing input', inputIndex)
+      console.log('Source TXID:', lockedUtxo.txid)
+      console.log('Source vout:', lockedUtxo.vout)
+      console.log('Source satoshis:', lockedUtxo.satoshis)
+      console.log('Locking script:', lockedUtxo.lockingScript)
+
+      // Build the preimage for BIP-143 style signing (BSV uses this)
       const preimage = TransactionSignature.format({
         sourceTXID: lockedUtxo.txid,
         sourceOutputIndex: lockedUtxo.vout,
         sourceSatoshis: lockedUtxo.satoshis,
         transactionVersion: tx.version,
         otherInputs: [],
-        inputIndex,
+        inputIndex: inputIndex,
         outputs: tx.outputs,
-        inputSequence: 0xfffffffe,
-        subscript: lockingScript,
+        inputSequence: inputSequence,
+        subscript: fullLockingScript,  // The script being signed
         lockTime: tx.lockTime,
         scope: sigHashType
       })
 
-      // Sign the preimage
-      const signature = privateKey.sign(preimage)
-      const sigDER = signature.toDER() as number[]
+      const preimageArr = preimage as number[]
+      console.log('Preimage hex:', preimageArr.map(b => b.toString(16).padStart(2, '0')).join(''))
 
-      // Build signature with hash type
+      // For BSV transaction signing, we need double SHA256 of the preimage.
+      // But privateKey.sign() does single SHA256 internally.
+      // So we pass the SINGLE SHA256 hash, and the SDK will hash it again.
+      const singleHash = Hash.sha256(preimage) as number[]
+      console.log('Single SHA256:', singleHash.map(b => b.toString(16).padStart(2, '0')).join(''))
+
+      // Sign the single hash - the SDK will do another SHA256 internally,
+      // resulting in the correct double-SHA256 sighash
+      const signature = privateKey.sign(singleHash)
+
+      // Get DER-encoded signature and append sighash type
+      const sigDER = signature.toDER() as number[]
       const sigWithHashType: number[] = [...sigDER, sigHashType]
 
-      // Get pubkey bytes
-      const pubKeyEncoded = publicKey.encode(true) as number[]
+      // Get compressed public key
+      const pubKeyBytes = publicKey.encode(true) as number[]
+
+      console.log('Signature (with hashtype):', sigWithHashType.map(b => b.toString(16).padStart(2, '0')).join(''))
+      console.log('Public key:', pubKeyBytes.map(b => b.toString(16).padStart(2, '0')).join(''))
 
       // Build unlocking script: <sig> <pubkey>
       const unlockScript = new Script()
       unlockScript.writeBin(sigWithHashType)
-      unlockScript.writeBin(pubKeyEncoded)
+      unlockScript.writeBin(pubKeyBytes)
 
-      // Convert Script binary to number array
-      const scriptBin = unlockScript.toBinary() as number[]
+      const scriptBytes = unlockScript.toBinary() as number[]
+      console.log('Unlocking script:', scriptBytes.map(b => b.toString(16).padStart(2, '0')).join(''))
 
-      return UnlockingScript.fromBinary(scriptBin)
+      return UnlockingScript.fromBinary(scriptBytes)
     },
-    estimateLength: async (_tx: Transaction, _inputIndex: number): Promise<number> => 107
+    estimateLength: async (): Promise<number> => 107
   }
 
-  // Add the locked input
+  // Add input with our custom unlock template
   tx.addInput({
     sourceTXID: lockedUtxo.txid,
     sourceOutputIndex: lockedUtxo.vout,
-    sequence: 0xfffffffe, // Must be < 0xffffffff for CLTV to work
-    unlockingScriptTemplate: cltvUnlock
+    sequence: inputSequence,
+    unlockingScriptTemplate: customUnlockTemplate
   })
 
   // Add output back to our address
@@ -910,7 +1057,14 @@ export async function unlockBSV(
     satoshis: outputSats
   })
 
+  // Sign the transaction (calls our custom template)
   await tx.sign()
+
+  console.log('=== FINAL TRANSACTION ===')
+  console.log('Transaction hex:', tx.toHex())
+  console.log('nLockTime:', tx.lockTime)
+  console.log('Attempting to broadcast...')
+
   const txid = await broadcastTransaction(tx)
 
   // Track transaction
@@ -918,9 +1072,9 @@ export async function unlockBSV(
     await recordSentTransaction(
       txid,
       tx.toHex(),
-      `Unlocked ${lockedUtxo.satoshis} sats from block ${lockedUtxo.unlockBlock}`,
+      `Unlocked ${lockedUtxo.satoshis} sats`,
       ['unlock'],
-      outputSats  // Positive because we're receiving back
+      outputSats
     )
   } catch (error) {
     console.warn('Failed to track unlock transaction:', error)
@@ -941,5 +1095,104 @@ export async function getCurrentBlockHeight(): Promise<number> {
   } catch (error) {
     console.error('Error fetching block height:', error)
     throw error
+  }
+}
+
+/**
+ * Generate the raw unlock transaction hex without broadcasting.
+ * This can be used to submit the transaction manually to miners
+ * who are willing to accept non-standard scripts.
+ */
+export async function generateUnlockTxHex(
+  wif: string,
+  lockedUtxo: LockedUTXO
+): Promise<{ txHex: string; txid: string; outputSats: number }> {
+  const privateKey = PrivateKey.fromWif(wif)
+  const publicKey = privateKey.toPublicKey()
+  const toAddress = publicKey.toAddress()
+
+  // Calculate fee for 1 input, 1 output
+  const fee = calculateTxFee(1, 1, 5)
+  const outputSats = lockedUtxo.satoshis - fee
+
+  if (outputSats <= 0) {
+    throw new Error('Insufficient funds to cover unlock fee')
+  }
+
+  // Parse the FULL locking script - this is what we sign against
+  const fullLockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
+
+  // SIGHASH_ALL | SIGHASH_FORKID for BSV
+  const sigHashType = TransactionSignature.SIGHASH_ALL | TransactionSignature.SIGHASH_FORKID
+  const inputSequence = 0xfffffffe // < 0xffffffff to enable nLockTime
+
+  // Build transaction first
+  const tx = new Transaction()
+  tx.version = 1
+  tx.lockTime = lockedUtxo.unlockBlock
+
+  // Create custom unlock template with manual signing
+  const customUnlockTemplate = {
+    sign: async (tx: Transaction, inputIndex: number): Promise<UnlockingScript> => {
+      // Build the preimage for BIP-143 style signing (BSV uses this)
+      const preimage = TransactionSignature.format({
+        sourceTXID: lockedUtxo.txid,
+        sourceOutputIndex: lockedUtxo.vout,
+        sourceSatoshis: lockedUtxo.satoshis,
+        transactionVersion: tx.version,
+        otherInputs: [],
+        inputIndex: inputIndex,
+        outputs: tx.outputs,
+        inputSequence: inputSequence,
+        subscript: fullLockingScript,
+        lockTime: tx.lockTime,
+        scope: sigHashType
+      })
+
+      // For BSV transaction signing, we need double SHA256 of the preimage.
+      // But privateKey.sign() does single SHA256 internally.
+      // So we pass the SINGLE SHA256 hash, and the SDK will hash it again.
+      const singleHash = Hash.sha256(preimage) as number[]
+      const signature = privateKey.sign(singleHash)
+
+      // Get DER-encoded signature and append sighash type
+      const sigDER = signature.toDER() as number[]
+      const sigWithHashType: number[] = [...sigDER, sigHashType]
+
+      // Get compressed public key
+      const pubKeyBytes = publicKey.encode(true) as number[]
+
+      // Build unlocking script: <sig> <pubkey>
+      const unlockScript = new Script()
+      unlockScript.writeBin(sigWithHashType)
+      unlockScript.writeBin(pubKeyBytes)
+
+      const scriptBytes = unlockScript.toBinary() as number[]
+      return UnlockingScript.fromBinary(scriptBytes)
+    },
+    estimateLength: async (): Promise<number> => 107
+  }
+
+  // Add input with our custom unlock template
+  tx.addInput({
+    sourceTXID: lockedUtxo.txid,
+    sourceOutputIndex: lockedUtxo.vout,
+    sequence: inputSequence,
+    unlockingScriptTemplate: customUnlockTemplate
+  })
+
+  // Add output back to our address
+  tx.addOutput({
+    lockingScript: new P2PKH().lock(toAddress),
+    satoshis: outputSats
+  })
+
+  // Sign the transaction (calls our custom template)
+  await tx.sign()
+
+  return {
+    txHex: tx.toHex(),
+    txid: tx.id('hex'),
+    outputSats
   }
 }
