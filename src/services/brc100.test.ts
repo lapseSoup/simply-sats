@@ -175,15 +175,57 @@ describe('BRC-100 Service', () => {
     })
 
     describe('verifySignature', () => {
-      it('should return true for non-empty signature', () => {
+      it('should verify a valid signature created with signMessage', () => {
+        const keys = getTestKeys()
+        const message = 'Hello, World!'
+
+        // Create a signature using signMessage
+        const signatureHex = signMessage(keys, message)
+
+        // Verify with the corresponding public key
         const result = verifySignature(
-          getTestKeys().identityPubKey,
-          'message',
-          'abcdef1234'
+          keys.identityPubKey,
+          message,
+          signatureHex
         )
 
-        // Current implementation just checks if signature exists
         expect(result).toBe(true)
+      })
+
+      it('should reject signature with wrong message', () => {
+        const keys = getTestKeys()
+        const message = 'Hello, World!'
+        const wrongMessage = 'Different message'
+
+        // Create a signature for the original message
+        const signatureHex = signMessage(keys, message)
+
+        // Try to verify with a different message - should fail
+        const result = verifySignature(
+          keys.identityPubKey,
+          wrongMessage,
+          signatureHex
+        )
+
+        expect(result).toBe(false)
+      })
+
+      it('should reject signature with wrong public key', () => {
+        const keys = getTestKeys()
+        const message = 'Hello, World!'
+
+        // Create a signature with identity key
+        const signatureHex = signMessage(keys, message)
+
+        // Try to verify with a different public key (wallet key instead of identity key)
+        // These are different keys derived from the same mnemonic
+        const result = verifySignature(
+          keys.walletPubKey,  // Wrong key!
+          message,
+          signatureHex
+        )
+
+        expect(result).toBe(false)
       })
 
       it('should return false for empty signature', () => {
@@ -194,6 +236,62 @@ describe('BRC-100 Service', () => {
         )
 
         expect(result).toBe(false)
+      })
+
+      it('should return false for invalid/malformed signature hex', () => {
+        const result = verifySignature(
+          getTestKeys().identityPubKey,
+          'message',
+          'not-valid-hex-at-all!'
+        )
+
+        expect(result).toBe(false)
+      })
+
+      it('should return false for random hex that is not a valid signature', () => {
+        const result = verifySignature(
+          getTestKeys().identityPubKey,
+          'message',
+          'abcdef1234567890abcdef1234567890'  // Random hex, not a valid DER signature
+        )
+
+        expect(result).toBe(false)
+      })
+
+      it('should return false for truncated signature', () => {
+        const keys = getTestKeys()
+        const message = 'Hello, World!'
+
+        // Create a valid signature
+        const signatureHex = signMessage(keys, message)
+
+        // Truncate the signature
+        const truncatedSig = signatureHex.slice(0, signatureHex.length / 2)
+
+        const result = verifySignature(
+          keys.identityPubKey,
+          message,
+          truncatedSig
+        )
+
+        expect(result).toBe(false)
+      })
+
+      it('should verify signatures for different messages independently', () => {
+        const keys = getTestKeys()
+        const message1 = 'Message One'
+        const message2 = 'Message Two'
+
+        const sig1 = signMessage(keys, message1)
+        const sig2 = signMessage(keys, message2)
+
+        // Each signature should verify with its own message
+        expect(verifySignature(keys.identityPubKey, message1, sig1)).toBe(true)
+        expect(verifySignature(keys.identityPubKey, message2, sig2)).toBe(true)
+
+        // But not with swapped messages
+        expect(verifySignature(keys.identityPubKey, message1, sig2)).toBe(false)
+        expect(verifySignature(keys.identityPubKey, message2, sig1)).toBe(false)
       })
     })
   })

@@ -1,4 +1,4 @@
-import { PrivateKey, P2PKH, Transaction, LockingScript, PublicKey, Hash, SymmetricKey } from '@bsv/sdk'
+import { PrivateKey, P2PKH, Transaction, LockingScript, PublicKey, Hash, SymmetricKey, Signature } from '@bsv/sdk'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import type { WalletKeys, UTXO, LockedUTXO } from './wallet'
@@ -475,9 +475,9 @@ export function signMessage(keys: WalletKeys, message: string): string {
   const privateKey = PrivateKey.fromWif(keys.identityWif)
   const messageBytes = new TextEncoder().encode(message)
   const signature = privateKey.sign(Array.from(messageBytes))
-  // Convert signature to hex string
-  const sigBytes = signature as unknown as number[]
-  return Buffer.from(sigBytes).toString('hex')
+  // Convert signature to DER-encoded hex string
+  const sigDER = signature.toDER() as number[]
+  return Buffer.from(sigDER).toString('hex')
 }
 
 // Sign arbitrary data with specified key
@@ -496,18 +496,38 @@ export function signData(keys: WalletKeys, data: number[], keyType: 'identity' |
 
   const privateKey = PrivateKey.fromWif(wif)
   const signature = privateKey.sign(data)
-  // Convert signature to hex string
-  const sigBytes = signature as unknown as number[]
-  return Buffer.from(sigBytes).toString('hex')
+  // Convert signature to DER-encoded hex string
+  const sigDER = signature.toDER() as number[]
+  return Buffer.from(sigDER).toString('hex')
 }
 
 // Verify a signature
-export function verifySignature(_publicKeyHex: string, _message: string, signatureHex: string): boolean {
+export function verifySignature(publicKeyHex: string, message: string, signatureHex: string): boolean {
   try {
-    // This would need proper implementation with @bsv/sdk verification
-    // For now, return true if signature exists
-    return signatureHex.length > 0
+    // Reject empty signatures
+    if (!signatureHex || signatureHex.length === 0) {
+      return false
+    }
+
+    // Validate hex format
+    if (!/^[0-9a-fA-F]+$/.test(signatureHex)) {
+      return false
+    }
+
+    // Parse the public key
+    const publicKey = PublicKey.fromString(publicKeyHex)
+
+    // Parse the DER-encoded signature
+    const sigBytes = Buffer.from(signatureHex, 'hex')
+    const signature = Signature.fromDER(Array.from(sigBytes))
+
+    // Convert message to bytes (must match how it was signed)
+    const messageBytes = Array.from(new TextEncoder().encode(message))
+
+    // Verify the signature
+    return publicKey.verify(messageBytes, signature)
   } catch {
+    // Any parsing or verification error means invalid signature
     return false
   }
 }
