@@ -59,6 +59,14 @@ export async function createAccount(
   keys: WalletKeys,
   password: string
 ): Promise<number> {
+  // Password is required - no unencrypted storage allowed
+  if (!password) {
+    throw new Error('Password is required for wallet encryption')
+  }
+  if (password.length < 8) {
+    throw new Error('Password must be at least 8 characters')
+  }
+
   const database = getDatabase()
 
   // Encrypt the wallet keys
@@ -75,14 +83,9 @@ export async function createAccount(
     identityPubKey: keys.identityPubKey
   })
 
-  // If password provided, encrypt and serialize; otherwise just use plain JSON
-  let encryptedKeysStr: string
-  if (password) {
-    const encryptedData = await encrypt(keysJson, password)
-    encryptedKeysStr = JSON.stringify(encryptedData)
-  } else {
-    encryptedKeysStr = keysJson
-  }
+  // Always encrypt - password is required (validated above)
+  const encryptedData = await encrypt(keysJson, password)
+  const encryptedKeysStr = JSON.stringify(encryptedData)
 
   // Deactivate all existing accounts
   await database.execute('UPDATE accounts SET is_active = 0')
