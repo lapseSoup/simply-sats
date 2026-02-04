@@ -16,7 +16,8 @@ import {
   unlockBSV,
   detectLockedUtxos,
   getFeeRatePerKB,
-  setFeeRateFromKB
+  setFeeRateFromKB,
+  transferOrdinal
 } from '../services/wallet'
 import {
   setWalletKeys,
@@ -38,6 +39,28 @@ import {
   getBalanceFromDatabase,
   getSpendableUtxosFromDatabase
 } from '../services/sync'
+import {
+  type Account,
+  getAllAccounts,
+  getActiveAccount,
+  getAccountKeys,
+  switchAccount as switchAccountDb,
+  createAccount,
+  deleteAccount as deleteAccountDb,
+  updateAccountName,
+  migrateToMultiAccount
+} from '../services/accounts'
+import {
+  type TokenBalance,
+  syncTokenBalances
+} from '../services/tokens'
+import {
+  initAutoLock,
+  stopAutoLock,
+  resetInactivityTimer,
+  setInactivityLimit,
+  minutesToMs
+} from '../services/autoLock'
 
 interface NetworkInfo {
   blockHeight: number
@@ -74,6 +97,28 @@ interface WalletContextType {
   basketBalances: BasketBalances
   contacts: Contact[]
 
+  // Multi-account state
+  accounts: Account[]
+  activeAccount: Account | null
+  activeAccountId: number | null
+  switchAccount: (accountId: number, password: string) => Promise<boolean>
+  createNewAccount: (name: string, password: string) => Promise<boolean>
+  deleteAccount: (accountId: number) => Promise<boolean>
+  renameAccount: (accountId: number, name: string) => Promise<void>
+  refreshAccounts: () => Promise<void>
+
+  // Token state
+  tokenBalances: TokenBalance[]
+  refreshTokens: () => Promise<void>
+  tokensSyncing: boolean
+
+  // Lock state
+  isLocked: boolean
+  lockWallet: () => void
+  unlockWallet: (password: string) => Promise<boolean>
+  autoLockMinutes: number
+  setAutoLockMinutes: (minutes: number) => void
+
   // Network state
   networkInfo: NetworkInfo | null
   syncing: boolean
@@ -102,6 +147,7 @@ interface WalletContextType {
   handleSend: (address: string, amountSats: number) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleLock: (amountSats: number, blocks: number) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleUnlock: (lock: LockedUTXO) => Promise<{ success: boolean; txid?: string; error?: string }>
+  handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
 
   // Utilities
   copyToClipboard: (text: string, feedback?: string) => Promise<void>
@@ -149,6 +195,22 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const [txHistory, setTxHistory] = useState<TxHistoryItem[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
 
+  // Multi-account state
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [activeAccount, setActiveAccount] = useState<Account | null>(null)
+  const [activeAccountId, setActiveAccountId] = useState<number | null>(null)
+
+  // Token state
+  const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([])
+  const [tokensSyncing, setTokensSyncing] = useState(false)
+
+  // Lock state
+  const [isLocked, setIsLocked] = useState(false)
+  const [autoLockMinutes, setAutoLockMinutesState] = useState<number>(() => {
+    const saved = localStorage.getItem('simply_sats_auto_lock_minutes')
+    return saved ? parseInt(saved, 10) : 10
+  })
+
   // Basket balances
   const [basketBalances, setBasketBalances] = useState<BasketBalances>({
     default: 0,
@@ -185,6 +247,179 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setWalletKeys(newWallet)
   }, [])
 
+  // Lock wallet (clear keys from memory)
+  const lockWallet = useCallback(() => {
+    console.log('[Wallet] Locking wallet')
+    setIsLocked(true)
+    // Clear sensitive data from memory
+    setWalletState(null)
+    setWalletKeys(null)
+  }, [])
+
+  // Unlock wallet with password
+  const unlockWallet = useCallback(async (password: string): Promise<boolean> => {
+    if (!activeAccount) {
+      console.error('[Wallet] No active account to unlock')
+      return false
+    }
+
+    try {
+      const keys = await getAccountKeys(activeAccount, password)
+      if (keys) {
+        setWalletState(keys)
+        setWalletKeys(keys)
+        setIsLocked(false)
+        resetInactivityTimer()
+        console.log('[Wallet] Wallet unlocked')
+        return true
+      }
+      return false
+    } catch (e) {
+      console.error('[Wallet] Failed to unlock:', e)
+      return false
+    }
+  }, [activeAccount])
+
+  // Set auto-lock timeout
+  const setAutoLockMinutes = useCallback((minutes: number) => {
+    setAutoLockMinutesState(minutes)
+    localStorage.setItem('simply_sats_auto_lock_minutes', String(minutes))
+    if (minutes > 0) {
+      setInactivityLimit(minutesToMs(minutes))
+    } else {
+      stopAutoLock()
+    }
+  }, [])
+
+  // Refresh accounts list
+  const refreshAccounts = useCallback(async () => {
+    try {
+      const allAccounts = await getAllAccounts()
+      setAccounts(allAccounts)
+
+      const active = await getActiveAccount()
+      if (active) {
+        setActiveAccount(active)
+        setActiveAccountId(active.id || null)
+      }
+    } catch (e) {
+      console.error('[Wallet] Failed to refresh accounts:', e)
+    }
+  }, [])
+
+  // Switch to a different account
+  const switchAccount = useCallback(async (accountId: number, password: string): Promise<boolean> => {
+    try {
+      // Get the account
+      const account = accounts.find(a => a.id === accountId)
+      if (!account) {
+        console.error('[Wallet] Account not found')
+        return false
+      }
+
+      // Try to decrypt keys
+      const keys = await getAccountKeys(account, password)
+      if (!keys) {
+        console.error('[Wallet] Invalid password')
+        return false
+      }
+
+      // Switch in database
+      const success = await switchAccountDb(accountId)
+      if (!success) return false
+
+      // Update state
+      setActiveAccount(account)
+      setActiveAccountId(accountId)
+      setWallet(keys)
+      setIsLocked(false)
+
+      // Refresh data for new account
+      await refreshAccounts()
+
+      console.log(`[Wallet] Switched to account ${account.name}`)
+      return true
+    } catch (e) {
+      console.error('[Wallet] Failed to switch account:', e)
+      return false
+    }
+  }, [accounts, setWallet, refreshAccounts])
+
+  // Create a new account
+  const createNewAccount = useCallback(async (name: string, password: string): Promise<boolean> => {
+    try {
+      // Create new wallet keys
+      const keys = createWallet()
+
+      // Create account in database
+      const accountId = await createAccount(name, keys, password)
+      if (!accountId) return false
+
+      // Set as active
+      setWallet(keys)
+      setIsLocked(false)
+
+      // Refresh accounts
+      await refreshAccounts()
+
+      console.log(`[Wallet] Created new account: ${name}`)
+      return true
+    } catch (e) {
+      console.error('[Wallet] Failed to create account:', e)
+      return false
+    }
+  }, [setWallet, refreshAccounts])
+
+  // Delete an account
+  const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
+    try {
+      const success = await deleteAccountDb(accountId)
+      if (success) {
+        await refreshAccounts()
+
+        // If we deleted the active account, load the new active one
+        const active = await getActiveAccount()
+        if (active && wallet === null) {
+          const keys = await getAccountKeys(active, '')
+          if (keys) {
+            setWallet(keys)
+          }
+        }
+      }
+      return success
+    } catch (e) {
+      console.error('[Wallet] Failed to delete account:', e)
+      return false
+    }
+  }, [wallet, setWallet, refreshAccounts])
+
+  // Rename an account
+  const renameAccount = useCallback(async (accountId: number, name: string): Promise<void> => {
+    await updateAccountName(accountId, name)
+    await refreshAccounts()
+  }, [refreshAccounts])
+
+  // Refresh token balances
+  const refreshTokens = useCallback(async () => {
+    if (!wallet || tokensSyncing) return
+
+    setTokensSyncing(true)
+    try {
+      const accountId = activeAccountId || 1
+      const balances = await syncTokenBalances(
+        accountId,
+        wallet.walletAddress,
+        wallet.ordAddress
+      )
+      setTokenBalances(balances)
+      console.log(`[Tokens] Synced ${balances.length} token balances`)
+    } catch (e) {
+      console.error('[Tokens] Failed to sync tokens:', e)
+    } finally {
+      setTokensSyncing(false)
+    }
+  }, [wallet, activeAccountId, tokensSyncing])
+
   // Initialize database and load wallet on mount
   useEffect(() => {
     const init = async () => {
@@ -219,15 +454,40 @@ export function WalletProvider({ children }: WalletProviderProps) {
         } catch (e) {
           console.log('No cached transactions yet')
         }
+
+        // Load accounts
+        const allAccounts = await getAllAccounts()
+        setAccounts(allAccounts)
+
+        const active = await getActiveAccount()
+        if (active) {
+          setActiveAccount(active)
+          setActiveAccountId(active.id || null)
+        }
       } catch (err) {
         console.error('Failed to initialize database:', err)
       }
 
+      // Try to load wallet (legacy support + new account system)
       if (hasWallet()) {
         try {
           const keys = await loadWallet('')
           if (keys) {
             setWallet(keys)
+
+            // Migrate to multi-account if needed
+            const allAccounts = await getAllAccounts()
+            if (allAccounts.length === 0) {
+              console.log('[Wallet] Migrating to multi-account system')
+              await migrateToMultiAccount(keys, '')
+              const accounts = await getAllAccounts()
+              setAccounts(accounts)
+              const active = await getActiveAccount()
+              if (active) {
+                setActiveAccount(active)
+                setActiveAccountId(active.id || null)
+              }
+            }
           }
         } catch (err) {
           console.error('Failed to load wallet:', err)
@@ -242,6 +502,15 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
     init()
   }, [setWallet])
+
+  // Initialize auto-lock when wallet is loaded
+  useEffect(() => {
+    if (wallet && autoLockMinutes > 0) {
+      console.log(`[AutoLock] Initializing with ${autoLockMinutes} minute timeout`)
+      const cleanup = initAutoLock(lockWallet, minutesToMs(autoLockMinutes))
+      return cleanup
+    }
+  }, [wallet, autoLockMinutes, lockWallet])
 
   // Fetch network status
   useEffect(() => {
@@ -540,6 +809,45 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [wallet, networkInfo, locks, fetchData])
 
+  const handleTransferOrdinal = useCallback(async (
+    ordinal: Ordinal,
+    toAddress: string
+  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
+    if (!wallet) return { success: false, error: 'No wallet loaded' }
+
+    try {
+      // Get funding UTXOs from the wallet
+      const fundingUtxos = await getUTXOs(wallet.walletAddress)
+
+      if (fundingUtxos.length === 0) {
+        return { success: false, error: 'No funding UTXOs available for transfer fee' }
+      }
+
+      // Create the ordinal UTXO object
+      const ordinalUtxo: UTXO = {
+        txid: ordinal.txid,
+        vout: ordinal.vout,
+        satoshis: 1,
+        script: '' // Will be fetched by transferOrdinal
+      }
+
+      const txid = await transferOrdinal(
+        wallet.ordWif,
+        ordinalUtxo,
+        toAddress,
+        wallet.walletWif,
+        fundingUtxos
+      )
+
+      // Refresh data
+      await fetchData()
+
+      return { success: true, txid }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Transfer failed' }
+    }
+  }, [wallet, fetchData])
+
   // Settings
   const toggleDisplayUnit = useCallback(() => {
     const newValue = !displayInSats
@@ -602,6 +910,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [usdPrice])
 
   const value: WalletContextType = {
+    // Wallet state
     wallet,
     setWallet,
     balance,
@@ -613,18 +922,48 @@ export function WalletProvider({ children }: WalletProviderProps) {
     txHistory,
     basketBalances,
     contacts,
+
+    // Multi-account state
+    accounts,
+    activeAccount,
+    activeAccountId,
+    switchAccount,
+    createNewAccount,
+    deleteAccount,
+    renameAccount,
+    refreshAccounts,
+
+    // Token state
+    tokenBalances,
+    refreshTokens,
+    tokensSyncing,
+
+    // Lock state
+    isLocked,
+    lockWallet,
+    unlockWallet,
+    autoLockMinutes,
+    setAutoLockMinutes,
+
+    // Network state
     networkInfo,
     syncing,
     loading,
+
+    // Settings
     displayInSats,
     toggleDisplayUnit,
     feeRateKB,
     setFeeRate,
+
+    // Connected apps
     connectedApps,
     trustedOrigins,
     addTrustedOrigin,
     removeTrustedOrigin,
     disconnectApp,
+
+    // Actions
     performSync,
     fetchData,
     handleCreateWallet,
@@ -634,9 +973,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleSend,
     handleLock,
     handleUnlock,
+    handleTransferOrdinal,
+
+    // Utilities
     copyToClipboard,
     showToast,
     copyFeedback,
+
+    // Format helpers
     formatBSVShort,
     formatUSD
   }

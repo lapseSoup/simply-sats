@@ -20,6 +20,24 @@ fn include_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/002_transaction_amount.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "Multi-account system",
+            sql: include_str!("../migrations/003_accounts.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 4,
+            description: "BSV20 token support",
+            sql: include_str!("../migrations/004_tokens.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 5,
+            description: "Tagged key derivation and messaging",
+            sql: include_str!("../migrations/005_tagged_keys.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

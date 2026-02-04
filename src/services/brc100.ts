@@ -1,4 +1,4 @@
-import { PrivateKey, P2PKH, Transaction, LockingScript } from '@bsv/sdk'
+import { PrivateKey, P2PKH, Transaction, LockingScript, PublicKey, Hash, SymmetricKey } from '@bsv/sdk'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import type { WalletKeys, UTXO, LockedUTXO } from './wallet'
@@ -32,11 +32,12 @@ import {
   type CertificateType,
   type AcquireCertificateArgs
 } from './certificates'
+import { deriveTaggedKey, type DerivationTag } from './keyDerivation'
 
 // BRC-100 Protocol Types
 export interface BRC100Request {
   id: string
-  type: 'getPublicKey' | 'createSignature' | 'createAction' | 'getNetwork' | 'getVersion' | 'isAuthenticated' | 'getHeight' | 'listOutputs' | 'lockBSV' | 'unlockBSV' | 'listLocks'
+  type: 'getPublicKey' | 'createSignature' | 'createAction' | 'getNetwork' | 'getVersion' | 'isAuthenticated' | 'getHeight' | 'listOutputs' | 'lockBSV' | 'unlockBSV' | 'listLocks' | 'encrypt' | 'decrypt' | 'getTaggedKeys'
   params?: any
   origin?: string // The app requesting (e.g., "wrootz.com")
 }
@@ -1048,6 +1049,150 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
           response.error = {
             code: -32000,
             message: error instanceof Error ? error.message : 'Unlock failed'
+          }
+        }
+        break
+      }
+
+      case 'encrypt': {
+        // ECIES encryption using counterparty's public key
+        const params = request.params || {}
+        const plaintext = params.plaintext || params.message
+        const recipientPubKey = params.counterparty || params.publicKey
+
+        if (!plaintext) {
+          response.error = { code: -32602, message: 'Missing plaintext parameter' }
+          break
+        }
+
+        if (!recipientPubKey) {
+          response.error = { code: -32602, message: 'Missing counterparty/publicKey parameter' }
+          break
+        }
+
+        try {
+          // Derive shared secret using ECDH
+          const senderPrivKey = PrivateKey.fromWif(keys.identityWif)
+          const recipientPublicKey = PublicKey.fromString(recipientPubKey)
+
+          // Use ECDH to derive shared secret
+          const sharedSecret = senderPrivKey.deriveSharedSecret(recipientPublicKey)
+          const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
+
+          // Encrypt using AES with the shared secret
+          const plaintextBytes = new TextEncoder().encode(plaintext)
+          const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
+          const encrypted = symmetricKey.encrypt(Array.from(plaintextBytes))
+
+          // Convert encrypted bytes to hex string
+          const encryptedHex = Array.from(encrypted as number[])
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('')
+
+          // Return as hex string along with sender's public key for decryption
+          response.result = {
+            ciphertext: encryptedHex,
+            senderPublicKey: keys.identityPubKey
+          }
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Encryption failed'
+          }
+        }
+        break
+      }
+
+      case 'decrypt': {
+        // ECIES decryption using counterparty's public key
+        const params = request.params || {}
+        const ciphertext = params.ciphertext || params.encrypted
+        const senderPubKey = params.counterparty || params.senderPublicKey
+
+        if (!ciphertext) {
+          response.error = { code: -32602, message: 'Missing ciphertext parameter' }
+          break
+        }
+
+        if (!senderPubKey) {
+          response.error = { code: -32602, message: 'Missing counterparty/senderPublicKey parameter' }
+          break
+        }
+
+        try {
+          // Derive shared secret using ECDH
+          const recipientPrivKey = PrivateKey.fromWif(keys.identityWif)
+          const senderPublicKey = PublicKey.fromString(senderPubKey)
+
+          // Use ECDH to derive shared secret
+          const sharedSecret = recipientPrivKey.deriveSharedSecret(senderPublicKey)
+          const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
+
+          // Convert hex ciphertext to bytes
+          const ciphertextBytes = (ciphertext as string).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16))
+
+          // Decrypt using AES with the shared secret
+          const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
+          const decrypted = symmetricKey.decrypt(ciphertextBytes)
+
+          // Return plaintext
+          const decryptedBytes = decrypted instanceof Uint8Array ? decrypted : new Uint8Array(decrypted as number[])
+          response.result = {
+            plaintext: new TextDecoder().decode(decryptedBytes)
+          }
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Decryption failed'
+          }
+        }
+        break
+      }
+
+      case 'getTaggedKeys': {
+        // Derive tagged keys for app-specific use
+        const params = request.params || {}
+        const label = params.label
+        const keyIds = params.keyIds || params.ids || [params.keyId || 'default']
+
+        if (!label) {
+          response.error = { code: -32602, message: 'Missing label parameter' }
+          break
+        }
+
+        try {
+          const rootPrivKey = PrivateKey.fromWif(keys.identityWif)
+          const derivedKeys: Array<{
+            keyId: string
+            publicKey: string
+            address: string
+            derivationPath: string
+          }> = []
+
+          for (const keyId of keyIds) {
+            const tag: DerivationTag = {
+              label,
+              id: keyId,
+              domain: request.origin
+            }
+
+            const derived = deriveTaggedKey(rootPrivKey, tag)
+            derivedKeys.push({
+              keyId,
+              publicKey: derived.publicKey,
+              address: derived.address,
+              derivationPath: derived.derivationPath
+            })
+          }
+
+          response.result = {
+            label,
+            keys: derivedKeys
+          }
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Key derivation failed'
           }
         }
         break

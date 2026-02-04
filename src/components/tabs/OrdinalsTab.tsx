@@ -4,6 +4,7 @@ import type { Ordinal } from '../../services/wallet'
 
 interface OrdinalsTabProps {
   onSelectOrdinal: (ordinal: Ordinal) => void
+  onTransferOrdinal?: (ordinal: Ordinal) => void
 }
 
 type SortOption = 'newest' | 'oldest' | 'content'
@@ -42,7 +43,8 @@ function getContentIcon(contentType: string | undefined): string {
   }
 }
 
-export function OrdinalsTab({ onSelectOrdinal }: OrdinalsTabProps) {
+export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
+  // Note: _onTransferOrdinal is available for future use
   const { ordinals } = useWallet()
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('newest')

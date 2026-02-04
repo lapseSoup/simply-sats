@@ -24,12 +24,15 @@ import {
   OrdinalModal,
   UnlockConfirmModal,
   RestoreModal,
-  SettingsModal
+  SettingsModal,
+  LockScreenModal,
+  OrdinalTransferModal
 } from './components/modals'
 import {
   ActivityTab,
   OrdinalsTab,
-  LocksTab
+  LocksTab,
+  TokensTab
 } from './components/tabs'
 import { OnboardingFlow } from './components/onboarding'
 
@@ -49,8 +52,8 @@ import { PrivateKey } from '@bsv/sdk'
 import { getDerivedAddresses } from './services/database'
 import { needsInitialSync } from './services/sync'
 
-type Tab = 'activity' | 'ordinals' | 'locks'
-type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | 'brc100' | 'lock' | null
+type Tab = 'activity' | 'ordinals' | 'tokens' | 'locks'
+type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | 'brc100' | 'lock' | 'transfer-ordinal' | null
 
 function WalletApp() {
   const {
@@ -66,14 +69,23 @@ function WalletApp() {
     copyFeedback,
     showToast,
     performSync,
-    fetchData
+    fetchData,
+    // Lock screen state
+    isLocked,
+    unlockWallet,
+    // Token state
+    tokenBalances,
+    refreshTokens
   } = useWallet()
 
   const [activeTab, setActiveTab] = useState<Tab>('activity')
   const [modal, setModal] = useState<Modal>(null)
 
   // Tab order for keyboard navigation
-  const tabOrder: Tab[] = ['activity', 'ordinals', 'locks']
+  const tabOrder: Tab[] = ['activity', 'ordinals', 'tokens', 'locks']
+
+  // Ordinal for transfer
+  const [ordinalToTransfer, setOrdinalToTransfer] = useState<Ordinal | null>(null)
 
   const navigateTab = useCallback((direction: 'left' | 'right') => {
     const currentIndex = tabOrder.indexOf(activeTab)
@@ -238,6 +250,11 @@ function WalletApp() {
     setModal('ordinal')
   }
 
+  const handleTransferOrdinal = (ordinal: Ordinal) => {
+    setOrdinalToTransfer(ordinal)
+    setModal('transfer-ordinal')
+  }
+
   const handleUnlockClick = (lock: LockedUTXO) => {
     setUnlockConfirm(lock)
   }
@@ -276,6 +293,16 @@ function WalletApp() {
       <div className="setup-screen">
         <div className="spinner" aria-label="Loading" />
       </div>
+    )
+  }
+
+  // Lock screen (wallet is locked due to inactivity)
+  if (isLocked && wallet === null) {
+    return (
+      <>
+        <LockScreenModal onUnlock={unlockWallet} />
+        <Toast message={copyFeedback} />
+      </>
     )
   }
 
@@ -353,6 +380,18 @@ function WalletApp() {
           <span className="tab-count" aria-label={`${ordinals.length} ordinals`}>{ordinals.length}</span>
         </button>
         <button
+          id="tab-tokens"
+          className={`nav-tab ${activeTab === 'tokens' ? 'active' : ''}`}
+          onClick={() => setActiveTab('tokens')}
+          role="tab"
+          aria-selected={activeTab === 'tokens'}
+          aria-controls="tabpanel-tokens"
+          tabIndex={activeTab === 'tokens' ? 0 : -1}
+        >
+          Tokens
+          <span className="tab-count" aria-label={`${tokenBalances.length} tokens`}>{tokenBalances.length}</span>
+        </button>
+        <button
           id="tab-locks"
           className={`nav-tab ${activeTab === 'locks' ? 'active' : ''}`}
           onClick={() => setActiveTab('locks')}
@@ -375,7 +414,13 @@ function WalletApp() {
         tabIndex={-1}
       >
         {activeTab === 'activity' && <ActivityTab />}
-        {activeTab === 'ordinals' && <OrdinalsTab onSelectOrdinal={handleSelectOrdinal} />}
+        {activeTab === 'ordinals' && (
+          <OrdinalsTab
+            onSelectOrdinal={handleSelectOrdinal}
+            onTransferOrdinal={handleTransferOrdinal}
+          />
+        )}
+        {activeTab === 'tokens' && <TokensTab onRefresh={refreshTokens} />}
         {activeTab === 'locks' && (
           <LocksTab
             onLock={() => setModal('lock')}
@@ -392,7 +437,23 @@ function WalletApp() {
       {modal === 'receive' && <ReceiveModal onClose={() => setModal(null)} />}
       {modal === 'settings' && <SettingsModal onClose={() => setModal(null)} />}
       {modal === 'ordinal' && selectedOrdinal && (
-        <OrdinalModal ordinal={selectedOrdinal} onClose={() => setModal(null)} />
+        <OrdinalModal
+          ordinal={selectedOrdinal}
+          onClose={() => setModal(null)}
+          onTransfer={() => {
+            setOrdinalToTransfer(selectedOrdinal)
+            setModal('transfer-ordinal')
+          }}
+        />
+      )}
+      {modal === 'transfer-ordinal' && ordinalToTransfer && (
+        <OrdinalTransferModal
+          ordinal={ordinalToTransfer}
+          onClose={() => {
+            setOrdinalToTransfer(null)
+            setModal(null)
+          }}
+        />
       )}
       {modal === 'brc100' && brc100Request && (
         <BRC100Modal

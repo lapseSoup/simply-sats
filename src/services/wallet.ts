@@ -1704,3 +1704,128 @@ export async function detectLockedUtxos(
     return []
   }
 }
+
+/**
+ * Transfer a 1Sat Ordinal to another address
+ *
+ * @param ordWif - The ordinals private key WIF
+ * @param ordinalUtxo - The 1-sat ordinal UTXO to transfer
+ * @param toAddress - Recipient's address
+ * @param fundingWif - WIF for funding UTXOs (for the fee)
+ * @param fundingUtxos - UTXOs to use for paying the fee
+ * @returns Transaction ID
+ */
+export async function transferOrdinal(
+  ordWif: string,
+  ordinalUtxo: UTXO,
+  toAddress: string,
+  fundingWif: string,
+  fundingUtxos: UTXO[]
+): Promise<string> {
+  const ordPrivateKey = PrivateKey.fromWif(ordWif)
+  const ordPublicKey = ordPrivateKey.toPublicKey()
+  const ordFromAddress = ordPublicKey.toAddress()
+  const ordSourceLockingScript = new P2PKH().lock(ordFromAddress)
+
+  const fundingPrivateKey = PrivateKey.fromWif(fundingWif)
+  const fundingPublicKey = fundingPrivateKey.toPublicKey()
+  const fundingFromAddress = fundingPublicKey.toAddress()
+  const fundingSourceLockingScript = new P2PKH().lock(fundingFromAddress)
+
+  const tx = new Transaction()
+
+  // Add ordinal input first (the 1-sat inscription)
+  tx.addInput({
+    sourceTXID: ordinalUtxo.txid,
+    sourceOutputIndex: ordinalUtxo.vout,
+    unlockingScriptTemplate: new P2PKH().unlock(
+      ordPrivateKey,
+      'all',
+      false,
+      ordinalUtxo.satoshis,
+      ordSourceLockingScript
+    ),
+    sequence: 0xffffffff
+  })
+
+  // Calculate fee for the transaction
+  // 1 ordinal input + funding inputs, 1 ordinal output + possibly change output
+  const numFundingInputs = Math.min(fundingUtxos.length, 2) // Usually 1-2 inputs enough
+  const estimatedFee = calculateTxFee(1 + numFundingInputs, 2)
+
+  // Select funding UTXOs
+  const fundingToUse: UTXO[] = []
+  let totalFunding = 0
+
+  for (const utxo of fundingUtxos) {
+    fundingToUse.push(utxo)
+    totalFunding += utxo.satoshis
+
+    if (totalFunding >= estimatedFee + 100) break
+  }
+
+  if (totalFunding < estimatedFee) {
+    throw new Error(`Insufficient funds for fee (need ~${estimatedFee} sats)`)
+  }
+
+  // Add funding inputs
+  for (const utxo of fundingToUse) {
+    tx.addInput({
+      sourceTXID: utxo.txid,
+      sourceOutputIndex: utxo.vout,
+      unlockingScriptTemplate: new P2PKH().unlock(
+        fundingPrivateKey,
+        'all',
+        false,
+        utxo.satoshis,
+        fundingSourceLockingScript
+      ),
+      sequence: 0xffffffff
+    })
+  }
+
+  // Add ordinal output first (important: ordinals go to first output)
+  tx.addOutput({
+    lockingScript: new P2PKH().lock(toAddress),
+    satoshis: 1 // Always 1 sat for ordinals
+  })
+
+  // Calculate actual fee and change
+  const totalInput = ordinalUtxo.satoshis + totalFunding
+  const actualFee = calculateTxFee(1 + fundingToUse.length, 2)
+  const change = totalInput - 1 - actualFee
+
+  // Add change output if above dust
+  if (change > 546) {
+    tx.addOutput({
+      lockingScript: new P2PKH().lock(fundingFromAddress),
+      satoshis: change
+    })
+  }
+
+  await tx.sign()
+  const txid = await broadcastTransaction(tx)
+
+  // Track transaction locally
+  try {
+    await recordSentTransaction(
+      txid,
+      tx.toHex(),
+      `Transferred ordinal ${ordinalUtxo.txid.slice(0, 8)}... to ${toAddress.slice(0, 8)}...`,
+      ['ordinal', 'transfer']
+    )
+
+    // Mark spent UTXOs
+    const spentUtxos = [
+      { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
+      ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+    ]
+    await markUtxosSpent(spentUtxos, txid)
+
+    console.log('Ordinal transfer tracked locally:', txid)
+  } catch (error) {
+    console.warn('Failed to track ordinal transfer locally:', error)
+  }
+
+  return txid
+}

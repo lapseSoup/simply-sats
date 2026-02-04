@@ -5,9 +5,10 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 interface OrdinalModalProps {
   ordinal: Ordinal
   onClose: () => void
+  onTransfer?: () => void
 }
 
-export function OrdinalModal({ ordinal, onClose }: OrdinalModalProps) {
+export function OrdinalModal({ ordinal, onClose, onTransfer }: OrdinalModalProps) {
   const { copyToClipboard } = useWallet()
 
   const openOnWoC = (txid: string) => {
@@ -31,18 +32,32 @@ export function OrdinalModal({ ordinal, onClose }: OrdinalModalProps) {
                 <span className="ordinal-info-value">{ordinal.origin.slice(0, 16)}...</span>
               </div>
               <div className="ordinal-info-row">
+                <span className="ordinal-info-label">Outpoint</span>
+                <span className="ordinal-info-value">{`${ordinal.txid}:${ordinal.vout}`.slice(0, 16)}...</span>
+              </div>
+              <div className="ordinal-info-row">
                 <span className="ordinal-info-label">TXID</span>
                 <button className="link-btn" onClick={() => openOnWoC(ordinal.txid)}>
                   View on WhatsOnChain
                 </button>
               </div>
             </div>
-            <button
-              className="btn btn-secondary"
-              onClick={() => copyToClipboard(ordinal.origin, 'Origin copied!')}
-            >
-              Copy Origin
-            </button>
+            <div className="ordinal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => copyToClipboard(ordinal.origin, 'Origin copied!')}
+              >
+                Copy Origin
+              </button>
+              {onTransfer && (
+                <button
+                  className="btn btn-primary"
+                  onClick={onTransfer}
+                >
+                  Transfer
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

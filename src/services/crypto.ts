@@ -206,3 +206,160 @@ export async function migrateLegacyData(legacyData: string, password: string): P
   // Re-encrypt with proper encryption
   return encrypt(decoded, password)
 }
+
+// ============================================
+// ECIES Message Encryption
+// ============================================
+
+/**
+ * ECIES (Elliptic Curve Integrated Encryption Scheme) for message encryption.
+ * This allows encrypting messages that can only be decrypted by the holder
+ * of a specific private key.
+ *
+ * Note: This is a simplified implementation. For full BRC compatibility,
+ * you may want to use the @bsv/sdk ECIES implementation.
+ */
+
+/**
+ * Derive a shared secret using ECDH (Elliptic Curve Diffie-Hellman)
+ * This uses the sender's private key and recipient's public key
+ *
+ * Note: This is a placeholder that uses AES-GCM with a derived key.
+ * For full ECIES, use the @bsv/sdk implementation.
+ *
+ * @param message - The message to encrypt
+ * @param recipientPubKey - Recipient's public key (hex string)
+ * @param sharedSecret - A pre-computed shared secret (hex string)
+ * @returns Encrypted message as base64
+ */
+export async function encryptWithSharedSecret(
+  message: string,
+  sharedSecret: string
+): Promise<string> {
+  // Convert shared secret to key material
+  const secretBytes = hexToBytes(sharedSecret)
+
+  // Import as raw key - ensure we pass an ArrayBuffer
+  const arrayBuffer = secretBytes.buffer.slice(secretBytes.byteOffset, secretBytes.byteOffset + secretBytes.byteLength) as ArrayBuffer
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    arrayBuffer,
+    'HKDF',
+    false,
+    ['deriveBits', 'deriveKey']
+  )
+
+  // Derive an AES key from the shared secret
+  const aesKey = await crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(16), // Fixed salt for deterministic derivation
+      info: new TextEncoder().encode('ECIES-AES-KEY')
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  )
+
+  // Generate random IV
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+
+  // Encrypt the message
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    aesKey,
+    new TextEncoder().encode(message)
+  )
+
+  // Combine IV + ciphertext
+  const combined = new Uint8Array(iv.length + ciphertext.byteLength)
+  combined.set(iv)
+  combined.set(new Uint8Array(ciphertext), iv.length)
+
+  return bufferToBase64(combined.buffer)
+}
+
+/**
+ * Decrypt a message using a shared secret
+ *
+ * @param encryptedMessage - The encrypted message as base64
+ * @param sharedSecret - The shared secret (hex string)
+ * @returns Decrypted message
+ */
+export async function decryptWithSharedSecret(
+  encryptedMessage: string,
+  sharedSecret: string
+): Promise<string> {
+  // Convert shared secret to key material
+  const secretBytes = hexToBytes(sharedSecret)
+
+  // Import as raw key - ensure we pass an ArrayBuffer
+  const arrayBuffer = secretBytes.buffer.slice(secretBytes.byteOffset, secretBytes.byteOffset + secretBytes.byteLength) as ArrayBuffer
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    arrayBuffer,
+    'HKDF',
+    false,
+    ['deriveBits', 'deriveKey']
+  )
+
+  // Derive the same AES key
+  const aesKey = await crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(16),
+      info: new TextEncoder().encode('ECIES-AES-KEY')
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  )
+
+  // Decode the combined data
+  const combined = new Uint8Array(base64ToBuffer(encryptedMessage))
+
+  // Extract IV and ciphertext
+  const iv = combined.slice(0, 12)
+  const ciphertext = combined.slice(12)
+
+  // Decrypt
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    aesKey,
+    ciphertext
+  )
+
+  return new TextDecoder().decode(plaintext)
+}
+
+/**
+ * Helper: Convert hex string to Uint8Array
+ */
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16)
+  }
+  return bytes
+}
+
+/**
+ * Helper: Convert Uint8Array to hex string
+ */
+export function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/**
+ * Generate a random encryption key (for session-based encryption)
+ */
+export async function generateRandomKey(): Promise<string> {
+  const key = crypto.getRandomValues(new Uint8Array(32))
+  return bytesToHex(key)
+}
