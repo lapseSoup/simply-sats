@@ -9,8 +9,8 @@ import {
   decryptWithSharedSecret,
   generateRandomKey,
   bytesToHex,
-  EncryptedData
 } from './crypto'
+import type { EncryptedData } from './crypto'
 
 describe('Password-based Encryption', () => {
   const testPassword = 'securepassword123'

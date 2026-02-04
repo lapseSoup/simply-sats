@@ -54,6 +54,7 @@ import {
   setInactivityLimit,
   minutesToMs
 } from '../services/autoLock'
+import { isValidOrigin, normalizeOrigin } from '../utils/validation'
 
 interface TxHistoryItem {
   tx_hash: string
@@ -118,7 +119,7 @@ interface WalletContextType {
   // Connected apps
   connectedApps: string[]
   trustedOrigins: string[]
-  addTrustedOrigin: (origin: string) => void
+  addTrustedOrigin: (origin: string) => boolean
   removeTrustedOrigin: (origin: string) => void
   disconnectApp: (origin: string) => void
 
@@ -798,11 +799,17 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Trusted origins
   const addTrustedOrigin = useCallback((origin: string) => {
-    if (!trustedOrigins.includes(origin)) {
-      const newOrigins = [...trustedOrigins, origin]
+    if (!isValidOrigin(origin)) {
+      console.warn('Invalid origin format:', origin)
+      return false
+    }
+    const normalized = normalizeOrigin(origin)
+    if (!trustedOrigins.includes(normalized)) {
+      const newOrigins = [...trustedOrigins, normalized]
       localStorage.setItem('simply_sats_trusted_origins', JSON.stringify(newOrigins))
       setTrustedOrigins(newOrigins)
     }
+    return true
   }, [trustedOrigins])
 
   const removeTrustedOrigin = useCallback((origin: string) => {
