@@ -12,8 +12,7 @@ vi.mock('../infrastructure/api/wocClient', () => {
   }
   return {
     getWocClient: () => mockClient,
-    createWocClient: () => mockClient,
-    __mockClient: mockClient // Export for test access
+    createWocClient: () => mockClient
   }
 })
 
@@ -57,7 +56,15 @@ import {
 } from './database'
 
 // Get the mock client for test manipulation
-import { __mockClient as mockWocClient } from '../infrastructure/api/wocClient'
+import { getWocClient } from '../infrastructure/api/wocClient'
+const mockWocClient = getWocClient() as ReturnType<typeof vi.fn> & {
+  getBlockHeight: ReturnType<typeof vi.fn>
+  getBalance: ReturnType<typeof vi.fn>
+  getUtxos: ReturnType<typeof vi.fn>
+  getTransactionHistory: ReturnType<typeof vi.fn>
+  getTransactionDetails: ReturnType<typeof vi.fn>
+  broadcastTransaction: ReturnType<typeof vi.fn>
+}
 
 describe('Sync Service', () => {
   beforeEach(() => {
