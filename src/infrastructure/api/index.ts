@@ -3,6 +3,4 @@
  */
 
 export * from './wocClient'
-
-// NOTE: These exports will be uncommented as modules are created
-// export * from './feeService'
+export * from './feeService'
