@@ -1,8 +1,24 @@
+import { useState, useEffect } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { getTransactionsByLabel } from '../../services/database'
 
 export function ActivityTab() {
   const { txHistory, locks } = useWallet()
+  const [unlockTxids, setUnlockTxids] = useState<Set<string>>(new Set())
+
+  // Fetch unlock transaction IDs from database
+  useEffect(() => {
+    const fetchUnlockTxids = async () => {
+      try {
+        const unlockTxs = await getTransactionsByLabel('unlock')
+        setUnlockTxids(new Set(unlockTxs.map(tx => tx.txid)))
+      } catch (e) {
+        console.warn('Failed to fetch unlock transactions:', e)
+      }
+    }
+    fetchUnlockTxids()
+  }, [txHistory]) // Refresh when tx history changes
 
   const openOnWoC = (txid: string) => {
     openUrl(`https://whatsonchain.com/tx/${txid}`)
@@ -20,12 +36,30 @@ export function ActivityTab() {
     )
   }
 
+  // Determine transaction type and icon
+  const getTxTypeAndIcon = (tx: { tx_hash: string; amount?: number }) => {
+    const isLockTx = locks.some(l => l.txid === tx.tx_hash)
+    const isUnlockTx = unlockTxids.has(tx.tx_hash)
+
+    if (isLockTx) {
+      return { type: 'Locked', icon: '🔒' }
+    }
+    if (isUnlockTx) {
+      return { type: 'Unlocked', icon: '🔓' }
+    }
+    if (tx.amount && tx.amount > 0) {
+      return { type: 'Received', icon: '📥' }
+    }
+    if (tx.amount && tx.amount < 0) {
+      return { type: 'Sent', icon: '📤' }
+    }
+    return { type: 'Transaction', icon: '📄' }
+  }
+
   return (
     <div className="tx-list" role="list" aria-label="Transaction history">
       {txHistory.map((tx) => {
-        const isLockTx = locks.some(l => l.txid === tx.tx_hash)
-        const txType = isLockTx ? 'Locked' : (tx.amount && tx.amount > 0 ? 'Received' : tx.amount && tx.amount < 0 ? 'Sent' : 'Transaction')
-        const txIcon = isLockTx ? '🔒' : (tx.amount && tx.amount > 0 ? '📥' : tx.amount && tx.amount < 0 ? '📤' : '📄')
+        const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
 
         return (
           <div

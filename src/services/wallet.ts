@@ -7,7 +7,7 @@ import {
   markUtxosSpent,
   BASKETS
 } from './sync'
-import { getDerivedAddresses } from './database'
+import { getDerivedAddresses, markLockUnlockedByTxid, getDatabase } from './database'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData } from './crypto'
 
 // Wallet type - simplified to just BRC-100/Yours standard
@@ -1043,8 +1043,28 @@ export interface Ordinal {
 }
 
 // Get 1Sat Ordinals from the ordinals address
+// Uses the GorillaPool 1Sat Ordinals API for reliable inscription detection
 export async function getOrdinals(address: string): Promise<Ordinal[]> {
   try {
+    // First, try the GorillaPool 1Sat Ordinals API for proper inscription data
+    const gpResponse = await fetch(`https://ordinals.gorillapool.io/api/txos/address/${address}/unspent?limit=100`)
+    if (gpResponse.ok) {
+      const gpData = await gpResponse.json()
+      if (Array.isArray(gpData) && gpData.length > 0) {
+        console.log(`Found ${gpData.length} ordinals from GorillaPool API for ${address}`)
+        return gpData.map((item: any) => ({
+          origin: item.origin?.outpoint || `${item.txid}_${item.vout}`,
+          txid: item.txid,
+          vout: item.vout,
+          satoshis: item.satoshis || 1,
+          contentType: item.origin?.data?.insc?.file?.type,
+          content: item.origin?.data?.insc?.file?.hash
+        }))
+      }
+    }
+
+    // Fallback: Use WhatsOnChain to get 1-sat UTXOs, then verify each with GorillaPool
+    console.log('Falling back to WhatsOnChain for ordinals detection...')
     const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
     if (!response.ok) {
       console.warn(`Failed to fetch ordinals for ${address}: ${response.status}`)
@@ -1059,13 +1079,40 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
     const ordinals: Ordinal[] = []
 
     for (const utxo of utxos) {
+      // Check 1-sat UTXOs - these might be ordinals
       if (utxo.value === 1) {
-        ordinals.push({
-          origin: `${utxo.tx_hash}_${utxo.tx_pos}`,
-          txid: utxo.tx_hash,
-          vout: utxo.tx_pos,
-          satoshis: 1
-        })
+        const origin = `${utxo.tx_hash}_${utxo.tx_pos}`
+
+        // Try to get inscription details from GorillaPool
+        try {
+          const details = await getOrdinalDetails(origin)
+          if (details && details.origin) {
+            ordinals.push({
+              origin: details.origin.outpoint || origin,
+              txid: utxo.tx_hash,
+              vout: utxo.tx_pos,
+              satoshis: 1,
+              contentType: details.origin?.data?.insc?.file?.type,
+              content: details.origin?.data?.insc?.file?.hash
+            })
+          } else {
+            // Still include as potential ordinal even if no metadata
+            ordinals.push({
+              origin,
+              txid: utxo.tx_hash,
+              vout: utxo.tx_pos,
+              satoshis: 1
+            })
+          }
+        } catch {
+          // Include without metadata on error
+          ordinals.push({
+            origin,
+            txid: utxo.tx_hash,
+            vout: utxo.tx_pos,
+            satoshis: 1
+          })
+        }
       }
     }
 
@@ -1408,6 +1455,14 @@ export async function unlockBSV(
     console.warn('Failed to track unlock transaction:', error)
   }
 
+  // Mark the lock as unlocked in the database
+  try {
+    await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout)
+    console.log(`Marked lock ${lockedUtxo.txid}:${lockedUtxo.vout} as unlocked`)
+  } catch (error) {
+    console.warn('Failed to mark lock as unlocked in database:', error)
+  }
+
   return txid
 }
 
@@ -1620,6 +1675,25 @@ async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
 }
 
 /**
+ * Check if a lock has been marked as unlocked in the database
+ */
+async function isLockMarkedUnlocked(txid: string, vout: number): Promise<boolean> {
+  try {
+    const database = getDatabase()
+    const result = await database.select<{ unlocked_at: number | null }[]>(
+      `SELECT l.unlocked_at FROM locks l
+       INNER JOIN utxos u ON l.utxo_id = u.id
+       WHERE u.txid = $1 AND u.vout = $2`,
+      [txid, vout]
+    )
+    // If we found a lock record with unlocked_at set, it's been unlocked
+    return result.length > 0 && result[0].unlocked_at !== null
+  } catch {
+    return false
+  }
+}
+
+/**
  * Scan transaction history to detect locked UTXOs
  * This is used during wallet restoration to reconstruct the locks list
  */
@@ -1671,7 +1745,14 @@ export async function detectLockedUtxos(
             continue
           }
 
-          // Check if still unspent
+          // Check if marked as unlocked in database (handles pending unlock txs)
+          const markedUnlocked = await isLockMarkedUnlocked(txid, vout)
+          if (markedUnlocked) {
+            console.log(`Lock ${txid}:${vout} marked as unlocked in database`)
+            continue
+          }
+
+          // Check if still unspent on chain
           const unspent = await isUtxoUnspent(txid, vout)
           if (!unspent) {
             console.log(`Lock ${txid}:${vout} has been spent (unlocked)`)

@@ -553,6 +553,22 @@ export async function markLockUnlocked(lockId: number): Promise<void> {
   )
 }
 
+/**
+ * Mark a lock as unlocked by its UTXO txid and vout
+ */
+export async function markLockUnlockedByTxid(txid: string, vout: number): Promise<void> {
+  const database = getDatabase()
+
+  // Find the lock by joining with utxos table
+  await database.execute(
+    `UPDATE locks SET unlocked_at = $1
+     WHERE utxo_id IN (SELECT id FROM utxos WHERE txid = $2 AND vout = $3)
+     AND unlocked_at IS NULL`,
+    [Date.now(), txid, vout]
+  )
+  console.log(`[DB] Marked lock as unlocked: ${txid}:${vout}`)
+}
+
 // ============================================
 // Sync Operations
 // ============================================
