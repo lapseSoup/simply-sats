@@ -31,6 +31,24 @@ function formatTimeRemaining(seconds: number): string {
   }
 }
 
+function formatCountdownTimer(seconds: number): { days: string; hours: string; minutes: string; seconds: string } {
+  if (seconds <= 0) {
+    return { days: '00', hours: '00', minutes: '00', seconds: '00' }
+  }
+
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+
+  return {
+    days: String(days).padStart(2, '0'),
+    hours: String(hours).padStart(2, '0'),
+    minutes: String(minutes).padStart(2, '0'),
+    seconds: String(secs).padStart(2, '0')
+  }
+}
+
 function formatFullTimeRemaining(seconds: number): string {
   if (seconds <= 0) return 'Ready to unlock!'
 
@@ -243,7 +261,25 @@ interface LockItemProps {
 
 function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, onOpenWoC }: LockItemProps) {
   const blocksRemaining = Math.max(0, lock.unlockBlock - currentHeight)
-  const estimatedSecondsRemaining = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
+  const [estimatedSecondsRemaining, setEstimatedSecondsRemaining] = useState(
+    blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
+  )
+
+  // Update countdown every second for a real-time feel
+  useEffect(() => {
+    if (isUnlockable) return
+
+    const startTime = Date.now()
+    const initialSeconds = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
+
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000)
+      const remaining = Math.max(0, initialSeconds - elapsed)
+      setEstimatedSecondsRemaining(remaining)
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [blocksRemaining, isUnlockable])
 
   // Calculate progress percentage
   // We estimate lock duration based on createdAt timestamp vs unlock block
@@ -254,6 +290,9 @@ function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, on
   const progressPercent = isUnlockable
     ? 100
     : Math.max(0, Math.min(99, ((lockDuration - blocksRemaining) / lockDuration) * 100))
+
+  const countdown = formatCountdownTimer(estimatedSecondsRemaining)
+  const showDetailedCountdown = blocksRemaining <= 144 // Show detailed countdown for last ~24 hours
 
   return (
     <div
@@ -285,6 +324,23 @@ function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, on
           <div className="lock-details">
             {isUnlockable ? (
               <span className="unlock-ready-badge">✨ Ready to unlock!</span>
+            ) : showDetailedCountdown ? (
+              <div className="countdown-timer">
+                <div className="countdown-unit">
+                  <span className="countdown-value">{countdown.hours}</span>
+                  <span className="countdown-label">h</span>
+                </div>
+                <span className="countdown-separator">:</span>
+                <div className="countdown-unit">
+                  <span className="countdown-value">{countdown.minutes}</span>
+                  <span className="countdown-label">m</span>
+                </div>
+                <span className="countdown-separator">:</span>
+                <div className="countdown-unit">
+                  <span className="countdown-value">{countdown.seconds}</span>
+                  <span className="countdown-label">s</span>
+                </div>
+              </div>
             ) : (
               <>
                 <span className="lock-time-remaining">

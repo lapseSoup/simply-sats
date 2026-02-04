@@ -2791,6 +2791,45 @@ select:focus-visible {
   font-weight: 500;
 }
 
+/* Countdown timer for locks approaching unlock */
+.countdown-timer {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', monospace;
+}
+
+.countdown-unit {
+  display: flex;
+  align-items: baseline;
+}
+
+.countdown-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 24px;
+  text-align: center;
+}
+
+.countdown-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: lowercase;
+}
+
+.countdown-separator {
+  color: var(--accent);
+  font-weight: 600;
+  opacity: 0.5;
+  animation: countdown-blink 1s ease-in-out infinite;
+}
+
+@keyframes countdown-blink {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
 .lock-target {
   font-size: 11px;
   color: var(--text-muted);
