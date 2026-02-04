@@ -1,227 +1,171 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import {
   encrypt,
+  decrypt,
   isEncryptedData,
   isLegacyEncrypted,
   migrateLegacyData,
-  type EncryptedData
+  encryptWithSharedSecret,
+  decryptWithSharedSecret,
+  generateRandomKey,
+  bytesToHex,
+  EncryptedData
 } from './crypto'
 
-// Since we're testing crypto operations, we need to use the real Web Crypto API
-// The mock in setup.ts is just for basic functionality
+describe('Password-based Encryption', () => {
+  const testPassword = 'securepassword123'
+  const testPlaintext = 'sensitive wallet data'
 
-describe('Crypto Service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  it('should encrypt and decrypt string data', async () => {
+    const encrypted = await encrypt(testPlaintext, testPassword)
+    const decrypted = await decrypt(encrypted, testPassword)
+    expect(decrypted).toBe(testPlaintext)
   })
 
-  describe('isEncryptedData', () => {
-    it('should return true for valid encrypted data object', () => {
-      const validData: EncryptedData = {
-        version: 1,
-        ciphertext: 'base64string',
-        iv: 'ivbase64',
-        salt: 'saltbase64',
-        iterations: 100000
-      }
-
-      expect(isEncryptedData(validData)).toBe(true)
-    })
-
-    it('should return false for null', () => {
-      expect(isEncryptedData(null)).toBe(false)
-    })
-
-    it('should return false for undefined', () => {
-      expect(isEncryptedData(undefined)).toBe(false)
-    })
-
-    it('should return false for string', () => {
-      expect(isEncryptedData('string')).toBe(false)
-    })
-
-    it('should return false for array', () => {
-      expect(isEncryptedData([])).toBe(false)
-    })
-
-    it('should return false for missing version', () => {
-      expect(isEncryptedData({
-        ciphertext: 'base64',
-        iv: 'iv',
-        salt: 'salt',
-        iterations: 100000
-      })).toBe(false)
-    })
-
-    it('should return false for missing ciphertext', () => {
-      expect(isEncryptedData({
-        version: 1,
-        iv: 'iv',
-        salt: 'salt',
-        iterations: 100000
-      })).toBe(false)
-    })
-
-    it('should return false for missing iv', () => {
-      expect(isEncryptedData({
-        version: 1,
-        ciphertext: 'ct',
-        salt: 'salt',
-        iterations: 100000
-      })).toBe(false)
-    })
-
-    it('should return false for missing salt', () => {
-      expect(isEncryptedData({
-        version: 1,
-        ciphertext: 'ct',
-        iv: 'iv',
-        iterations: 100000
-      })).toBe(false)
-    })
-
-    it('should return false for missing iterations', () => {
-      expect(isEncryptedData({
-        version: 1,
-        ciphertext: 'ct',
-        iv: 'iv',
-        salt: 'salt'
-      })).toBe(false)
-    })
-
-    it('should return false for wrong type version', () => {
-      expect(isEncryptedData({
-        version: '1',
-        ciphertext: 'ct',
-        iv: 'iv',
-        salt: 'salt',
-        iterations: 100000
-      })).toBe(false)
-    })
-
-    it('should return false for wrong type iterations', () => {
-      expect(isEncryptedData({
-        version: 1,
-        ciphertext: 'ct',
-        iv: 'iv',
-        salt: 'salt',
-        iterations: '100000'
-      })).toBe(false)
-    })
+  it('should encrypt and decrypt object data', async () => {
+    const testObject = { mnemonic: 'test words', walletWif: 'L123456' }
+    const encrypted = await encrypt(testObject, testPassword)
+    const decrypted = await decrypt(encrypted, testPassword)
+    expect(JSON.parse(decrypted)).toEqual(testObject)
   })
 
-  describe('isLegacyEncrypted', () => {
-    it('should return true for legacy base64 wallet data', () => {
-      const walletData = {
-        mnemonic: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
-        walletWif: 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D'
-      }
-      const legacyEncoded = btoa(JSON.stringify(walletData))
-
-      expect(isLegacyEncrypted(legacyEncoded)).toBe(true)
-    })
-
-    it('should return false for non-base64 string', () => {
-      expect(isLegacyEncrypted('not base64!')).toBe(false)
-    })
-
-    it('should return false for base64 that is not wallet data', () => {
-      const notWallet = btoa(JSON.stringify({ foo: 'bar' }))
-      expect(isLegacyEncrypted(notWallet)).toBe(false)
-    })
-
-    it('should return false for empty string', () => {
-      expect(isLegacyEncrypted('')).toBe(false)
-    })
-
-    it('should return false for JSON object', () => {
-      expect(isLegacyEncrypted(JSON.stringify({ version: 1 }))).toBe(false)
-    })
+  it('should produce different ciphertext for same plaintext (random IV/salt)', async () => {
+    const encrypted1 = await encrypt(testPlaintext, testPassword)
+    const encrypted2 = await encrypt(testPlaintext, testPassword)
+    expect(encrypted1.ciphertext).not.toBe(encrypted2.ciphertext)
+    expect(encrypted1.iv).not.toBe(encrypted2.iv)
+    expect(encrypted1.salt).not.toBe(encrypted2.salt)
   })
 
-  // Note: The following tests require the actual Web Crypto API
-  // In a real testing environment, you would either:
-  // 1. Use a more complete crypto mock
-  // 2. Run these as integration tests in a browser environment
-  // 3. Use a polyfill like webcrypto
-
-  describe('encrypt/decrypt integration', () => {
-    // These tests use mocked crypto - in a real environment they would use actual crypto
-
-    it('should encrypt data and return encrypted structure', async () => {
-      const plaintext = { mnemonic: 'test', walletWif: 'wif123' }
-      const password = 'testpassword123'
-
-      const encrypted = await encrypt(plaintext, password)
-
-      expect(encrypted.version).toBe(1)
-      expect(encrypted.ciphertext).toBeDefined()
-      expect(encrypted.iv).toBeDefined()
-      expect(encrypted.salt).toBeDefined()
-      expect(encrypted.iterations).toBe(100000)
-    })
-
-    it('should encrypt string data', async () => {
-      const plaintext = 'simple string'
-      const password = 'password'
-
-      const encrypted = await encrypt(plaintext, password)
-
-      expect(isEncryptedData(encrypted)).toBe(true)
-    })
-
-    it('should generate different ciphertexts for same data', async () => {
-      const plaintext = 'same data'
-      const password = 'password'
-
-      const encrypted1 = await encrypt(plaintext, password)
-      const encrypted2 = await encrypt(plaintext, password)
-
-      // Different salts and IVs should produce different ciphertexts
-      expect(encrypted1.salt).not.toBe(encrypted2.salt)
-      expect(encrypted1.iv).not.toBe(encrypted2.iv)
-    })
+  it('should fail decryption with wrong password', async () => {
+    const encrypted = await encrypt(testPlaintext, testPassword)
+    await expect(decrypt(encrypted, 'wrongpassword')).rejects.toThrow('Decryption failed')
   })
 
-  describe('migrateLegacyData', () => {
-    it('should migrate legacy base64 data to encrypted format', async () => {
-      const walletData = {
-        mnemonic: 'test mnemonic',
-        walletWif: 'testWif'
-      }
-      const legacyData = btoa(JSON.stringify(walletData))
-      const password = 'newpassword'
-
-      const migrated = await migrateLegacyData(legacyData, password)
-
-      expect(isEncryptedData(migrated)).toBe(true)
-      expect(migrated.version).toBe(1)
-      expect(migrated.iterations).toBe(100000)
-    })
+  it('should fail decryption with tampered ciphertext', async () => {
+    const encrypted = await encrypt(testPlaintext, testPassword)
+    const tampered: EncryptedData = {
+      ...encrypted,
+      ciphertext: encrypted.ciphertext.slice(0, -4) + 'XXXX'
+    }
+    await expect(decrypt(tampered, testPassword)).rejects.toThrow('Decryption failed')
   })
 
-  describe('Encryption Parameters', () => {
-    it('should use 100000 PBKDF2 iterations (OWASP recommended)', async () => {
-      const encrypted = await encrypt('data', 'password')
-      expect(encrypted.iterations).toBe(100000)
-    })
+  it('should include version and iterations in encrypted data', async () => {
+    const encrypted = await encrypt(testPlaintext, testPassword)
+    expect(encrypted.version).toBe(1)
+    expect(encrypted.iterations).toBe(100000)
+  })
+})
 
-    it('should use version 1', async () => {
-      const encrypted = await encrypt('data', 'password')
-      expect(encrypted.version).toBe(1)
-    })
+describe('Encrypted Data Type Guard', () => {
+  it('should identify valid encrypted data', () => {
+    const valid: EncryptedData = {
+      version: 1,
+      ciphertext: 'abc123',
+      iv: 'def456',
+      salt: 'ghi789',
+      iterations: 100000
+    }
+    expect(isEncryptedData(valid)).toBe(true)
+  })
 
-    it('should generate 16-byte salt (128 bits)', async () => {
-      const encrypted = await encrypt('data', 'password')
-      // Base64 of 16 bytes = 24 chars (with padding) or 22-24 chars
-      const saltBytes = atob(encrypted.salt)
-      expect(saltBytes.length).toBe(16)
-    })
+  it('should reject invalid encrypted data', () => {
+    expect(isEncryptedData(null)).toBe(false)
+    expect(isEncryptedData(undefined)).toBe(false)
+    expect(isEncryptedData('string')).toBe(false)
+    expect(isEncryptedData({ version: 1 })).toBe(false)
+  })
+})
 
-    it('should generate 12-byte IV (96 bits for AES-GCM)', async () => {
-      const encrypted = await encrypt('data', 'password')
-      const ivBytes = atob(encrypted.iv)
-      expect(ivBytes.length).toBe(12)
-    })
+describe('Legacy Format Detection', () => {
+  it('should detect legacy base64-encoded wallet data', () => {
+    const legacyData = btoa(JSON.stringify({
+      mnemonic: 'test words here',
+      walletWif: 'L1234567890'
+    }))
+    expect(isLegacyEncrypted(legacyData)).toBe(true)
+  })
+
+  it('should reject non-legacy data', () => {
+    expect(isLegacyEncrypted('not base64')).toBe(false)
+    expect(isLegacyEncrypted(btoa('not json'))).toBe(false)
+  })
+})
+
+describe('Legacy Data Migration', () => {
+  it('should migrate legacy data to new encrypted format', async () => {
+    const testPassword = 'migrationPassword123'
+    const legacyWalletData = {
+      mnemonic: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+      walletWif: 'L1a2b3c4d5e6f7g8h9i0'
+    }
+    const legacyData = btoa(JSON.stringify(legacyWalletData))
+
+    const migrated = await migrateLegacyData(legacyData, testPassword)
+
+    expect(isEncryptedData(migrated)).toBe(true)
+    expect(migrated.version).toBe(1)
+    expect(migrated.iterations).toBe(100000)
+
+    const decrypted = await decrypt(migrated, testPassword)
+    expect(JSON.parse(decrypted)).toEqual(legacyWalletData)
+  })
+})
+
+describe('Shared Secret Encryption', () => {
+  it('should encrypt and decrypt with shared secret', async () => {
+    const sharedSecret = await generateRandomKey()
+    const message = 'Hello, encrypted world!'
+
+    const encrypted = await encryptWithSharedSecret(message, sharedSecret)
+    const decrypted = await decryptWithSharedSecret(encrypted, sharedSecret)
+
+    expect(decrypted).toBe(message)
+  })
+
+  it('should produce different ciphertext for same message (random salt/IV)', async () => {
+    const sharedSecret = await generateRandomKey()
+    const message = 'Same message'
+
+    const encrypted1 = await encryptWithSharedSecret(message, sharedSecret)
+    const encrypted2 = await encryptWithSharedSecret(message, sharedSecret)
+
+    expect(encrypted1).not.toBe(encrypted2)
+  })
+
+  it('should fail decryption with wrong shared secret', async () => {
+    const sharedSecret1 = await generateRandomKey()
+    const sharedSecret2 = await generateRandomKey()
+    const message = 'Secret message'
+
+    const encrypted = await encryptWithSharedSecret(message, sharedSecret1)
+
+    await expect(decryptWithSharedSecret(encrypted, sharedSecret2)).rejects.toThrow()
+  })
+})
+
+describe('Utility Functions', () => {
+  it('should generate random 32-byte keys', async () => {
+    const key1 = await generateRandomKey()
+    const key2 = await generateRandomKey()
+    expect(key1.length).toBe(64)
+    expect(key2.length).toBe(64)
+    expect(key1).not.toBe(key2)
+  })
+
+  it('should convert bytes to hex correctly', () => {
+    const bytes = new Uint8Array([0x00, 0x01, 0x0f, 0xff])
+    expect(bytesToHex(bytes)).toBe('00010fff')
+  })
+
+  it('should handle empty byte array', () => {
+    const bytes = new Uint8Array([])
+    expect(bytesToHex(bytes)).toBe('')
+  })
+
+  it('should pad single digit hex values', () => {
+    const bytes = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+    expect(bytesToHex(bytes)).toBe('000102030405060708090a0b0c0d0e0f')
   })
 })

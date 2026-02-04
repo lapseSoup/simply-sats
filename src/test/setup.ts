@@ -1,3 +1,13 @@
+// Setup Web Crypto API FIRST - before any other imports
+// This must be at the very top to ensure globalThis.crypto is set
+// before any modules that depend on it are loaded
+import { webcrypto } from 'node:crypto'
+Object.defineProperty(globalThis, 'crypto', {
+  value: webcrypto,
+  writable: true,
+  configurable: true
+})
+
 import { expect, afterEach, beforeEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
@@ -42,29 +52,6 @@ beforeEach(() => {
 
 // Mock fetch
 globalThis.fetch = vi.fn()
-
-// Mock crypto.subtle for tests
-const mockCrypto = {
-  getRandomValues: <T extends ArrayBufferView>(array: T): T => {
-    if (array instanceof Uint8Array) {
-      for (let i = 0; i < array.length; i++) {
-        array[i] = Math.floor(Math.random() * 256)
-      }
-    }
-    return array
-  },
-  subtle: {
-    importKey: vi.fn().mockResolvedValue({}),
-    deriveKey: vi.fn().mockResolvedValue({}),
-    encrypt: vi.fn().mockResolvedValue(new ArrayBuffer(32)),
-    decrypt: vi.fn().mockResolvedValue(new TextEncoder().encode('{"mnemonic":"test"}'))
-  }
-}
-
-Object.defineProperty(globalThis, 'crypto', {
-  value: mockCrypto,
-  writable: true
-})
 
 // Custom matchers
 expect.extend({

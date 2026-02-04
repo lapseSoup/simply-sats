@@ -8,7 +8,8 @@
  */
 
 // Use Web Crypto API (available in both browser and Tauri)
-const crypto = globalThis.crypto
+// Using a getter function allows tests to override globalThis.crypto
+const getCrypto = () => globalThis.crypto
 
 /**
  * Encryption result containing all data needed for decryption
@@ -62,7 +63,7 @@ function base64ToBuffer(base64: string): ArrayBuffer {
  */
 async function deriveKey(password: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
   // Import password as raw key material
-  const passwordKey = await crypto.subtle.importKey(
+  const passwordKey = await getCrypto().subtle.importKey(
     'raw',
     new TextEncoder().encode(password),
     'PBKDF2',
@@ -72,7 +73,7 @@ async function deriveKey(password: string, salt: Uint8Array, iterations: number)
 
   // Derive AES key using PBKDF2
   // Use .buffer to get the underlying ArrayBuffer for type compatibility
-  return crypto.subtle.deriveKey(
+  return getCrypto().subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: salt.buffer as ArrayBuffer,
@@ -101,14 +102,14 @@ export async function encrypt(plaintext: string | object, password: string): Pro
   const data = typeof plaintext === 'string' ? plaintext : JSON.stringify(plaintext)
 
   // Generate random salt and IV
-  const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH))
-  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH))
+  const salt = getCrypto().getRandomValues(new Uint8Array(SALT_LENGTH))
+  const iv = getCrypto().getRandomValues(new Uint8Array(IV_LENGTH))
 
   // Derive key from password
   const key = await deriveKey(password, salt, PBKDF2_ITERATIONS)
 
   // Encrypt with AES-GCM
-  const ciphertext = await crypto.subtle.encrypt(
+  const ciphertext = await getCrypto().subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
     new TextEncoder().encode(data)
@@ -147,7 +148,7 @@ export async function decrypt(encryptedData: EncryptedData, password: string): P
 
   try {
     // Decrypt with AES-GCM
-    const plaintext = await crypto.subtle.decrypt(
+    const plaintext = await getCrypto().subtle.decrypt(
       { name: 'AES-GCM', iv },
       key,
       ciphertext
@@ -241,7 +242,7 @@ export async function encryptWithSharedSecret(
 
   // Import as raw key - ensure we pass an ArrayBuffer
   const arrayBuffer = secretBytes.buffer.slice(secretBytes.byteOffset, secretBytes.byteOffset + secretBytes.byteLength) as ArrayBuffer
-  const keyMaterial = await crypto.subtle.importKey(
+  const keyMaterial = await getCrypto().subtle.importKey(
     'raw',
     arrayBuffer,
     'HKDF',
@@ -251,10 +252,10 @@ export async function encryptWithSharedSecret(
 
   // Generate random salt for HKDF (16 bytes)
   // Using random salt provides better security than fixed salt
-  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const salt = getCrypto().getRandomValues(new Uint8Array(16))
 
   // Derive an AES key from the shared secret
-  const aesKey = await crypto.subtle.deriveKey(
+  const aesKey = await getCrypto().subtle.deriveKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
@@ -268,10 +269,10 @@ export async function encryptWithSharedSecret(
   )
 
   // Generate random IV
-  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const iv = getCrypto().getRandomValues(new Uint8Array(12))
 
   // Encrypt the message
-  const ciphertext = await crypto.subtle.encrypt(
+  const ciphertext = await getCrypto().subtle.encrypt(
     { name: 'AES-GCM', iv },
     aesKey,
     new TextEncoder().encode(message)
@@ -302,7 +303,7 @@ export async function decryptWithSharedSecret(
 
   // Import as raw key - ensure we pass an ArrayBuffer
   const arrayBuffer = secretBytes.buffer.slice(secretBytes.byteOffset, secretBytes.byteOffset + secretBytes.byteLength) as ArrayBuffer
-  const keyMaterial = await crypto.subtle.importKey(
+  const keyMaterial = await getCrypto().subtle.importKey(
     'raw',
     arrayBuffer,
     'HKDF',
@@ -320,7 +321,7 @@ export async function decryptWithSharedSecret(
   const ciphertext = combined.slice(28)
 
   // Derive the same AES key using the extracted salt
-  const aesKey = await crypto.subtle.deriveKey(
+  const aesKey = await getCrypto().subtle.deriveKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
@@ -334,7 +335,7 @@ export async function decryptWithSharedSecret(
   )
 
   // Decrypt
-  const plaintext = await crypto.subtle.decrypt(
+  const plaintext = await getCrypto().subtle.decrypt(
     { name: 'AES-GCM', iv },
     aesKey,
     ciphertext
@@ -385,6 +386,6 @@ export function bytesToHex(bytes: Uint8Array): string {
  * Generate a random encryption key (for session-based encryption)
  */
 export async function generateRandomKey(): Promise<string> {
-  const key = crypto.getRandomValues(new Uint8Array(32))
+  const key = getCrypto().getRandomValues(new Uint8Array(32))
   return bytesToHex(key)
 }
