@@ -1,0 +1,345 @@
+import { useState, useEffect } from 'react'
+import { useWallet } from '../../contexts/WalletContext'
+import type { LockedUTXO } from '../../services/wallet'
+import { openUrl } from '@tauri-apps/plugin-opener'
+
+interface LocksTabProps {
+  onLock: () => void
+  onUnlock: (lock: LockedUTXO) => void
+  onUnlockAll: () => void
+  unlocking: string | null
+}
+
+// Average BSV block time is ~10 minutes (600 seconds)
+const AVERAGE_BLOCK_TIME_SECONDS = 600
+
+function formatTimeRemaining(seconds: number): string {
+  if (seconds <= 0) return 'Ready!'
+
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+
+  if (days > 0) {
+    return `~${days}d ${hours}h`
+  } else if (hours > 0) {
+    return `~${hours}h ${minutes}m`
+  } else if (minutes > 0) {
+    return `~${minutes}m`
+  } else {
+    return '<1m'
+  }
+}
+
+function formatFullTimeRemaining(seconds: number): string {
+  if (seconds <= 0) return 'Ready to unlock!'
+
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+
+  const parts = []
+  if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`)
+  if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`)
+  if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`)
+
+  if (parts.length === 0) return 'Less than a minute'
+  return `Approximately ${parts.join(', ')}`
+}
+
+interface ProgressRingProps {
+  progress: number
+  size?: number
+  strokeWidth?: number
+  isUnlockable?: boolean
+}
+
+function ProgressRing({ progress, size = 48, strokeWidth = 4, isUnlockable = false }: ProgressRingProps) {
+  const radius = (size - strokeWidth) / 2
+  const circumference = radius * 2 * Math.PI
+  const offset = circumference - (progress / 100) * circumference
+
+  return (
+    <div className="progress-ring-container">
+      <svg
+        width={size}
+        height={size}
+        className="progress-ring"
+        role="progressbar"
+        aria-valuenow={Math.round(progress)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        {/* Background circle */}
+        <circle
+          className="progress-ring-bg"
+          strokeWidth={strokeWidth}
+          fill="transparent"
+          r={radius}
+          cx={size / 2}
+          cy={size / 2}
+        />
+        {/* Progress circle */}
+        <circle
+          className={`progress-ring-progress ${isUnlockable ? 'complete' : ''}`}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          fill="transparent"
+          r={radius}
+          cx={size / 2}
+          cy={size / 2}
+          style={{
+            strokeDasharray: circumference,
+            strokeDashoffset: offset,
+            transform: 'rotate(-90deg)',
+            transformOrigin: '50% 50%'
+          }}
+        />
+      </svg>
+      <div className="progress-ring-content">
+        {isUnlockable ? '🔓' : '🔒'}
+      </div>
+    </div>
+  )
+}
+
+export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabProps) {
+  const { locks, networkInfo } = useWallet()
+  const [, forceUpdate] = useState(0)
+
+  // Update time estimates every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      forceUpdate(n => n + 1)
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const openOnWoC = (txid: string) => {
+    openUrl(`https://whatsonchain.com/tx/${txid}`)
+  }
+
+  const currentHeight = networkInfo?.blockHeight || 0
+
+  const getUnlockableLocks = () => {
+    return locks.filter(lock => currentHeight >= lock.unlockBlock)
+  }
+
+  const unlockableLocks = getUnlockableLocks()
+  const lockedLocks = locks.filter(lock => currentHeight < lock.unlockBlock)
+
+  // Calculate total locked value
+  const totalLocked = locks.reduce((sum, lock) => sum + lock.satoshis, 0)
+
+  return (
+    <div className="locks-tab">
+      {/* Summary Card */}
+      {locks.length > 0 && (
+        <div className="locks-summary">
+          <div className="locks-summary-item">
+            <span className="locks-summary-label">Total Locked</span>
+            <span className="locks-summary-value">{totalLocked.toLocaleString()} sats</span>
+          </div>
+          <div className="locks-summary-item">
+            <span className="locks-summary-label">Active Locks</span>
+            <span className="locks-summary-value">{lockedLocks.length}</span>
+          </div>
+          <div className="locks-summary-item">
+            <span className="locks-summary-label">Ready to Unlock</span>
+            <span className="locks-summary-value unlockable">{unlockableLocks.length}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="locks-actions">
+        <button
+          className="btn btn-primary"
+          onClick={onLock}
+          aria-label="Create a new lock"
+        >
+          🔒 Lock BSV
+        </button>
+        {unlockableLocks.length > 1 && (
+          <button
+            className="btn btn-secondary"
+            onClick={onUnlockAll}
+            aria-label={`Unlock all ${unlockableLocks.length} ready locks`}
+          >
+            🔓 Unlock All ({unlockableLocks.length})
+          </button>
+        )}
+      </div>
+
+      {/* Locks List */}
+      {locks.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon" aria-hidden="true">🔓</div>
+          <div className="empty-title">No Locks Yet</div>
+          <div className="empty-text">
+            Lock your BSV until a specific block height.
+            Great for savings goals and commitments.
+          </div>
+        </div>
+      ) : (
+        <div className="locks-list" role="list" aria-label="Locked UTXOs">
+          {/* Unlockable locks first */}
+          {unlockableLocks.length > 0 && (
+            <div className="locks-section">
+              <h3 className="locks-section-title">
+                <span className="pulse-dot" aria-hidden="true" />
+                Ready to Unlock
+              </h3>
+              {unlockableLocks.map((lock) => {
+                const isUnlocking = unlocking === lock.txid
+                return (
+                  <LockItem
+                    key={lock.txid}
+                    lock={lock}
+                    currentHeight={currentHeight}
+                    isUnlockable={true}
+                    isUnlocking={isUnlocking}
+                    onUnlock={onUnlock}
+                    onOpenWoC={openOnWoC}
+                  />
+                )
+              })}
+            </div>
+          )}
+
+          {/* Pending locks */}
+          {lockedLocks.length > 0 && (
+            <div className="locks-section">
+              {unlockableLocks.length > 0 && (
+                <h3 className="locks-section-title">Still Locked</h3>
+              )}
+              {lockedLocks.map((lock) => (
+                <LockItem
+                  key={lock.txid}
+                  lock={lock}
+                  currentHeight={currentHeight}
+                  isUnlockable={false}
+                  isUnlocking={false}
+                  onUnlock={onUnlock}
+                  onOpenWoC={openOnWoC}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface LockItemProps {
+  lock: LockedUTXO
+  currentHeight: number
+  isUnlockable: boolean
+  isUnlocking: boolean
+  onUnlock: (lock: LockedUTXO) => void
+  onOpenWoC: (txid: string) => void
+}
+
+function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, onOpenWoC }: LockItemProps) {
+  const blocksRemaining = Math.max(0, lock.unlockBlock - currentHeight)
+  const estimatedSecondsRemaining = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
+
+  // Calculate progress percentage
+  // We estimate lock duration based on createdAt timestamp vs unlock block
+  const lockDuration = lock.createdAt
+    ? lock.unlockBlock - Math.floor(lock.createdAt / 600000) // 600000ms = 10min average block
+    : blocksRemaining + 100 // Fallback if no createdAt
+
+  const progressPercent = isUnlockable
+    ? 100
+    : Math.max(0, Math.min(99, ((lockDuration - blocksRemaining) / lockDuration) * 100))
+
+  return (
+    <div
+      className={`lock-card ${isUnlockable ? 'unlockable' : ''}`}
+      role="listitem"
+      aria-label={`${lock.satoshis.toLocaleString()} sats locked until block ${lock.unlockBlock.toLocaleString()}`}
+    >
+      <div className="lock-card-main">
+        <div
+          className="lock-progress-ring"
+          onClick={() => onOpenWoC(lock.txid)}
+          role="button"
+          tabIndex={0}
+          aria-label="View transaction on WhatsOnChain"
+          onKeyDown={(e) => e.key === 'Enter' && onOpenWoC(lock.txid)}
+        >
+          <ProgressRing
+            progress={progressPercent}
+            size={56}
+            strokeWidth={4}
+            isUnlockable={isUnlockable}
+          />
+        </div>
+
+        <div className="lock-info">
+          <div className="lock-amount">
+            {lock.satoshis.toLocaleString()} sats
+          </div>
+          <div className="lock-details">
+            {isUnlockable ? (
+              <span className="unlock-ready-badge">✨ Ready to unlock!</span>
+            ) : (
+              <>
+                <span className="lock-time-remaining">
+                  {formatTimeRemaining(estimatedSecondsRemaining)}
+                </span>
+                <span className="lock-blocks">
+                  {blocksRemaining.toLocaleString()} blocks
+                </span>
+              </>
+            )}
+          </div>
+          <div className="lock-target">
+            Target block: {lock.unlockBlock.toLocaleString()}
+          </div>
+        </div>
+
+        <div className="lock-actions">
+          {isUnlockable ? (
+            <button
+              className="btn btn-unlock"
+              onClick={() => onUnlock(lock)}
+              disabled={isUnlocking}
+              aria-label={`Unlock ${lock.satoshis.toLocaleString()} sats`}
+            >
+              {isUnlocking ? (
+                <>
+                  <span className="spinner-small" aria-hidden="true" />
+                  Unlocking...
+                </>
+              ) : (
+                <>🔓 Unlock</>
+              )}
+            </button>
+          ) : (
+            <div className="lock-countdown" title={formatFullTimeRemaining(estimatedSecondsRemaining)}>
+              <span className="lock-percent">{Math.round(progressPercent)}%</span>
+              <span className="lock-status">complete</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded progress bar for locked items */}
+      {!isUnlockable && (
+        <div className="lock-progress-bar-container">
+          <div
+            className="lock-progress-bar"
+            style={{ width: `${progressPercent}%` }}
+            role="progressbar"
+            aria-valuenow={Math.round(progressPercent)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          />
+        </div>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,51 @@
+import type { Ordinal } from '../../services/wallet'
+import { useWallet } from '../../contexts/WalletContext'
+import { openUrl } from '@tauri-apps/plugin-opener'
+
+interface OrdinalModalProps {
+  ordinal: Ordinal
+  onClose: () => void
+}
+
+export function OrdinalModal({ ordinal, onClose }: OrdinalModalProps) {
+  const { copyToClipboard } = useWallet()
+
+  const openOnWoC = (txid: string) => {
+    openUrl(`https://whatsonchain.com/tx/${txid}`)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-handle" />
+        <div className="modal-header">
+          <h2 className="modal-title">Ordinal</h2>
+          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="modal-content">
+          <div className="ordinal-detail">
+            <div className="ordinal-preview" aria-hidden="true">🔮</div>
+            <div className="ordinal-info-list">
+              <div className="ordinal-info-row">
+                <span className="ordinal-info-label">Origin</span>
+                <span className="ordinal-info-value">{ordinal.origin.slice(0, 16)}...</span>
+              </div>
+              <div className="ordinal-info-row">
+                <span className="ordinal-info-label">TXID</span>
+                <button className="link-btn" onClick={() => openOnWoC(ordinal.txid)}>
+                  View on WhatsOnChain
+                </button>
+              </div>
+            </div>
+            <button
+              className="btn btn-secondary"
+              onClick={() => copyToClipboard(ordinal.origin, 'Origin copied!')}
+            >
+              Copy Origin
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
