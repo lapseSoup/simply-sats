@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee } from '../../services/wallet'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 
@@ -12,10 +13,9 @@ export function SendModal({ onClose }: SendModalProps) {
     wallet,
     balance,
     utxos,
-    displayInSats,
-    handleSend,
-    showToast
+    handleSend
   } = useWallet()
+  const { displayInSats, showToast } = useUI()
 
   const [sendAddress, setSendAddress] = useState('')
   const [sendAmount, setSendAmount] = useState('')

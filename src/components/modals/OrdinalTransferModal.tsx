@@ -9,6 +9,7 @@ import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import type { Ordinal } from '../../services/wallet'
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 
 interface OrdinalTransferModalProps {
   ordinal: Ordinal
@@ -19,7 +20,8 @@ export function OrdinalTransferModal({
   ordinal,
   onClose
 }: OrdinalTransferModalProps) {
-  const { handleTransferOrdinal, showToast } = useWallet()
+  const { handleTransferOrdinal } = useWallet()
+  const { showToast } = useUI()
   const [toAddress, setToAddress] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

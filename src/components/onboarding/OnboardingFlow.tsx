@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { SimplySatsLogo } from '../shared'
-import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 
 interface OnboardingFlowProps {
   onCreateWallet: () => Promise<string | null>
@@ -38,7 +38,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
   const [featureIndex, setFeatureIndex] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
   const [creating, setCreating] = useState(false)
-  const { showToast } = useWallet()
+  const { showToast } = useUI()
 
   const handleNext = () => {
     setIsAnimating(true)

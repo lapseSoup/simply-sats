@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
-import { WalletProvider, useWallet, NetworkProvider } from './contexts'
+import { WalletProvider, useWallet, NetworkProvider, UIProvider, useUI } from './contexts'
 import {
   Toast,
   PaymentAlert,
@@ -66,8 +66,6 @@ function WalletApp() {
     handleUnlock,
     handleCreateWallet,
     connectedApps,
-    copyFeedback,
-    showToast,
     performSync,
     fetchData,
     // Lock screen state
@@ -77,6 +75,8 @@ function WalletApp() {
     tokenBalances,
     refreshTokens
   } = useWallet()
+
+  const { copyFeedback, showToast } = useUI()
 
   const [activeTab, setActiveTab] = useState<Tab>('activity')
   const [modal, setModal] = useState<Modal>(null)
@@ -492,9 +492,11 @@ function App() {
   return (
     <ScreenReaderAnnounceProvider>
       <NetworkProvider>
-        <WalletProvider>
-          <WalletApp />
-        </WalletProvider>
+        <UIProvider>
+          <WalletProvider>
+            <WalletApp />
+          </WalletProvider>
+        </UIProvider>
       </NetworkProvider>
     </ScreenReaderAnnounceProvider>
   )

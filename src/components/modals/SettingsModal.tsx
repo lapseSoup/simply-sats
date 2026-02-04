@@ -3,6 +3,7 @@ import { PrivateKey } from '@bsv/sdk'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs'
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../services/keyDerivation'
 import { checkForPayments, getPaymentNotifications } from '../../services/messageBox'
 import { exportDatabase, importDatabase, type DatabaseBackup } from '../../services/database'
@@ -24,10 +25,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     disconnectApp,
     handleDeleteWallet,
     performSync,
-    fetchData,
-    copyToClipboard,
-    showToast
+    fetchData
   } = useWallet()
+  const { copyToClipboard, showToast } = useUI()
 
   // Local state for various input forms
   const [showSenderInput, setShowSenderInput] = useState(false)

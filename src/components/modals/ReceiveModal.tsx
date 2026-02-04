@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { PrivateKey, PublicKey } from '@bsv/sdk'
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 import {
   addDerivedAddress,
   addContact,
@@ -17,12 +18,8 @@ interface ReceiveModalProps {
 type ReceiveType = 'wallet' | 'ordinals' | 'brc100'
 
 export function ReceiveModal({ onClose }: ReceiveModalProps) {
-  const {
-    wallet,
-    contacts,
-    copyToClipboard,
-    showToast
-  } = useWallet()
+  const { wallet, contacts } = useWallet()
+  const { copyToClipboard, showToast } = useUI()
 
   const [receiveType, setReceiveType] = useState<ReceiveType>('wallet')
   const [showDeriveMode, setShowDeriveMode] = useState(false)

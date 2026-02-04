@@ -8,13 +8,15 @@ import { useState } from 'react'
 import type { TokenBalance } from '../../services/tokens'
 import { formatTokenAmount } from '../../services/tokens'
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 
 interface TokensTabProps {
   onRefresh?: () => Promise<void>
 }
 
 export function TokensTab({ onRefresh }: TokensTabProps) {
-  const { tokenBalances, tokensSyncing: loading, refreshTokens, showToast, handleSendToken } = useWallet()
+  const { tokenBalances, tokensSyncing: loading, refreshTokens, handleSendToken } = useWallet()
+  const { showToast } = useUI()
 
   const handleRefresh = async () => {
     if (onRefresh) {

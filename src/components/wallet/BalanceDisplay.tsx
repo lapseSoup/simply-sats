@@ -1,14 +1,9 @@
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 
 export function BalanceDisplay() {
-  const {
-    balance,
-    ordBalance,
-    displayInSats,
-    toggleDisplayUnit,
-    formatBSVShort,
-    formatUSD
-  } = useWallet()
+  const { balance, ordBalance } = useWallet()
+  const { displayInSats, toggleDisplayUnit, formatBSVShort, formatUSD } = useUI()
 
   const totalBalance = balance + ordBalance
 

@@ -28,9 +28,20 @@ vi.mock('../../contexts/WalletContext', () => ({
       { txid: 'abc123', vout: 0, satoshis: 50000, script: 'script1' },
       { txid: 'def456', vout: 1, satoshis: 50000, script: 'script2' }
     ],
+    handleSend: mockHandleSend
+  })
+}))
+
+// Mock the UI context
+vi.mock('../../contexts/UIContext', () => ({
+  useUI: () => ({
     displayInSats: true,
-    handleSend: mockHandleSend,
-    showToast: mockShowToast
+    showToast: mockShowToast,
+    copyFeedback: null,
+    copyToClipboard: vi.fn(),
+    toggleDisplayUnit: vi.fn(),
+    formatBSVShort: vi.fn((sats: number) => (sats / 100000000).toFixed(8)),
+    formatUSD: vi.fn((sats: number) => (sats / 100000000 * 50).toFixed(2))
   })
 }))
 

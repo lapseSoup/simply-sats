@@ -1,5 +1,5 @@
 import type { Ordinal } from '../../services/wallet'
-import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
 
 interface OrdinalModalProps {
@@ -9,7 +9,7 @@ interface OrdinalModalProps {
 }
 
 export function OrdinalModal({ ordinal, onClose, onTransfer }: OrdinalModalProps) {
-  const { copyToClipboard } = useWallet()
+  const { copyToClipboard } = useUI()
 
   const openOnWoC = (txid: string) => {
     openUrl(`https://whatsonchain.com/tx/${txid}`)

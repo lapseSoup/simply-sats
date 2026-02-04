@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 import { calculateLockFee, getTimelockScriptSize } from '../../services/wallet'
 
 interface LockModalProps {
@@ -11,10 +12,9 @@ export function LockModal({ onClose }: LockModalProps) {
     wallet,
     balance,
     networkInfo,
-    displayInSats,
-    handleLock,
-    showToast
+    handleLock
   } = useWallet()
+  const { displayInSats, showToast } = useUI()
 
   const [lockAmount, setLockAmount] = useState('')
   const [lockBlocks, setLockBlocks] = useState('')

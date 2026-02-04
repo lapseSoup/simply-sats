@@ -119,8 +119,6 @@ interface WalletContextType {
   loading: boolean
 
   // Settings
-  displayInSats: boolean
-  toggleDisplayUnit: () => void
   feeRateKB: number
   setFeeRate: (rate: number) => void
 
@@ -144,14 +142,6 @@ interface WalletContextType {
   handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
 
-  // Utilities
-  copyToClipboard: (text: string, feedback?: string) => Promise<void>
-  showToast: (message: string) => void
-  copyFeedback: string | null
-
-  // Format helpers
-  formatBSVShort: (sats: number) => string
-  formatUSD: (sats: number) => string
 }
 
 const WalletContext = createContext<WalletContextType | null>(null)
@@ -222,10 +212,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const { networkInfo, syncing, setSyncing, usdPrice } = useNetwork()
 
   // Settings
-  const [displayInSats, setDisplayInSats] = useState<boolean>(() => {
-    const saved = localStorage.getItem('simply_sats_display_sats')
-    return saved === 'true'
-  })
   const [feeRateKB, setFeeRateKBState] = useState<number>(() => getFeeRatePerKB())
 
   // Connected apps
@@ -235,8 +221,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     return saved ? JSON.parse(saved) : []
   })
 
-  // UI feedback
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
 
   // Set wallet and update BRC-100 service
   const setWallet = useCallback((newWallet: WalletKeys | null) => {
@@ -911,12 +895,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [wallet, fetchData, refreshTokens])
 
   // Settings
-  const toggleDisplayUnit = useCallback(() => {
-    const newValue = !displayInSats
-    setDisplayInSats(newValue)
-    localStorage.setItem('simply_sats_display_sats', String(newValue))
-  }, [displayInSats])
-
   const setFeeRate = useCallback((rate: number) => {
     setFeeRateKBState(rate)
     setFeeRateFromKB(rate)
@@ -942,34 +920,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setConnectedApps(newConnectedApps)
     localStorage.setItem('simply_sats_connected_apps', JSON.stringify(newConnectedApps))
   }, [connectedApps])
-
-  // Utilities
-  const copyToClipboard = useCallback(async (text: string, feedback = 'Copied!') => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopyFeedback(feedback)
-      setTimeout(() => setCopyFeedback(null), 2000)
-    } catch (err) {
-      console.error('Failed to copy:', err)
-    }
-  }, [])
-
-  const showToast = useCallback((message: string) => {
-    setCopyFeedback(message)
-    setTimeout(() => setCopyFeedback(null), 2000)
-  }, [])
-
-  // Format helpers
-  const formatBSVShort = useCallback((sats: number) => {
-    const bsv = sats / 100000000
-    if (bsv >= 1) return bsv.toFixed(4)
-    if (bsv >= 0.01) return bsv.toFixed(6)
-    return bsv.toFixed(8)
-  }, [])
-
-  const formatUSD = useCallback((sats: number) => {
-    return ((sats / 100000000) * usdPrice).toFixed(2)
-  }, [usdPrice])
 
   const value: WalletContextType = {
     // Wallet state
@@ -1013,8 +963,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     loading,
 
     // Settings
-    displayInSats,
-    toggleDisplayUnit,
     feeRateKB,
     setFeeRate,
 
@@ -1036,16 +984,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleLock,
     handleUnlock,
     handleTransferOrdinal,
-    handleSendToken,
-
-    // Utilities
-    copyToClipboard,
-    showToast,
-    copyFeedback,
-
-    // Format helpers
-    formatBSVShort,
-    formatUSD
+    handleSendToken
   }
 
   return (
