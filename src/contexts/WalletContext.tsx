@@ -165,10 +165,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   })
   const [utxos, setUtxos] = useState<UTXO[]>([])
   const [ordinals, setOrdinals] = useState<Ordinal[]>([])
-  const [locks, setLocks] = useState<LockedUTXO[]>(() => {
-    const cached = localStorage.getItem('simply_sats_locks')
-    return cached ? JSON.parse(cached) : []
-  })
+  const [locks, setLocks] = useState<LockedUTXO[]>([])
   const [txHistory, setTxHistory] = useState<TxHistoryItem[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
 
@@ -394,6 +391,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
     init()
   }, [setWallet, refreshAccounts])
 
+  // Migration: remove old localStorage locks (database is source of truth)
+  useEffect(() => {
+    localStorage.removeItem('simply_sats_locks')
+  }, [])
+
   // Initialize auto-lock when wallet is loaded
   useEffect(() => {
     if (wallet && autoLockMinutes > 0) {
@@ -558,11 +560,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
         )
         if (detectedLocks.length > 0) {
           setLocks(detectedLocks)
-          localStorage.setItem('simply_sats_locks', JSON.stringify(detectedLocks))
         } else if (knownUnlockedLocks.size > 0) {
           // If we had unlocked locks and now there are none, clear the list
           setLocks([])
-          localStorage.setItem('simply_sats_locks', JSON.stringify([]))
         }
       } catch (e) {
         console.error('Failed to detect locks:', e)
@@ -699,7 +699,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
       // Add the locked UTXO to our list
       const newLocks = [...locks, result.lockedUtxo]
       setLocks(newLocks)
-      localStorage.setItem('simply_sats_locks', JSON.stringify(newLocks))
 
       await fetchData()
       return { success: true, txid: result.txid }
@@ -724,7 +723,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       const newLocks = locks.filter(l => l.txid !== lock.txid || l.vout !== lock.vout)
       setLocks(newLocks)
-      localStorage.setItem('simply_sats_locks', JSON.stringify(newLocks))
 
       await fetchData()
       return { success: true, txid }
