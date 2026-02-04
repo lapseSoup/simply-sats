@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type {
+  WocClient
+} from './wocClient'
 import {
-  WocClient,
   createWocClient,
   getWocClient,
   DEFAULT_WOC_CONFIG
