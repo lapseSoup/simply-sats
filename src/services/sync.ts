@@ -16,6 +16,10 @@ import {
   upsertTransaction,
   getDerivedAddresses as getDerivedAddressesFromDB,
   updateDerivedAddressSyncTime,
+  markUtxosPendingSpend,
+  confirmUtxosSpent,
+  rollbackPendingSpend,
+  getPendingUtxos,
   type UTXO as DBUtxo
 } from './database'
 import { RATE_LIMITS } from './config'
@@ -317,6 +321,14 @@ export async function markUtxosSpent(
   for (const utxo of utxos) {
     await markUTXOSpent(utxo.txid, utxo.vout, spendingTxid)
   }
+}
+
+// Re-export pending spend functions from database for race condition prevention
+export {
+  markUtxosPendingSpend,
+  confirmUtxosSpent,
+  rollbackPendingSpend,
+  getPendingUtxos
 }
 
 /**

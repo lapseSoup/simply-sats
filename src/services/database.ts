@@ -213,13 +213,14 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
 
 /**
  * Get UTXOs by basket
+ * When spendableOnly is true, excludes pending UTXOs to prevent race conditions
  */
 export async function getUTXOsByBasket(basket: string, spendableOnly = true): Promise<UTXO[]> {
   const database = getDatabase()
 
   let query = 'SELECT * FROM utxos WHERE basket = $1'
   if (spendableOnly) {
-    query += ' AND spendable = 1 AND spent_at IS NULL'
+    query += " AND spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
   }
 
   const rows = await database.select<any[]>(query, [basket])
@@ -253,12 +254,13 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true): Pr
 
 /**
  * Get all spendable UTXOs across all baskets
+ * Excludes UTXOs that are pending (being spent) to prevent race conditions
  */
 export async function getSpendableUTXOs(): Promise<UTXO[]> {
   const database = getDatabase()
 
   const rows = await database.select<any[]>(
-    'SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL'
+    "SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
   )
 
   return rows.map(row => ({
@@ -277,12 +279,13 @@ export async function getSpendableUTXOs(): Promise<UTXO[]> {
 
 /**
  * Get spendable UTXOs for a specific address
+ * Excludes UTXOs that are pending (being spent) to prevent race conditions
  */
 export async function getSpendableUTXOsByAddress(address: string): Promise<UTXO[]> {
   const database = getDatabase()
 
   const rows = await database.select<any[]>(
-    'SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND address = $1',
+    "SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent') AND address = $1",
     [address]
   )
 
@@ -307,18 +310,139 @@ export async function markUTXOSpent(txid: string, vout: number, spentTxid: strin
   const database = getDatabase()
 
   await database.execute(
-    'UPDATE utxos SET spent_at = $1, spent_txid = $2 WHERE txid = $3 AND vout = $4',
-    [Date.now(), spentTxid, txid, vout]
+    'UPDATE utxos SET spent_at = $1, spent_txid = $2, spending_status = $3 WHERE txid = $4 AND vout = $5',
+    [Date.now(), spentTxid, 'spent', txid, vout]
   )
+}
+
+// ============================================
+// Pending Spend Operations (Race Condition Prevention)
+// ============================================
+
+/**
+ * Ensure the spending_status column exists (migration)
+ */
+async function ensureSpendingStatusColumn(): Promise<void> {
+  const database = getDatabase()
+  try {
+    // Check if column exists by trying to select it
+    await database.select<any[]>('SELECT spending_status FROM utxos LIMIT 1')
+  } catch {
+    // Column doesn't exist, add it
+    console.log('[DB] Adding spending_status columns to utxos table...')
+    await database.execute("ALTER TABLE utxos ADD COLUMN spending_status TEXT DEFAULT 'unspent' CHECK(spending_status IN ('unspent', 'pending', 'spent'))")
+    await database.execute('ALTER TABLE utxos ADD COLUMN pending_spending_txid TEXT')
+    await database.execute('ALTER TABLE utxos ADD COLUMN pending_since INTEGER')
+    await database.execute("CREATE INDEX IF NOT EXISTS idx_utxos_pending ON utxos(spending_status) WHERE spending_status = 'pending'")
+  }
+}
+
+/**
+ * Mark UTXOs as pending spend (BEFORE broadcast)
+ * This prevents race conditions where a crash after broadcast but before
+ * marking as spent could cause double-spend attempts.
+ */
+export async function markUtxosPendingSpend(
+  utxos: Array<{ txid: string; vout: number }>,
+  pendingTxid: string
+): Promise<void> {
+  await ensureSpendingStatusColumn()
+  const database = getDatabase()
+
+  for (const utxo of utxos) {
+    await database.execute(
+      `UPDATE utxos
+       SET spending_status = 'pending',
+           pending_spending_txid = $1,
+           pending_since = $2
+       WHERE txid = $3 AND vout = $4 AND (spending_status = 'unspent' OR spending_status IS NULL)`,
+      [pendingTxid, Date.now(), utxo.txid, utxo.vout]
+    )
+  }
+}
+
+/**
+ * Confirm UTXOs as spent (AFTER successful broadcast)
+ */
+export async function confirmUtxosSpent(
+  utxos: Array<{ txid: string; vout: number }>,
+  spendingTxid: string
+): Promise<void> {
+  const database = getDatabase()
+
+  for (const utxo of utxos) {
+    await database.execute(
+      `UPDATE utxos
+       SET spending_status = 'spent',
+           spent_at = $1,
+           spent_txid = $2,
+           pending_spending_txid = NULL,
+           pending_since = NULL
+       WHERE txid = $3 AND vout = $4`,
+      [Date.now(), spendingTxid, utxo.txid, utxo.vout]
+    )
+  }
+}
+
+/**
+ * Rollback pending spend (if broadcast FAILS)
+ */
+export async function rollbackPendingSpend(
+  utxos: Array<{ txid: string; vout: number }>
+): Promise<void> {
+  const database = getDatabase()
+
+  for (const utxo of utxos) {
+    await database.execute(
+      `UPDATE utxos
+       SET spending_status = 'unspent',
+           pending_spending_txid = NULL,
+           pending_since = NULL
+       WHERE txid = $1 AND vout = $2 AND spending_status = 'pending'`,
+      [utxo.txid, utxo.vout]
+    )
+  }
+}
+
+/**
+ * Get UTXOs that are stuck in pending state (for recovery)
+ * UTXOs pending for more than the specified timeout are considered stuck.
+ */
+export async function getPendingUtxos(timeoutMs: number = 300000): Promise<Array<{
+  txid: string
+  vout: number
+  satoshis: number
+  pendingTxid: string
+  pendingSince: number
+}>> {
+  await ensureSpendingStatusColumn()
+  const database = getDatabase()
+
+  const cutoff = Date.now() - timeoutMs
+  const rows = await database.select<any[]>(
+    `SELECT txid, vout, satoshis, pending_spending_txid, pending_since
+     FROM utxos
+     WHERE spending_status = 'pending' AND pending_since < $1`,
+    [cutoff]
+  )
+
+  return rows.map(row => ({
+    txid: row.txid,
+    vout: row.vout,
+    satoshis: row.satoshis,
+    pendingTxid: row.pending_spending_txid,
+    pendingSince: row.pending_since
+  }))
 }
 
 /**
  * Get total balance from database
+ * Excludes UTXOs that are pending (being spent) to prevent double-counting
  */
 export async function getBalanceFromDB(basket?: string): Promise<number> {
   const database = getDatabase()
 
-  let query = 'SELECT SUM(satoshis) as total FROM utxos WHERE spendable = 1 AND spent_at IS NULL'
+  let query = "SELECT SUM(satoshis) as total FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
   const params: any[] = []
 
   if (basket) {

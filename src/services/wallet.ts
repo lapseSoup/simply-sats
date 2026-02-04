@@ -4,7 +4,9 @@ import {
   getBalanceFromDatabase,
   getSpendableUtxosFromDatabase,
   recordSentTransaction,
-  markUtxosSpent,
+  markUtxosPendingSpend,
+  confirmUtxosSpent,
+  rollbackPendingSpend,
   BASKETS
 } from './sync'
 import { getDerivedAddresses, markLockUnlockedByTxid, getDatabase, addUTXO, addLock, withTransaction } from './database'
@@ -718,10 +720,40 @@ export async function sendBSV(
   }
 
   await tx.sign()
-  const txid = await broadcastTransaction(tx)
 
-  // Track transaction locally for BRC-100 compliance
-  // Use database transaction to ensure atomicity - both operations succeed or both fail
+  // Get the UTXOs we're about to spend
+  const utxosToSpend = inputsToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+
+  // Compute txid before broadcast for pending marking
+  const pendingTxid = tx.id('hex')
+
+  // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
+  // If we crash after broadcast but before marking as spent, these UTXOs won't be double-spent
+  try {
+    await markUtxosPendingSpend(utxosToSpend, pendingTxid)
+    console.log('Marked UTXOs as pending spend:', pendingTxid)
+  } catch (error) {
+    console.error('Failed to mark UTXOs as pending:', error)
+    throw new Error('Failed to prepare transaction - UTXOs could not be locked')
+  }
+
+  // Now broadcast the transaction
+  let txid: string
+  try {
+    txid = await broadcastTransaction(tx)
+  } catch (broadcastError) {
+    // Broadcast failed - rollback the pending status
+    console.error('Broadcast failed, rolling back pending status:', broadcastError)
+    try {
+      await rollbackPendingSpend(utxosToSpend)
+      console.log('Rolled back pending status for UTXOs')
+    } catch (rollbackError) {
+      console.error('CRITICAL: Failed to rollback pending status:', rollbackError)
+    }
+    throw broadcastError
+  }
+
+  // Broadcast succeeded - confirm the spend and record the transaction
   try {
     await withTransaction(async () => {
       // Record the transaction
@@ -732,18 +764,15 @@ export async function sendBSV(
         ['send']
       )
 
-      // Mark spent UTXOs
-      await markUtxosSpent(
-        inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
-        txid
-      )
+      // Confirm UTXOs as spent (updates from pending -> spent)
+      await confirmUtxosSpent(utxosToSpend, txid)
     })
 
     console.log('Transaction tracked locally:', txid)
   } catch (error) {
     // Log error but don't fail - tx is already broadcast
-    // This ensures user knows about tracking failure for manual recovery
-    console.error('CRITICAL: Failed to track transaction locally. TXID:', txid, 'Error:', error)
+    // UTXOs are still marked as pending, which is safe (they won't be double-spent)
+    console.error('CRITICAL: Failed to confirm transaction locally. TXID:', txid, 'Error:', error)
   }
 
   return txid
@@ -884,9 +913,39 @@ export async function sendBSVMultiKey(
   }
 
   await tx.sign()
-  const txid = await broadcastTransaction(tx)
 
-  // Track transaction locally with database transaction for atomicity
+  // Get the UTXOs we're about to spend
+  const utxosToSpend = inputsToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+
+  // Compute txid before broadcast for pending marking
+  const pendingTxid = tx.id('hex')
+
+  // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
+  try {
+    await markUtxosPendingSpend(utxosToSpend, pendingTxid)
+    console.log('Marked UTXOs as pending spend:', pendingTxid)
+  } catch (error) {
+    console.error('Failed to mark UTXOs as pending:', error)
+    throw new Error('Failed to prepare transaction - UTXOs could not be locked')
+  }
+
+  // Now broadcast the transaction
+  let txid: string
+  try {
+    txid = await broadcastTransaction(tx)
+  } catch (broadcastError) {
+    // Broadcast failed - rollback the pending status
+    console.error('Broadcast failed, rolling back pending status:', broadcastError)
+    try {
+      await rollbackPendingSpend(utxosToSpend)
+      console.log('Rolled back pending status for UTXOs')
+    } catch (rollbackError) {
+      console.error('CRITICAL: Failed to rollback pending status:', rollbackError)
+    }
+    throw broadcastError
+  }
+
+  // Broadcast succeeded - confirm the spend and record the transaction
   try {
     await withTransaction(async () => {
       await recordSentTransaction(
@@ -896,15 +955,13 @@ export async function sendBSVMultiKey(
         ['send']
       )
 
-      await markUtxosSpent(
-        inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
-        txid
-      )
+      // Confirm UTXOs as spent (updates from pending -> spent)
+      await confirmUtxosSpent(utxosToSpend, txid)
     })
 
     console.log('Transaction tracked locally:', txid)
   } catch (error) {
-    console.error('CRITICAL: Failed to track transaction locally. TXID:', txid, 'Error:', error)
+    console.error('CRITICAL: Failed to confirm transaction locally. TXID:', txid, 'Error:', error)
   }
 
   return txid
@@ -1434,7 +1491,37 @@ export async function lockBSV(
   }
 
   await tx.sign()
-  const txid = await broadcastTransaction(tx)
+
+  // Get the UTXOs we're about to spend
+  const utxosToSpend = inputsToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+
+  // Compute txid before broadcast for pending marking
+  const pendingTxid = tx.id('hex')
+
+  // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
+  try {
+    await markUtxosPendingSpend(utxosToSpend, pendingTxid)
+    console.log('Marked UTXOs as pending spend for lock:', pendingTxid)
+  } catch (error) {
+    console.error('Failed to mark UTXOs as pending:', error)
+    throw new Error('Failed to prepare lock transaction - UTXOs could not be locked')
+  }
+
+  // Now broadcast the transaction
+  let txid: string
+  try {
+    txid = await broadcastTransaction(tx)
+  } catch (broadcastError) {
+    // Broadcast failed - rollback the pending status
+    console.error('Lock broadcast failed, rolling back pending status:', broadcastError)
+    try {
+      await rollbackPendingSpend(utxosToSpend)
+      console.log('Rolled back pending status for UTXOs')
+    } catch (rollbackError) {
+      console.error('CRITICAL: Failed to rollback pending status:', rollbackError)
+    }
+    throw broadcastError
+  }
 
   const lockedUtxo: LockedUTXO = {
     txid,
@@ -1446,7 +1533,7 @@ export async function lockBSV(
     createdAt: Date.now()
   }
 
-  // Track transaction
+  // Track transaction and confirm spend
   try {
     await recordSentTransaction(
       txid,
@@ -1455,10 +1542,8 @@ export async function lockBSV(
       ['lock'],
       -satoshis  // Negative because we're sending/locking
     )
-    await markUtxosSpent(
-      inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
-      txid
-    )
+    // Confirm UTXOs as spent (updates from pending -> spent)
+    await confirmUtxosSpent(utxosToSpend, txid)
   } catch (error) {
     console.warn('Failed to track lock transaction:', error)
   }
@@ -2105,7 +2190,40 @@ export async function transferOrdinal(
   }
 
   await tx.sign()
-  const txid = await broadcastTransaction(tx)
+
+  // Get the UTXOs we're about to spend
+  const utxosToSpend = [
+    { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
+    ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+  ]
+
+  // Compute txid before broadcast for pending marking
+  const pendingTxid = tx.id('hex')
+
+  // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
+  try {
+    await markUtxosPendingSpend(utxosToSpend, pendingTxid)
+    console.log('Marked UTXOs as pending spend for ordinal transfer:', pendingTxid)
+  } catch (error) {
+    console.error('Failed to mark UTXOs as pending:', error)
+    throw new Error('Failed to prepare ordinal transfer - UTXOs could not be locked')
+  }
+
+  // Now broadcast the transaction
+  let txid: string
+  try {
+    txid = await broadcastTransaction(tx)
+  } catch (broadcastError) {
+    // Broadcast failed - rollback the pending status
+    console.error('Ordinal transfer broadcast failed, rolling back pending status:', broadcastError)
+    try {
+      await rollbackPendingSpend(utxosToSpend)
+      console.log('Rolled back pending status for UTXOs')
+    } catch (rollbackError) {
+      console.error('CRITICAL: Failed to rollback pending status:', rollbackError)
+    }
+    throw broadcastError
+  }
 
   // Track transaction locally
   try {
@@ -2116,12 +2234,8 @@ export async function transferOrdinal(
       ['ordinal', 'transfer']
     )
 
-    // Mark spent UTXOs
-    const spentUtxos = [
-      { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
-      ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
-    ]
-    await markUtxosSpent(spentUtxos, txid)
+    // Confirm UTXOs as spent (updates from pending -> spent)
+    await confirmUtxosSpent(utxosToSpend, txid)
 
     console.log('Ordinal transfer tracked locally:', txid)
   } catch (error) {
