@@ -48,7 +48,7 @@ function getRequestInfo(req: BRC100Request): RequestInfo {
         risk: 'low',
         action: 'Sign'
       }
-    case 'createAction':
+    case 'createAction': {
       const actionParams = getCreateActionParams(req)
       const hasOutputs = actionParams?.outputs && actionParams.outputs.length > 0
       const totalAmount = hasOutputs
@@ -70,6 +70,7 @@ function getRequestInfo(req: BRC100Request): RequestInfo {
           : undefined,
         action: 'Approve Transaction'
       }
+    }
     case 'isAuthenticated':
       return {
         title: 'Check Connection',

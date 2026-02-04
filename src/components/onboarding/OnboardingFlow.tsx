@@ -87,7 +87,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
       } else {
         showToast('Failed to create wallet')
       }
-    } catch (err) {
+    } catch (_err) {
       showToast('Error creating wallet')
     }
     setCreating(false)

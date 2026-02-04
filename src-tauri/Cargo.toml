@@ -13,6 +13,16 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# DevTools only enabled in debug builds for security
+tauri = { version = "2", features = [] }
+
+[features]
+default = []
+# Enable devtools feature for development
+devtools = ["tauri/devtools"]
+
+[dev-dependencies]
+# Enable devtools in dev builds
 tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "2"

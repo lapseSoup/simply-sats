@@ -30,7 +30,7 @@ interface AutoLockState {
 }
 
 // Singleton state
-let state: AutoLockState = {
+const state: AutoLockState = {
   lastActiveTime: Date.now(),
   isEnabled: false,
   inactivityLimit: DEFAULT_INACTIVITY_LIMIT,

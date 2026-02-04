@@ -279,7 +279,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         return true
       }
       return false
-    } catch (e) {
+    } catch (_e) {
       console.error('[Wallet] Failed to unlock:', e)
       return false
     }
@@ -307,7 +307,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setActiveAccount(active)
         setActiveAccountId(active.id || null)
       }
-    } catch (e) {
+    } catch (_e) {
       console.error('[Wallet] Failed to refresh accounts:', e)
     }
   }, [])
@@ -344,7 +344,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       console.log(`[Wallet] Switched to account ${account.name}`)
       return true
-    } catch (e) {
+    } catch (_e) {
       console.error('[Wallet] Failed to switch account:', e)
       return false
     }
@@ -369,7 +369,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       console.log(`[Wallet] Created new account: ${name}`)
       return true
-    } catch (e) {
+    } catch (_e) {
       console.error('[Wallet] Failed to create account:', e)
       return false
     }
@@ -392,7 +392,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         }
       }
       return success
-    } catch (e) {
+    } catch (_e) {
       console.error('[Wallet] Failed to delete account:', e)
       return false
     }
@@ -418,7 +418,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       )
       setTokenBalances(balances)
       console.log(`[Tokens] Synced ${balances.length} token balances`)
-    } catch (e) {
+    } catch (_e) {
       console.error('[Tokens] Failed to sync tokens:', e)
     } finally {
       setTokensSyncing(false)
@@ -456,7 +456,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
               amount: tx.amount
             })))
           }
-        } catch (e) {
+        } catch (_e) {
           console.log('No cached transactions yet')
         }
 
@@ -541,7 +541,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         if (data?.rate) {
           setUsdPrice(data.rate)
         }
-      } catch (e) {
+      } catch (_e) {
         console.error('Failed to fetch USD price:', e)
       }
     }
@@ -593,7 +593,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         const totalBalance = defaultBal + derivedBal
         setBalance(totalBalance)
         localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
-      } catch (e) {
+      } catch (_e) {
         console.error('Failed to get basket balances:', e)
       }
     } catch (error) {
@@ -629,7 +629,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
           setOrdBalance(totalOrdBalance)
           localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance))
         }
-      } catch (e) {
+      } catch (_e) {
         const cached = parseInt(localStorage.getItem('simply_sats_cached_ord_balance') || '0', 10)
         if (cached > 0) setOrdBalance(cached)
       }
@@ -689,7 +689,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         const derivedCount = derivedOrdinals.flat().length
         console.log(`[WalletContext] Got ${dbOrdinals.length} from database, ${ordAddressOrdinals.length} from ordAddress, ${walletAddressOrdinals.length} from walletAddress, ${identityAddressOrdinals.length} from identityAddress, ${derivedCount} from derived addresses, ${allOrdinals.length} total unique`)
         setOrdinals(allOrdinals)
-      } catch (e) {
+      } catch (_e) {
         console.error('[WalletContext] Failed to fetch ordinals:', e)
       }
 
@@ -711,7 +711,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
           setLocks([])
           localStorage.setItem('simply_sats_locks', JSON.stringify([]))
         }
-      } catch (e) {
+      } catch (_e) {
         console.error('Failed to detect locks:', e)
       }
     } catch (error) {
@@ -798,13 +798,23 @@ export function WalletProvider({ children }: WalletProviderProps) {
                 address: derived.address
               })
             }
-          } catch (e) {
+          } catch (_e) {
             // Skip if can't get UTXOs for this address
           }
         }
       }
 
-      const txid = await sendBSVMultiKey(wallet.walletWif, address, amountSats, extendedUtxos)
+      // Deduplicate UTXOs by txid:vout to prevent double-spend attempts
+      // Database and API sources can have overlapping UTXOs
+      const seen = new Set<string>()
+      const deduplicatedUtxos = extendedUtxos.filter(u => {
+        const key = `${u.txid}:${u.vout}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      const txid = await sendBSVMultiKey(wallet.walletWif, address, amountSats, deduplicatedUtxos)
       await fetchData()
       return { success: true, txid }
     } catch (err) {

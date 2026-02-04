@@ -148,11 +148,11 @@ export function getDerivedAddresses(
             invoiceNumber,
             privateKey: childPrivKey
           })
-        } catch (e) {
+        } catch (_e) {
           // Skip invalid derivations
         }
       }
-    } catch (e) {
+    } catch (_e) {
       // Skip invalid public keys
     }
   }
@@ -192,7 +192,7 @@ export function findDerivedKeyForAddress(
         return { privateKey: childPrivKey, invoiceNumber }
       }
     }
-  } catch (e) {
+  } catch (_e) {
     // Invalid sender public key
   }
 
@@ -208,7 +208,7 @@ export function addKnownSender(pubKeyHex: string): void {
     // Persist to localStorage
     try {
       localStorage.setItem('simply_sats_known_senders', JSON.stringify(KNOWN_SENDER_PUBKEYS))
-    } catch (e) {
+    } catch (_e) {
       // Ignore storage errors
     }
   }
@@ -228,7 +228,7 @@ export function loadKnownSenders(): void {
         }
       }
     }
-  } catch (e) {
+  } catch (_e) {
     // Ignore parse errors
   }
 }
@@ -261,7 +261,7 @@ export function debugFindInvoiceNumber(
       if (address === targetAddress) {
         return { found: true, invoiceNumber: inv, testedCount }
       }
-    } catch (e) {
+    } catch (_e) {
       // Skip invalid
     }
   }
@@ -275,7 +275,7 @@ export function debugFindInvoiceNumber(
       if (address === targetAddress) {
         return { found: true, invoiceNumber: String(i), testedCount }
       }
-    } catch (e) {
+    } catch (_e) {
       // Skip
     }
   }
@@ -291,7 +291,7 @@ export function debugFindInvoiceNumber(
         if (address === targetAddress) {
           return { found: true, invoiceNumber: inv, testedCount }
         }
-      } catch (e) {
+      } catch (_e) {
         // Skip
       }
     }
@@ -310,7 +310,7 @@ export function debugFindInvoiceNumber(
           if (address === targetAddress) {
             return { found: true, invoiceNumber: inv, testedCount }
           }
-        } catch (e) {
+        } catch (_e) {
           // Skip
         }
       }
@@ -330,7 +330,7 @@ export function debugFindInvoiceNumber(
         if (address === targetAddress) {
           return { found: true, invoiceNumber: inv, testedCount }
         }
-      } catch (e) {
+      } catch (_e) {
         // Skip
       }
     }
@@ -347,7 +347,7 @@ export function debugFindInvoiceNumber(
         if (address === targetAddress) {
           return { found: true, invoiceNumber: inv, testedCount }
         }
-      } catch (e) {
+      } catch (_e) {
         // Skip
       }
     }

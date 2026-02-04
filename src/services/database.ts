@@ -80,6 +80,26 @@ export function getDatabase(): Database {
   return db
 }
 
+/**
+ * Execute multiple database operations within a transaction
+ * If any operation fails, all changes are rolled back
+ */
+export async function withTransaction<T>(
+  operations: () => Promise<T>
+): Promise<T> {
+  const database = getDatabase()
+
+  try {
+    await database.execute('BEGIN TRANSACTION')
+    const result = await operations()
+    await database.execute('COMMIT')
+    return result
+  } catch (error) {
+    await database.execute('ROLLBACK')
+    throw error
+  }
+}
+
 // ============================================
 // UTXO Operations
 // ============================================
@@ -852,14 +872,14 @@ export async function clearDatabase(): Promise<void> {
   // Also clear derived addresses
   try {
     await database.execute('DELETE FROM derived_addresses')
-  } catch (e) {
+  } catch (_e) {
     // Table may not exist yet
   }
 
   // Also clear contacts
   try {
     await database.execute('DELETE FROM contacts')
-  } catch (e) {
+  } catch (_e) {
     // Table may not exist yet
   }
 
@@ -1007,7 +1027,7 @@ export async function getDerivedAddresses(): Promise<DerivedAddress[]> {
       createdAt: row.created_at,
       lastSyncedAt: row.last_synced_at
     }))
-  } catch (e) {
+  } catch (_e) {
     // Table may not exist yet
     return []
   }
@@ -1038,7 +1058,7 @@ export async function getDerivedAddressByAddress(address: string): Promise<Deriv
       createdAt: row.created_at,
       lastSyncedAt: row.last_synced_at
     }
-  } catch (e) {
+  } catch (_e) {
     return null
   }
 }
@@ -1145,7 +1165,7 @@ export async function getContacts(): Promise<Contact[]> {
       label: row.label,
       createdAt: row.created_at
     }))
-  } catch (e) {
+  } catch (_e) {
     // Table may not exist yet
     return []
   }
@@ -1172,7 +1192,7 @@ export async function getContactByPubkey(pubkey: string): Promise<Contact | null
       label: row.label,
       createdAt: row.created_at
     }
-  } catch (e) {
+  } catch (_e) {
     return null
   }
 }
@@ -1211,7 +1231,7 @@ export async function getNextInvoiceNumber(senderPubkey: string): Promise<number
       [senderPubkey]
     )
     return (rows[0]?.count || 0) + 1
-  } catch (e) {
+  } catch (_e) {
     return 1
   }
 }

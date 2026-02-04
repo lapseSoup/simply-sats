@@ -303,8 +303,9 @@ export async function sendBSV(
     satoshis
   })
 
-  // Add change output if above dust
-  if (change > 546) {
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(fromAddress),
       satoshis: change
@@ -446,8 +447,9 @@ export async function sendBSVMultiKey(
     satoshis
   })
 
-  // Add change output if above dust
-  if (change > 546) {
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(changeAddress),
       satoshis: change

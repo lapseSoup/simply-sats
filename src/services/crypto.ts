@@ -154,7 +154,7 @@ export async function decrypt(encryptedData: EncryptedData, password: string): P
     )
 
     return new TextDecoder().decode(plaintext)
-  } catch (error) {
+  } catch (_error) {
     // AES-GCM will throw if authentication fails (wrong password or tampered data)
     throw new Error('Decryption failed - invalid password or corrupted data')
   }

@@ -168,7 +168,7 @@ export interface LockedOutput {
 }
 
 // Pending request queue for user approval
-let pendingRequests: Map<string, {
+const pendingRequests: Map<string, {
   request: BRC100Request
   resolve: (response: BRC100Response) => void
   reject: (error: any) => void
@@ -660,7 +660,7 @@ export async function createLockTransaction(
   }
 
   // Calculate outputs (lock output + optional OP_RETURN + change)
-  let numOutputs = ordinalOrigin ? 3 : 2 // lock + opreturn + change, or just lock + change
+  const numOutputs = ordinalOrigin ? 3 : 2 // lock + opreturn + change, or just lock + change
   const fee = calculateTxFee(inputsToUse.length, numOutputs)
   const change = totalInput - satoshis - fee
 
@@ -703,8 +703,9 @@ export async function createLockTransaction(
     })
   }
 
-  // Add change output
-  if (change > 546) {
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(fromAddress),
       satoshis: change
@@ -941,7 +942,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
   }
 
   try {
-    let response: BRC100Response = { id: requestId }
+    const response: BRC100Response = { id: requestId }
 
     switch (request.type) {
       case 'getPublicKey': {
@@ -1444,8 +1445,9 @@ async function buildAndBroadcastAction(
     })
   }
 
-  // Add change output
-  if (change > 546) {
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(fromAddress),
       satoshis: change
@@ -1540,8 +1542,9 @@ async function buildAndBroadcastAction(
       }
     }
 
-    // Add change output
-    if (change > 546) {
+    // Add change output if there is any change
+    // Note: BSV has no dust limit - all change amounts are valid
+    if (change > 0) {
       const changeVout = actionRequest.outputs.length
       await addUTXO({
         txid,

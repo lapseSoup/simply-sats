@@ -7,7 +7,7 @@ import {
   markUtxosSpent,
   BASKETS
 } from './sync'
-import { getDerivedAddresses, markLockUnlockedByTxid, getDatabase, addUTXO, addLock } from './database'
+import { getDerivedAddresses, markLockUnlockedByTxid, getDatabase, addUTXO, addLock, withTransaction } from './database'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData } from './crypto'
 
 // Wallet type - simplified to just BRC-100/Yours standard
@@ -262,7 +262,7 @@ export async function getBalance(address: string): Promise<number> {
 export async function getBalanceFromDB(basket?: string): Promise<number> {
   try {
     return await getBalanceFromDatabase(basket)
-  } catch (error) {
+  } catch {
     console.warn('Database not ready, falling back to API')
     return 0
   }
@@ -278,7 +278,7 @@ export async function getUTXOsFromDB(basket = BASKETS.DEFAULT): Promise<UTXO[]> 
       satoshis: u.satoshis,
       script: u.lockingScript
     }))
-  } catch (error) {
+  } catch {
     console.warn('Database not ready')
     return []
   }
@@ -395,22 +395,108 @@ export async function calculateTxAmount(txDetails: any, addressOrAddresses: stri
   return received - sent
 }
 
-// Default fee rate: 0.071 sat/byte (71 sat/KB) - most miners accept this
-const DEFAULT_FEE_RATE = 0.071
+// Default fee rate: 0.05 sat/byte (50 sat/KB) - BSV miners typically accept very low fees
+const DEFAULT_FEE_RATE = 0.05
 
-// Get the current fee rate from settings or use default
+// Minimum fee rate (sat/byte) - BSV has very low minimum
+const MIN_FEE_RATE = 0.01
+
+// Maximum fee rate (sat/byte) - cap to prevent accidental overpayment
+const MAX_FEE_RATE = 1.0
+
+// Cache for dynamic fee rate
+let cachedFeeRate: { rate: number; timestamp: number } | null = null
+const FEE_RATE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+/**
+ * Fetch current recommended fee rate from the network
+ * Uses GorillaPool's fee quote endpoint
+ */
+export async function fetchDynamicFeeRate(): Promise<number> {
+  // Check cache first
+  if (cachedFeeRate && Date.now() - cachedFeeRate.timestamp < FEE_RATE_CACHE_TTL) {
+    return cachedFeeRate.rate
+  }
+
+  try {
+    // GorillaPool mAPI returns fee policies
+    const response = await fetch('https://mapi.gorillapool.io/mapi/feeQuote', {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    })
+
+    if (response.ok) {
+      const result = await response.json()
+      const payload = typeof result.payload === 'string'
+        ? JSON.parse(result.payload)
+        : result.payload
+
+      if (payload?.fees) {
+        // Extract standard fee for data transactions
+        const standardFee = payload.fees.find((f: { feeType: string }) => f.feeType === 'standard')
+        if (standardFee?.miningFee) {
+          // Convert from satoshis/byte
+          const ratePerByte = standardFee.miningFee.satoshis / standardFee.miningFee.bytes
+          const clampedRate = Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, ratePerByte))
+
+          // Cache the result
+          cachedFeeRate = { rate: clampedRate, timestamp: Date.now() }
+          console.log(`[Fees] Fetched dynamic fee rate: ${clampedRate} sat/byte`)
+          return clampedRate
+        }
+      }
+    }
+  } catch {
+    console.warn('[Fees] Failed to fetch dynamic fee rate, using default')
+  }
+
+  // Fallback to default
+  return DEFAULT_FEE_RATE
+}
+
+/**
+ * Get the current fee rate
+ * Prefers user-set rate, then cached dynamic rate, then default
+ */
 export function getFeeRate(): number {
+  // Check for user override first
   const stored = localStorage.getItem('simply_sats_fee_rate')
   if (stored) {
     const rate = parseFloat(stored)
     if (!isNaN(rate) && rate > 0) return rate
   }
+
+  // Use cached dynamic rate if available
+  if (cachedFeeRate && Date.now() - cachedFeeRate.timestamp < FEE_RATE_CACHE_TTL) {
+    return cachedFeeRate.rate
+  }
+
   return DEFAULT_FEE_RATE
+}
+
+/**
+ * Get fee rate with optional async fetch of dynamic rate
+ */
+export async function getFeeRateAsync(): Promise<number> {
+  // Check for user override first
+  const stored = localStorage.getItem('simply_sats_fee_rate')
+  if (stored) {
+    const rate = parseFloat(stored)
+    if (!isNaN(rate) && rate > 0) return rate
+  }
+
+  // Fetch dynamic rate
+  return fetchDynamicFeeRate()
 }
 
 // Set the fee rate (in sats/byte)
 export function setFeeRate(rate: number): void {
   localStorage.setItem('simply_sats_fee_rate', String(rate))
+}
+
+// Clear user fee rate override (use dynamic rate)
+export function clearFeeRateOverride(): void {
+  localStorage.removeItem('simply_sats_fee_rate')
 }
 
 // Get fee rate in sats/KB for display
@@ -528,14 +614,12 @@ async function broadcastTransaction(tx: Transaction): Promise<string> {
     console.log('GorillaPool ARC response:', arcResult)
 
     // ARC returns status 200 even for errors, check txStatus
+    // Only accept confirmed statuses - do not accept ambiguous responses
     if (arcResult.txid && (arcResult.txStatus === 'SEEN_ON_NETWORK' || arcResult.txStatus === 'ACCEPTED')) {
       console.log('ARC broadcast successful! txid:', arcResult.txid)
       return arcResult.txid
-    } else if (arcResult.txid && !arcResult.detail) {
-      // Sometimes ARC returns just txid on success
-      console.log('ARC broadcast possibly successful, txid:', arcResult.txid)
-      return arcResult.txid
     } else {
+      // Removed unsafe "possibly successful" path that accepted any txid without status verification
       const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
       console.warn('ARC rejected transaction:', errorMsg)
       errors.push(`ARC: ${errorMsg}`)
@@ -560,13 +644,12 @@ async function broadcastTransaction(tx: Transaction): Promise<string> {
     const arcResult2 = await arcResponse2.json()
     console.log('GorillaPool ARC (plain) response:', arcResult2)
 
+    // Only accept confirmed statuses - do not accept ambiguous responses
     if (arcResult2.txid && (arcResult2.txStatus === 'SEEN_ON_NETWORK' || arcResult2.txStatus === 'ACCEPTED')) {
       console.log('ARC broadcast successful! txid:', arcResult2.txid)
       return arcResult2.txid
-    } else if (arcResult2.txid && !arcResult2.detail) {
-      console.log('ARC broadcast possibly successful, txid:', arcResult2.txid)
-      return arcResult2.txid
     } else {
+      // Removed unsafe "possibly successful" path that accepted any txid without status verification
       const errorMsg = arcResult2.detail || arcResult2.extraInfo || arcResult2.title || 'Unknown ARC error'
       console.warn('ARC (plain) rejected transaction:', errorMsg)
       errors.push(`ARC2: ${errorMsg}`)
@@ -725,38 +808,42 @@ export async function sendBSV(
     satoshis
   })
 
-  // Add change output if it's above dust threshold
-  if (change > 546) {
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(fromAddress),
       satoshis: change
     })
   }
-  // If change <= 546, it goes to miners as extra fee (dust)
 
   await tx.sign()
   const txid = await broadcastTransaction(tx)
 
   // Track transaction locally for BRC-100 compliance
+  // Use database transaction to ensure atomicity - both operations succeed or both fail
   try {
-    // Record the transaction
-    await recordSentTransaction(
-      txid,
-      tx.toHex(),
-      `Sent ${satoshis} sats to ${toAddress}`,
-      ['send']
-    )
+    await withTransaction(async () => {
+      // Record the transaction
+      await recordSentTransaction(
+        txid,
+        tx.toHex(),
+        `Sent ${satoshis} sats to ${toAddress}`,
+        ['send']
+      )
 
-    // Mark spent UTXOs
-    await markUtxosSpent(
-      inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
-      txid
-    )
+      // Mark spent UTXOs
+      await markUtxosSpent(
+        inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
+        txid
+      )
+    })
 
     console.log('Transaction tracked locally:', txid)
   } catch (error) {
-    // Don't fail the send if tracking fails - tx is already broadcast
-    console.warn('Failed to track transaction locally:', error)
+    // Log error but don't fail - tx is already broadcast
+    // This ensures user knows about tracking failure for manual recovery
+    console.error('CRITICAL: Failed to track transaction locally. TXID:', txid, 'Error:', error)
   }
 
   return txid
@@ -887,8 +974,9 @@ export async function sendBSVMultiKey(
     satoshis
   })
 
-  // Add change output if it's above dust threshold
-  if (change > 546) {
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(changeAddress),
       satoshis: change
@@ -898,23 +986,25 @@ export async function sendBSVMultiKey(
   await tx.sign()
   const txid = await broadcastTransaction(tx)
 
-  // Track transaction locally
+  // Track transaction locally with database transaction for atomicity
   try {
-    await recordSentTransaction(
-      txid,
-      tx.toHex(),
-      `Sent ${satoshis} sats to ${toAddress}`,
-      ['send']
-    )
+    await withTransaction(async () => {
+      await recordSentTransaction(
+        txid,
+        tx.toHex(),
+        `Sent ${satoshis} sats to ${toAddress}`,
+        ['send']
+      )
 
-    await markUtxosSpent(
-      inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
-      txid
-    )
+      await markUtxosSpent(
+        inputsToUse.map(u => ({ txid: u.txid, vout: u.vout })),
+        txid
+      )
+    })
 
     console.log('Transaction tracked locally:', txid)
   } catch (error) {
-    console.warn('Failed to track transaction locally:', error)
+    console.error('CRITICAL: Failed to track transaction locally. TXID:', txid, 'Error:', error)
   }
 
   return txid
@@ -969,7 +1059,7 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
       await saveWallet(parsed, password)
       return parsed
     }
-  } catch (e) {
+  } catch (_e) {
     // Not valid JSON - might be legacy format
   }
 
@@ -1434,8 +1524,9 @@ export async function lockBSV(
     })
   }
 
-  // Add change output if above dust
-  if (change > 546) {
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(fromAddress),
       satoshis: change
@@ -2104,8 +2195,9 @@ export async function transferOrdinal(
   const actualFee = calculateTxFee(1 + fundingToUse.length, 2)
   const change = totalInput - 1 - actualFee
 
-  // Add change output if above dust
-  if (change > 546) {
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
     tx.addOutput({
       lockingScript: new P2PKH().lock(fundingFromAddress),
       satoshis: change

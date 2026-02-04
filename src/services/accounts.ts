@@ -123,7 +123,7 @@ export async function getAllAccounts(): Promise<Account[]> {
       createdAt: row.created_at,
       lastAccessedAt: row.last_accessed_at
     }))
-  } catch (e) {
+  } catch (_e) {
     // Table may not exist yet
     console.log('[Accounts] No accounts table yet')
     return []
@@ -153,7 +153,7 @@ export async function getActiveAccount(): Promise<Account | null> {
       createdAt: row.created_at,
       lastAccessedAt: row.last_accessed_at
     }
-  } catch (e) {
+  } catch (_e) {
     return null
   }
 }
@@ -182,7 +182,7 @@ export async function getAccountById(accountId: number): Promise<Account | null>
       createdAt: row.created_at,
       lastAccessedAt: row.last_accessed_at
     }
-  } catch (e) {
+  } catch (_e) {
     return null
   }
 }
@@ -211,7 +211,7 @@ export async function getAccountByIdentity(identityAddress: string): Promise<Acc
       createdAt: row.created_at,
       lastAccessedAt: row.last_accessed_at
     }
-  } catch (e) {
+  } catch (_e) {
     return null
   }
 }
@@ -355,7 +355,7 @@ export async function getAccountSettings(accountId: number): Promise<AccountSett
     }
 
     return settings
-  } catch (e) {
+  } catch (_e) {
     return DEFAULT_ACCOUNT_SETTINGS
   }
 }

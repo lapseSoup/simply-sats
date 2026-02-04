@@ -73,8 +73,8 @@ export interface LookupResult {
 }
 
 // Cached node status
-let nodeCache: Map<string, ShipNode> = new Map()
-let serviceLookupCache: Map<string, SlapService[]> = new Map()
+const nodeCache: Map<string, ShipNode> = new Map()
+const serviceLookupCache: Map<string, SlapService[]> = new Map()
 
 /**
  * Check if an overlay node is healthy
@@ -205,7 +205,7 @@ export async function submitToOverlay(
           error: errorText
         })
       }
-    } catch (error) {
+    } catch (_error) {
       results.push({
         txid: '',
         accepted: false,

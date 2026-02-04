@@ -11,7 +11,7 @@
  */
 
 import { getDatabase } from './database'
-import { PrivateKey, Hash } from '@bsv/sdk'
+import { PrivateKey, Hash, PublicKey, Signature } from '@bsv/sdk'
 import type { WalletKeys } from './wallet'
 
 /**
@@ -327,7 +327,6 @@ export function verifyCertificateSignature(cert: Certificate): boolean {
     const hash = Hash.sha256(Array.from(new TextEncoder().encode(data))) as number[]
 
     // Import certifier public key
-    const { PublicKey, Signature } = require('@bsv/sdk')
     const publicKey = PublicKey.fromString(cert.certifier)
 
     // Import signature

@@ -315,7 +315,7 @@ export async function getTokenByTicker(
       verified: row.verified === 1,
       createdAt: row.created_at
     }
-  } catch (e) {
+  } catch (_e) {
     return null
   }
 }
@@ -347,7 +347,7 @@ export async function getTokenById(tokenId: number): Promise<Token | null> {
       verified: row.verified === 1,
       createdAt: row.created_at
     }
-  } catch (e) {
+  } catch (_e) {
     return null
   }
 }
@@ -375,7 +375,7 @@ export async function getAllTokens(): Promise<Token[]> {
       verified: row.verified === 1,
       createdAt: row.created_at
     }))
-  } catch (e) {
+  } catch (_e) {
     return []
   }
 }
@@ -452,7 +452,7 @@ export async function getTokenBalancesFromDb(accountId: number): Promise<TokenBa
     }
 
     return Array.from(balanceMap.values())
-  } catch (e) {
+  } catch (_e) {
     return []
   }
 }
@@ -505,7 +505,7 @@ export async function getTokenTransfers(
     params.push(limit)
 
     return await database.select<any[]>(query, params)
-  } catch (e) {
+  } catch (_e) {
     return []
   }
 }
@@ -566,7 +566,7 @@ export async function toggleFavoriteToken(
       )
       return true // Added to favorites
     }
-  } catch (e) {
+  } catch (_e) {
     return false
   }
 }
@@ -599,7 +599,7 @@ export async function getFavoriteTokens(accountId: number): Promise<Token[]> {
       verified: row.verified === 1,
       createdAt: row.created_at
     }))
-  } catch (e) {
+  } catch (_e) {
     return []
   }
 }

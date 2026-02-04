@@ -196,7 +196,7 @@ describe('Wallet Service', () => {
     describe('getFeeRate / setFeeRate', () => {
       it('should return default fee rate when not set', () => {
         const rate = getFeeRate()
-        expect(rate).toBe(0.071) // Default rate
+        expect(rate).toBe(0.05) // Default rate
       })
 
       it('should persist and retrieve custom fee rate', () => {
@@ -206,7 +206,7 @@ describe('Wallet Service', () => {
 
       it('should ignore invalid stored values', () => {
         localStorage.setItem('simply_sats_fee_rate', 'invalid')
-        expect(getFeeRate()).toBe(0.071) // Should return default
+        expect(getFeeRate()).toBe(0.05) // Should return default
       })
     })
 

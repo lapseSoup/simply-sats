@@ -153,7 +153,7 @@ class Logger {
     // Save to localStorage
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.logs))
-    } catch (e) {
+    } catch (_e) {
       // Storage full or unavailable - clear old logs
       this.logs = this.logs.slice(-100)
       try {

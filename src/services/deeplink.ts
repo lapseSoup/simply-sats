@@ -2,6 +2,26 @@ import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { handleBRC100Request, generateRequestId, type BRC100Request } from './brc100'
 import type { WalletKeys } from './wallet'
 
+/**
+ * Safely parse JSON from untrusted deep link parameters
+ * Returns undefined if parsing fails instead of throwing
+ */
+function safeJsonParse<T>(value: string | undefined): T | undefined {
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value)
+    // Basic validation - ensure we got an expected type
+    if (parsed === null || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
+      console.warn('Deep link JSON parsed to unexpected type:', typeof parsed)
+      return undefined
+    }
+    return parsed as T
+  } catch (error) {
+    console.warn('Failed to parse deep link JSON parameter:', error)
+    return undefined
+  }
+}
+
 // Parse a deep link URL and convert to BRC-100 request
 export function parseDeepLink(url: string): BRC100Request | null {
   try {
@@ -29,7 +49,7 @@ export function parseDeepLink(url: string): BRC100Request | null {
           id: generateRequestId(),
           type: 'createSignature',
           params: {
-            data: params.data ? JSON.parse(params.data) : [],
+            data: safeJsonParse<number[]>(params.data) ?? [],
             protocolID: params.protocol ? [1, params.protocol] : [1, 'unknown'],
             keyID: params.keyId || 'default'
           },
@@ -43,7 +63,7 @@ export function parseDeepLink(url: string): BRC100Request | null {
           type: 'createAction',
           params: {
             description: params.description || 'Transaction',
-            outputs: params.outputs ? JSON.parse(params.outputs) : []
+            outputs: safeJsonParse<unknown[]>(params.outputs) ?? []
           },
           origin: params.origin || params.app || 'Unknown App'
         }

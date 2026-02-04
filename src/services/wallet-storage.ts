@@ -17,9 +17,13 @@ const STORAGE_KEY = 'simply_sats_wallet'
  * @param keys - Wallet keys to save
  * @param password - Password for encryption
  */
+// Minimum password length - 12 characters for security
+// A 4-character password can be brute-forced in seconds
+const MIN_PASSWORD_LENGTH = 12
+
 export async function saveWallet(keys: WalletKeys, password: string): Promise<void> {
-  if (!password || password.length < 4) {
-    throw new Error('Password must be at least 4 characters')
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
   }
 
   const encryptedData = await encrypt(keys, password)
@@ -107,8 +111,8 @@ export function clearWallet(): void {
  * @throws Error if old password is wrong
  */
 export async function changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
-  if (!newPassword || newPassword.length < 4) {
-    throw new Error('New password must be at least 4 characters')
+  if (!newPassword || newPassword.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`New password must be at least ${MIN_PASSWORD_LENGTH} characters`)
   }
 
   const keys = await loadWallet(oldPassword)

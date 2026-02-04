@@ -80,7 +80,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         showToast('No new payments')
       }
       setMessageBoxStatus('idle')
-    } catch (e) {
+    } catch (_e) {
       setMessageBoxStatus('error')
       showToast('MessageBox check failed')
     }
@@ -107,7 +107,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           }
         }
         setDebugResult('❌ Not found')
-      } catch (e) {
+      } catch (_e) {
         setDebugResult('❌ Error')
       }
       setDebugSearching(false)
@@ -138,7 +138,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         await writeTextFile(filePath, backupJson)
         showToast('Backup saved!')
       }
-    } catch (err) {
+    } catch (_err) {
       showToast('Backup failed')
     }
   }
@@ -161,7 +161,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         showToast('Backup imported!')
         performSync(false)
       }
-    } catch (err) {
+    } catch (_err) {
       showToast('Import failed')
     }
   }

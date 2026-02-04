@@ -30,7 +30,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       const keys = restoreWallet(restoreMnemonic.trim())
       setWallet({ ...keys, mnemonic: restoreMnemonic.trim() })
       onSuccess()
-    } catch (err) {
+    } catch (_err) {
       alert('Invalid mnemonic. Please check your words.')
     }
   }
@@ -40,7 +40,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       const keys = await importFromJSON(restoreJSON)
       setWallet(keys)
       onSuccess()
-    } catch (err) {
+    } catch (_err) {
       alert('Invalid JSON backup. Please check the format.')
     }
   }
@@ -86,7 +86,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       // Trigger sync to update balances
       performSync(false)
       onSuccess()
-    } catch (err) {
+    } catch (_err) {
       alert('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
     }
   }
