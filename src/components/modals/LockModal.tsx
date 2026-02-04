@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { calculateLockFee, getTimelockScriptSize } from '../../services/wallet'
+import { calculateLockFee, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
+import { getTimelockScriptSize } from '../../services/wallet'
 
 interface LockModalProps {
   onClose: () => void
@@ -48,9 +49,9 @@ export function LockModal({ onClose }: LockModalProps) {
   let fee = 0
   if (wallet && blocks > 0) {
     const scriptSize = getTimelockScriptSize(wallet.walletPubKey, unlockBlock)
-    fee = calculateLockFee(1, scriptSize)
+    fee = calculateLockFee(1, DEFAULT_FEE_RATE, scriptSize)
   } else {
-    fee = calculateLockFee(1)
+    fee = calculateLockFee(1, DEFAULT_FEE_RATE)
   }
 
   const handleSubmit = async () => {
