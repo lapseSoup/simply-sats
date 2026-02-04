@@ -86,7 +86,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       // Trigger sync to update balances
       performSync(false)
       onSuccess()
-    } catch (_err) {
+    } catch (err) {
       alert('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
     }
   }

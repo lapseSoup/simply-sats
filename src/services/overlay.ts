@@ -205,7 +205,7 @@ export async function submitToOverlay(
           error: errorText
         })
       }
-    } catch (_error) {
+    } catch (error) {
       results.push({
         txid: '',
         accepted: false,
