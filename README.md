@@ -8,7 +8,7 @@ A simple, lightweight BSV wallet with BRC-100 support. Built with Tauri, React, 
 - **BRC-100 compatible** - Works seamlessly with BRC-100 apps and protocols (Wrootz, etc.)
 - **BRC-42/43 key derivation** - Receive payments at unique derived addresses with full privacy
 - **Contacts** - Save sender public keys for easy payment reception
-- **1Sat Ordinals viewer** - View and manage your 1Sat Ordinal inscriptions
+- **1Sat Ordinals viewer** - View and transfer your 1Sat Ordinal inscriptions
 - **Time locks** - Lock sats until a specific block height using OP_PUSH_TX (Wrootz integration)
 - **Yours Wallet compatible** - Uses the same derivation paths as Yours Wallet
 - **Transaction history** - View your transaction history with WhatsOnChain links
@@ -16,7 +16,9 @@ A simple, lightweight BSV wallet with BRC-100 support. Built with Tauri, React, 
 - **Local database** - UTXOs tracked locally for fast balance queries
 - **Multi-account support** - Create multiple accounts from a single seed phrase
 - **Token tracking** - View BSV-20/BSV-21 token balances
-- **Auto-lock** - Automatically lock wallet after inactivity
+- **Auto-lock** - Automatically lock wallet after inactivity (configurable 5min to 1hr)
+- **Overlay Network** - SHIP/SLAP broadcast support for transaction reliability
+- **AES-GCM encryption** - Wallet keys encrypted locally with your password
 
 ## Derivation Paths
 
@@ -79,11 +81,12 @@ npm run tauri build
 
 ## Security
 
-- Private keys are stored locally only
-- No external servers besides WhatsOnChain/GorillaPool APIs for blockchain data
+- Private keys are encrypted locally with AES-GCM 256-bit encryption
+- No external servers besides WhatsOnChain/GorillaPool/ARC APIs for blockchain data
 - Recovery phrase is the only way to restore your wallet
 - Derived address private keys are computed from your seed phrase + sender's public key
-- Auto-lock feature locks wallet after configurable inactivity period
+- Auto-lock feature locks wallet after configurable inactivity period (5min to 1hr, or disabled)
+- Password protection optional - leave blank if you prefer no password
 
 ## License
 

@@ -7,7 +7,7 @@ import {
   markUtxosSpent,
   BASKETS
 } from './sync'
-import { getDerivedAddresses, markLockUnlockedByTxid, getDatabase } from './database'
+import { getDerivedAddresses, markLockUnlockedByTxid, getDatabase, addUTXO, addLock } from './database'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData } from './crypto'
 
 // Wallet type - simplified to just BRC-100/Yours standard
@@ -1047,9 +1047,11 @@ export interface Ordinal {
 export async function getOrdinals(address: string): Promise<Ordinal[]> {
   try {
     // First, try the GorillaPool 1Sat Ordinals API for proper inscription data
+    console.log(`Fetching ordinals for ${address} from GorillaPool...`)
     const gpResponse = await fetch(`https://ordinals.gorillapool.io/api/txos/address/${address}/unspent?limit=100`)
     if (gpResponse.ok) {
       const gpData = await gpResponse.json()
+      console.log(`GorillaPool response for ${address}:`, Array.isArray(gpData) ? `${gpData.length} items` : typeof gpData)
       if (Array.isArray(gpData) && gpData.length > 0) {
         console.log(`Found ${gpData.length} ordinals from GorillaPool API for ${address}`)
         return gpData.map((item: any) => ({
@@ -1060,11 +1062,15 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
           contentType: item.origin?.data?.insc?.file?.type,
           content: item.origin?.data?.insc?.file?.hash
         }))
+      } else {
+        console.log(`GorillaPool returned empty array for ${address}, falling back to WhatsOnChain`)
       }
+    } else {
+      console.log(`GorillaPool API error: ${gpResponse.status}, falling back to WhatsOnChain`)
     }
 
     // Fallback: Use WhatsOnChain to get 1-sat UTXOs, then verify each with GorillaPool
-    console.log('Falling back to WhatsOnChain for ordinals detection...')
+    console.log('Using WhatsOnChain for ordinals detection...')
     const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
     if (!response.ok) {
       console.warn(`Failed to fetch ordinals for ${address}: ${response.status}`)
@@ -1356,6 +1362,29 @@ export async function lockBSV(
     )
   } catch (error) {
     console.warn('Failed to track lock transaction:', error)
+  }
+
+  // Add lock to database so it can be properly tracked for unlock
+  try {
+    const utxoId = await addUTXO({
+      txid,
+      vout: 0,
+      satoshis,
+      lockingScript: timelockScript.toHex(),
+      basket: 'locks',
+      spendable: false,
+      createdAt: Date.now()
+    })
+
+    await addLock({
+      utxoId,
+      unlockBlock,
+      ordinalOrigin: ordinalOrigin ?? undefined,
+      createdAt: Date.now()
+    })
+    console.log(`Added lock to database: ${txid}:0 until block ${unlockBlock}`)
+  } catch (error) {
+    console.warn('Failed to add lock to database:', error)
   }
 
   return { txid, lockedUtxo }

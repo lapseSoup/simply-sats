@@ -80,7 +80,7 @@ export function LockScreenModal({
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={e => setPassword(e.target.value)}
-              placeholder="Enter password"
+              placeholder="Enter password (or leave blank)"
               className={`lock-screen-input ${error ? 'error' : ''}`}
               disabled={loading}
               autoComplete="current-password"
@@ -117,7 +117,7 @@ export function LockScreenModal({
           <button
             type="submit"
             className="lock-screen-button"
-            disabled={loading || !password}
+            disabled={loading}
           >
             {loading ? (
               <span className="loading-spinner" />
@@ -138,7 +138,8 @@ export function LockScreenModal({
         )}
 
         <p className="lock-screen-hint">
-          Locked for your security after 10 minutes of inactivity
+          Locked for your security after inactivity.
+          {' '}If you never set a password, leave it blank.
         </p>
       </div>
 
