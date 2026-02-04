@@ -1,7 +1,48 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo, useCallback } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { getTransactionsByLabel } from '../../services/database'
+
+// Memoized transaction item to prevent unnecessary re-renders
+const TransactionItem = memo(function TransactionItem({
+  tx,
+  txType,
+  txIcon,
+  onOpenWoC
+}: {
+  tx: { tx_hash: string; amount?: number; height: number }
+  txType: string
+  txIcon: string
+  onOpenWoC: (txid: string) => void
+}) {
+  return (
+    <div
+      className="tx-item"
+      onClick={() => onOpenWoC(tx.tx_hash)}
+      role="listitem"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && onOpenWoC(tx.tx_hash)}
+    >
+      <div className="tx-icon" aria-hidden="true">{txIcon}</div>
+      <div className="tx-info">
+        <div className="tx-type">{txType}</div>
+        <div className="tx-meta">
+          <span className="tx-hash">{tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}</span>
+          {tx.height > 0 && <span>• Block {tx.height.toLocaleString()}</span>}
+        </div>
+      </div>
+      <div className="tx-amount">
+        {tx.amount ? (
+          <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
+            {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats
+          </div>
+        ) : (
+          <div className="tx-amount-value">View →</div>
+        )}
+      </div>
+    </div>
+  )
+})
 
 export function ActivityTab() {
   const { txHistory, locks } = useWallet()
@@ -20,9 +61,9 @@ export function ActivityTab() {
     fetchUnlockTxids()
   }, [txHistory]) // Refresh when tx history changes
 
-  const openOnWoC = (txid: string) => {
+  const openOnWoC = useCallback((txid: string) => {
     openUrl(`https://whatsonchain.com/tx/${txid}`)
-  }
+  }, [])
 
   if (txHistory.length === 0) {
     return (
@@ -62,32 +103,13 @@ export function ActivityTab() {
         const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
 
         return (
-          <div
+          <TransactionItem
             key={tx.tx_hash}
-            className="tx-item"
-            onClick={() => openOnWoC(tx.tx_hash)}
-            role="listitem"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && openOnWoC(tx.tx_hash)}
-          >
-            <div className="tx-icon" aria-hidden="true">{txIcon}</div>
-            <div className="tx-info">
-              <div className="tx-type">{txType}</div>
-              <div className="tx-meta">
-                <span className="tx-hash">{tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}</span>
-                {tx.height > 0 && <span>• Block {tx.height.toLocaleString()}</span>}
-              </div>
-            </div>
-            <div className="tx-amount">
-              {tx.amount ? (
-                <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
-                  {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats
-                </div>
-              ) : (
-                <div className="tx-amount-value">View →</div>
-              )}
-            </div>
-          </div>
+            tx={tx}
+            txType={txType}
+            txIcon={txIcon}
+            onOpenWoC={openOnWoC}
+          />
         )
       })}
     </div>

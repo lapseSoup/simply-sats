@@ -83,8 +83,8 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
 
   const handleCreate = async () => {
     // Validate password
-    if (password.length < 8) {
-      setPasswordError('Password must be at least 8 characters')
+    if (password.length < 12) {
+      setPasswordError('Password must be at least 12 characters')
       return
     }
     if (password !== confirmPassword) {

@@ -327,3 +327,42 @@ export function logApiCall(endpoint: string, method: string, status?: number): v
 export function logError(context: string, error: unknown): void {
   logger.error(context, error)
 }
+
+// ============================================
+// Context-Specific Loggers
+// ============================================
+
+/**
+ * Pre-configured logger for wallet operations
+ */
+export const walletLogger = logger.child({ module: 'Wallet' })
+
+/**
+ * Pre-configured logger for sync operations
+ */
+export const syncLogger = logger.child({ module: 'Sync' })
+
+/**
+ * Pre-configured logger for database operations
+ */
+export const dbLogger = logger.child({ module: 'Database' })
+
+/**
+ * Pre-configured logger for API calls
+ */
+export const apiLogger = logger.child({ module: 'API' })
+
+/**
+ * Pre-configured logger for BRC-100 protocol
+ */
+export const brc100Logger = logger.child({ module: 'BRC-100' })
+
+/**
+ * Pre-configured logger for crypto operations
+ */
+export const cryptoLogger = logger.child({ module: 'Crypto' })
+
+/**
+ * Pre-configured logger for account operations
+ */
+export const accountLogger = logger.child({ module: 'Accounts' })

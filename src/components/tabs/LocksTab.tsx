@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import type { LockedUTXO } from '../../services/wallet'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -133,21 +133,19 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
     return () => clearInterval(interval)
   }, [])
 
-  const openOnWoC = (txid: string) => {
+  const openOnWoC = useCallback((txid: string) => {
     openUrl(`https://whatsonchain.com/tx/${txid}`)
-  }
+  }, [])
 
   const currentHeight = networkInfo?.blockHeight || 0
 
-  const getUnlockableLocks = () => {
-    return locks.filter(lock => currentHeight >= lock.unlockBlock)
-  }
-
-  const unlockableLocks = getUnlockableLocks()
-  const lockedLocks = locks.filter(lock => currentHeight < lock.unlockBlock)
-
-  // Calculate total locked value
-  const totalLocked = locks.reduce((sum, lock) => sum + lock.satoshis, 0)
+  // Memoize lock categorization
+  const { unlockableLocks, lockedLocks, totalLocked } = useMemo(() => {
+    const unlockable = locks.filter(lock => currentHeight >= lock.unlockBlock)
+    const locked = locks.filter(lock => currentHeight < lock.unlockBlock)
+    const total = locks.reduce((sum, lock) => sum + lock.satoshis, 0)
+    return { unlockableLocks: unlockable, lockedLocks: locked, totalLocked: total }
+  }, [locks, currentHeight])
 
   return (
     <div className="locks-tab">
@@ -259,7 +257,7 @@ interface LockItemProps {
   onOpenWoC: (txid: string) => void
 }
 
-function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, onOpenWoC }: LockItemProps) {
+const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, onOpenWoC }: LockItemProps) {
   const blocksRemaining = Math.max(0, lock.unlockBlock - currentHeight)
   const [estimatedSecondsRemaining, setEstimatedSecondsRemaining] = useState(
     blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
@@ -398,4 +396,4 @@ function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, on
       )}
     </div>
   )
-}
+})

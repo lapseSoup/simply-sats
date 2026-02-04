@@ -4,11 +4,55 @@
  * Displays BSV20/BSV21 token balances with ability to send tokens.
  */
 
-import { useState } from 'react'
+import { useState, memo, useCallback, useMemo } from 'react'
 import type { TokenBalance } from '../../services/tokens'
 import { formatTokenAmount } from '../../services/tokens'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
+
+// Memoized token card to prevent unnecessary re-renders
+const TokenCard = memo(function TokenCard({
+  balance,
+  onSend
+}: {
+  balance: TokenBalance
+  onSend: (balance: TokenBalance) => void
+}) {
+  return (
+    <div className="token-card">
+      <div className="token-icon">
+        {balance.token.iconUrl ? (
+          <img src={balance.token.iconUrl} alt={balance.token.ticker} />
+        ) : (
+          <span>{balance.token.ticker.slice(0, 2).toUpperCase()}</span>
+        )}
+      </div>
+      <div className="token-info">
+        <span className="token-ticker">{balance.token.ticker}</span>
+        <span className="token-name">{balance.token.name || balance.token.ticker}</span>
+      </div>
+      <div className="token-balance">
+        <span className="balance-amount">
+          {formatTokenAmount(balance.total, balance.token.decimals)}
+        </span>
+        {balance.pending > 0n && (
+          <span className="balance-pending">
+            +{formatTokenAmount(balance.pending, balance.token.decimals)} pending
+          </span>
+        )}
+      </div>
+      <div className="token-actions">
+        <button
+          className="send-button"
+          onClick={() => onSend(balance)}
+          disabled={balance.confirmed <= 0n}
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  )
+})
 
 interface TokensTabProps {
   onRefresh?: () => Promise<void>
@@ -33,10 +77,13 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('')
 
-  // Filter tokens
-  const filteredBalances = tokenBalances.filter(balance =>
-    balance.token.ticker.toLowerCase().includes(filter.toLowerCase()) ||
-    balance.token.name?.toLowerCase().includes(filter.toLowerCase())
+  // Filter tokens - memoized to prevent recalculation
+  const filteredBalances = useMemo(() =>
+    tokenBalances.filter(balance =>
+      balance.token.ticker.toLowerCase().includes(filter.toLowerCase()) ||
+      balance.token.name?.toLowerCase().includes(filter.toLowerCase())
+    ),
+    [tokenBalances, filter]
   )
 
   const handleSend = async () => {
@@ -93,18 +140,18 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
     setSending(false)
   }
 
-  const openSendModal = (balance: TokenBalance) => {
+  const openSendModal = useCallback((balance: TokenBalance) => {
     setSelectedToken(balance)
     setSendModalOpen(true)
     setError('')
-  }
+  }, [])
 
-  const closeSendModal = () => {
+  const closeSendModal = useCallback(() => {
     setSendModalOpen(false)
     setSendAmount('')
     setSendAddress('')
     setError('')
-  }
+  }, [])
 
   if (loading && tokenBalances.length === 0) {
     return (
@@ -176,38 +223,11 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
       {/* Token Grid */}
       <div className="tokens-grid">
         {filteredBalances.map(balance => (
-          <div key={`${balance.token.ticker}-${balance.token.protocol}`} className="token-card">
-            <div className="token-icon">
-              {balance.token.iconUrl ? (
-                <img src={balance.token.iconUrl} alt={balance.token.ticker} />
-              ) : (
-                <span>{balance.token.ticker.slice(0, 2).toUpperCase()}</span>
-              )}
-            </div>
-            <div className="token-info">
-              <span className="token-ticker">{balance.token.ticker}</span>
-              <span className="token-name">{balance.token.name || balance.token.ticker}</span>
-            </div>
-            <div className="token-balance">
-              <span className="balance-amount">
-                {formatTokenAmount(balance.total, balance.token.decimals)}
-              </span>
-              {balance.pending > 0n && (
-                <span className="balance-pending">
-                  +{formatTokenAmount(balance.pending, balance.token.decimals)} pending
-                </span>
-              )}
-            </div>
-            <div className="token-actions">
-              <button
-                className="send-button"
-                onClick={() => openSendModal(balance)}
-                disabled={balance.confirmed <= 0n}
-              >
-                Send
-              </button>
-            </div>
-          </div>
+          <TokenCard
+            key={`${balance.token.ticker}-${balance.token.protocol}`}
+            balance={balance}
+            onSend={openSendModal}
+          />
         ))}
       </div>
 

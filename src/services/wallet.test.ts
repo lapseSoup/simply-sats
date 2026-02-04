@@ -507,24 +507,24 @@ describe('Wallet Service', () => {
     }
 
     describe('saveWallet', () => {
-      it('should reject passwords shorter than 8 characters', async () => {
-        await expect(saveWallet(mockWalletKeys, 'short')).rejects.toThrow('Password must be at least 8 characters')
-        await expect(saveWallet(mockWalletKeys, '1234567')).rejects.toThrow('Password must be at least 8 characters')
+      it('should reject passwords shorter than 12 characters', async () => {
+        await expect(saveWallet(mockWalletKeys, 'short')).rejects.toThrow('Password must be at least 12 characters')
+        await expect(saveWallet(mockWalletKeys, '12345678901')).rejects.toThrow('Password must be at least 12 characters')
       })
 
       it('should reject empty passwords', async () => {
-        await expect(saveWallet(mockWalletKeys, '')).rejects.toThrow('Password must be at least 8 characters')
+        await expect(saveWallet(mockWalletKeys, '')).rejects.toThrow('Password must be at least 12 characters')
       })
     })
 
     describe('changePassword', () => {
-      it('should reject new passwords shorter than 8 characters', async () => {
-        await expect(changePassword('oldpassword123', 'short')).rejects.toThrow('Password must be at least 8 characters')
-        await expect(changePassword('oldpassword123', '1234567')).rejects.toThrow('Password must be at least 8 characters')
+      it('should reject new passwords shorter than 12 characters', async () => {
+        await expect(changePassword('oldpassword123', 'short')).rejects.toThrow('Password must be at least 12 characters')
+        await expect(changePassword('oldpassword123', '12345678901')).rejects.toThrow('Password must be at least 12 characters')
       })
 
       it('should reject empty new passwords', async () => {
-        await expect(changePassword('oldpassword123', '')).rejects.toThrow('Password must be at least 8 characters')
+        await expect(changePassword('oldpassword123', '')).rejects.toThrow('Password must be at least 12 characters')
       })
 
       it('should fail gracefully when wallet not found', async () => {

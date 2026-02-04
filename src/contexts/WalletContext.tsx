@@ -575,8 +575,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Wallet actions
   const handleCreateWallet = useCallback(async (password: string): Promise<string | null> => {
-    if (!password || password.length < 8) {
-      throw new Error('Password must be at least 8 characters')
+    if (!password || password.length < 12) {
+      throw new Error('Password must be at least 12 characters')
     }
     try {
       const keys = createWallet()
@@ -590,8 +590,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [setWallet])
 
   const handleRestoreWallet = useCallback(async (mnemonic: string, password: string): Promise<boolean> => {
-    if (!password || password.length < 8) {
-      throw new Error('Password must be at least 8 characters')
+    if (!password || password.length < 12) {
+      throw new Error('Password must be at least 12 characters')
     }
     try {
       const keys = restoreWallet(mnemonic.trim())
@@ -605,8 +605,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [setWallet])
 
   const handleImportJSON = useCallback(async (json: string, password: string): Promise<boolean> => {
-    if (!password || password.length < 8) {
-      throw new Error('Password must be at least 8 characters')
+    if (!password || password.length < 12) {
+      throw new Error('Password must be at least 12 characters')
     }
     try {
       const keys = await importFromJSON(json)

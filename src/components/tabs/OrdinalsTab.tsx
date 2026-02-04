@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import type { Ordinal } from '../../services/wallet'
 
@@ -250,7 +250,7 @@ interface OrdinalItemProps {
   onSelect: (ordinal: Ordinal) => void
 }
 
-function OrdinalGridItem({ ordinal, onSelect }: OrdinalItemProps) {
+const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect }: OrdinalItemProps) {
   const icon = getContentIcon(ordinal.contentType)
 
   return (
@@ -277,9 +277,9 @@ function OrdinalGridItem({ ordinal, onSelect }: OrdinalItemProps) {
       </div>
     </div>
   )
-}
+})
 
-function OrdinalListItem({ ordinal, onSelect }: OrdinalItemProps) {
+const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect }: OrdinalItemProps) {
   const icon = getContentIcon(ordinal.contentType)
 
   return (
@@ -305,4 +305,4 @@ function OrdinalListItem({ ordinal, onSelect }: OrdinalItemProps) {
       <div className="ordinal-list-arrow" aria-hidden="true">→</div>
     </div>
   )
-}
+})

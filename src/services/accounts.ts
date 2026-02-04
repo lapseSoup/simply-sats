@@ -60,11 +60,12 @@ export async function createAccount(
   password: string
 ): Promise<number> {
   // Password is required - no unencrypted storage allowed
+  // Standardized to 12 characters minimum for security
   if (!password) {
     throw new Error('Password is required for wallet encryption')
   }
-  if (password.length < 8) {
-    throw new Error('Password must be at least 8 characters')
+  if (password.length < 12) {
+    throw new Error('Password must be at least 12 characters')
   }
 
   const database = getDatabase()

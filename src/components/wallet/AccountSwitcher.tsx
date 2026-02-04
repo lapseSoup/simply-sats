@@ -5,8 +5,51 @@
  * Shows current account with balance preview and allows account management.
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, memo, useCallback, useMemo } from 'react'
 import type { Account } from '../../services/accounts'
+
+// Memoized account item to prevent unnecessary re-renders
+const AccountItem = memo(function AccountItem({
+  account,
+  isActive,
+  onSelect
+}: {
+  account: Account
+  isActive: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      className={`account-item ${isActive ? 'active' : ''}`}
+      onClick={onSelect}
+      role="option"
+      aria-selected={isActive}
+    >
+      <div className="account-avatar">
+        {account.name.charAt(0).toUpperCase()}
+      </div>
+      <div className="account-item-info">
+        <span className="account-item-name">{account.name}</span>
+        <span className="account-item-address">
+          {account.identityAddress.slice(0, 8)}...{account.identityAddress.slice(-6)}
+        </span>
+      </div>
+      {isActive && (
+        <svg
+          className="check-icon"
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M3 8L6 11L13 4" />
+        </svg>
+      )}
+    </button>
+  )
+})
 
 interface AccountSwitcherProps {
   accounts: Account[]
@@ -54,7 +97,28 @@ export function AccountSwitcher({
     return () => document.removeEventListener('keydown', handleEscape)
   }, [])
 
-  const activeAccount = accounts.find(a => a.id === activeAccountId)
+  const activeAccount = useMemo(
+    () => accounts.find(a => a.id === activeAccountId),
+    [accounts, activeAccountId]
+  )
+
+  // Memoized handler to handle account selection
+  const handleAccountSelect = useCallback((accountId: number) => {
+    if (accountId !== activeAccountId) {
+      onSwitchAccount(accountId)
+    }
+    setIsOpen(false)
+  }, [activeAccountId, onSwitchAccount])
+
+  const handleCreateClick = useCallback(() => {
+    onCreateAccount()
+    setIsOpen(false)
+  }, [onCreateAccount])
+
+  const handleManageClick = useCallback(() => {
+    onManageAccounts()
+    setIsOpen(false)
+  }, [onManageAccounts])
 
   if (accounts.length === 0) {
     return null
@@ -99,51 +163,19 @@ export function AccountSwitcher({
         <div className="account-dropdown" role="listbox">
           <div className="account-list">
             {accounts.map(account => (
-              <button
+              <AccountItem
                 key={account.id}
-                className={`account-item ${account.id === activeAccountId ? 'active' : ''}`}
-                onClick={() => {
-                  if (account.id !== activeAccountId) {
-                    onSwitchAccount(account.id!)
-                  }
-                  setIsOpen(false)
-                }}
-                role="option"
-                aria-selected={account.id === activeAccountId}
-              >
-                <div className="account-avatar">
-                  {account.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="account-item-info">
-                  <span className="account-item-name">{account.name}</span>
-                  <span className="account-item-address">
-                    {account.identityAddress.slice(0, 8)}...{account.identityAddress.slice(-6)}
-                  </span>
-                </div>
-                {account.id === activeAccountId && (
-                  <svg
-                    className="check-icon"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M3 8L6 11L13 4" />
-                  </svg>
-                )}
-              </button>
+                account={account}
+                isActive={account.id === activeAccountId}
+                onSelect={() => handleAccountSelect(account.id!)}
+              />
             ))}
           </div>
 
           <div className="account-actions">
             <button
               className="account-action-button"
-              onClick={() => {
-                onCreateAccount()
-                setIsOpen(false)
-              }}
+              onClick={handleCreateClick}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M8 3V13M3 8H13" />
@@ -152,10 +184,7 @@ export function AccountSwitcher({
             </button>
             <button
               className="account-action-button"
-              onClick={() => {
-                onManageAccounts()
-                setIsOpen(false)
-              }}
+              onClick={handleManageClick}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="8" cy="8" r="2" />

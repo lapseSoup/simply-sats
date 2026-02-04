@@ -977,8 +977,8 @@ const STORAGE_KEY = 'simply_sats_wallet'
  * @param password - Password for encryption
  */
 export async function saveWallet(keys: WalletKeys, password: string): Promise<void> {
-  if (!password || password.length < 8) {
-    throw new Error('Password must be at least 8 characters')
+  if (!password || password.length < 12) {
+    throw new Error('Password must be at least 12 characters')
   }
 
   const encryptedData = await encrypt(keys, password)
@@ -1066,8 +1066,8 @@ export function clearWallet(): void {
  * @throws Error if old password is wrong
  */
 export async function changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
-  if (!newPassword || newPassword.length < 8) {
-    throw new Error('Password must be at least 8 characters')
+  if (!newPassword || newPassword.length < 12) {
+    throw new Error('Password must be at least 12 characters')
   }
 
   const keys = await loadWallet(oldPassword)

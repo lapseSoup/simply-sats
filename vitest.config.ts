@@ -25,8 +25,20 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      include: ['src/services/**/*.ts'],
-      exclude: ['src/test/**', '**/*.d.ts']
+      include: [
+        'src/services/**/*.ts',
+        'src/components/**/*.tsx',
+        'src/hooks/**/*.ts',
+        'src/domain/**/*.ts',
+        'src/infrastructure/**/*.ts'
+      ],
+      exclude: [
+        'src/test/**',
+        '**/*.d.ts',
+        '**/*.test.{ts,tsx}',
+        '**/*.spec.{ts,tsx}',
+        '**/index.ts'
+      ]
     },
     testTimeout: 10000,
     hookTimeout: 10000
