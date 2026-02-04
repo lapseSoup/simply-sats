@@ -18,12 +18,8 @@ import {
   updateDerivedAddressSyncTime,
   type UTXO as DBUtxo
 } from './database'
-import { getWocApiUrl, TIMEOUTS, RATE_LIMITS } from './config'
-import { fetchWithRetry } from './network'
-import { NetworkError, AppError } from './errors'
-
-// Get WhatsOnChain API base URL from config
-const getWocApi = () => getWocApiUrl()
+import { RATE_LIMITS } from './config'
+import { getWocClient } from '../infrastructure/api/wocClient'
 
 // Basket names for different address types
 export const BASKETS = {
@@ -42,14 +38,6 @@ export interface AddressInfo {
   wif?: string // Optional - for signing
 }
 
-// WhatsOnChain UTXO response
-interface WocUtxo {
-  tx_hash: string
-  tx_pos: number
-  value: number
-  height?: number
-}
-
 
 // Sync result
 export interface SyncResult {
@@ -61,45 +49,26 @@ export interface SyncResult {
 }
 
 /**
- * Fetch current blockchain height with timeout and retry
+ * Fetch current blockchain height using infrastructure layer
  */
 export async function getCurrentBlockHeight(): Promise<number> {
-  try {
-    const response = await fetchWithRetry(`${getWocApi()}/chain/info`, {
-      timeout: TIMEOUTS.default
-    })
-    if (!response.ok) {
-      throw new NetworkError('Failed to fetch blockchain info', '/chain/info')
-    }
-    const data = await response.json()
-    return data.blocks
-  } catch (error) {
-    if (error instanceof AppError) throw error
-    throw new NetworkError('Failed to fetch blockchain info', '/chain/info')
-  }
+  return getWocClient().getBlockHeight()
 }
 
 /**
- * Fetch UTXOs for an address from WhatsOnChain with timeout and retry
+ * Fetch UTXOs for an address using infrastructure layer
+ * Returns UTXOs in the format needed by the sync logic
  */
-async function fetchUtxosFromWoc(address: string): Promise<WocUtxo[]> {
-  try {
-    const response = await fetchWithRetry(`${getWocApi()}/address/${address}/unspent`, {
-      timeout: TIMEOUTS.sync
-    })
-    if (!response.ok) {
-      if (response.status === 404) {
-        return [] // No UTXOs found
-      }
-      throw new NetworkError(`Failed to fetch UTXOs for ${address}`, `/address/${address}/unspent`)
-    }
-    return response.json()
-  } catch (error) {
-    if (error instanceof AppError) throw error
-    // Return empty on network errors for backwards compatibility
-    console.warn(`[Sync] Network error fetching UTXOs for ${address}:`, error)
-    return []
-  }
+async function fetchUtxosFromWoc(address: string): Promise<{ txid: string; vout: number; satoshis: number }[]> {
+  // WocClient handles timeout, retry, and error handling internally
+  // It returns empty array on errors for backward compatibility
+  const utxos = await getWocClient().getUtxos(address)
+  // Map to the format needed by sync logic (already compatible)
+  return utxos.map(u => ({
+    txid: u.txid,
+    vout: u.vout,
+    satoshis: u.satoshis
+  }))
 }
 
 /**
@@ -142,7 +111,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   // Build set of current UTXOs from WoC
   const currentUtxoKeys = new Set<string>()
   for (const u of wocUtxos) {
-    currentUtxoKeys.add(`${u.tx_hash}:${u.tx_pos}`)
+    currentUtxoKeys.add(`${u.txid}:${u.vout}`)
   }
 
   let newUtxos = 0
@@ -151,22 +120,22 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
   // Add new UTXOs (with address field!)
   for (const wocUtxo of wocUtxos) {
-    const key = `${wocUtxo.tx_hash}:${wocUtxo.tx_pos}`
-    totalBalance += wocUtxo.value
+    const key = `${wocUtxo.txid}:${wocUtxo.vout}`
+    totalBalance += wocUtxo.satoshis
 
     if (!existingMap.has(key)) {
       // New UTXO - add to database with address
-      console.log(`[SYNC] Adding UTXO: ${wocUtxo.tx_hash.slice(0,8)}:${wocUtxo.tx_pos} = ${wocUtxo.value} sats`)
+      console.log(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats`)
       await addUTXO({
-        txid: wocUtxo.tx_hash,
-        vout: wocUtxo.tx_pos,
-        satoshis: wocUtxo.value,
+        txid: wocUtxo.txid,
+        vout: wocUtxo.vout,
+        satoshis: wocUtxo.satoshis,
         lockingScript,
         address,  // Store the address!
         basket,
         spendable: true,
         createdAt: Date.now(),
-        tags: basket === BASKETS.ORDINALS && wocUtxo.value === 1 ? ['ordinal'] : []
+        tags: basket === BASKETS.ORDINALS && wocUtxo.satoshis === 1 ? ['ordinal'] : []
       })
       newUtxos++
     }

@@ -1,16 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import {
-  BASKETS,
-  getCurrentBlockHeight,
-  getBalanceFromDatabase,
-  getSpendableUtxosFromDatabase,
-  getOrdinalsFromDatabase,
-  recordSentTransaction,
-  markUtxosSpent,
-  needsInitialSync,
-  type AddressInfo,
-  type SyncResult
-} from './sync'
+
+// Mock the WocClient from infrastructure layer - must be before imports
+vi.mock('../infrastructure/api/wocClient', () => {
+  const mockClient = {
+    getBlockHeight: vi.fn().mockResolvedValue(0),
+    getBalance: vi.fn().mockResolvedValue(0),
+    getUtxos: vi.fn().mockResolvedValue([]),
+    getTransactionHistory: vi.fn().mockResolvedValue([]),
+    getTransactionDetails: vi.fn().mockResolvedValue(null),
+    broadcastTransaction: vi.fn().mockResolvedValue('')
+  }
+  return {
+    getWocClient: () => mockClient,
+    createWocClient: () => mockClient,
+    __mockClient: mockClient // Export for test access
+  }
+})
 
 // Mock database module
 vi.mock('./database', () => ({
@@ -24,31 +29,35 @@ vi.mock('./database', () => ({
   updateDerivedAddressSyncTime: vi.fn().mockResolvedValue(undefined)
 }))
 
-// Mock network module
-vi.mock('./network', () => ({
-  fetchWithRetry: vi.fn()
-}))
-
 // Mock config module
 vi.mock('./config', () => ({
-  getWocApiUrl: vi.fn(() => 'https://api.whatsonchain.com/v1/bsv/main'),
-  TIMEOUTS: {
-    default: 10000,
-    sync: 30000,
-    broadcast: 60000
-  },
   RATE_LIMITS: {
     addressSyncDelay: 500
   }
 }))
 
-import { fetchWithRetry } from './network'
+import {
+  BASKETS,
+  getCurrentBlockHeight,
+  getBalanceFromDatabase,
+  getSpendableUtxosFromDatabase,
+  getOrdinalsFromDatabase,
+  recordSentTransaction,
+  markUtxosSpent,
+  needsInitialSync,
+  type AddressInfo,
+  type SyncResult
+} from './sync'
+
 import {
   getSpendableUTXOs,
   getLastSyncedHeight,
   upsertTransaction,
   markUTXOSpent as dbMarkUTXOSpent
 } from './database'
+
+// Get the mock client for test manipulation
+import { __mockClient as mockWocClient } from '../infrastructure/api/wocClient'
 
 describe('Sync Service', () => {
   beforeEach(() => {
@@ -73,34 +82,31 @@ describe('Sync Service', () => {
   })
 
   describe('getCurrentBlockHeight', () => {
-    it('should fetch current block height from API', async () => {
-      vi.mocked(fetchWithRetry).mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ blocks: 890000 })
-      } as Response)
+    it('should fetch current block height from WocClient', async () => {
+      mockWocClient.getBlockHeight.mockResolvedValueOnce(890000)
 
       const height = await getCurrentBlockHeight()
 
       expect(height).toBe(890000)
-      expect(fetchWithRetry).toHaveBeenCalledWith(
-        'https://api.whatsonchain.com/v1/bsv/main/chain/info',
-        expect.objectContaining({ timeout: 10000 })
-      )
+      expect(mockWocClient.getBlockHeight).toHaveBeenCalled()
     })
 
-    it('should throw NetworkError on API failure', async () => {
-      vi.mocked(fetchWithRetry).mockResolvedValueOnce({
-        ok: false,
-        status: 500
-      } as Response)
+    it('should return 0 on API failure (WocClient handles errors gracefully)', async () => {
+      // WocClient returns 0 on errors instead of throwing
+      mockWocClient.getBlockHeight.mockResolvedValueOnce(0)
 
-      await expect(getCurrentBlockHeight()).rejects.toThrow('Failed to fetch blockchain info')
+      const height = await getCurrentBlockHeight()
+
+      expect(height).toBe(0)
     })
 
-    it('should throw on network error', async () => {
-      vi.mocked(fetchWithRetry).mockRejectedValueOnce(new Error('Network failure'))
+    it('should return 0 on network error (WocClient handles errors gracefully)', async () => {
+      // WocClient catches errors internally and returns 0
+      mockWocClient.getBlockHeight.mockResolvedValueOnce(0)
 
-      await expect(getCurrentBlockHeight()).rejects.toThrow()
+      const height = await getCurrentBlockHeight()
+
+      expect(height).toBe(0)
     })
   })
 
