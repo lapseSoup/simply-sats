@@ -1,5 +1,5 @@
 import * as bip39 from 'bip39'
-import { HD, Mnemonic, PrivateKey, PublicKey, P2PKH, Transaction, Script, LockingScript, UnlockingScript, TransactionSignature, Hash } from '@bsv/sdk'
+import { PrivateKey, PublicKey, P2PKH, Transaction, Script, LockingScript, UnlockingScript, TransactionSignature, Hash } from '@bsv/sdk'
 import {
   getBalanceFromDatabase,
   getSpendableUtxosFromDatabase,
@@ -10,18 +10,29 @@ import {
 import { getDerivedAddresses, markLockUnlockedByTxid, getDatabase, addUTXO, addLock, withTransaction } from './database'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData } from './crypto'
 
+// Import domain layer pure functions
+import {
+  deriveWalletKeys,
+  keysFromWif as domainKeysFromWif,
+  WALLET_PATHS
+} from '../domain/wallet/keyDerivation'
+import { validateMnemonic } from '../domain/wallet/validation'
+import {
+  calculateTxFee as domainCalculateTxFee,
+  calculateLockFee as domainCalculateLockFee,
+  calculateMaxSend as domainCalculateMaxSend,
+  calculateExactFee as domainCalculateExactFee,
+  feeFromBytes as domainFeeFromBytes,
+  DEFAULT_FEE_RATE as DOMAIN_DEFAULT_FEE_RATE,
+  MIN_FEE_RATE,
+  MAX_FEE_RATE
+} from '../domain/transaction/fees'
+
+// Re-export WALLET_PATHS for backward compatibility
+export { WALLET_PATHS }
+
 // Wallet type - simplified to just BRC-100/Yours standard
 export type WalletType = 'yours'
-
-// BRC-100 standard derivation paths (matching Yours Wallet exactly)
-// See: https://github.com/yours-org/yours-wallet/blob/main/src/utils/constants.ts
-const WALLET_PATHS = {
-  yours: {
-    wallet: "m/44'/236'/0'/1/0",    // BSV spending (DEFAULT_WALLET_PATH)
-    ordinals: "m/44'/236'/1'/0/0",   // Ordinals (DEFAULT_ORD_PATH)
-    identity: "m/0'/236'/0'/0/0"     // Identity/BRC-100 authentication (DEFAULT_IDENTITY_PATH)
-  }
-}
 
 export interface WalletKeys {
   mnemonic: string
@@ -61,31 +72,9 @@ interface OneSatWalletBackup {
   mnemonic?: string   // Optional mnemonic
 }
 
-// Generate keys from derivation path
-function deriveKeys(mnemonic: string, path: string) {
-  const seed = Mnemonic.fromString(mnemonic).toSeed()
-  const masterNode = HD.fromSeed(seed)
-  const childNode = masterNode.derive(path)
-  const privateKey = childNode.privKey
-  const publicKey = privateKey.toPublicKey()
-
-  return {
-    wif: privateKey.toWif(),
-    address: publicKey.toAddress(),
-    pubKey: publicKey.toString()
-  }
-}
-
-// Generate keys from WIF (for importing from other wallets)
+// Generate keys from WIF (for importing from other wallets) - delegates to domain layer
 function keysFromWif(wif: string) {
-  const privateKey = PrivateKey.fromWif(wif)
-  const publicKey = privateKey.toPublicKey()
-
-  return {
-    wif: privateKey.toWif(),
-    address: publicKey.toAddress(),
-    pubKey: publicKey.toString()
-  }
+  return domainKeysFromWif(wif)
 }
 
 // Create new wallet with fresh mnemonic
@@ -94,36 +83,19 @@ export function createWallet(): WalletKeys {
   return restoreWallet(mnemonic)
 }
 
-// Restore wallet from mnemonic
+// Restore wallet from mnemonic - delegates to domain layer
 export function restoreWallet(mnemonic: string): WalletKeys {
-  // Normalize mnemonic: lowercase, trim, collapse multiple spaces
-  const normalizedMnemonic = mnemonic.toLowerCase().trim().replace(/\s+/g, ' ')
+  // Use domain layer validation which normalizes and validates
+  const validation = validateMnemonic(mnemonic)
 
-  // Validate mnemonic
-  if (!bip39.validateMnemonic(normalizedMnemonic)) {
-    console.error('Mnemonic validation failed for:', normalizedMnemonic.split(' ').length, 'words')
-    throw new Error('Invalid mnemonic phrase. Please check your 12 words.')
+  if (!validation.isValid || !validation.normalizedMnemonic) {
+    console.error('Mnemonic validation failed:', validation.error)
+    throw new Error(validation.error || 'Invalid mnemonic phrase. Please check your 12 words.')
   }
 
   try {
-    const paths = WALLET_PATHS.yours
-    const wallet = deriveKeys(normalizedMnemonic, paths.wallet)
-    const ord = deriveKeys(normalizedMnemonic, paths.ordinals)
-    const identity = deriveKeys(normalizedMnemonic, paths.identity)
-
-    return {
-      mnemonic: normalizedMnemonic,
-      walletType: 'yours',
-      walletWif: wallet.wif,
-      walletAddress: wallet.address,
-      walletPubKey: wallet.pubKey,
-      ordWif: ord.wif,
-      ordAddress: ord.address,
-      ordPubKey: ord.pubKey,
-      identityWif: identity.wif,
-      identityAddress: identity.address,
-      identityPubKey: identity.pubKey
-    }
+    // Delegate to domain layer for key derivation
+    return deriveWalletKeys(validation.normalizedMnemonic)
   } catch (error) {
     console.error('Error deriving keys from mnemonic:', error)
     throw new Error('Failed to derive wallet keys from mnemonic')
@@ -395,14 +367,8 @@ export async function calculateTxAmount(txDetails: any, addressOrAddresses: stri
   return received - sent
 }
 
-// Default fee rate: 0.05 sat/byte (50 sat/KB) - BSV miners typically accept very low fees
-const DEFAULT_FEE_RATE = 0.05
-
-// Minimum fee rate (sat/byte) - BSV has very low minimum
-const MIN_FEE_RATE = 0.01
-
-// Maximum fee rate (sat/byte) - cap to prevent accidental overpayment
-const MAX_FEE_RATE = 1.0
+// Default fee rate - re-exported from domain layer
+const DEFAULT_FEE_RATE = DOMAIN_DEFAULT_FEE_RATE
 
 // Cache for dynamic fee rate
 let cachedFeeRate: { rate: number; timestamp: number } | null = null
@@ -509,61 +475,25 @@ export function setFeeRateFromKB(ratePerKB: number): void {
   setFeeRate(ratePerKB / 1000)
 }
 
-// Calculate fee from exact byte size
+// Calculate fee from exact byte size - delegates to domain layer
 export function feeFromBytes(bytes: number, customFeeRate?: number): number {
   const rate = customFeeRate ?? getFeeRate()
-  return Math.max(1, Math.ceil(bytes * rate))
+  return domainFeeFromBytes(bytes, rate)
 }
 
-// Calculate varint size for a given length
-function varintSize(n: number): number {
-  if (n < 0xfd) return 1
-  if (n <= 0xffff) return 3
-  if (n <= 0xffffffff) return 5
-  return 9
-}
-
-// Standard P2PKH sizes
-const P2PKH_INPUT_SIZE = 148  // outpoint 36 + scriptlen 1 + scriptsig ~107 + sequence 4
-const P2PKH_OUTPUT_SIZE = 34  // value 8 + scriptlen 1 + script 25
-const TX_OVERHEAD = 10        // version 4 + locktime 4 + input count ~1 + output count ~1
-
-// Calculate transaction fee for standard P2PKH inputs/outputs
+// Calculate transaction fee for standard P2PKH inputs/outputs - delegates to domain layer
 export function calculateTxFee(numInputs: number, numOutputs: number, extraBytes = 0): number {
-  const txSize = TX_OVERHEAD + (numInputs * P2PKH_INPUT_SIZE) + (numOutputs * P2PKH_OUTPUT_SIZE) + extraBytes
-  return feeFromBytes(txSize)
+  return domainCalculateTxFee(numInputs, numOutputs, getFeeRate(), extraBytes)
 }
 
-// Calculate the exact fee for a lock transaction using actual script size
+// Calculate the exact fee for a lock transaction using actual script size - delegates to domain layer
 export function calculateLockFee(numInputs: number, timelockScriptSize?: number): number {
-  // If no script size provided, use the actual size from our timelock script
-  // The script is built from LOCKUP_PREFIX + pkh (20 bytes) + nLockTime (3-4 bytes) + LOCKUP_SUFFIX
-  // Actual measured size is ~1090 bytes
-  const scriptSize = timelockScriptSize ?? 1090
-
-  // Lock output: value (8) + varint for script length + script
-  const lockOutputSize = 8 + varintSize(scriptSize) + scriptSize
-  // Change output: standard P2PKH
-  const changeOutputSize = P2PKH_OUTPUT_SIZE
-
-  const txSize = TX_OVERHEAD + (numInputs * P2PKH_INPUT_SIZE) + lockOutputSize + changeOutputSize
-  return feeFromBytes(txSize)
+  return domainCalculateLockFee(numInputs, getFeeRate(), timelockScriptSize)
 }
 
-// Calculate max sendable amount given UTXOs
+// Calculate max sendable amount given UTXOs - delegates to domain layer
 export function calculateMaxSend(utxos: UTXO[]): { maxSats: number; fee: number; numInputs: number } {
-  if (utxos.length === 0) {
-    return { maxSats: 0, fee: 0, numInputs: 0 }
-  }
-
-  const totalSats = utxos.reduce((sum, u) => sum + u.satoshis, 0)
-  const numInputs = utxos.length
-
-  // When sending max, we have 1 output (no change)
-  const fee = calculateTxFee(numInputs, 1)
-  const maxSats = Math.max(0, totalSats - fee)
-
-  return { maxSats, fee, numInputs }
+  return domainCalculateMaxSend(utxos, getFeeRate())
 }
 
 // Broadcast a signed transaction - try multiple endpoints for non-standard scripts
@@ -700,42 +630,12 @@ export async function broadcastTransaction(tx: Transaction): Promise<string> {
 }
 
 
-// Calculate exact fee by selecting UTXOs for a given amount
+// Calculate exact fee by selecting UTXOs for a given amount - delegates to domain layer
 export function calculateExactFee(
   satoshis: number,
   utxos: UTXO[]
 ): { fee: number; inputCount: number; outputCount: number; totalInput: number; canSend: boolean } {
-  if (utxos.length === 0 || satoshis <= 0) {
-    return { fee: 0, inputCount: 0, outputCount: 0, totalInput: 0, canSend: false }
-  }
-
-  // Select UTXOs (same logic as sendBSV)
-  const inputsToUse: UTXO[] = []
-  let totalInput = 0
-
-  for (const utxo of utxos) {
-    inputsToUse.push(utxo)
-    totalInput += utxo.satoshis
-
-    if (totalInput >= satoshis + 100) break
-  }
-
-  if (totalInput < satoshis) {
-    return { fee: 0, inputCount: inputsToUse.length, outputCount: 0, totalInput, canSend: false }
-  }
-
-  // Calculate if we'll have change
-  const numInputs = inputsToUse.length
-  const prelimChange = totalInput - satoshis
-  const willHaveChange = prelimChange > 100
-
-  const numOutputs = willHaveChange ? 2 : 1
-  const fee = calculateTxFee(numInputs, numOutputs)
-
-  const change = totalInput - satoshis - fee
-  const canSend = change >= 0
-
-  return { fee, inputCount: numInputs, outputCount: numOutputs, totalInput, canSend }
+  return domainCalculateExactFee(satoshis, utxos, getFeeRate())
 }
 
 // Build and sign a simple P2PKH transaction
