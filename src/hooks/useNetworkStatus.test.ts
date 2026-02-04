@@ -7,7 +7,7 @@
  * - Interval cleanup
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useNetworkStatus } from './useNetworkStatus'
 

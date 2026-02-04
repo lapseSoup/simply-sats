@@ -206,7 +206,7 @@ describe('Account Management Service', () => {
     it('should create a new account with encrypted keys', async () => {
       const keys = createMockWalletKeys()
       // Use legacy mode for simpler test passwords
-      const accountId = await createAccount('Test Account', keys, 'password12345', true, true)
+      const accountId = await createAccount('Test Account', keys, 'password12345', true)
 
       expect(accountId).toBe(1)
 
@@ -350,7 +350,7 @@ describe('Account Management Service', () => {
       const accountId = await createAccount('Test Account', keys, 'password12345', true)
 
       const account = await getAccountById(accountId)
-      const decryptedKeys = await getAccountKeys(account!, 'password12345', true)
+      const decryptedKeys = await getAccountKeys(account!, 'password12345')
 
       expect(decryptedKeys).not.toBeNull()
       expect(decryptedKeys!.mnemonic).toBe(keys.mnemonic)

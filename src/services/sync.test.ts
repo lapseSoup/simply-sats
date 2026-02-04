@@ -57,7 +57,7 @@ import {
 
 // Get the mock client for test manipulation
 import { getWocClient } from '../infrastructure/api/wocClient'
-const mockWocClient = getWocClient() as ReturnType<typeof vi.fn> & {
+const mockWocClient = getWocClient() as unknown as {
   getBlockHeight: ReturnType<typeof vi.fn>
   getBalance: ReturnType<typeof vi.fn>
   getUtxos: ReturnType<typeof vi.fn>

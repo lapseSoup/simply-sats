@@ -9,17 +9,13 @@
  * - Enable/disable behavior
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useKeyboardNav } from './useKeyboardNav'
 
 describe('useKeyboardNav', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-  })
-
-  afterEach(() => {
-    // Clean up any event listeners
   })
 
   const dispatchKeydown = (key: string, target?: HTMLElement) => {

@@ -131,7 +131,7 @@ export async function getAllAccounts(): Promise<Account[]> {
       encryptedKeys: row.encrypted_keys,
       isActive: row.is_active === 1,
       createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at
+      lastAccessedAt: row.last_accessed_at ?? undefined
     }))
   } catch (_e) {
     // Table may not exist yet
@@ -161,7 +161,7 @@ export async function getActiveAccount(): Promise<Account | null> {
       encryptedKeys: row.encrypted_keys,
       isActive: true,
       createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at
+      lastAccessedAt: row.last_accessed_at ?? undefined
     }
   } catch (_e) {
     return null
@@ -190,7 +190,7 @@ export async function getAccountById(accountId: number): Promise<Account | null>
       encryptedKeys: row.encrypted_keys,
       isActive: row.is_active === 1,
       createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at
+      lastAccessedAt: row.last_accessed_at ?? undefined
     }
   } catch (_e) {
     return null
@@ -219,7 +219,7 @@ export async function getAccountByIdentity(identityAddress: string): Promise<Acc
       encryptedKeys: row.encrypted_keys,
       isActive: row.is_active === 1,
       createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at
+      lastAccessedAt: row.last_accessed_at ?? undefined
     }
   } catch (_e) {
     return null

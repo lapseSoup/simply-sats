@@ -5,7 +5,7 @@
 
 import { P2PKH } from '@bsv/sdk'
 import type { UTXO } from '../../domain/types'
-import { type Result, ok, err, AppError, ErrorCodes } from '../../services/errors'
+import { type Result, ok, err } from '../../services/errors'
 
 /**
  * API error with additional context

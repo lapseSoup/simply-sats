@@ -161,8 +161,8 @@ export async function getCertificatesBySubject(subject: string): Promise<Certifi
     fields: JSON.parse(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
-    expiresAt: row.expires_at,
-    revocationTxid: row.revocation_txid
+    expiresAt: row.expires_at ?? undefined,
+    revocationTxid: row.revocation_txid ?? undefined
   }))
 }
 
@@ -187,8 +187,8 @@ export async function getCertificatesByCertifier(certifier: string): Promise<Cer
     fields: JSON.parse(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
-    expiresAt: row.expires_at,
-    revocationTxid: row.revocation_txid
+    expiresAt: row.expires_at ?? undefined,
+    revocationTxid: row.revocation_txid ?? undefined
   }))
 }
 
@@ -220,8 +220,8 @@ export async function getCertificatesByType(type: CertificateType, subject?: str
     fields: JSON.parse(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
-    expiresAt: row.expires_at,
-    revocationTxid: row.revocation_txid
+    expiresAt: row.expires_at ?? undefined,
+    revocationTxid: row.revocation_txid ?? undefined
   }))
 }
 
@@ -249,8 +249,8 @@ export async function getCertificateBySerial(serialNumber: string): Promise<Cert
     fields: JSON.parse(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
-    expiresAt: row.expires_at,
-    revocationTxid: row.revocation_txid
+    expiresAt: row.expires_at ?? undefined,
+    revocationTxid: row.revocation_txid ?? undefined
   }
 }
 

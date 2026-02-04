@@ -245,7 +245,7 @@ export async function syncWallet(
   try {
     // Sync derived addresses FIRST (most important for correct balance)
     const derivedAddresses = await getDerivedAddressesFromDB()
-    syncLogger.debug('[SYNC] Found', derivedAddresses.length, 'derived addresses in database')
+    syncLogger.debug(`[SYNC] Found ${derivedAddresses.length} derived addresses in database`)
 
     if (token.isCancelled) {
       syncLogger.debug('[SYNC] Cancelled before starting')
@@ -256,7 +256,7 @@ export async function syncWallet(
 
     // Add derived addresses first (priority)
     for (const derived of derivedAddresses) {
-      syncLogger.debug('[SYNC] Adding derived address to sync (priority):', derived.address)
+      syncLogger.debug(`[SYNC] Adding derived address to sync (priority): ${derived.address}`)
       addresses.push({
         address: derived.address,
         basket: BASKETS.DERIVED,
@@ -271,7 +271,7 @@ export async function syncWallet(
       { address: identityAddress, basket: BASKETS.IDENTITY }
     )
 
-    syncLogger.debug('[SYNC] Total addresses to sync:', addresses.length)
+    syncLogger.debug(`[SYNC] Total addresses to sync: ${addresses.length}`)
     const results = await syncAllAddresses(addresses, token)
 
     if (token.isCancelled) {
@@ -311,7 +311,7 @@ export async function getBalanceFromDatabase(basket?: string): Promise<number> {
     const balance = filtered.reduce((sum, u) => sum + u.satoshis, 0)
     syncLogger.debug(`[BALANCE] getBalanceFromDatabase('${basket}'): ${filtered.length} UTXOs, ${balance} sats`)
     if (basket === 'derived' && filtered.length > 0) {
-      syncLogger.debug('[BALANCE] Derived UTXOs:', filtered.map(u => ({ txid: u.txid.slice(0, 8), vout: u.vout, sats: u.satoshis, basket: u.basket })))
+      syncLogger.debug('[BALANCE] Derived UTXOs', { utxos: filtered.map(u => ({ txid: u.txid.slice(0, 8), vout: u.vout, sats: u.satoshis, basket: u.basket })) })
     }
     return balance
   }
@@ -414,8 +414,10 @@ export async function restoreFromBlockchain(
   // Perform full sync
   const result = await syncWallet(walletAddress, ordAddress, identityAddress)
 
-  syncLogger.info(`Restore complete: ${result.total} total satoshis found`)
-  syncLogger.debug('Results:', { results: result.results })
+  syncLogger.info(`Restore complete: ${result?.total ?? 0} total satoshis found`)
+  if (result) {
+    syncLogger.debug('Results', { results: result.results })
+  }
 
-  return result
+  return result!
 }

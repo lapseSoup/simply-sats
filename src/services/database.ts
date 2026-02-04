@@ -25,7 +25,6 @@ import type {
   ActionResultRow,
   BalanceSumRow,
   CountRow,
-  TagRow,
   SqlParams
 } from './database-types'
 
@@ -264,8 +263,8 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true): Pr
       basket: row.basket,
       spendable: row.spendable === 1,
       createdAt: row.created_at,
-      spentAt: row.spent_at,
-      spentTxid: row.spent_txid,
+      spentAt: row.spent_at ?? undefined,
+      spentTxid: row.spent_txid ?? undefined,
       tags: tags.map(t => t.tag)
     })
   }
@@ -587,13 +586,13 @@ export async function getAllTransactions(limit = 30): Promise<Transaction[]> {
   return rows.map(row => ({
     id: row.id,
     txid: row.txid,
-    rawTx: row.raw_tx,
-    description: row.description,
+    rawTx: row.raw_tx ?? undefined,
+    description: row.description ?? undefined,
     createdAt: row.created_at,
-    confirmedAt: row.confirmed_at,
-    blockHeight: row.block_height,
+    confirmedAt: row.confirmed_at ?? undefined,
+    blockHeight: row.block_height ?? undefined,
     status: row.status,
-    amount: row.amount
+    amount: row.amount ?? undefined
   }))
 }
 
@@ -626,11 +625,11 @@ export async function getTransactionsByLabel(label: string): Promise<Transaction
   return rows.map(row => ({
     id: row.id,
     txid: row.txid,
-    rawTx: row.raw_tx,
-    description: row.description,
+    rawTx: row.raw_tx ?? undefined,
+    description: row.description ?? undefined,
     createdAt: row.created_at,
-    confirmedAt: row.confirmed_at,
-    blockHeight: row.block_height,
+    confirmedAt: row.confirmed_at ?? undefined,
+    blockHeight: row.block_height ?? undefined,
     status: row.status
   }))
 }
@@ -688,16 +687,16 @@ export async function getLocks(currentHeight: number): Promise<(Lock & { utxo: U
     id: row.id,
     utxoId: row.utxo_id,
     unlockBlock: row.unlock_block,
-    ordinalOrigin: row.ordinal_origin,
+    ordinalOrigin: row.ordinal_origin ?? undefined,
     createdAt: row.created_at,
-    unlockedAt: row.unlocked_at,
+    unlockedAt: row.unlocked_at ?? undefined,
     utxo: {
       id: row.utxo_id,
       txid: row.txid,
       vout: row.vout,
       satoshis: row.satoshis,
       lockingScript: row.locking_script,
-      address: row.address,
+      address: row.address ?? undefined,
       basket: row.basket,
       spendable: currentHeight >= row.unlock_block,
       createdAt: row.created_at,
@@ -780,7 +779,7 @@ export async function getBaskets(): Promise<Basket[]> {
   return rows.map(row => ({
     id: row.id,
     name: row.name,
-    description: row.description,
+    description: row.description ?? undefined,
     createdAt: row.created_at
   }))
 }
@@ -835,12 +834,12 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
       vout: row.vout,
       satoshis: row.satoshis,
       lockingScript: row.locking_script,
-      address: row.address,
+      address: row.address ?? undefined,
       basket: row.basket,
       spendable: row.spendable === 1,
       createdAt: row.created_at,
-      spentAt: row.spent_at,
-      spentTxid: row.spent_txid,
+      spentAt: row.spent_at ?? undefined,
+      spentTxid: row.spent_txid ?? undefined,
       tags: tags.map(t => t.tag)
     })
   }
@@ -850,11 +849,11 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   const transactions: Transaction[] = txRows.map(row => ({
     id: row.id,
     txid: row.txid,
-    rawTx: row.raw_tx,
-    description: row.description,
+    rawTx: row.raw_tx ?? undefined,
+    description: row.description ?? undefined,
     createdAt: row.created_at,
-    confirmedAt: row.confirmed_at,
-    blockHeight: row.block_height,
+    confirmedAt: row.confirmed_at ?? undefined,
+    blockHeight: row.block_height ?? undefined,
     status: row.status
   }))
 
@@ -864,9 +863,9 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
     id: row.id,
     utxoId: row.utxo_id,
     unlockBlock: row.unlock_block,
-    ordinalOrigin: row.ordinal_origin,
+    ordinalOrigin: row.ordinal_origin ?? undefined,
     createdAt: row.created_at,
-    unlockedAt: row.unlocked_at
+    unlockedAt: row.unlocked_at ?? undefined
   }))
 
   // Get all baskets
@@ -874,7 +873,7 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   const baskets: Basket[] = basketRows.map(row => ({
     id: row.id,
     name: row.name,
-    description: row.description,
+    description: row.description ?? undefined,
     createdAt: row.created_at
   }))
 
@@ -982,7 +981,7 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
         [derived.address, derived.senderPubkey, derived.invoiceNumber, derived.privateKeyWif, derived.label || null, derived.createdAt, derived.lastSyncedAt || null]
       )
     }
-    dbLogger.info('Imported', backup.derivedAddresses.length, 'derived addresses')
+    dbLogger.info(`Imported ${backup.derivedAddresses.length} derived addresses`)
   }
 
   // Import contacts (if present - version 3+)
@@ -995,7 +994,7 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
         [contact.pubkey, contact.label, contact.createdAt]
       )
     }
-    dbLogger.info('Imported', backup.contacts.length, 'contacts')
+    dbLogger.info(`Imported ${backup.contacts.length} contacts`)
   }
 
   dbLogger.info('Database import complete')
@@ -1148,7 +1147,7 @@ export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>)
 
   // Verify the save by checking total count
   const allAddresses = await getDerivedAddresses()
-  dbLogger.debug('[DB] Total derived addresses after save:', allAddresses.length)
+  dbLogger.debug(`[DB] Total derived addresses after save: ${allAddresses.length}`)
 
   return result.lastInsertId as number
 }
@@ -1168,9 +1167,9 @@ export async function getDerivedAddresses(): Promise<DerivedAddress[]> {
       senderPubkey: row.sender_pubkey,
       invoiceNumber: row.invoice_number,
       privateKeyWif: row.private_key_wif,
-      label: row.label,
+      label: row.label ?? undefined,
       createdAt: row.created_at,
-      lastSyncedAt: row.last_synced_at
+      lastSyncedAt: row.last_synced_at ?? undefined
     }))
   } catch (_e) {
     // Table may not exist yet
@@ -1199,9 +1198,9 @@ export async function getDerivedAddressByAddress(address: string): Promise<Deriv
       senderPubkey: row.sender_pubkey,
       invoiceNumber: row.invoice_number,
       privateKeyWif: row.private_key_wif,
-      label: row.label,
+      label: row.label ?? undefined,
       createdAt: row.created_at,
-      lastSyncedAt: row.last_synced_at
+      lastSyncedAt: row.last_synced_at ?? undefined
     }
   } catch (_e) {
     return null
@@ -1533,15 +1532,15 @@ export async function getRecentActionResults(limit = 50): Promise<ActionResult[]
     id: row.id,
     requestId: row.request_id,
     actionType: row.action_type,
-    description: row.description,
-    origin: row.origin,
-    txid: row.txid,
+    description: row.description ?? '',
+    origin: row.origin ?? undefined,
+    txid: row.txid ?? undefined,
     approved: row.approved === 1,
-    error: row.error,
-    inputParams: row.input_params,
-    outputResult: row.output_result,
+    error: row.error ?? undefined,
+    inputParams: row.input_params ?? undefined,
+    outputResult: row.output_result ?? undefined,
     requestedAt: row.requested_at,
-    completedAt: row.completed_at
+    completedAt: row.completed_at ?? undefined
   }))
 }
 
@@ -1561,15 +1560,15 @@ export async function getActionResultsByOrigin(origin: string, limit = 50): Prom
     id: row.id,
     requestId: row.request_id,
     actionType: row.action_type,
-    description: row.description,
-    origin: row.origin,
-    txid: row.txid,
+    description: row.description ?? '',
+    origin: row.origin ?? undefined,
+    txid: row.txid ?? undefined,
     approved: row.approved === 1,
-    error: row.error,
-    inputParams: row.input_params,
-    outputResult: row.output_result,
+    error: row.error ?? undefined,
+    inputParams: row.input_params ?? undefined,
+    outputResult: row.output_result ?? undefined,
     requestedAt: row.requested_at,
-    completedAt: row.completed_at
+    completedAt: row.completed_at ?? undefined
   }))
 }
 
@@ -1592,14 +1591,14 @@ export async function getActionResultByTxid(txid: string): Promise<ActionResult 
     id: row.id,
     requestId: row.request_id,
     actionType: row.action_type,
-    description: row.description,
-    origin: row.origin,
-    txid: row.txid,
+    description: row.description ?? '',
+    origin: row.origin ?? undefined,
+    txid: row.txid ?? undefined,
     approved: row.approved === 1,
-    error: row.error,
-    inputParams: row.input_params,
-    outputResult: row.output_result,
+    error: row.error ?? undefined,
+    inputParams: row.input_params ?? undefined,
+    outputResult: row.output_result ?? undefined,
     requestedAt: row.requested_at,
-    completedAt: row.completed_at
+    completedAt: row.completed_at ?? undefined
   }
 }
