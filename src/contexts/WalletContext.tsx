@@ -19,10 +19,8 @@ import {
   setFeeRateFromKB,
   transferOrdinal
 } from '../services/wallet'
-import {
-  setWalletKeys,
-  getNetworkStatus
-} from '../services/brc100'
+import { setWalletKeys } from '../services/brc100'
+import { useNetwork, type NetworkInfo } from './NetworkContext'
 import {
   initDatabase,
   repairUTXOs,
@@ -63,12 +61,6 @@ import {
   setInactivityLimit,
   minutesToMs
 } from '../services/autoLock'
-
-interface NetworkInfo {
-  blockHeight: number
-  overlayHealthy: boolean
-  overlayNodeCount: number
-}
 
 interface TxHistoryItem {
   tx_hash: string
@@ -188,7 +180,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     const cached = localStorage.getItem('simply_sats_cached_ord_balance')
     return cached ? parseInt(cached, 10) : 0
   })
-  const [usdPrice, setUsdPrice] = useState<number>(0)
   const [utxos, setUtxos] = useState<UTXO[]>([])
   const [ordinals, setOrdinals] = useState<Ordinal[]>([])
   const [locks, setLocks] = useState<LockedUTXO[]>(() => {
@@ -227,9 +218,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     locks: 0
   })
 
-  // Network state
-  const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null)
-  const [syncing, setSyncing] = useState(false)
+  // Get network state from NetworkContext
+  const { networkInfo, syncing, setSyncing, usdPrice } = useNetwork()
 
   // Settings
   const [displayInSats, setDisplayInSats] = useState<boolean>(() => {
@@ -518,39 +508,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
       return cleanup
     }
   }, [wallet, autoLockMinutes, lockWallet])
-
-  // Fetch network status
-  useEffect(() => {
-    const fetchNetworkStatus = async () => {
-      try {
-        const status = await getNetworkStatus()
-        setNetworkInfo(status)
-      } catch (error) {
-        console.error('Failed to fetch network status:', error)
-      }
-    }
-    fetchNetworkStatus()
-    const interval = setInterval(fetchNetworkStatus, 60000)
-    return () => clearInterval(interval)
-  }, [])
-
-  // Fetch USD price
-  useEffect(() => {
-    const fetchPrice = async () => {
-      try {
-        const res = await fetch('https://api.whatsonchain.com/v1/bsv/main/exchangerate')
-        const data = await res.json()
-        if (data?.rate) {
-          setUsdPrice(data.rate)
-        }
-      } catch (e) {
-        console.error('Failed to fetch USD price:', e)
-      }
-    }
-    fetchPrice()
-    const interval = setInterval(fetchPrice, 60000)
-    return () => clearInterval(interval)
-  }, [])
 
   // Sync wallet with blockchain
   const performSync = useCallback(async (isRestore = false, _forceReset = false) => {
