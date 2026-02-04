@@ -1,15 +1,25 @@
 use axum::{
     routing::post,
-    http::{StatusCode, Method},
+    http::{StatusCode, Method, HeaderValue},
     Json, Router,
     extract::State,
 };
-use tower_http::cors::{CorsLayer, Any};
+use tower_http::cors::CorsLayer;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use crate::SharedBRC100State;
 
 const PORT: u16 = 3322; // Simply Sats uses 3322 (Metanet Desktop uses 3321)
+
+// Allowed origins for CORS - only localhost and Tauri webview
+const ALLOWED_ORIGINS: &[&str] = &[
+    "http://localhost",
+    "http://localhost:1420",      // Vite dev server
+    "http://127.0.0.1",
+    "http://127.0.0.1:1420",
+    "tauri://localhost",          // Tauri webview on macOS/Linux
+    "https://tauri.localhost",    // Tauri webview on Windows
+];
 
 #[derive(Clone)]
 struct AppState {
@@ -56,11 +66,20 @@ pub async fn start_server(app_handle: AppHandle, brc100_state: SharedBRC100State
         brc100_state,
     };
 
-    // Configure CORS to allow any origin (for local development)
+    // Configure CORS to only allow localhost and Tauri webview origins
+    // This prevents malicious websites from accessing the wallet API
+    let allowed_origins: Vec<HeaderValue> = ALLOWED_ORIGINS
+        .iter()
+        .filter_map(|origin| origin.parse().ok())
+        .collect();
+
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(allowed_origins)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers(Any);
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+        ]);
 
     // REST-style routes matching HTTPWalletJSON substrate format from @bsv/sdk
     let app = Router::new()
@@ -273,20 +292,20 @@ async fn forward_to_frontend(
     }
 }
 
+/// Generate a cryptographically secure unique request ID
+/// Uses CSPRNG for unpredictability to prevent request ID prediction attacks
 fn uuid_simple() -> String {
+    use rand::Rng;
     use std::time::{SystemTime, UNIX_EPOCH};
+
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis();
-    format!("{}_{}", timestamp, rand_simple())
-}
 
-fn rand_simple() -> u32 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .subsec_nanos();
-    nanos
+    // Use cryptographically secure random number generator
+    let mut rng = rand::thread_rng();
+    let random_part: u64 = rng.gen();
+
+    format!("{}_{:016x}", timestamp, random_part)
 }

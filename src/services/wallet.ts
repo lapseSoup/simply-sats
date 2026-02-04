@@ -1047,40 +1047,53 @@ export interface Ordinal {
 export async function getOrdinals(address: string): Promise<Ordinal[]> {
   try {
     // First, try the GorillaPool 1Sat Ordinals API for proper inscription data
-    console.log(`Fetching ordinals for ${address} from GorillaPool...`)
+    console.log(`[Ordinals] Fetching ordinals for ${address} from GorillaPool...`)
     const gpResponse = await fetch(`https://ordinals.gorillapool.io/api/txos/address/${address}/unspent?limit=100`)
+    console.log(`[Ordinals] GorillaPool response status: ${gpResponse.status}`)
     if (gpResponse.ok) {
       const gpData = await gpResponse.json()
-      console.log(`GorillaPool response for ${address}:`, Array.isArray(gpData) ? `${gpData.length} items` : typeof gpData)
+      console.log(`[Ordinals] GorillaPool response:`, Array.isArray(gpData) ? `${gpData.length} items` : typeof gpData)
       if (Array.isArray(gpData) && gpData.length > 0) {
-        console.log(`Found ${gpData.length} ordinals from GorillaPool API for ${address}`)
-        return gpData.map((item: any) => ({
-          origin: item.origin?.outpoint || `${item.txid}_${item.vout}`,
-          txid: item.txid,
-          vout: item.vout,
-          satoshis: item.satoshis || 1,
-          contentType: item.origin?.data?.insc?.file?.type,
-          content: item.origin?.data?.insc?.file?.hash
-        }))
+        // Filter for 1-sat UTXOs (actual ordinals) and those with origin set
+        const oneSatItems = gpData.filter((item: any) => item.satoshis === 1 || item.origin)
+        console.log(`[Ordinals] Found ${gpData.length} total UTXOs, ${oneSatItems.length} are 1-sat ordinals`)
+
+        if (oneSatItems.length > 0) {
+          // Log first item structure for debugging
+          console.log(`[Ordinals] First ordinal structure:`, JSON.stringify(oneSatItems[0], null, 2))
+
+          const result = oneSatItems.map((item: any) => ({
+            origin: item.origin?.outpoint || item.outpoint || `${item.txid}_${item.vout}`,
+            txid: item.txid,
+            vout: item.vout,
+            satoshis: item.satoshis || 1,
+            contentType: item.origin?.data?.insc?.file?.type,
+            content: item.origin?.data?.insc?.file?.hash
+          }))
+          console.log(`[Ordinals] Returning ${result.length} ordinals`)
+          return result
+        }
+        console.log(`[Ordinals] No 1-sat ordinals found, falling back to WhatsOnChain`)
       } else {
-        console.log(`GorillaPool returned empty array for ${address}, falling back to WhatsOnChain`)
+        console.log(`[Ordinals] GorillaPool returned empty array for ${address}, falling back to WhatsOnChain`)
       }
     } else {
-      console.log(`GorillaPool API error: ${gpResponse.status}, falling back to WhatsOnChain`)
+      console.log(`[Ordinals] GorillaPool API error: ${gpResponse.status}, falling back to WhatsOnChain`)
     }
 
     // Fallback: Use WhatsOnChain to get 1-sat UTXOs, then verify each with GorillaPool
-    console.log('Using WhatsOnChain for ordinals detection...')
+    console.log('[Ordinals] Using WhatsOnChain for ordinals detection...')
     const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
     if (!response.ok) {
-      console.warn(`Failed to fetch ordinals for ${address}: ${response.status}`)
+      console.warn(`[Ordinals] Failed to fetch ordinals for ${address}: ${response.status}`)
       return []
     }
     const utxos = await response.json()
     if (!Array.isArray(utxos)) {
-      console.warn(`Unexpected ordinals response for ${address}:`, utxos)
+      console.warn(`[Ordinals] Unexpected ordinals response for ${address}:`, utxos)
       return []
     }
+    console.log(`[Ordinals] WhatsOnChain returned ${utxos.length} UTXOs for ${address}`)
 
     const ordinals: Ordinal[] = []
 
@@ -1088,6 +1101,7 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
       // Check 1-sat UTXOs - these might be ordinals
       if (utxo.value === 1) {
         const origin = `${utxo.tx_hash}_${utxo.tx_pos}`
+        console.log(`[Ordinals] Found 1-sat UTXO: ${origin}`)
 
         // Try to get inscription details from GorillaPool
         try {
@@ -1122,6 +1136,7 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
       }
     }
 
+    console.log(`[Ordinals] WhatsOnChain fallback found ${ordinals.length} ordinals`)
     return ordinals
   } catch (error) {
     console.error(`Error fetching ordinals for ${address}:`, error)
@@ -1137,6 +1152,99 @@ export async function getOrdinalDetails(origin: string): Promise<any> {
     return response.json()
   } catch {
     return null
+  }
+}
+
+/**
+ * Scan transaction history to find ordinals with non-standard scripts
+ * (e.g., 1Sat Ordinal inscriptions with OP_IF envelope that don't show up in address queries)
+ */
+export async function scanHistoryForOrdinals(
+  walletAddress: string,
+  publicKeyHash: string
+): Promise<Ordinal[]> {
+  console.log(`[Ordinals] Scanning transaction history for inscriptions owned by PKH: ${publicKeyHash}`)
+  const ordinals: Ordinal[] = []
+
+  try {
+    const history = await getTransactionHistory(walletAddress)
+    if (!history || history.length === 0) {
+      console.log('[Ordinals] No transaction history found')
+      return []
+    }
+
+    console.log(`[Ordinals] Checking ${history.length} transactions for ordinal outputs`)
+
+    for (const historyItem of history) {
+      const txid = historyItem.tx_hash
+
+      try {
+        const txDetails = await getTransactionDetails(txid)
+        if (!txDetails?.vout) continue
+
+        for (let vout = 0; vout < txDetails.vout.length; vout++) {
+          const output = txDetails.vout[vout]
+          const value = output.value
+          const scriptHex = output.scriptPubKey?.hex
+
+          // Only check 1-sat outputs (potential ordinals)
+          if (value !== 0.00000001 || !scriptHex) continue
+
+          // Check if this is an ordinal inscription (starts with OP_IF 'ord')
+          // OP_IF = 63, then push 'ord' = 03 6f7264
+          if (scriptHex.startsWith('63036f7264')) {
+            // Extract PKH from the script - it's after OP_ENDIF (68) OP_DUP (76) OP_HASH160 (a9) OP_PUSHBYTES_20 (14)
+            const pkhMarker = '6876a914'
+            const pkhIndex = scriptHex.indexOf(pkhMarker)
+            if (pkhIndex !== -1) {
+              const extractedPkh = scriptHex.substring(pkhIndex + pkhMarker.length, pkhIndex + pkhMarker.length + 40)
+
+              if (extractedPkh.toLowerCase() === publicKeyHash.toLowerCase()) {
+                // Check if still unspent by querying GorillaPool
+                const origin = `${txid}_${vout}`
+                const details = await getOrdinalDetails(origin)
+
+                // Check if spent
+                if (details && details.spend && details.spend !== '') {
+                  console.log(`[Ordinals] Found inscription ${origin} but it's been spent`)
+                  continue
+                }
+
+                console.log(`[Ordinals] Found unspent inscription: ${origin}`)
+
+                // Try to extract content type from script
+                let contentType: string | undefined
+                // Content type is after 'ord' push and OP_1, usually like: 10 6170706c69636174696f6e2f6a736f6e
+                const contentTypeMatch = scriptHex.match(/63036f726451([0-9a-f]{2})([0-9a-f]+)00/)
+                if (contentTypeMatch) {
+                  const ctLen = parseInt(contentTypeMatch[1], 16)
+                  const ctHex = contentTypeMatch[2].substring(0, ctLen * 2)
+                  try {
+                    contentType = Buffer.from(ctHex, 'hex').toString('utf8')
+                  } catch { /* ignore */ }
+                }
+
+                ordinals.push({
+                  origin,
+                  txid,
+                  vout,
+                  satoshis: 1,
+                  contentType
+                })
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`[Ordinals] Error processing tx ${txid}:`, error)
+      }
+    }
+
+    console.log(`[Ordinals] History scan found ${ordinals.length} ordinal(s)`)
+    return ordinals
+  } catch (error) {
+    console.error('[Ordinals] Error scanning history for ordinals:', error)
+    return []
   }
 }
 
@@ -1720,8 +1828,41 @@ function parseTimelockScript(scriptHex: string): { unlockBlock: number; publicKe
  */
 async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
   try {
+    // Primary check: the direct spent endpoint (faster and more reliable)
+    const spentResponse = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/${vout}/spent`)
+
+    // 200 OK means we got spending info = it's spent
+    if (spentResponse.ok) {
+      const spentData = await spentResponse.json()
+      if (spentData && spentData.txid) {
+        console.log(`UTXO ${txid}:${vout} has been spent in tx ${spentData.txid}`)
+        return false
+      }
+    }
+
+    // 404 means no spending tx found = still unspent
+    if (spentResponse.status === 404) {
+      return true
+    }
+
+    // For rate limiting (429) or other errors, fall back to tx lookup
+    if (spentResponse.status === 429) {
+      console.log(`Rate limited checking ${txid}:${vout}, trying tx endpoint...`)
+      // Wait a bit before retrying
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+
+    // Fallback: Check the full transaction
     const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`)
-    if (!response.ok) return false
+    if (!response.ok) {
+      console.log(`Could not fetch tx ${txid}, status ${response.status}`)
+      // If rate limited, conservatively assume it might be spent to avoid showing stale locks
+      if (response.status === 429) {
+        console.log(`Rate limited, conservatively treating as potentially spent`)
+        return false
+      }
+      return true
+    }
 
     const txData = await response.json()
     const output = txData.vout?.[vout]
@@ -1731,27 +1872,30 @@ async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
       return false
     }
 
-    // Also check via the direct spent endpoint
-    const spentResponse = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/${vout}/spent`)
-    if (spentResponse.ok) {
-      const spentData = await spentResponse.json()
-      // If we get spending info, it's spent
-      if (spentData && spentData.txid) {
-        return false
-      }
-    }
-
     return true
-  } catch {
-    // Assume unspent if we can't determine
-    return true
+  } catch (error) {
+    console.error(`Error checking UTXO ${txid}:${vout}:`, error)
+    // On network errors, conservatively assume spent to avoid showing stale locks
+    return false
   }
 }
 
 /**
  * Check if a lock has been marked as unlocked in the database
+ * Also accepts a set of known-unlocked lock keys for in-memory tracking
  */
-async function isLockMarkedUnlocked(txid: string, vout: number): Promise<boolean> {
+async function isLockMarkedUnlocked(
+  txid: string,
+  vout: number,
+  knownUnlockedLocks?: Set<string>
+): Promise<boolean> {
+  // First check in-memory set (most recent unlocks)
+  const lockKey = `${txid}:${vout}`
+  if (knownUnlockedLocks?.has(lockKey)) {
+    console.log(`Lock ${lockKey} found in known-unlocked set`)
+    return true
+  }
+
   try {
     const database = getDatabase()
     const result = await database.select<{ unlocked_at: number | null }[]>(
@@ -1761,8 +1905,14 @@ async function isLockMarkedUnlocked(txid: string, vout: number): Promise<boolean
       [txid, vout]
     )
     // If we found a lock record with unlocked_at set, it's been unlocked
-    return result.length > 0 && result[0].unlocked_at !== null
-  } catch {
+    const isUnlocked = result.length > 0 && result[0].unlocked_at !== null
+    if (isUnlocked) {
+      console.log(`Lock ${lockKey} marked as unlocked in database`)
+    }
+    return isUnlocked
+  } catch (err) {
+    console.warn(`Error checking lock status for ${lockKey}:`, err)
+    // On error, return false but log it - the caller should handle this
     return false
   }
 }
@@ -1770,12 +1920,17 @@ async function isLockMarkedUnlocked(txid: string, vout: number): Promise<boolean
 /**
  * Scan transaction history to detect locked UTXOs
  * This is used during wallet restoration to reconstruct the locks list
+ * @param knownUnlockedLocks - Set of "txid:vout" strings for locks that were just unlocked
  */
 export async function detectLockedUtxos(
   walletAddress: string,
-  publicKeyHex: string
+  publicKeyHex: string,
+  knownUnlockedLocks?: Set<string>
 ): Promise<LockedUTXO[]> {
   console.log('Scanning transaction history for locked UTXOs...')
+  if (knownUnlockedLocks && knownUnlockedLocks.size > 0) {
+    console.log(`Excluding ${knownUnlockedLocks.size} known-unlocked locks`)
+  }
 
   const detectedLocks: LockedUTXO[] = []
 
@@ -1819,10 +1974,9 @@ export async function detectLockedUtxos(
             continue
           }
 
-          // Check if marked as unlocked in database (handles pending unlock txs)
-          const markedUnlocked = await isLockMarkedUnlocked(txid, vout)
+          // Check if marked as unlocked (in-memory set or database)
+          const markedUnlocked = await isLockMarkedUnlocked(txid, vout, knownUnlockedLocks)
           if (markedUnlocked) {
-            console.log(`Lock ${txid}:${vout} marked as unlocked in database`)
             continue
           }
 

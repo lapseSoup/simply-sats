@@ -249,12 +249,16 @@ export async function encryptWithSharedSecret(
     ['deriveBits', 'deriveKey']
   )
 
+  // Generate random salt for HKDF (16 bytes)
+  // Using random salt provides better security than fixed salt
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+
   // Derive an AES key from the shared secret
   const aesKey = await crypto.subtle.deriveKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: new Uint8Array(16), // Fixed salt for deterministic derivation
+      salt: salt,
       info: new TextEncoder().encode('ECIES-AES-KEY')
     },
     keyMaterial,
@@ -273,10 +277,11 @@ export async function encryptWithSharedSecret(
     new TextEncoder().encode(message)
   )
 
-  // Combine IV + ciphertext
-  const combined = new Uint8Array(iv.length + ciphertext.byteLength)
-  combined.set(iv)
-  combined.set(new Uint8Array(ciphertext), iv.length)
+  // Combine salt + IV + ciphertext (salt needed for decryption)
+  const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength)
+  combined.set(salt)
+  combined.set(iv, salt.length)
+  combined.set(new Uint8Array(ciphertext), salt.length + iv.length)
 
   return bufferToBase64(combined.buffer)
 }
@@ -305,12 +310,21 @@ export async function decryptWithSharedSecret(
     ['deriveBits', 'deriveKey']
   )
 
-  // Derive the same AES key
+  // Decode the combined data
+  const combined = new Uint8Array(base64ToBuffer(encryptedMessage))
+
+  // Extract salt, IV, and ciphertext
+  // Format: salt (16 bytes) + IV (12 bytes) + ciphertext
+  const salt = combined.slice(0, 16)
+  const iv = combined.slice(16, 28)
+  const ciphertext = combined.slice(28)
+
+  // Derive the same AES key using the extracted salt
   const aesKey = await crypto.subtle.deriveKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: new Uint8Array(16),
+      salt: salt,
       info: new TextEncoder().encode('ECIES-AES-KEY')
     },
     keyMaterial,
@@ -318,13 +332,6 @@ export async function decryptWithSharedSecret(
     false,
     ['encrypt', 'decrypt']
   )
-
-  // Decode the combined data
-  const combined = new Uint8Array(base64ToBuffer(encryptedMessage))
-
-  // Extract IV and ciphertext
-  const iv = combined.slice(0, 12)
-  const ciphertext = combined.slice(12)
 
   // Decrypt
   const plaintext = await crypto.subtle.decrypt(
@@ -338,11 +345,29 @@ export async function decryptWithSharedSecret(
 
 /**
  * Helper: Convert hex string to Uint8Array
+ * @throws Error if hex string is invalid
  */
 function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substr(i, 2), 16)
+  // Validate hex string format
+  if (typeof hex !== 'string') {
+    throw new Error('Input must be a string')
+  }
+
+  // Remove any whitespace and ensure lowercase
+  const cleanHex = hex.replace(/\s/g, '').toLowerCase()
+
+  // Check for valid hex characters and even length
+  if (!/^[0-9a-f]*$/.test(cleanHex)) {
+    throw new Error('Invalid hex string: contains non-hex characters')
+  }
+
+  if (cleanHex.length % 2 !== 0) {
+    throw new Error('Invalid hex string: odd length')
+  }
+
+  const bytes = new Uint8Array(cleanHex.length / 2)
+  for (let i = 0; i < cleanHex.length; i += 2) {
+    bytes[i / 2] = parseInt(cleanHex.substr(i, 2), 16)
   }
   return bytes
 }

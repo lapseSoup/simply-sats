@@ -35,10 +35,37 @@ import {
 import { deriveTaggedKey, type DerivationTag } from './keyDerivation'
 
 // BRC-100 Protocol Types
+// Valid BRC-100 request types - used for validation
+export const BRC100_REQUEST_TYPES = [
+  'getPublicKey',
+  'createSignature',
+  'createAction',
+  'getNetwork',
+  'getVersion',
+  'isAuthenticated',
+  'getHeight',
+  'listOutputs',
+  'lockBSV',
+  'unlockBSV',
+  'listLocks',
+  'encrypt',
+  'decrypt',
+  'getTaggedKeys'
+] as const
+
+export type BRC100RequestType = typeof BRC100_REQUEST_TYPES[number]
+
+/**
+ * Validate that a string is a valid BRC-100 request type
+ */
+export function isValidBRC100RequestType(type: string): type is BRC100RequestType {
+  return BRC100_REQUEST_TYPES.includes(type as BRC100RequestType)
+}
+
 export interface BRC100Request {
   id: string
-  type: 'getPublicKey' | 'createSignature' | 'createAction' | 'getNetwork' | 'getVersion' | 'isAuthenticated' | 'getHeight' | 'listOutputs' | 'lockBSV' | 'unlockBSV' | 'listLocks' | 'encrypt' | 'decrypt' | 'getTaggedKeys'
-  params?: any
+  type: BRC100RequestType
+  params?: Record<string, unknown>
   origin?: string // The app requesting (e.g., "wrootz.com")
 }
 
@@ -131,9 +158,24 @@ export async function setupHttpServerListener(): Promise<() => void> {
       origin?: string
     }>('brc100-request', async (event) => {
       try {
+        // Validate the request type before processing
+        const requestMethod = event.payload.method
+        if (!isValidBRC100RequestType(requestMethod)) {
+          console.error(`BRC-100: Invalid request type: ${requestMethod}`)
+          try {
+            await invoke('respond_to_brc100', {
+              requestId: event.payload.id,
+              response: { error: { code: -32601, message: `Invalid method: ${requestMethod}` } }
+            })
+          } catch (e) {
+            console.error('Failed to send error response for invalid method:', e)
+          }
+          return
+        }
+
         const request: BRC100Request = {
           id: event.payload.id,
-          type: event.payload.method as any,
+          type: requestMethod,
           params: event.payload.params,
           origin: event.payload.origin
         }

@@ -18,9 +18,12 @@ import {
   updateDerivedAddressSyncTime,
   type UTXO as DBUtxo
 } from './database'
+import { getWocApiUrl, TIMEOUTS, RATE_LIMITS } from './config'
+import { fetchWithRetry } from './network'
+import { NetworkError, AppError } from './errors'
 
-// WhatsOnChain API base URL
-const WOC_API = 'https://api.whatsonchain.com/v1/bsv/main'
+// Get WhatsOnChain API base URL from config
+const getWocApi = () => getWocApiUrl()
 
 // Basket names for different address types
 export const BASKETS = {
@@ -58,29 +61,45 @@ export interface SyncResult {
 }
 
 /**
- * Fetch current blockchain height
+ * Fetch current blockchain height with timeout and retry
  */
 export async function getCurrentBlockHeight(): Promise<number> {
-  const response = await fetch(`${WOC_API}/chain/info`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch blockchain info')
+  try {
+    const response = await fetchWithRetry(`${getWocApi()}/chain/info`, {
+      timeout: TIMEOUTS.default
+    })
+    if (!response.ok) {
+      throw new NetworkError('Failed to fetch blockchain info', '/chain/info')
+    }
+    const data = await response.json()
+    return data.blocks
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    throw new NetworkError('Failed to fetch blockchain info', '/chain/info')
   }
-  const data = await response.json()
-  return data.blocks
 }
 
 /**
- * Fetch UTXOs for an address from WhatsOnChain
+ * Fetch UTXOs for an address from WhatsOnChain with timeout and retry
  */
 async function fetchUtxosFromWoc(address: string): Promise<WocUtxo[]> {
-  const response = await fetch(`${WOC_API}/address/${address}/unspent`)
-  if (!response.ok) {
-    if (response.status === 404) {
-      return [] // No UTXOs found
+  try {
+    const response = await fetchWithRetry(`${getWocApi()}/address/${address}/unspent`, {
+      timeout: TIMEOUTS.sync
+    })
+    if (!response.ok) {
+      if (response.status === 404) {
+        return [] // No UTXOs found
+      }
+      throw new NetworkError(`Failed to fetch UTXOs for ${address}`, `/address/${address}/unspent`)
     }
-    throw new Error(`Failed to fetch UTXOs for ${address}`)
+    return response.json()
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    // Return empty on network errors for backwards compatibility
+    console.warn(`[Sync] Network error fetching UTXOs for ${address}:`, error)
+    return []
   }
-  return response.json()
 }
 
 /**
@@ -188,9 +207,9 @@ export async function syncAllAddresses(addresses: AddressInfo[]): Promise<SyncRe
     const addr = addresses[i]
     try {
       // Add delay between requests to avoid rate limiting (429 errors)
-      // Use longer delay (1 second) to be safe
+      // Use configurable delay from config
       if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
       }
       const result = await syncAddress(addr)
       results.push(result)
@@ -280,6 +299,22 @@ export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEF
   return allUtxos
     .filter(u => u.basket === basket)
     .sort((a, b) => a.satoshis - b.satoshis)
+}
+
+/**
+ * Get ordinals from the database (ordinals basket)
+ * Returns ordinals that are stored in the database from syncing
+ */
+export async function getOrdinalsFromDatabase(): Promise<{ txid: string; vout: number; satoshis: number; origin: string }[]> {
+  const allUtxos = await getSpendableUTXOs()
+  const ordinalUtxos = allUtxos.filter(u => u.basket === BASKETS.ORDINALS)
+  console.log(`[Ordinals] Found ${ordinalUtxos.length} ordinals in database`)
+  return ordinalUtxos.map(u => ({
+    txid: u.txid,
+    vout: u.vout,
+    satoshis: u.satoshis,
+    origin: `${u.txid}_${u.vout}`
+  }))
 }
 
 /**

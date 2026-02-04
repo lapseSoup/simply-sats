@@ -12,7 +12,10 @@ import {
   getWalletKeys,
   getPendingRequests,
   setRequestHandler,
+  BRC100_REQUEST_TYPES,
+  isValidBRC100RequestType,
   type BRC100Request,
+  type BRC100RequestType,
   type LockedOutput
 } from './brc100'
 import type { WalletKeys } from './wallet'
@@ -349,6 +352,75 @@ describe('BRC-100 Service', () => {
           type: type as any
         }
         expect(request.type).toBe(type)
+      })
+    })
+
+    describe('BRC100_REQUEST_TYPES', () => {
+      it('should export all valid request types', () => {
+        expect(BRC100_REQUEST_TYPES).toContain('getPublicKey')
+        expect(BRC100_REQUEST_TYPES).toContain('createSignature')
+        expect(BRC100_REQUEST_TYPES).toContain('createAction')
+        expect(BRC100_REQUEST_TYPES).toContain('getNetwork')
+        expect(BRC100_REQUEST_TYPES).toContain('getVersion')
+        expect(BRC100_REQUEST_TYPES).toContain('isAuthenticated')
+        expect(BRC100_REQUEST_TYPES).toContain('getHeight')
+        expect(BRC100_REQUEST_TYPES).toContain('listOutputs')
+        expect(BRC100_REQUEST_TYPES).toContain('lockBSV')
+        expect(BRC100_REQUEST_TYPES).toContain('unlockBSV')
+        expect(BRC100_REQUEST_TYPES).toContain('listLocks')
+        expect(BRC100_REQUEST_TYPES).toContain('encrypt')
+        expect(BRC100_REQUEST_TYPES).toContain('decrypt')
+        expect(BRC100_REQUEST_TYPES).toContain('getTaggedKeys')
+      })
+
+      it('should be a readonly array', () => {
+        // TypeScript ensures this at compile time, but we verify the array exists
+        expect(Array.isArray(BRC100_REQUEST_TYPES)).toBe(true)
+        expect(BRC100_REQUEST_TYPES.length).toBeGreaterThan(0)
+      })
+    })
+
+    describe('isValidBRC100RequestType', () => {
+      it('should return true for valid request types', () => {
+        expect(isValidBRC100RequestType('getPublicKey')).toBe(true)
+        expect(isValidBRC100RequestType('createSignature')).toBe(true)
+        expect(isValidBRC100RequestType('createAction')).toBe(true)
+        expect(isValidBRC100RequestType('lockBSV')).toBe(true)
+        expect(isValidBRC100RequestType('unlockBSV')).toBe(true)
+        expect(isValidBRC100RequestType('encrypt')).toBe(true)
+        expect(isValidBRC100RequestType('decrypt')).toBe(true)
+      })
+
+      it('should return false for invalid request types', () => {
+        expect(isValidBRC100RequestType('invalidMethod')).toBe(false)
+        expect(isValidBRC100RequestType('GETPUBLICKEY')).toBe(false) // case sensitive
+        expect(isValidBRC100RequestType('')).toBe(false)
+        expect(isValidBRC100RequestType('get_public_key')).toBe(false)
+        expect(isValidBRC100RequestType('createSignature ')).toBe(false) // trailing space
+      })
+
+      it('should act as type guard', () => {
+        const unknownType: string = 'getPublicKey'
+
+        if (isValidBRC100RequestType(unknownType)) {
+          // TypeScript should narrow the type to BRC100RequestType
+          const validType: BRC100RequestType = unknownType
+          expect(validType).toBe('getPublicKey')
+        }
+      })
+
+      it('should handle all BRC100_REQUEST_TYPES', () => {
+        // Every type in the constant should be valid
+        BRC100_REQUEST_TYPES.forEach(type => {
+          expect(isValidBRC100RequestType(type)).toBe(true)
+        })
+      })
+
+      it('should reject common injection attempts', () => {
+        expect(isValidBRC100RequestType('getPublicKey; DROP TABLE users')).toBe(false)
+        expect(isValidBRC100RequestType('<script>alert(1)</script>')).toBe(false)
+        expect(isValidBRC100RequestType('__proto__')).toBe(false)
+        expect(isValidBRC100RequestType('constructor')).toBe(false)
       })
     })
   })

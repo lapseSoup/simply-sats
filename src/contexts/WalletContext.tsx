@@ -37,7 +37,8 @@ import {
   syncWallet,
   restoreFromBlockchain,
   getBalanceFromDatabase,
-  getSpendableUtxosFromDatabase
+  getSpendableUtxosFromDatabase,
+  getOrdinalsFromDatabase
 } from '../services/sync'
 import {
   type Account,
@@ -210,6 +211,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
     const saved = localStorage.getItem('simply_sats_auto_lock_minutes')
     return saved ? parseInt(saved, 10) : 10
   })
+
+  // Track recently unlocked locks to prevent re-detection race condition
+  // Keys are "txid:vout" strings
+  const [knownUnlockedLocks, setKnownUnlockedLocks] = useState<Set<string>>(new Set())
 
   // Basket balances
   const [basketBalances, setBasketBalances] = useState<BasketBalances>({
@@ -647,22 +652,64 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       setTxHistory(dbTxHistory)
 
-      // Get ordinals
+      // Get ordinals - first from database (already synced), then supplement with API calls
       try {
-        const ords = await getOrdinals(wallet.ordAddress)
-        setOrdinals(ords)
+        // First get ordinals already in the database (synced from blockchain)
+        const dbOrdinals = await getOrdinalsFromDatabase()
+        console.log(`[WalletContext] Found ${dbOrdinals.length} ordinals in database`)
+
+        // Also fetch from APIs for any that might not be in database yet
+        console.log(`[WalletContext] Fetching additional ordinals from APIs...`)
+
+        // Get derived addresses
+        const derivedAddrs = await getDerivedAddresses()
+
+        // Fetch from all addresses in parallel
+        const [ordAddressOrdinals, walletAddressOrdinals, identityAddressOrdinals, ...derivedOrdinals] = await Promise.all([
+          getOrdinals(wallet.ordAddress).catch(() => []),
+          getOrdinals(wallet.walletAddress).catch(() => []),
+          getOrdinals(wallet.identityAddress).catch(() => []),
+          ...derivedAddrs.map(d => getOrdinals(d.address).catch(() => []))
+        ])
+
+        // Combine and deduplicate by origin
+        const seen = new Set<string>()
+        const allOrdinals = [
+          ...dbOrdinals,  // Database ordinals first (most reliable)
+          ...ordAddressOrdinals,
+          ...walletAddressOrdinals,
+          ...identityAddressOrdinals,
+          ...derivedOrdinals.flat()
+        ].filter(ord => {
+          if (seen.has(ord.origin)) return false
+          seen.add(ord.origin)
+          return true
+        })
+
+        const derivedCount = derivedOrdinals.flat().length
+        console.log(`[WalletContext] Got ${dbOrdinals.length} from database, ${ordAddressOrdinals.length} from ordAddress, ${walletAddressOrdinals.length} from walletAddress, ${identityAddressOrdinals.length} from identityAddress, ${derivedCount} from derived addresses, ${allOrdinals.length} total unique`)
+        setOrdinals(allOrdinals)
       } catch (e) {
-        console.error('Failed to fetch ordinals:', e)
+        console.error('[WalletContext] Failed to fetch ordinals:', e)
       }
 
       // Detect locks
       try {
         const utxoList = await getUTXOs(wallet.walletAddress)
         setUtxos(utxoList)
-        const detectedLocks = await detectLockedUtxos(wallet.walletAddress, wallet.walletPubKey)
+        // Pass knownUnlockedLocks to prevent re-adding recently unlocked locks
+        const detectedLocks = await detectLockedUtxos(
+          wallet.walletAddress,
+          wallet.walletPubKey,
+          knownUnlockedLocks
+        )
         if (detectedLocks.length > 0) {
           setLocks(detectedLocks)
           localStorage.setItem('simply_sats_locks', JSON.stringify(detectedLocks))
+        } else if (knownUnlockedLocks.size > 0) {
+          // If we had unlocked locks and now there are none, clear the list
+          setLocks([])
+          localStorage.setItem('simply_sats_locks', JSON.stringify([]))
         }
       } catch (e) {
         console.error('Failed to detect locks:', e)
@@ -670,7 +717,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     } catch (error) {
       console.error('Failed to fetch data:', error)
     }
-  }, [wallet])
+  }, [wallet, knownUnlockedLocks])
 
   // Wallet actions
   const handleCreateWallet = useCallback(async (): Promise<string | null> => {
@@ -798,7 +845,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
     try {
       const txid = await unlockBSV(wallet.walletWif, lock, currentHeight)
 
-      const newLocks = locks.filter(l => l.txid !== lock.txid)
+      // Add to known-unlocked set BEFORE removing from state and fetching data
+      // This prevents the race condition where detectLockedUtxos re-adds the lock
+      const lockKey = `${lock.txid}:${lock.vout}`
+      setKnownUnlockedLocks(prev => new Set([...prev, lockKey]))
+
+      const newLocks = locks.filter(l => l.txid !== lock.txid || l.vout !== lock.vout)
       setLocks(newLocks)
       localStorage.setItem('simply_sats_locks', JSON.stringify(newLocks))
 
