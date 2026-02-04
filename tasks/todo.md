@@ -1,93 +1,94 @@
-# Simply Sats - Overnight Work Session Summary
+# Simply Sats - Future Improvements
 
-## Completed: February 4, 2026
+## High Priority
 
-### Phase 1: Code Quality & Testing
-- [x] Run full test suite - 307 passed, 5 skipped
-- [x] Run ESLint - 72 warnings, 0 errors
-- [x] Run TypeScript check - passed
-- [x] Add tests for accounts service - 27 new tests
-- [x] Commit: `test: add comprehensive test coverage for accounts service`
+### Task 6.1: Transaction Builder Extraction
+- [ ] Move TX building logic from wallet.ts to domain layer
+- [ ] Create pure functions for building unsigned transactions
+- [ ] Separate signing step from transaction construction
+- [ ] Add comprehensive tests for transaction building
 
-### Phase 2: Security Hardening
-- [x] Create ConfirmationModal shared component
-- [x] Add confirmation for BSV sends > 10,000 sats
-- [x] Add confirmation for ordinal transfers (2s delay)
-- [x] Add confirmation for account deletion (requires typing "DELETE")
-- [x] Commit: `feat: add speed bump confirmation modals for irreversible actions`
+### Task 6.2: Database Repository Pattern
+- [ ] Create `src/infrastructure/database/utxoRepository.ts`
+- [ ] Abstract SQLite operations with clean interfaces
+- [ ] Create repositories for: UTXOs, Transactions, Locks, Ordinals
+- [ ] Add unit tests with mock database
 
-### Phase 3: UI/UX Polish
-- [x] Create Skeleton loader component
-- [x] Create EmptyState component with pre-configured variants
-- [x] Add real-time countdown timer for locks within 24 hours
-- [x] Add countdown CSS animations
-- [x] Commit: `feat: add UI/UX polish with skeleton loaders and countdown timers`
+### Task 6.3: Error Handling Standardization
+- [ ] Create unified error type system in `src/domain/errors.ts`
+- [ ] Define typed errors: `InsufficientFundsError`, `NetworkError`, `ValidationError`, etc.
+- [ ] Update services to throw/catch typed errors
+- [ ] Add error boundary components for graceful UI handling
 
-### Phase 4: Token Send Implementation
-- [x] Research BSV-20 token transfer API format
-- [x] Implement token transfer in tokens.ts:
-  - createBsv20TransferInscription()
-  - createBsv21TransferInscription()
-  - getTokenUtxosForSend()
-  - transferToken()
-  - sendToken()
-- [x] Add handleSendToken to WalletContext
-- [x] Wire up TokensTab to use token send service
-- [x] Export broadcastTransaction from wallet.ts
-- [x] Fix TypeScript errors and test failures
-- [x] Commit: `feat: add BSV-20/21 token send capability`
+## Medium Priority
 
-## Final Results
+### Task 7.1: Ordinals Service Extraction
+- [ ] Create `src/domain/ordinals/` module
+- [ ] Extract ordinal inscription logic from wallet.ts
+- [ ] Add pure functions for ordinal validation and parsing
+- [ ] Add tests for ordinal operations
 
-### Tests
-- **334 tests passed**, 5 skipped
-- All test files passing
+### Task 7.2: Lock/Timelock Domain
+- [ ] Create `src/domain/locks/` module
+- [ ] Extract timelock script building into pure functions
+- [ ] Add `buildTimelockScript()`, `parseTimelockScript()` functions
+- [ ] Add comprehensive tests
 
-### Build
-- TypeScript compiles successfully
-- Vite build successful (921 KB bundle)
+### Task 7.3: React Query Integration
+- [ ] Replace manual sync state management with React Query
+- [ ] Add caching for balance, UTXOs, ordinals
+- [ ] Implement optimistic updates for transactions
+- [ ] Add automatic refetching and stale data handling
 
-### Git Log
-```
-3810888 feat: add BSV-20/21 token send capability
-a00a3df feat: add UI/UX polish with skeleton loaders and countdown timers
-b654f16 feat: add speed bump confirmation modals for irreversible actions
-38fc446 test: add comprehensive test coverage for accounts service
-```
+## Code Quality
 
-## Files Changed
+### Task 8.1: Reduce Bundle Size
+- [ ] Analyze bundle with `npm run build -- --analyze`
+- [ ] Add dynamic imports for modals (SendModal, LockModal, ReceiveModal)
+- [ ] Lazy load settings and advanced features
+- [ ] Target: reduce 922KB bundle by 30%+
 
-### Phase 1 (Testing)
-- `src/services/accounts.test.ts` - New file with 27 tests
+### Task 8.2: Type Safety Improvements
+- [ ] Audit and remove `any` types in wallet.ts
+- [ ] Add strict typing to API responses
+- [ ] Create Zod schemas for runtime validation
+- [ ] Enable stricter TypeScript compiler options
 
-### Phase 2 (Security)
-- `src/components/shared/ConfirmationModal.tsx` - New component
-- `src/components/modals/SendModal.tsx` - Added confirmation flow
-- `src/components/modals/OrdinalTransferModal.tsx` - Added confirmation flow
-- `src/components/modals/SettingsModal.tsx` - Added deletion confirmation
+### Task 8.3: Test Coverage Expansion
+- [ ] Add integration tests for new context providers
+- [ ] Add E2E tests for critical flows (send, receive, lock)
+- [ ] Increase coverage target to 80%+
+- [ ] Add visual regression tests for UI components
 
-### Phase 3 (UI/UX)
-- `src/components/shared/Skeleton.tsx` - New component
-- `src/components/shared/EmptyState.tsx` - New component
-- `src/components/tabs/LocksTab.tsx` - Added countdown timer
-- `src/App.css` - Added countdown CSS
+---
 
-### Phase 4 (Token Send)
-- `src/services/tokens.ts` - Added ~400 lines for token transfer
-- `src/services/wallet.ts` - Exported broadcastTransaction
-- `src/contexts/WalletContext.tsx` - Added handleSendToken
-- `src/components/tabs/TokensTab.tsx` - Wired up token send UI
+## Completed Phases
 
-## Notes
+### Phase 1: Domain Layer ✅
+- Task 1.1: Domain directory structure
+- Task 1.2: Fee calculation functions
+- Task 1.3: Key derivation functions
+- Task 1.4: Mnemonic validation
+- Task 1.5: Coin selection logic
 
-1. **Token Transfer Format**: BSV-20 transfers use inscription format:
-   ```json
-   {"p":"bsv-20","op":"transfer","tick":"TOKEN","amt":"AMOUNT"}
-   ```
-   with content-type `application/bsv-20`
+### Phase 2: Infrastructure Layer ✅
+- Task 2.1: Infrastructure directory structure
+- Task 2.2: WhatsOnChain API client
+- Task 2.3: Fee rate service
 
-2. **Script Building**: Uses raw opcode values (OP_FALSE=0x00, OP_IF=0x63, etc.) rather than SDK OpCode enum which doesn't exist
+### Phase 3: Adapter Layer ✅
+- Task 3.1: Wallet adapter
+- Task 3.2: Domain exports
 
-3. **UTXO Selection**: Token send checks both wallet address and ordinals address for token UTXOs
+### Phase 4: Split WalletContext ✅
+- Task 4.1: NetworkContext
+- Task 4.2: UIContext
+- Task 4.3: AccountsContext
+- Task 4.4: TokensContext
+- Task 4.5: Slim down WalletContext (1099 → 884 lines)
 
-4. **Test Mock Pattern**: Uses `vi.hoisted()` for mock state that needs to be accessible from both mock factory and test code
+### Phase 5: Migrate Components ✅
+- Task 5.1: SendModal → domain layer
+- Task 5.2: LockModal → domain layer
+- Task 5.3: sync.ts → infrastructure layer
+- Task 5.4: wallet.ts → adapters
