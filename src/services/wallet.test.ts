@@ -17,6 +17,8 @@ import {
   getFeeRate,
   setFeeRate,
   feeFromBytes,
+  saveWallet,
+  changePassword,
   type UTXO
 } from './wallet'
 
@@ -485,6 +487,48 @@ describe('Wallet Service', () => {
         expect(await calculateTxAmount(null, 'addr')).toBe(0)
         expect(await calculateTxAmount(undefined, 'addr')).toBe(0)
         expect(await calculateTxAmount({}, 'addr')).toBe(0)
+      })
+    })
+  })
+
+  describe('Password Policy', () => {
+    const mockWalletKeys = {
+      mnemonic: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+      walletType: 'yours' as const,
+      walletWif: 'L1234567890abcdef',
+      walletAddress: '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2',
+      walletPubKey: '02abcdef1234567890',
+      ordWif: 'L1234567890abcdef',
+      ordAddress: '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2',
+      ordPubKey: '02abcdef1234567890',
+      identityWif: 'L1234567890abcdef',
+      identityAddress: '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2',
+      identityPubKey: '02abcdef1234567890'
+    }
+
+    describe('saveWallet', () => {
+      it('should reject passwords shorter than 8 characters', async () => {
+        await expect(saveWallet(mockWalletKeys, 'short')).rejects.toThrow('Password must be at least 8 characters')
+        await expect(saveWallet(mockWalletKeys, '1234567')).rejects.toThrow('Password must be at least 8 characters')
+      })
+
+      it('should reject empty passwords', async () => {
+        await expect(saveWallet(mockWalletKeys, '')).rejects.toThrow('Password must be at least 8 characters')
+      })
+    })
+
+    describe('changePassword', () => {
+      it('should reject new passwords shorter than 8 characters', async () => {
+        await expect(changePassword('oldpassword123', 'short')).rejects.toThrow('Password must be at least 8 characters')
+        await expect(changePassword('oldpassword123', '1234567')).rejects.toThrow('Password must be at least 8 characters')
+      })
+
+      it('should reject empty new passwords', async () => {
+        await expect(changePassword('oldpassword123', '')).rejects.toThrow('Password must be at least 8 characters')
+      })
+
+      it('should fail gracefully when wallet not found', async () => {
+        await expect(changePassword('wrongpassword', 'newpassword123')).rejects.toThrow('Wrong password or wallet not found')
       })
     })
   })

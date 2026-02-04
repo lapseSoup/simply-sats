@@ -6,6 +6,7 @@ import { MnemonicInput } from '../forms/MnemonicInput'
 import { restoreWallet, importFromJSON } from '../../services/wallet'
 import { importDatabase, type DatabaseBackup } from '../../services/database'
 import { setWalletKeys } from '../../services/brc100'
+import { saveWallet } from '../../services/wallet'
 
 interface RestoreModalProps {
   onClose: () => void
@@ -15,37 +16,62 @@ interface RestoreModalProps {
 type RestoreMode = 'mnemonic' | 'json' | 'fullbackup'
 
 export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
-  const { setWallet, performSync } = useWallet()
+  const { setWallet, performSync, handleRestoreWallet, handleImportJSON } = useWallet()
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('mnemonic')
   const [restoreMnemonic, setRestoreMnemonic] = useState('')
   const [restoreJSON, setRestoreJSON] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+
+  const validatePassword = (): boolean => {
+    if (password.length < 8) {
+      setPasswordError('Password must be at least 8 characters')
+      return false
+    }
+    if (password !== confirmPassword) {
+      setPasswordError('Passwords do not match')
+      return false
+    }
+    setPasswordError('')
+    return true
+  }
 
   const handleRestoreFromMnemonic = async () => {
+    if (!validatePassword()) return
     try {
       const words = restoreMnemonic.trim().split(/\s+/)
       if (words.length !== 12) {
         alert('Please enter exactly 12 words')
         return
       }
-      const keys = restoreWallet(restoreMnemonic.trim())
-      setWallet({ ...keys, mnemonic: restoreMnemonic.trim() })
-      onSuccess()
-    } catch (_err) {
-      alert('Invalid mnemonic. Please check your words.')
+      const success = await handleRestoreWallet(restoreMnemonic.trim(), password)
+      if (success) {
+        onSuccess()
+      } else {
+        alert('Failed to restore wallet')
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Invalid mnemonic. Please check your words.')
     }
   }
 
   const handleRestoreFromJSON = async () => {
+    if (!validatePassword()) return
     try {
-      const keys = await importFromJSON(restoreJSON)
-      setWallet(keys)
-      onSuccess()
-    } catch (_err) {
-      alert('Invalid JSON backup. Please check the format.')
+      const success = await handleImportJSON(restoreJSON, password)
+      if (success) {
+        onSuccess()
+      } else {
+        alert('Failed to import wallet')
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Invalid JSON backup. Please check the format.')
     }
   }
 
   const handleRestoreFromFullBackup = async () => {
+    if (!validatePassword()) return
     try {
       const filePath = await open({
         filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -62,13 +88,15 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         return
       }
 
-      // Restore wallet from backup
+      // Restore wallet from backup with password
       if (backup.wallet.mnemonic) {
         const keys = restoreWallet(backup.wallet.mnemonic)
+        await saveWallet(keys, password)
         setWallet({ ...keys, mnemonic: backup.wallet.mnemonic })
         setWalletKeys(keys)
       } else if (backup.wallet.keys) {
         const keys = await importFromJSON(JSON.stringify(backup.wallet.keys))
+        await saveWallet(keys, password)
         setWallet(keys)
         setWalletKeys(keys)
       } else {
@@ -140,10 +168,37 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   Type each word and use arrow keys + Enter to select from suggestions
                 </div>
               </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="restore-password">Create Password</label>
+                <input
+                  id="restore-password"
+                  type="password"
+                  className="form-input"
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="restore-confirm-password">Confirm Password</label>
+                <input
+                  id="restore-confirm-password"
+                  type="password"
+                  className="form-input"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              {passwordError && (
+                <div className="form-error" role="alert">{passwordError}</div>
+              )}
               <button
                 className="btn btn-primary"
                 onClick={handleRestoreFromMnemonic}
-                disabled={!restoreMnemonic.trim()}
+                disabled={!restoreMnemonic.trim() || !password || !confirmPassword}
               >
                 Restore Wallet
               </button>
@@ -166,10 +221,37 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   Supports Shaullet, 1Sat Ordinals, and Simply Sats backups
                 </div>
               </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="json-password">Create Password</label>
+                <input
+                  id="json-password"
+                  type="password"
+                  className="form-input"
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="json-confirm-password">Confirm Password</label>
+                <input
+                  id="json-confirm-password"
+                  type="password"
+                  className="form-input"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              {passwordError && (
+                <div className="form-error" role="alert">{passwordError}</div>
+              )}
               <button
                 className="btn btn-primary"
                 onClick={handleRestoreFromJSON}
-                disabled={!restoreJSON.trim()}
+                disabled={!restoreJSON.trim() || !password || !confirmPassword}
               >
                 Import Wallet
               </button>
@@ -184,9 +266,37 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   Restore from a Simply Sats full backup file (.json) including wallet keys, UTXOs, and transaction history.
                 </div>
               </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="fullbackup-password">Create Password</label>
+                <input
+                  id="fullbackup-password"
+                  type="password"
+                  className="form-input"
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="fullbackup-confirm-password">Confirm Password</label>
+                <input
+                  id="fullbackup-confirm-password"
+                  type="password"
+                  className="form-input"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              {passwordError && (
+                <div className="form-error" role="alert">{passwordError}</div>
+              )}
               <button
                 className="btn btn-primary"
                 onClick={handleRestoreFromFullBackup}
+                disabled={!password || !confirmPassword}
               >
                 Select Backup File
               </button>

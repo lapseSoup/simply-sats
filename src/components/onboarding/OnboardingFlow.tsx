@@ -3,7 +3,7 @@ import { SimplySatsLogo } from '../shared'
 import { useUI } from '../../contexts/UIContext'
 
 interface OnboardingFlowProps {
-  onCreateWallet: () => Promise<string | null>
+  onCreateWallet: (password: string) => Promise<string | null>
   onRestoreClick: () => void
   onWalletCreated?: (mnemonic: string) => void
 }
@@ -38,6 +38,9 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
   const [featureIndex, setFeatureIndex] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
   const { showToast } = useUI()
 
   const handleNext = () => {
@@ -79,16 +82,26 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
   }
 
   const handleCreate = async () => {
+    // Validate password
+    if (password.length < 8) {
+      setPasswordError('Password must be at least 8 characters')
+      return
+    }
+    if (password !== confirmPassword) {
+      setPasswordError('Passwords do not match')
+      return
+    }
+    setPasswordError('')
     setCreating(true)
     try {
-      const mnemonic = await onCreateWallet()
+      const mnemonic = await onCreateWallet(password)
       if (mnemonic) {
         onWalletCreated?.(mnemonic)
       } else {
         showToast('Failed to create wallet')
       }
-    } catch (_err) {
-      showToast('Error creating wallet')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Error creating wallet')
     }
     setCreating(false)
   }
@@ -157,11 +170,43 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
             <p className="onboarding-action-subtitle">
               Choose an option to get started with Simply Sats
             </p>
+            <div className="onboarding-password-section">
+              <div className="form-group">
+                <label className="form-label" htmlFor="create-password">Create Password</label>
+                <input
+                  id="create-password"
+                  type="password"
+                  className="form-input"
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="confirm-password">Confirm Password</label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  className="form-input"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              {passwordError && (
+                <div className="form-error" role="alert">{passwordError}</div>
+              )}
+              <div className="form-hint">
+                This password encrypts your wallet on this device.
+              </div>
+            </div>
             <div className="onboarding-actions">
               <button
                 className="btn btn-primary btn-large"
                 onClick={handleCreate}
-                disabled={creating}
+                disabled={creating || !password || !confirmPassword}
               >
                 {creating ? (
                   <>
@@ -170,7 +215,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                   </>
                 ) : (
                   <>
-                    <span aria-hidden="true">✨</span>
+                    <span aria-hidden="true">+</span>
                     Create New Wallet
                   </>
                 )}
@@ -180,7 +225,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                 onClick={onRestoreClick}
                 disabled={creating}
               >
-                <span aria-hidden="true">🔄</span>
+                <span aria-hidden="true">-</span>
                 Restore Existing Wallet
               </button>
             </div>
