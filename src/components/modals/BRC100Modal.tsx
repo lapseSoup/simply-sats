@@ -1,8 +1,16 @@
 import { useState } from 'react'
 import { feeFromBytes } from '../../services/wallet'
-import type { BRC100Request } from '../../services/brc100'
+import type { BRC100Request, CreateActionRequest } from '../../services/brc100'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useKeyboardNav } from '../../hooks/useKeyboardNav'
+
+// Helper type for accessing params safely
+type RequestParams = Record<string, unknown>
+
+// Helper to get typed params
+function getCreateActionParams(req: BRC100Request): CreateActionRequest | undefined {
+  return req.params as unknown as CreateActionRequest | undefined
+}
 
 interface BRC100ModalProps {
   request: BRC100Request
@@ -41,9 +49,10 @@ function getRequestInfo(req: BRC100Request): RequestInfo {
         action: 'Sign'
       }
     case 'createAction':
-      const hasOutputs = req.params?.outputs && req.params.outputs.length > 0
+      const actionParams = getCreateActionParams(req)
+      const hasOutputs = actionParams?.outputs && actionParams.outputs.length > 0
       const totalAmount = hasOutputs
-        ? req.params.outputs.reduce((sum: number, o: { satoshis?: number }) => sum + (o.satoshis || 0), 0)
+        ? actionParams!.outputs.reduce((sum: number, o) => sum + (o.satoshis || 0), 0)
         : 0
       const isHighValue = totalAmount > 100000 // More than 100,000 sats
 
@@ -124,21 +133,24 @@ export function BRC100Modal({ request, onApprove, onReject }: BRC100ModalProps) 
     total: number
   } | null = null
 
-  if (request.type === 'createAction' && request.params?.outputs) {
-    const numOutputs = request.params.outputs.length + 1 // +1 for change
-    const outputAmount = request.params.outputs.reduce(
-      (sum: number, o: { satoshis?: number }) => sum + (o.satoshis || 0),
-      0
-    )
-    const numInputs = Math.ceil((outputAmount + 200) / 10000) || 1
-    const txSize = 10 + numInputs * 148 + numOutputs * 34
-    const fee = feeFromBytes(txSize)
+  if (request.type === 'createAction') {
+    const actionParams = getCreateActionParams(request)
+    if (actionParams?.outputs) {
+      const numOutputs = actionParams.outputs.length + 1 // +1 for change
+      const outputAmount = actionParams.outputs.reduce(
+        (sum: number, o) => sum + (o.satoshis || 0),
+        0
+      )
+      const numInputs = Math.ceil((outputAmount + 200) / 10000) || 1
+      const txSize = 10 + numInputs * 148 + numOutputs * 34
+      const fee = feeFromBytes(txSize)
 
-    txDetails = {
-      outputCount: request.params.outputs.length,
-      outputAmount,
-      fee,
-      total: outputAmount + fee
+      txDetails = {
+        outputCount: actionParams.outputs.length,
+        outputAmount,
+        fee,
+        total: outputAmount + fee
+      }
     }
   }
 
@@ -223,10 +235,10 @@ export function BRC100Modal({ request, onApprove, onReject }: BRC100ModalProps) 
                     <span>{txDetails.total.toLocaleString()} sats</span>
                   </div>
 
-                  {request.params?.description && (
+                  {Boolean((request.params as RequestParams)?.description) && (
                     <div className="tx-description">
                       <span className="tx-desc-label">Description:</span>
-                      <span className="tx-desc-value">{request.params.description}</span>
+                      <span className="tx-desc-value">{String((request.params as RequestParams).description)}</span>
                     </div>
                   )}
                 </div>
@@ -237,18 +249,18 @@ export function BRC100Modal({ request, onApprove, onReject }: BRC100ModalProps) 
           {/* Signature details */}
           {request.type === 'createSignature' && request.params && (
             <div className="brc100-sig-details">
-              {request.params.protocolID && (
+              {Boolean((request.params as RequestParams).protocolID) && (
                 <div className="sig-detail">
                   <span className="sig-label">Protocol</span>
                   <span className="sig-value">
-                    {request.params.protocolID[1] || 'Unknown'}
+                    {((request.params as RequestParams).protocolID as [number, string])?.[1] || 'Unknown'}
                   </span>
                 </div>
               )}
-              {request.params.keyID && (
+              {Boolean((request.params as RequestParams).keyID) && (
                 <div className="sig-detail">
                   <span className="sig-label">Key ID</span>
-                  <span className="sig-value">{request.params.keyID}</span>
+                  <span className="sig-value">{String((request.params as RequestParams).keyID)}</span>
                 </div>
               )}
             </div>

@@ -107,6 +107,54 @@ export interface CreateActionRequest {
   }
 }
 
+// Parameter interfaces for various request types
+export interface ListOutputsParams {
+  basket?: string
+  includeSpent?: boolean
+  includeTags?: string[]
+  limit?: number
+  offset?: number
+}
+
+export interface LockBSVParams {
+  satoshis?: number
+  blocks?: number
+  ordinalOrigin?: string
+  app?: string
+}
+
+export interface UnlockBSVParams {
+  outpoints?: string[]
+}
+
+export interface GetPublicKeyParams {
+  identityKey?: boolean
+  forOrdinals?: boolean
+  protocolID?: [number, string]
+  keyID?: string
+  counterparty?: string
+  privileged?: boolean
+}
+
+export interface EncryptDecryptParams {
+  plaintext?: number[]
+  ciphertext?: number[]
+  protocolID?: [number, string]
+  keyID?: string
+  counterparty?: string
+}
+
+export interface GetTaggedKeysParams {
+  tag?: string
+  limit?: number
+  offset?: number
+}
+
+// Helper to safely get typed params
+function getParams<T>(request: BRC100Request): T {
+  return (request.params || {}) as T
+}
+
 // Lock tracking
 export interface LockedOutput {
   outpoint: string
@@ -221,7 +269,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
 
       // Auto-respond to listOutputs using database
       if (request.type === 'listOutputs' && currentWalletKeys) {
-        const params = request.params || {}
+        const params = getParams<ListOutputsParams>(request)
         const basket = params.basket
         const includeSpent = params.includeSpent || false
         const includeTags = params.includeTags || []
@@ -254,7 +302,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
           }
 
           // Map basket names
-          let dbBasket = basket
+          let dbBasket: string = basket || BASKETS.DEFAULT
           if (basket === 'ordinals') dbBasket = BASKETS.ORDINALS
           else if (basket === 'identity') dbBasket = BASKETS.IDENTITY
           else if (!basket || basket === 'default') dbBasket = BASKETS.DEFAULT
@@ -337,7 +385,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
       // Handle lockBSV - creates time-locked output using OP_PUSH_TX
       // This requires user approval as it spends funds
       if (request.type === 'lockBSV' && currentWalletKeys) {
-        const params = request.params || {}
+        const params = getParams<LockBSVParams>(request)
         const satoshis = params.satoshis
         const blocks = params.blocks
 
@@ -364,8 +412,8 @@ export async function setupHttpServerListener(): Promise<() => void> {
       // Handle unlockBSV - spends time-locked output back to wallet
       // This requires user approval as it spends funds
       if (request.type === 'unlockBSV' && currentWalletKeys) {
-        const params = request.params || {}
-        const outpoint = params.outpoint
+        const params = getParams<UnlockBSVParams>(request)
+        const outpoint = params.outpoints?.[0]
 
         if (!outpoint) {
           await invoke('respond_to_brc100', {
@@ -724,7 +772,7 @@ export async function handleBRC100Request(
   try {
     switch (request.type) {
       case 'getPublicKey': {
-        const params = request.params || {}
+        const params = getParams<GetPublicKeyParams>(request)
         if (params.identityKey) {
           response.result = { publicKey: keys.identityPubKey }
         } else if (params.forOrdinals) {
@@ -742,7 +790,7 @@ export async function handleBRC100Request(
       }
 
       case 'listOutputs': {
-        const params = request.params || {}
+        const params = getParams<ListOutputsParams>(request)
         const basket = params.basket
         const includeSpent = params.includeSpent || false
         const includeTags = params.includeTags || []
@@ -771,7 +819,7 @@ export async function handleBRC100Request(
             }
           } else {
             // Map basket name
-            let dbBasket = basket
+            let dbBasket: string = basket || BASKETS.DEFAULT
             if (basket === 'ordinals') dbBasket = BASKETS.ORDINALS
             else if (basket === 'identity') dbBasket = BASKETS.IDENTITY
             else if (!basket || basket === 'default') dbBasket = BASKETS.DEFAULT
@@ -814,7 +862,7 @@ export async function handleBRC100Request(
       }
 
       case 'createSignature': {
-        const sigRequest = request.params as SignatureRequest
+        const sigRequest = request.params as unknown as SignatureRequest
 
         // If not auto-approve, queue for user approval
         if (!autoApprove) {
@@ -882,7 +930,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
     await recordActionRequest({
       requestId: request.id,
       actionType: request.type,
-      description: request.params?.description || `${request.type} request`,
+      description: (request.params as Record<string, unknown>)?.description as string || `${request.type} request`,
       origin: request.origin,
       approved: true,
       inputParams: JSON.stringify(request.params),
@@ -897,7 +945,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
     switch (request.type) {
       case 'getPublicKey': {
-        const params = request.params || {}
+        const params = getParams<GetPublicKeyParams>(request)
         if (params.identityKey) {
           response.result = { publicKey: keys.identityPubKey }
         } else if (params.forOrdinals) {
@@ -909,14 +957,14 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
       }
 
       case 'createSignature': {
-        const sigRequest = request.params as SignatureRequest
+        const sigRequest = request.params as unknown as SignatureRequest
         const signature = signData(keys, sigRequest.data, 'identity')
         response.result = { signature: Array.from(Buffer.from(signature, 'hex')) }
         break
       }
 
       case 'createAction': {
-        const actionRequest = request.params as CreateActionRequest
+        const actionRequest = request.params as unknown as CreateActionRequest
 
         // Check if this is a lock transaction (has wrootz_locks basket)
         const hasLockOutput = actionRequest.outputs?.some(o => o.basket === 'wrootz_locks')
@@ -968,10 +1016,10 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
       case 'lockBSV': {
         // Native lock using OP_PUSH_TX timelock
-        const params = request.params || {}
-        const satoshis = params.satoshis
-        const blocks = params.blocks
-        const lockMetadata = params.metadata || {}
+        const params = getParams<LockBSVParams>(request)
+        const satoshis = params.satoshis as number
+        const blocks = params.blocks as number
+        const lockMetadata = { ordinalOrigin: params.ordinalOrigin, app: params.app }
 
         try {
           const currentHeight = await getCurrentBlockHeight()
@@ -1022,7 +1070,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
           await addLock({
             utxoId,
             unlockBlock,
-            ordinalOrigin: lockMetadata.ordinalOrigin || null,
+            ordinalOrigin: lockMetadata.ordinalOrigin || undefined,
             createdAt: Date.now()
           })
 
@@ -1042,8 +1090,8 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
       case 'unlockBSV': {
         // Unlock a time-locked output
-        const params = request.params || {}
-        const outpoint = params.outpoint
+        const params = getParams<UnlockBSVParams>(request)
+        const outpoint = params.outpoints?.[0] || ''
 
         try {
           const currentHeight = await getCurrentBlockHeight()
@@ -1105,9 +1153,9 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
       case 'encrypt': {
         // ECIES encryption using counterparty's public key
-        const params = request.params || {}
-        const plaintext = params.plaintext || params.message
-        const recipientPubKey = params.counterparty || params.publicKey
+        const params = getParams<EncryptDecryptParams>(request)
+        const plaintext = params.plaintext ? String.fromCharCode(...params.plaintext) : undefined
+        const recipientPubKey = params.counterparty
 
         if (!plaintext) {
           response.error = { code: -32602, message: 'Missing plaintext parameter' }
@@ -1154,9 +1202,9 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
       case 'decrypt': {
         // ECIES decryption using counterparty's public key
-        const params = request.params || {}
-        const ciphertext = params.ciphertext || params.encrypted
-        const senderPubKey = params.counterparty || params.senderPublicKey
+        const params = getParams<EncryptDecryptParams>(request)
+        const ciphertext = params.ciphertext
+        const senderPubKey = params.counterparty
 
         if (!ciphertext) {
           response.error = { code: -32602, message: 'Missing ciphertext parameter' }
@@ -1177,8 +1225,8 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
           const sharedSecret = recipientPrivKey.deriveSharedSecret(senderPublicKey)
           const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
 
-          // Convert hex ciphertext to bytes
-          const ciphertextBytes = (ciphertext as string).match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16))
+          // Convert ciphertext bytes to actual bytes for decryption
+          const ciphertextBytes = ciphertext as number[]
 
           // Decrypt using AES with the shared secret
           const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
@@ -1200,9 +1248,9 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
       case 'getTaggedKeys': {
         // Derive tagged keys for app-specific use
-        const params = request.params || {}
-        const label = params.label
-        const keyIds = params.keyIds || params.ids || [params.keyId || 'default']
+        const params = getParams<GetTaggedKeysParams>(request)
+        const label = params.tag
+        const keyIds = ['default']
 
         if (!label) {
           response.error = { code: -32602, message: 'Missing label parameter' }
@@ -1528,7 +1576,7 @@ export async function rejectRequest(requestId: string): Promise<void> {
     await recordActionRequest({
       requestId: request.id,
       actionType: request.type,
-      description: request.params?.description || `${request.type} request`,
+      description: (request.params as Record<string, unknown>)?.description as string || `${request.type} request`,
       origin: request.origin,
       approved: false,
       error: 'User rejected request',

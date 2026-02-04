@@ -3951,6 +3951,7 @@ name = "simply-sats"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "rand 0.8.5",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
