@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { calculateExactFee, calculateTxFee } from '../../services/wallet'
+import { calculateExactFee, calculateTxFee, calculateMaxSend, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 
 interface SendModalProps {
@@ -31,26 +31,30 @@ export function SendModal({ onClose }: SendModalProps) {
     : Math.round(parseFloat(sendAmount || '0') * 100000000)
   const availableSats = balance
 
-  // Calculate number of inputs
+  // Calculate number of inputs (fallback if no UTXOs available yet)
   const numInputs = utxos.length > 0 ? utxos.length : Math.max(1, Math.ceil(balance / 10000))
   const totalUtxoValue = utxos.length > 0 ? utxos.reduce((sum, u) => sum + u.satoshis, 0) : balance
 
-  // Calculate fee
+  // Calculate fee using domain layer functions
   let fee = 0
   if (sendSats > 0) {
     if (utxos.length > 0) {
-      const feeInfo = calculateExactFee(sendSats, utxos)
+      // Use domain layer calculateExactFee with explicit fee rate
+      const feeInfo = calculateExactFee(sendSats, utxos, DEFAULT_FEE_RATE)
       fee = feeInfo.fee
     } else {
+      // Fallback when UTXOs not loaded - estimate based on input count
       const isMaxSend = sendSats >= totalUtxoValue - 50
       const numOutputs = isMaxSend ? 1 : 2
-      fee = calculateTxFee(numInputs, numOutputs)
+      fee = calculateTxFee(numInputs, numOutputs, DEFAULT_FEE_RATE)
     }
   }
 
-  // Calculate max sendable with 1 output (no change)
-  const maxFee = calculateTxFee(numInputs, 1)
-  const maxSendSats = Math.max(0, totalUtxoValue - maxFee)
+  // Calculate max sendable using domain layer function
+  const maxSendResult = utxos.length > 0
+    ? calculateMaxSend(utxos, DEFAULT_FEE_RATE)
+    : { maxSats: Math.max(0, totalUtxoValue - calculateTxFee(numInputs, 1, DEFAULT_FEE_RATE)), fee: 0, numInputs }
+  const maxSendSats = maxSendResult.maxSats
 
   // Check if confirmation is required based on amount
   const requiresConfirmation = sendSats >= SEND_CONFIRMATION_THRESHOLD
