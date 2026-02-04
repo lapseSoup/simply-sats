@@ -10,11 +10,20 @@ use axum::{
 use tower_http::cors::CorsLayer;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+use governor::{Quota, RateLimiter};
+use std::num::NonZeroU32;
+use std::sync::Arc;
 use crate::{SharedBRC100State, SharedSessionState};
 
 const SESSION_TOKEN_HEADER: &str = "X-Simply-Sats-Token";
 
 const PORT: u16 = 3322; // Simply Sats uses 3322 (Metanet Desktop uses 3321)
+
+// Rate limiting configuration: 60 requests per minute
+const RATE_LIMIT_PER_MINUTE: u32 = 60;
+
+// Type alias for the rate limiter
+type SharedRateLimiter = Arc<RateLimiter<governor::state::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>;
 
 // Allowed origins for CORS - only localhost and Tauri webview
 const ALLOWED_ORIGINS: &[&str] = &[
@@ -31,6 +40,7 @@ struct AppState {
     app_handle: AppHandle,
     brc100_state: SharedBRC100State,
     session_state: SharedSessionState,
+    rate_limiter: SharedRateLimiter,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
@@ -66,7 +76,7 @@ struct HeightResponse {
     height: u32,
 }
 
-/// Middleware to validate session token on all requests except /getVersion
+/// Middleware to validate session token and apply rate limiting
 async fn validate_session_token(
     State(state): State<AppState>,
     request: Request<Body>,
@@ -87,7 +97,15 @@ async fn validate_session_token(
     match token_header {
         Some(token) if token == session.token => {
             drop(session);
-            Ok(next.run(request).await)
+
+            // Apply rate limiting after authentication
+            match state.rate_limiter.check() {
+                Ok(_) => Ok(next.run(request).await),
+                Err(_) => {
+                    eprintln!("[Rate Limit] Request to {} exceeded rate limit", request.uri().path());
+                    Err(StatusCode::TOO_MANY_REQUESTS)
+                }
+            }
         }
         _ => {
             eprintln!("Rejected request to {}: invalid or missing session token", request.uri().path());
@@ -101,10 +119,15 @@ pub async fn start_server(
     brc100_state: SharedBRC100State,
     session_state: SharedSessionState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Create rate limiter: RATE_LIMIT_PER_MINUTE requests per minute
+    let quota = Quota::per_minute(NonZeroU32::new(RATE_LIMIT_PER_MINUTE).unwrap());
+    let rate_limiter = Arc::new(RateLimiter::direct(quota));
+
     let state = AppState {
         app_handle,
         brc100_state,
         session_state,
+        rate_limiter,
     };
 
     // Configure CORS to only allow localhost and Tauri webview origins

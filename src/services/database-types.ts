@@ -196,6 +196,7 @@ export interface AccountRow {
   is_active: number  // 0 or 1
   created_at: number
   last_accessed_at: number | null
+  updated_at: number | null  // Added in migration 007
 }
 
 /**
@@ -204,6 +205,7 @@ export interface AccountRow {
 export interface AccountSettingRow {
   setting_key: string
   setting_value: string
+  updated_at: number | null  // Added in migration 007
 }
 
 /**
@@ -274,6 +276,7 @@ export interface TokenRow {
   icon_url: string | null
   verified: number  // 0 or 1
   created_at: number
+  updated_at: number | null  // Added in migration 007
 }
 
 /**
@@ -345,6 +348,42 @@ export interface CountRow {
  */
 export interface TagRow {
   tag: string
+}
+
+/**
+ * UTXO tag row with timestamp (migration 007)
+ */
+export interface UTXOTagRow {
+  id: number
+  utxo_id: number
+  tag: string
+  created_at: number | null  // Added in migration 007
+}
+
+/**
+ * Transaction label row with timestamp (migration 007)
+ */
+export interface TransactionLabelRow {
+  id: number
+  txid: string
+  label: string
+  created_at: number | null  // Added in migration 007
+}
+
+/**
+ * Connected app row from database
+ */
+export interface ConnectedAppRow {
+  id: number
+  account_id: number
+  origin: string
+  app_name: string | null
+  app_icon: string | null
+  permissions: string | null  // JSON array
+  trusted: number  // 0 or 1
+  connected_at: number
+  last_used_at: number | null
+  updated_at: number | null  // Added in migration 007
 }
 
 // ============================================

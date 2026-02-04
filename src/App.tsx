@@ -1,61 +1,25 @@
 import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
-import { WalletProvider, useWallet, NetworkProvider, UIProvider, useUI, AccountsProvider, TokensProvider } from './contexts'
-import {
-  Toast,
-  PaymentAlert,
-  ScreenReaderAnnounceProvider,
-  SkipLink
-} from './components/shared'
-import { useKeyboardNav } from './hooks'
-import {
-  Header,
-  BalanceDisplay,
-  BasketChips,
-  QuickActions
-} from './components/wallet'
-import {
-  SendModal,
-  LockModal,
-  ReceiveModal,
-  BRC100Modal,
-  MnemonicModal,
-  OrdinalModal,
-  UnlockConfirmModal,
-  RestoreModal,
-  SettingsModal,
-  LockScreenModal,
-  OrdinalTransferModal,
-  AccountModal
-} from './components/modals'
-import {
-  ActivityTab,
-  OrdinalsTab,
-  LocksTab,
-  TokensTab
-} from './components/tabs'
+import { useWallet, useUI } from './contexts'
+import { Toast, PaymentAlert, SkipLink } from './components/shared'
+import { useKeyboardNav, useBrc100Handler } from './hooks'
+import { Header, BalanceDisplay, BasketChips, QuickActions } from './components/wallet'
+import { RestoreModal, MnemonicModal, LockScreenModal } from './components/modals'
 import { OnboardingFlow } from './components/onboarding'
+import { AppProviders } from './AppProviders'
+import { AppModals, type Modal, type AccountModalMode } from './AppModals'
+import { AppTabNav, AppTabContent, type Tab } from './AppTabs'
 
 import type { Ordinal, LockedUTXO } from './services/wallet'
-import type { BRC100Request } from './services/brc100'
-import {
-  setRequestHandler,
-  approveRequest,
-  rejectRequest,
-  getPendingRequests,
-  setupHttpServerListener
-} from './services/brc100'
-import { setupDeepLinkListener } from './services/deeplink'
 import type { PaymentNotification } from './services/messageBox'
 import { loadNotifications, startPaymentListener } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
 import { getDerivedAddresses } from './services/database'
 import { needsInitialSync } from './services/sync'
 
-type Tab = 'activity' | 'ordinals' | 'tokens' | 'locks'
-type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | 'brc100' | 'lock' | 'transfer-ordinal' | 'account' | null
-type AccountModalMode = 'create' | 'import' | 'manage'
+// Tab order for keyboard navigation
+const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks']
 
 function WalletApp() {
   const {
@@ -67,16 +31,12 @@ function WalletApp() {
     networkInfo,
     handleUnlock,
     handleCreateWallet,
-    connectedApps,
     performSync,
     fetchData,
-    // Lock screen state
     isLocked,
     unlockWallet,
-    // Token state
     tokenBalances,
     refreshTokens,
-    // Multi-account state
     accounts,
     activeAccountId,
     createNewAccount,
@@ -86,116 +46,54 @@ function WalletApp() {
 
   const { copyFeedback, showToast } = useUI()
 
+  // UI State
   const [activeTab, setActiveTab] = useState<Tab>('activity')
   const [modal, setModal] = useState<Modal>(null)
   const [accountModalMode, setAccountModalMode] = useState<AccountModalMode>('manage')
 
-  // Tab order for keyboard navigation
-  const tabOrder: Tab[] = ['activity', 'ordinals', 'tokens', 'locks']
-
-  // Ordinal for transfer
+  // Ordinal state
   const [ordinalToTransfer, setOrdinalToTransfer] = useState<Ordinal | null>(null)
+  const [selectedOrdinal, setSelectedOrdinal] = useState<Ordinal | null>(null)
 
+  // Wallet state
+  const [newMnemonic, setNewMnemonic] = useState<string | null>(null)
+
+  // Unlock state
+  const [unlockConfirm, setUnlockConfirm] = useState<LockedUTXO | 'all' | null>(null)
+  const [unlocking, setUnlocking] = useState<string | null>(null)
+
+  // Payment alert state
+  const [newPaymentAlert, setNewPaymentAlert] = useState<PaymentNotification | null>(null)
+
+  // BRC-100 handler
+  const {
+    brc100Request,
+    handleApprove: handleApproveBRC100,
+    handleReject: handleRejectBRC100
+  } = useBrc100Handler({
+    wallet,
+    onRequestReceived: () => setModal('brc100')
+  })
+
+  // Tab navigation
   const navigateTab = useCallback((direction: 'left' | 'right') => {
-    const currentIndex = tabOrder.indexOf(activeTab)
+    const currentIndex = TAB_ORDER.indexOf(activeTab)
     let newIndex: number
     if (direction === 'left') {
-      newIndex = currentIndex === 0 ? tabOrder.length - 1 : currentIndex - 1
+      newIndex = currentIndex === 0 ? TAB_ORDER.length - 1 : currentIndex - 1
     } else {
-      newIndex = currentIndex === tabOrder.length - 1 ? 0 : currentIndex + 1
+      newIndex = currentIndex === TAB_ORDER.length - 1 ? 0 : currentIndex + 1
     }
-    setActiveTab(tabOrder[newIndex])
+    setActiveTab(TAB_ORDER[newIndex])
   }, [activeTab])
 
-  // Keyboard navigation for tabs (arrow keys) and Escape to close modals
+  // Keyboard navigation
   useKeyboardNav({
     onArrowLeft: () => !modal && navigateTab('left'),
     onArrowRight: () => !modal && navigateTab('right'),
     onEscape: () => modal && setModal(null),
     enabled: true
   })
-
-  // BRC-100 request state
-  const [brc100Request, setBrc100Request] = useState<BRC100Request | null>(null)
-  const [localConnectedApps, setLocalConnectedApps] = useState<string[]>(connectedApps)
-
-  // New wallet mnemonic display
-  const [newMnemonic, setNewMnemonic] = useState<string | null>(null)
-
-  // Ordinal detail
-  const [selectedOrdinal, setSelectedOrdinal] = useState<Ordinal | null>(null)
-
-  // Unlock confirm
-  const [unlockConfirm, setUnlockConfirm] = useState<LockedUTXO | 'all' | null>(null)
-  const [unlocking, setUnlocking] = useState<string | null>(null)
-
-  // Payment alert
-  const [newPaymentAlert, setNewPaymentAlert] = useState<PaymentNotification | null>(null)
-
-  // Account modal handlers
-  const handleAccountModalOpen = (mode: AccountModalMode) => {
-    setAccountModalMode(mode)
-    setModal('account')
-  }
-
-  // Handler for creating account from modal - returns mnemonic
-  const handleAccountCreate = async (name: string): Promise<string | null> => {
-    // For new accounts, we need a password - use empty for now (modal will handle)
-    // The AccountModal handles password collection internally
-    const password = '' // Will be prompted in modal
-    const success = await createNewAccount(name, password)
-    if (success && wallet?.mnemonic) {
-      return wallet.mnemonic
-    }
-    return null
-  }
-
-  // Handler for importing account from mnemonic
-  const handleAccountImport = async (_name: string, _mnemonic: string): Promise<boolean> => {
-    // Import is handled through restore flow
-    return false
-  }
-
-  // Set up BRC-100 request handler
-  useEffect(() => {
-    const handleIncomingRequest = async (request: BRC100Request) => {
-      // Check if this is from a trusted origin (auto-approve)
-      const savedTrustedOrigins = JSON.parse(localStorage.getItem('simply_sats_trusted_origins') || '[]')
-      const isTrusted = request.origin && savedTrustedOrigins.includes(request.origin)
-
-      if (isTrusted && wallet) {
-        console.log(`Auto-approving request from trusted origin: ${request.origin}`)
-        approveRequest(request.id, wallet)
-        return
-      }
-
-      setBrc100Request(request)
-      setModal('brc100')
-    }
-
-    setRequestHandler(handleIncomingRequest)
-
-    let unlistenDeepLink: (() => void) | null = null
-    setupDeepLinkListener(handleIncomingRequest).then(unlisten => {
-      unlistenDeepLink = unlisten
-    })
-
-    let unlistenHttp: (() => void) | null = null
-    setupHttpServerListener().then(unlisten => {
-      unlistenHttp = unlisten
-    })
-
-    const pending = getPendingRequests()
-    if (pending.length > 0) {
-      setBrc100Request(pending[0])
-      setModal('brc100')
-    }
-
-    return () => {
-      if (unlistenDeepLink) unlistenDeepLink()
-      if (unlistenHttp) unlistenHttp()
-    }
-  }, [wallet])
 
   // MessageBox listener for payments
   useEffect(() => {
@@ -208,7 +106,6 @@ function WalletApp() {
       setNewPaymentAlert(payment)
       showToast(`Received ${payment.amount?.toLocaleString() || 'unknown'} sats!`)
       fetchData()
-      // Auto-dismiss after 5 seconds
       setTimeout(() => setNewPaymentAlert(null), 5000)
     }
 
@@ -252,25 +149,23 @@ function WalletApp() {
     }
   }, [wallet, fetchData])
 
-  const handleApproveBRC100 = () => {
-    if (!brc100Request || !wallet) return
-
-    if (brc100Request.origin && !localConnectedApps.includes(brc100Request.origin)) {
-      const newConnectedApps = [...localConnectedApps, brc100Request.origin]
-      setLocalConnectedApps(newConnectedApps)
-      localStorage.setItem('simply_sats_connected_apps', JSON.stringify(newConnectedApps))
-    }
-
-    approveRequest(brc100Request.id, wallet)
-    setBrc100Request(null)
-    setModal(null)
+  // Handlers
+  const handleAccountModalOpen = (mode: AccountModalMode) => {
+    setAccountModalMode(mode)
+    setModal('account')
   }
 
-  const handleRejectBRC100 = () => {
-    if (!brc100Request) return
-    rejectRequest(brc100Request.id)
-    setBrc100Request(null)
-    setModal(null)
+  const handleAccountCreate = async (name: string): Promise<string | null> => {
+    const password = ''
+    const success = await createNewAccount(name, password)
+    if (success && wallet?.mnemonic) {
+      return wallet.mnemonic
+    }
+    return null
+  }
+
+  const handleAccountImport = async (_name: string, _mnemonic: string): Promise<boolean> => {
+    return false
   }
 
   const handleMnemonicConfirm = () => {
@@ -320,6 +215,16 @@ function WalletApp() {
     setUnlockConfirm(null)
   }
 
+  const handleBrc100Approve = () => {
+    handleApproveBRC100()
+    setModal(null)
+  }
+
+  const handleBrc100Reject = () => {
+    handleRejectBRC100()
+    setModal(null)
+  }
+
   // Loading screen
   if (loading) {
     return (
@@ -329,7 +234,7 @@ function WalletApp() {
     )
   }
 
-  // Lock screen (wallet is locked due to inactivity)
+  // Lock screen
   if (isLocked && wallet === null) {
     return (
       <>
@@ -339,7 +244,7 @@ function WalletApp() {
     )
   }
 
-  // Setup screen (no wallet) - new onboarding flow
+  // Setup screen (no wallet)
   if (!wallet) {
     return (
       <>
@@ -352,7 +257,6 @@ function WalletApp() {
           }}
         />
 
-        {/* Restore Modal */}
         {modal === 'restore' && (
           <RestoreModal
             onClose={() => setModal(null)}
@@ -360,7 +264,6 @@ function WalletApp() {
           />
         )}
 
-        {/* Mnemonic Display Modal */}
         {modal === 'mnemonic' && newMnemonic && (
           <MnemonicModal mnemonic={newMnemonic} onConfirm={handleMnemonicConfirm} />
         )}
@@ -389,146 +292,62 @@ function WalletApp() {
 
       <BasketChips />
 
-      {/* Navigation Tabs */}
-      <nav className="nav-tabs" role="tablist" aria-label="Wallet sections">
-        <button
-          id="tab-activity"
-          className={`nav-tab ${activeTab === 'activity' ? 'active' : ''}`}
-          onClick={() => setActiveTab('activity')}
-          role="tab"
-          aria-selected={activeTab === 'activity'}
-          aria-controls="tabpanel-activity"
-          tabIndex={activeTab === 'activity' ? 0 : -1}
-        >
-          Activity
-          <span className="tab-count" aria-label={`${txHistory.length} transactions`}>{txHistory.length}</span>
-        </button>
-        <button
-          id="tab-ordinals"
-          className={`nav-tab ${activeTab === 'ordinals' ? 'active' : ''}`}
-          onClick={() => setActiveTab('ordinals')}
-          role="tab"
-          aria-selected={activeTab === 'ordinals'}
-          aria-controls="tabpanel-ordinals"
-          tabIndex={activeTab === 'ordinals' ? 0 : -1}
-        >
-          Ordinals
-          <span className="tab-count" aria-label={`${ordinals.length} ordinals`}>{ordinals.length}</span>
-        </button>
-        <button
-          id="tab-tokens"
-          className={`nav-tab ${activeTab === 'tokens' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tokens')}
-          role="tab"
-          aria-selected={activeTab === 'tokens'}
-          aria-controls="tabpanel-tokens"
-          tabIndex={activeTab === 'tokens' ? 0 : -1}
-        >
-          Tokens
-          <span className="tab-count" aria-label={`${tokenBalances.length} tokens`}>{tokenBalances.length}</span>
-        </button>
-        <button
-          id="tab-locks"
-          className={`nav-tab ${activeTab === 'locks' ? 'active' : ''}`}
-          onClick={() => setActiveTab('locks')}
-          role="tab"
-          aria-selected={activeTab === 'locks'}
-          aria-controls="tabpanel-locks"
-          tabIndex={activeTab === 'locks' ? 0 : -1}
-        >
-          Locks
-          <span className="tab-count" aria-label={`${locks.length} locks`}>{locks.length}</span>
-        </button>
-      </nav>
+      <AppTabNav
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        counts={{
+          activity: txHistory.length,
+          ordinals: ordinals.length,
+          tokens: tokenBalances.length,
+          locks: locks.length
+        }}
+      />
 
-      {/* Content */}
-      <main
-        id="main-content"
-        className="content"
-        role="tabpanel"
-        aria-labelledby={`tab-${activeTab}`}
-        tabIndex={-1}
-      >
-        {activeTab === 'activity' && <ActivityTab />}
-        {activeTab === 'ordinals' && (
-          <OrdinalsTab
-            onSelectOrdinal={handleSelectOrdinal}
-            onTransferOrdinal={handleTransferOrdinal}
-          />
-        )}
-        {activeTab === 'tokens' && <TokensTab onRefresh={refreshTokens} />}
-        {activeTab === 'locks' && (
-          <LocksTab
-            onLock={() => setModal('lock')}
-            onUnlock={handleUnlockClick}
-            onUnlockAll={handleUnlockAll}
-            unlocking={unlocking}
-          />
-        )}
-      </main>
+      <AppTabContent
+        activeTab={activeTab}
+        onSelectOrdinal={handleSelectOrdinal}
+        onTransferOrdinal={handleTransferOrdinal}
+        onRefreshTokens={refreshTokens}
+        onLock={() => setModal('lock')}
+        onUnlock={handleUnlockClick}
+        onUnlockAll={handleUnlockAll}
+        unlocking={unlocking}
+      />
 
-      {/* Modals */}
-      {modal === 'send' && <SendModal onClose={() => setModal(null)} />}
-      {modal === 'lock' && <LockModal onClose={() => setModal(null)} />}
-      {modal === 'receive' && <ReceiveModal onClose={() => setModal(null)} />}
-      {modal === 'settings' && <SettingsModal onClose={() => setModal(null)} />}
-      {modal === 'ordinal' && selectedOrdinal && (
-        <OrdinalModal
-          ordinal={selectedOrdinal}
-          onClose={() => setModal(null)}
-          onTransfer={() => {
-            setOrdinalToTransfer(selectedOrdinal)
-            setModal('transfer-ordinal')
-          }}
-        />
-      )}
-      {modal === 'transfer-ordinal' && ordinalToTransfer && (
-        <OrdinalTransferModal
-          ordinal={ordinalToTransfer}
-          onClose={() => {
-            setOrdinalToTransfer(null)
-            setModal(null)
-          }}
-        />
-      )}
-      {modal === 'brc100' && brc100Request && (
-        <BRC100Modal
-          request={brc100Request}
-          onApprove={handleApproveBRC100}
-          onReject={handleRejectBRC100}
-        />
-      )}
-      {modal === 'mnemonic' && newMnemonic && (
-        <MnemonicModal mnemonic={newMnemonic} onConfirm={handleMnemonicConfirm} />
-      )}
-      {modal === 'account' && (
-        <AccountModal
-          isOpen={true}
-          onClose={() => setModal(null)}
-          mode={accountModalMode}
-          accounts={accounts}
-          activeAccountId={activeAccountId}
-          onCreateAccount={handleAccountCreate}
-          onImportAccount={handleAccountImport}
-          onDeleteAccount={deleteAccount}
-          onRenameAccount={renameAccount}
-        />
-      )}
+      <AppModals
+        modal={modal}
+        onCloseModal={() => setModal(null)}
+        selectedOrdinal={selectedOrdinal}
+        onTransferOrdinal={(ordinal) => {
+          setOrdinalToTransfer(ordinal)
+          setModal('transfer-ordinal')
+        }}
+        ordinalToTransfer={ordinalToTransfer}
+        onTransferComplete={() => {
+          setOrdinalToTransfer(null)
+          setModal(null)
+        }}
+        brc100Request={brc100Request}
+        onApproveBRC100={handleBrc100Approve}
+        onRejectBRC100={handleBrc100Reject}
+        newMnemonic={newMnemonic}
+        onMnemonicConfirm={handleMnemonicConfirm}
+        accountModalMode={accountModalMode}
+        accounts={accounts}
+        activeAccountId={activeAccountId}
+        onCreateAccount={handleAccountCreate}
+        onImportAccount={handleAccountImport}
+        onDeleteAccount={deleteAccount}
+        onRenameAccount={renameAccount}
+        unlockConfirm={unlockConfirm}
+        unlockableLocks={getUnlockableLocks()}
+        onConfirmUnlock={handleConfirmUnlock}
+        onCancelUnlock={() => setUnlockConfirm(null)}
+        isUnlocking={!!unlocking}
+      />
 
-      {/* Unlock Confirm Modal */}
-      {unlockConfirm && (
-        <UnlockConfirmModal
-          locks={unlockConfirm === 'all' ? getUnlockableLocks() : [unlockConfirm]}
-          onConfirm={handleConfirmUnlock}
-          onCancel={() => setUnlockConfirm(null)}
-          unlocking={!!unlocking}
-        />
-      )}
-
-      {/* Toast */}
       <Toast message={copyFeedback} />
 
-      {/* Payment Alert */}
       <PaymentAlert
         payment={newPaymentAlert}
         onDismiss={() => setNewPaymentAlert(null)}
@@ -539,19 +358,9 @@ function WalletApp() {
 
 function App() {
   return (
-    <ScreenReaderAnnounceProvider>
-      <NetworkProvider>
-        <UIProvider>
-          <AccountsProvider>
-            <TokensProvider>
-              <WalletProvider>
-                <WalletApp />
-              </WalletProvider>
-            </TokensProvider>
-          </AccountsProvider>
-        </UIProvider>
-      </NetworkProvider>
-    </ScreenReaderAnnounceProvider>
+    <AppProviders>
+      <WalletApp />
+    </AppProviders>
   )
 }
 

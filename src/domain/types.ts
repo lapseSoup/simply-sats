@@ -4,6 +4,99 @@
  */
 
 // ============================================
+// Result Type (Functional Error Handling)
+// ============================================
+
+/**
+ * A Result type for explicit error handling without exceptions.
+ * Use this for operations that can fail in expected ways.
+ *
+ * @example
+ * ```ts
+ * function divide(a: number, b: number): Result<number, string> {
+ *   if (b === 0) return err('Division by zero')
+ *   return ok(a / b)
+ * }
+ *
+ * const result = divide(10, 2)
+ * if (isOk(result)) {
+ *   console.log(result.value) // 5
+ * } else {
+ *   console.error(result.error) // Never reached
+ * }
+ * ```
+ */
+export type Result<T, E = Error> =
+  | { ok: true; value: T }
+  | { ok: false; error: E }
+
+/**
+ * Create a successful Result
+ */
+export function ok<T>(value: T): Result<T, never> {
+  return { ok: true, value }
+}
+
+/**
+ * Create a failed Result
+ */
+export function err<E>(error: E): Result<never, E> {
+  return { ok: false, error }
+}
+
+/**
+ * Type guard to check if a Result is successful
+ */
+export function isOk<T, E>(result: Result<T, E>): result is { ok: true; value: T } {
+  return result.ok
+}
+
+/**
+ * Type guard to check if a Result is an error
+ */
+export function isErr<T, E>(result: Result<T, E>): result is { ok: false; error: E } {
+  return !result.ok
+}
+
+/**
+ * Unwrap a Result, throwing if it's an error.
+ * Use sparingly - prefer pattern matching with isOk/isErr.
+ */
+export function unwrap<T, E>(result: Result<T, E>): T {
+  if (isOk(result)) {
+    return result.value
+  }
+  throw result.error instanceof Error ? result.error : new Error(String(result.error))
+}
+
+/**
+ * Unwrap a Result with a default value if it's an error.
+ */
+export function unwrapOr<T, E>(result: Result<T, E>, defaultValue: T): T {
+  return isOk(result) ? result.value : defaultValue
+}
+
+/**
+ * Map over a successful Result's value.
+ */
+export function mapResult<T, U, E>(
+  result: Result<T, E>,
+  fn: (value: T) => U
+): Result<U, E> {
+  return isOk(result) ? ok(fn(result.value)) : result
+}
+
+/**
+ * Chain Results together (flatMap).
+ */
+export function flatMapResult<T, U, E>(
+  result: Result<T, E>,
+  fn: (value: T) => Result<U, E>
+): Result<U, E> {
+  return isOk(result) ? fn(result.value) : result
+}
+
+// ============================================
 // Wallet Types
 // ============================================
 

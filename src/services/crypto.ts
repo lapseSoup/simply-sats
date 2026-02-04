@@ -1,10 +1,29 @@
 /**
- * Cryptographic utilities for Simply Sats
+ * Cryptographic Utilities for Simply Sats
  *
- * Provides secure encryption/decryption for wallet keys using
- * password-based key derivation (PBKDF2) and AES-GCM encryption.
+ * This module provides secure encryption/decryption for wallet keys using
+ * industry-standard cryptographic practices:
+ *
+ * - **Key Derivation**: PBKDF2-SHA256 with 100,000 iterations (OWASP recommended)
+ * - **Encryption**: AES-256-GCM (authenticated encryption)
+ * - **Random Generation**: Cryptographically secure random values for salt/IV
  *
  * This replaces the insecure btoa/atob encoding that was previously used.
+ *
+ * @module services/crypto
+ *
+ * @example
+ * ```typescript
+ * import { encrypt, decrypt } from './crypto'
+ *
+ * // Encrypt wallet data
+ * const encrypted = await encrypt(walletKeys, 'user-password')
+ *
+ * // Store encrypted.ciphertext, encrypted.iv, encrypted.salt
+ *
+ * // Later, decrypt with same password
+ * const decrypted = await decrypt(encrypted, 'user-password')
+ * ```
  */
 
 // Use Web Crypto API (available in both browser and Tauri)
@@ -12,27 +31,34 @@
 const getCrypto = () => globalThis.crypto
 
 /**
- * Encryption result containing all data needed for decryption
+ * Encryption result containing all data needed for decryption.
+ *
+ * All byte data is encoded as base64 strings for safe storage.
+ * The version field allows for future algorithm upgrades.
  */
 export interface EncryptedData {
-  // Version for future-proofing
+  /** Encryption format version (for future-proofing) */
   version: number
-  // Base64-encoded ciphertext
+  /** Base64-encoded ciphertext (AES-GCM encrypted data + auth tag) */
   ciphertext: string
-  // Base64-encoded initialization vector (12 bytes for AES-GCM)
+  /** Base64-encoded initialization vector (12 bytes for AES-GCM) */
   iv: string
-  // Base64-encoded salt for PBKDF2 (16 bytes)
+  /** Base64-encoded salt for PBKDF2 key derivation (16 bytes) */
   salt: string
-  // PBKDF2 iterations (stored for future adjustments)
+  /** PBKDF2 iterations (stored for forwards compatibility) */
   iterations: number
 }
 
-// Current encryption parameters
+/** Current encryption format version */
 const CURRENT_VERSION = 1
-const PBKDF2_ITERATIONS = 100000  // OWASP recommended minimum
-const SALT_LENGTH = 16  // 128 bits
-const IV_LENGTH = 12    // 96 bits for AES-GCM
-const KEY_LENGTH = 256  // AES-256
+/** PBKDF2 iterations - OWASP recommended minimum for 2024 */
+const PBKDF2_ITERATIONS = 100000
+/** Salt length in bytes (128 bits) */
+const SALT_LENGTH = 16
+/** IV length in bytes (96 bits for AES-GCM) */
+const IV_LENGTH = 12
+/** AES key length in bits (256-bit for AES-256) */
+const KEY_LENGTH = 256
 
 /**
  * Convert ArrayBuffer to base64 string

@@ -5,7 +5,7 @@
  * including list navigation, escape handling, and Enter submission.
  */
 
-import { useEffect, useCallback, useRef, useState } from 'react'
+import { useEffect, useCallback, useState, useId } from 'react'
 
 export interface UseModalKeyboardOptions {
   /** Called when Escape is pressed */
@@ -92,7 +92,8 @@ export function useModalKeyboard(options: UseModalKeyboardOptions = {}): UseModa
   } = options
 
   const [selectedIndex, setSelectedIndex] = useState(initialIndex)
-  const listId = useRef(`modal-list-${Math.random().toString(36).slice(2, 9)}`)
+  // Generate a stable ID using React's useId hook for accessibility
+  const listId = useId()
 
   // Reset selection when modal opens/closes
   useEffect(() => {
@@ -199,7 +200,7 @@ export function useModalKeyboard(options: UseModalKeyboardOptions = {}): UseModa
     setSelectedIndex(initialIndex)
   }, [initialIndex])
 
-  const getItemId = (index: number) => `${listId.current}-item-${index}`
+  const getItemId = (index: number) => `${listId}-item-${index}`
 
   const listProps = {
     role: 'listbox' as const,

@@ -50,7 +50,7 @@ export const LEGACY_PASSWORD_REQUIREMENTS: PasswordRequirements = {
 /**
  * Special characters considered for password complexity
  */
-const SPECIAL_CHARS = /[!@#$%^&*()_+\-=\[\]{}|;:'",.<>\/?\\`~]/
+const SPECIAL_CHARS = /[!@#$%^&*()_+\-=[\]{}|;:'",.<>/?\\`~]/
 
 /**
  * Validate a password against requirements

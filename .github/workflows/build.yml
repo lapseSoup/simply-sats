@@ -10,7 +10,43 @@ on:
   workflow_dispatch:  # Allows manual trigger from GitHub UI
 
 jobs:
+  # Quality checks run first and fast
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true  # Report but don't block
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
   build:
+    needs: quality  # Only build if quality checks pass
     strategy:
       fail-fast: false
       matrix:
@@ -48,18 +84,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Security audit
-        run: npm audit --audit-level=high
-        continue-on-error: true
-
-      - name: Run linter
-        run: npm run lint --if-present
-        continue-on-error: true
-
-      - name: Run tests
-        run: npm run test:run --if-present
-        continue-on-error: true
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

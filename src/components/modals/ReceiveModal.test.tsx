@@ -82,7 +82,7 @@ describe('ReceiveModal', () => {
 
     expect(screen.getByRole('tab', { name: /payment/i })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /ordinals/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /identity/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /private/i })).toBeInTheDocument()
   })
 
   it('defaults to wallet/payment tab', () => {
@@ -115,11 +115,11 @@ describe('ReceiveModal', () => {
     expect(ordinalsTab).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('switches to identity tab and shows public key', () => {
+  it('switches to private tab and shows public key', () => {
     render(<ReceiveModal onClose={mockOnClose} />)
 
-    const identityTab = screen.getByRole('tab', { name: /identity/i })
-    fireEvent.click(identityTab)
+    const privateTab = screen.getByRole('tab', { name: /private/i })
+    fireEvent.click(privateTab)
 
     expect(screen.getByText('02abc123pubkey456')).toBeInTheDocument()
     expect(screen.getByText('Your Identity Public Key')).toBeInTheDocument()
@@ -131,13 +131,13 @@ describe('ReceiveModal', () => {
     expect(screen.getByRole('button', { name: /copy address/i })).toBeInTheDocument()
   })
 
-  it('has copy button in identity tab', () => {
+  it('has copy button in private tab', () => {
     render(<ReceiveModal onClose={mockOnClose} />)
 
-    const identityTab = screen.getByRole('tab', { name: /identity/i })
-    fireEvent.click(identityTab)
+    const privateTab = screen.getByRole('tab', { name: /private/i })
+    fireEvent.click(privateTab)
 
-    expect(screen.getByRole('button', { name: /copy public key/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /copy identity key/i })).toBeInTheDocument()
   })
 
   it('calls onClose when close button is clicked', () => {
@@ -169,25 +169,25 @@ describe('ReceiveModal', () => {
     }
   })
 
-  it('shows generate receive address button in identity tab', () => {
+  it('shows generate private address button in private tab', () => {
     render(<ReceiveModal onClose={mockOnClose} />)
 
-    const identityTab = screen.getByRole('tab', { name: /identity/i })
-    fireEvent.click(identityTab)
+    const privateTab = screen.getByRole('tab', { name: /private/i })
+    fireEvent.click(privateTab)
 
-    expect(screen.getByRole('button', { name: /generate receive address/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /generate private address/i })).toBeInTheDocument()
   })
 
   it('shows derive mode when generate button is clicked', () => {
     render(<ReceiveModal onClose={mockOnClose} />)
 
-    const identityTab = screen.getByRole('tab', { name: /identity/i })
-    fireEvent.click(identityTab)
+    const privateTab = screen.getByRole('tab', { name: /private/i })
+    fireEvent.click(privateTab)
 
-    const generateButton = screen.getByRole('button', { name: /generate receive address/i })
+    const generateButton = screen.getByRole('button', { name: /generate private address/i })
     fireEvent.click(generateButton)
 
-    expect(screen.getByText(/sender.*contact/i)).toBeInTheDocument()
+    expect(screen.getByText(/sender.*identity.*public.*key/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /back/i })).toBeInTheDocument()
   })
 
