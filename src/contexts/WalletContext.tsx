@@ -53,7 +53,8 @@ import {
 } from '../services/accounts'
 import {
   type TokenBalance,
-  syncTokenBalances
+  syncTokenBalances,
+  sendToken
 } from '../services/tokens'
 import {
   initAutoLock,
@@ -149,6 +150,7 @@ interface WalletContextType {
   handleLock: (amountSats: number, blocks: number) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleUnlock: (lock: LockedUTXO) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
+  handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
 
   // Utilities
   copyToClipboard: (text: string, feedback?: string) => Promise<void>
@@ -910,6 +912,47 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [wallet, fetchData])
 
+  // Token send handler
+  const handleSendToken = useCallback(async (
+    ticker: string,
+    protocol: 'bsv20' | 'bsv21',
+    amount: string,
+    toAddress: string
+  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
+    if (!wallet) return { success: false, error: 'No wallet loaded' }
+
+    try {
+      // Get funding UTXOs from the wallet
+      const fundingUtxos = await getUTXOs(wallet.walletAddress)
+
+      if (fundingUtxos.length === 0) {
+        return { success: false, error: 'No funding UTXOs available for transfer fee' }
+      }
+
+      const result = await sendToken(
+        wallet.walletAddress,
+        wallet.ordAddress,
+        wallet.walletWif,
+        wallet.ordWif,
+        fundingUtxos,
+        ticker,
+        protocol,
+        amount,
+        toAddress
+      )
+
+      if (result.success) {
+        // Refresh data
+        await fetchData()
+        await refreshTokens()
+      }
+
+      return result
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Token transfer failed' }
+    }
+  }, [wallet, fetchData, refreshTokens])
+
   // Settings
   const toggleDisplayUnit = useCallback(() => {
     const newValue = !displayInSats
@@ -1036,6 +1079,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleLock,
     handleUnlock,
     handleTransferOrdinal,
+    handleSendToken,
 
     // Utilities
     copyToClipboard,

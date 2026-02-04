@@ -567,7 +567,7 @@ export function calculateMaxSend(utxos: UTXO[]): { maxSats: number; fee: number;
 }
 
 // Broadcast a signed transaction - try multiple endpoints for non-standard scripts
-async function broadcastTransaction(tx: Transaction): Promise<string> {
+export async function broadcastTransaction(tx: Transaction): Promise<string> {
   const txhex = tx.toHex()
   console.log('Broadcasting transaction:', txhex)
 

@@ -18,49 +18,59 @@ import {
   updateAccountSetting,
   getNextAccountNumber,
   isAccountSystemInitialized,
-  DEFAULT_ACCOUNT_SETTINGS,
-  type Account,
-  type AccountSettings
+  DEFAULT_ACCOUNT_SETTINGS
 } from './accounts'
 import type { WalletKeys } from './wallet'
 
+// Use vi.hoisted to define variables that can be used in mocks
+const { mockDb, resetMockDb, autoIncrement } = vi.hoisted(() => {
+  const state = {
+    db: { accounts: [] as unknown[], account_settings: [] as unknown[] },
+    counter: 1
+  }
+  return {
+    mockDb: state,
+    resetMockDb: () => {
+      state.db = { accounts: [], account_settings: [] }
+      state.counter = 1
+    },
+    autoIncrement: {
+      get: () => state.counter,
+      next: () => state.counter++
+    }
+  }
+})
+
 // Mock the database module
 vi.mock('./database', () => {
-  let mockDb: Record<string, unknown[]> = {
-    accounts: [],
-    account_settings: []
-  }
-
-  let autoIncrement = 1
-
   return {
     getDatabase: () => ({
       select: vi.fn(async (query: string, params?: unknown[]) => {
         // Parse the query to determine what to return
         if (query.includes('FROM accounts')) {
           if (query.includes('WHERE is_active = 1')) {
-            return mockDb.accounts.filter((a: unknown) => (a as { is_active: number }).is_active === 1)
+            return mockDb.db.accounts.filter((a: unknown) => (a as { is_active: number }).is_active === 1)
           }
           if (query.includes('WHERE id = $1') && params) {
-            return mockDb.accounts.filter((a: unknown) => (a as { id: number }).id === params[0])
+            return mockDb.db.accounts.filter((a: unknown) => (a as { id: number }).id === params[0])
           }
           if (query.includes('WHERE identity_address = $1') && params) {
-            return mockDb.accounts.filter((a: unknown) => (a as { identity_address: string }).identity_address === params[0])
+            return mockDb.db.accounts.filter((a: unknown) => (a as { identity_address: string }).identity_address === params[0])
           }
-          return mockDb.accounts
+          return mockDb.db.accounts
         }
         if (query.includes('FROM account_settings')) {
           if (params) {
-            return mockDb.account_settings.filter((s: unknown) => (s as { account_id: number }).account_id === params[0])
+            return mockDb.db.account_settings.filter((s: unknown) => (s as { account_id: number }).account_id === params[0])
           }
-          return mockDb.account_settings
+          return mockDb.db.account_settings
         }
         return []
       }),
       execute: vi.fn(async (query: string, params?: unknown[]) => {
         if (query.includes('INSERT INTO accounts')) {
           const newAccount = {
-            id: autoIncrement++,
+            id: autoIncrement.next(),
             name: params?.[0],
             identity_address: params?.[1],
             encrypted_keys: params?.[2],
@@ -68,15 +78,15 @@ vi.mock('./database', () => {
             created_at: params?.[3],
             last_accessed_at: params?.[3]
           }
-          mockDb.accounts.push(newAccount)
+          mockDb.db.accounts.push(newAccount)
           return { lastInsertId: newAccount.id }
         }
         if (query.includes('UPDATE accounts SET is_active = 0')) {
-          mockDb.accounts = mockDb.accounts.map((a: unknown) => ({ ...(a as object), is_active: 0 }))
-          return { rowsAffected: mockDb.accounts.length }
+          mockDb.db.accounts = mockDb.db.accounts.map((a: unknown) => ({ ...(a as object), is_active: 0 }))
+          return { rowsAffected: mockDb.db.accounts.length }
         }
         if (query.includes('UPDATE accounts SET is_active = 1') && params) {
-          mockDb.accounts = mockDb.accounts.map((a: unknown) => {
+          mockDb.db.accounts = mockDb.db.accounts.map((a: unknown) => {
             const account = a as { id: number; is_active: number; last_accessed_at: number }
             if (account.id === params[1]) {
               return { ...account, is_active: 1, last_accessed_at: params[0] }
@@ -86,7 +96,7 @@ vi.mock('./database', () => {
           return { rowsAffected: 1 }
         }
         if (query.includes('UPDATE accounts SET name = $1') && params) {
-          mockDb.accounts = mockDb.accounts.map((a: unknown) => {
+          mockDb.db.accounts = mockDb.db.accounts.map((a: unknown) => {
             const account = a as { id: number; name: string }
             if (account.id === params[1]) {
               return { ...account, name: params[0] }
@@ -96,20 +106,20 @@ vi.mock('./database', () => {
           return { rowsAffected: 1 }
         }
         if (query.includes('DELETE FROM accounts') && params) {
-          mockDb.accounts = mockDb.accounts.filter((a: unknown) => (a as { id: number }).id !== params[0])
+          mockDb.db.accounts = mockDb.db.accounts.filter((a: unknown) => (a as { id: number }).id !== params[0])
           return { rowsAffected: 1 }
         }
         if (query.includes('DELETE FROM account_settings') && params) {
-          mockDb.account_settings = mockDb.account_settings.filter((s: unknown) => (s as { account_id: number }).account_id !== params[0])
+          mockDb.db.account_settings = mockDb.db.account_settings.filter((s: unknown) => (s as { account_id: number }).account_id !== params[0])
           return { rowsAffected: 1 }
         }
         if (query.includes('INSERT OR REPLACE INTO account_settings') && params) {
           // Remove existing setting
-          mockDb.account_settings = mockDb.account_settings.filter(
+          mockDb.db.account_settings = mockDb.db.account_settings.filter(
             (s: unknown) => !((s as { account_id: number; setting_key: string }).account_id === params[0] && (s as { account_id: number; setting_key: string }).setting_key === params[1])
           )
           // Add new setting
-          mockDb.account_settings.push({
+          mockDb.db.account_settings.push({
             account_id: params[0],
             setting_key: params[1],
             setting_value: params[2]
@@ -118,13 +128,7 @@ vi.mock('./database', () => {
         }
         return { rowsAffected: 0 }
       })
-    }),
-    // Export for test cleanup
-    __resetMockDb: () => {
-      mockDb = { accounts: [], account_settings: [] }
-      autoIncrement = 1
-    },
-    __getMockDb: () => mockDb
+    })
   }
 })
 
@@ -146,6 +150,7 @@ vi.mock('./crypto', () => ({
 function createMockWalletKeys(suffix = '1'): WalletKeys {
   return {
     mnemonic: `test mnemonic words ${suffix}`,
+    walletType: 'yours',
     walletWif: `wallet-wif-${suffix}`,
     walletAddress: `wallet-address-${suffix}`,
     walletPubKey: `wallet-pubkey-${suffix}`,
@@ -159,10 +164,9 @@ function createMockWalletKeys(suffix = '1'): WalletKeys {
 }
 
 describe('Account Management Service', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     // Reset mock database before each test
-    const { __resetMockDb } = await import('./database')
-    ;(__resetMockDb as () => void)()
+    resetMockDb()
   })
 
   afterEach(() => {

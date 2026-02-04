@@ -14,7 +14,7 @@ interface TokensTabProps {
 }
 
 export function TokensTab({ onRefresh }: TokensTabProps) {
-  const { tokenBalances, tokensSyncing: loading, refreshTokens, showToast } = useWallet()
+  const { tokenBalances, tokensSyncing: loading, refreshTokens, showToast, handleSendToken } = useWallet()
 
   const handleRefresh = async () => {
     if (onRefresh) {
@@ -43,12 +43,51 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
     setSending(true)
     setError('')
 
-    // Token sending not yet implemented - placeholder
-    showToast('Token sending coming soon!')
-    setSendModalOpen(false)
-    setSendAmount('')
-    setSendAddress('')
-    setSelectedToken(null)
+    try {
+      // Validate address
+      if (!/^[13][a-km-zA-HJ-NP-Z1-9]{24,33}$/.test(sendAddress.trim())) {
+        setError('Invalid BSV address format')
+        setSending(false)
+        return
+      }
+
+      // Parse amount - convert to smallest unit (integer string)
+      const amountParsed = parseFloat(sendAmount)
+      if (isNaN(amountParsed) || amountParsed <= 0) {
+        setError('Invalid amount')
+        setSending(false)
+        return
+      }
+
+      // Convert to smallest unit based on decimals
+      const multiplier = Math.pow(10, selectedToken.token.decimals)
+      const amountInSmallestUnit = Math.floor(amountParsed * multiplier).toString()
+
+      // Determine ticker - for BSV21, use contract ID
+      const ticker = selectedToken.token.protocol === 'bsv21'
+        ? selectedToken.token.contractTxid || selectedToken.token.ticker
+        : selectedToken.token.ticker
+
+      const result = await handleSendToken(
+        ticker,
+        selectedToken.token.protocol,
+        amountInSmallestUnit,
+        sendAddress.trim()
+      )
+
+      if (result.success) {
+        showToast(`Sent ${sendAmount} ${selectedToken.token.ticker}!`)
+        setSendModalOpen(false)
+        setSendAmount('')
+        setSendAddress('')
+        setSelectedToken(null)
+      } else {
+        setError(result.error || 'Token transfer failed')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Token transfer failed')
+    }
+
     setSending(false)
   }
 

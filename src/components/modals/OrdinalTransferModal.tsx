@@ -196,7 +196,7 @@ export function OrdinalTransferModal({
           <button
             type="button"
             className="primary-button danger"
-            onClick={handleTransfer}
+            onClick={handleTransferClick}
             disabled={loading || !toAddress.trim()}
           >
             {loading ? 'Transferring...' : 'Transfer Ordinal'}

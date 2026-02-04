@@ -5,7 +5,16 @@
  * balance tracking, and token transfers.
  */
 
+import { Transaction, PrivateKey, P2PKH, Script } from '@bsv/sdk'
+
+// Opcodes for inscription scripts
+const OP_FALSE = 0x00
+const OP_IF = 0x63
+const OP_ENDIF = 0x68
+const OP_0 = 0x00
+const OP_1 = 0x51
 import { getDatabase } from './database'
+import { broadcastTransaction, calculateTxFee, type UTXO } from './wallet'
 
 // GorillaPool API endpoints
 const GORILLAPOOL_MAINNET = 'https://ordinals.gorillapool.io'
@@ -649,4 +658,388 @@ export async function syncTokenBalances(
   }
 
   return balances
+}
+
+// ============================================
+// Token Transfer Operations
+// ============================================
+
+/**
+ * Token UTXO type (from GorillaPool API)
+ */
+export interface TokenUTXO {
+  txid: string
+  vout: number
+  satoshis: number
+  script: string
+  height: number
+  idx: number
+  tick: string
+  id?: string // BSV21 contract ID
+  amt: string
+  status: number // 1 = confirmed
+}
+
+/**
+ * Create a BSV-20 transfer inscription script
+ *
+ * Format: OP_FALSE OP_IF "ord" <1> <content-type> OP_0 <content> OP_ENDIF
+ * Content: {"p":"bsv-20","op":"transfer","tick":"TOKEN","amt":"AMOUNT"}
+ */
+function createBsv20TransferInscription(ticker: string, amount: string): Script {
+  const contentType = Array.from(new TextEncoder().encode('application/bsv-20'))
+  const content = Array.from(new TextEncoder().encode(JSON.stringify({
+    p: 'bsv-20',
+    op: 'transfer',
+    tick: ticker,
+    amt: amount
+  })))
+  const ordMarker = Array.from(new TextEncoder().encode('ord'))
+
+  // Build inscription script: OP_FALSE OP_IF "ord" <1> <content-type> OP_0 <content> OP_ENDIF
+  const script = new Script()
+
+  // OP_FALSE OP_IF
+  script.writeOpCode(OP_FALSE)
+  script.writeOpCode(OP_IF)
+
+  // "ord" marker
+  script.writeBin(ordMarker)
+
+  // Push 1 (content-type tag)
+  script.writeOpCode(OP_1)
+
+  // Push content type
+  script.writeBin(contentType)
+
+  // OP_0 (content tag)
+  script.writeOpCode(OP_0)
+
+  // Push content
+  script.writeBin(content)
+
+  // OP_ENDIF
+  script.writeOpCode(OP_ENDIF)
+
+  return script
+}
+
+/**
+ * Create a BSV-21 transfer inscription script
+ *
+ * Format: {"p":"bsv-20","op":"transfer","id":"CONTRACT_ID","amt":"AMOUNT"}
+ */
+function createBsv21TransferInscription(contractId: string, amount: string): Script {
+  const contentType = Array.from(new TextEncoder().encode('application/bsv-20'))
+  const content = Array.from(new TextEncoder().encode(JSON.stringify({
+    p: 'bsv-20',
+    op: 'transfer',
+    id: contractId,
+    amt: amount
+  })))
+  const ordMarker = Array.from(new TextEncoder().encode('ord'))
+
+  const script = new Script()
+  script.writeOpCode(OP_FALSE)
+  script.writeOpCode(OP_IF)
+  script.writeBin(ordMarker)
+  script.writeOpCode(OP_1)
+  script.writeBin(contentType)
+  script.writeOpCode(OP_0)
+  script.writeBin(content)
+  script.writeOpCode(OP_ENDIF)
+
+  return script
+}
+
+/**
+ * Fetch token UTXOs for sending
+ */
+export async function getTokenUtxosForSend(
+  address: string,
+  ticker: string,
+  protocol: 'bsv20' | 'bsv21' = 'bsv20'
+): Promise<TokenUTXO[]> {
+  try {
+    const endpoint = protocol === 'bsv21'
+      ? `${getBaseUrl()}/api/bsv20/${address}/id/${ticker}`
+      : `${getBaseUrl()}/api/bsv20/${address}/tick/${ticker}`
+
+    const response = await fetch(endpoint)
+
+    if (!response.ok) {
+      console.error('[Tokens] Failed to fetch token UTXOs:', response.status)
+      return []
+    }
+
+    const data = await response.json()
+
+    // Filter for confirmed UTXOs (status === 1)
+    return data.filter((item: TokenUTXO) => item.status === 1)
+  } catch (e) {
+    console.error('[Tokens] Error fetching token UTXOs for send:', e)
+    return []
+  }
+}
+
+/**
+ * Transfer BSV20/BSV21 tokens to another address
+ *
+ * @param tokenWif - Private key WIF for the token-holding address
+ * @param tokenUtxos - Token UTXOs to spend
+ * @param ticker - Token ticker (BSV20) or contract ID (BSV21)
+ * @param protocol - Token protocol (bsv20 or bsv21)
+ * @param amount - Amount to send (as string to handle bigint)
+ * @param toAddress - Recipient address
+ * @param fundingWif - Private key WIF for funding (for the fee)
+ * @param fundingUtxos - UTXOs to use for paying the fee
+ * @param changeAddress - Address for change (both token change and BSV change)
+ * @returns Transaction ID
+ */
+export async function transferToken(
+  tokenWif: string,
+  tokenUtxos: TokenUTXO[],
+  ticker: string,
+  protocol: 'bsv20' | 'bsv21',
+  amount: string,
+  toAddress: string,
+  fundingWif: string,
+  fundingUtxos: UTXO[],
+  changeAddress: string
+): Promise<{ success: boolean; txid?: string; error?: string }> {
+  try {
+    const tokenPrivateKey = PrivateKey.fromWif(tokenWif)
+    const tokenPublicKey = tokenPrivateKey.toPublicKey()
+    const tokenFromAddress = tokenPublicKey.toAddress()
+    const tokenSourceLockingScript = new P2PKH().lock(tokenFromAddress)
+
+    const fundingPrivateKey = PrivateKey.fromWif(fundingWif)
+    const fundingPublicKey = fundingPrivateKey.toPublicKey()
+    const fundingFromAddress = fundingPublicKey.toAddress()
+    const fundingSourceLockingScript = new P2PKH().lock(fundingFromAddress)
+
+    // Calculate total tokens available
+    let totalTokensAvailable = BigInt(0)
+    for (const utxo of tokenUtxos) {
+      totalTokensAvailable += BigInt(utxo.amt)
+    }
+
+    const amountToSend = BigInt(amount)
+
+    if (amountToSend > totalTokensAvailable) {
+      return {
+        success: false,
+        error: `Insufficient token balance. Have ${totalTokensAvailable}, need ${amountToSend}`
+      }
+    }
+
+    const tx = new Transaction()
+
+    // Add token inputs
+    let tokensAdded = BigInt(0)
+    const tokenInputsUsed: TokenUTXO[] = []
+
+    for (const utxo of tokenUtxos) {
+      if (tokensAdded >= amountToSend) break
+
+      tx.addInput({
+        sourceTXID: utxo.txid,
+        sourceOutputIndex: utxo.vout,
+        unlockingScriptTemplate: new P2PKH().unlock(
+          tokenPrivateKey,
+          'all',
+          false,
+          utxo.satoshis,
+          tokenSourceLockingScript
+        ),
+        sequence: 0xffffffff
+      })
+
+      tokensAdded += BigInt(utxo.amt)
+      tokenInputsUsed.push(utxo)
+    }
+
+    // Calculate fee
+    const numOutputs = (tokensAdded > amountToSend) ? 3 : 2 // recipient + (token change?) + BSV change
+    const numFundingInputs = Math.min(fundingUtxos.length, 2)
+    const estimatedFee = calculateTxFee(tokenInputsUsed.length + numFundingInputs, numOutputs)
+
+    // Select funding UTXOs
+    const fundingToUse: UTXO[] = []
+    let totalFunding = 0
+
+    for (const utxo of fundingUtxos) {
+      fundingToUse.push(utxo)
+      totalFunding += utxo.satoshis
+
+      if (totalFunding >= estimatedFee + 100) break
+    }
+
+    if (totalFunding < estimatedFee) {
+      return {
+        success: false,
+        error: `Insufficient BSV for fee (need ~${estimatedFee} sats)`
+      }
+    }
+
+    // Add funding inputs
+    for (const utxo of fundingToUse) {
+      tx.addInput({
+        sourceTXID: utxo.txid,
+        sourceOutputIndex: utxo.vout,
+        unlockingScriptTemplate: new P2PKH().unlock(
+          fundingPrivateKey,
+          'all',
+          false,
+          utxo.satoshis,
+          fundingSourceLockingScript
+        ),
+        sequence: 0xffffffff
+      })
+    }
+
+    // Create inscription script for recipient
+    const recipientInscription = protocol === 'bsv21'
+      ? createBsv21TransferInscription(ticker, amount)
+      : createBsv20TransferInscription(ticker, amount)
+
+    // Build recipient output script: inscription + P2PKH
+    const recipientP2PKH = new P2PKH().lock(toAddress)
+    const recipientScript = Script.fromBinary([
+      ...recipientInscription.toBinary(),
+      ...recipientP2PKH.toBinary()
+    ])
+
+    // Add recipient output (1 sat for the inscription)
+    tx.addOutput({
+      lockingScript: recipientScript,
+      satoshis: 1
+    })
+
+    // Add token change output if there's leftover tokens
+    const tokenChange = tokensAdded - amountToSend
+    if (tokenChange > 0n) {
+      const changeInscription = protocol === 'bsv21'
+        ? createBsv21TransferInscription(ticker, tokenChange.toString())
+        : createBsv20TransferInscription(ticker, tokenChange.toString())
+
+      const changeP2PKH = new P2PKH().lock(changeAddress)
+      const changeScript = Script.fromBinary([
+        ...changeInscription.toBinary(),
+        ...changeP2PKH.toBinary()
+      ])
+
+      tx.addOutput({
+        lockingScript: changeScript,
+        satoshis: 1
+      })
+    }
+
+    // Calculate BSV change
+    let totalInput = totalFunding
+    for (const utxo of tokenInputsUsed) {
+      totalInput += utxo.satoshis
+    }
+
+    const outputSats = 1 + (tokenChange > 0n ? 1 : 0) // recipient + optional token change
+    const actualFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, numOutputs)
+    const bsvChange = totalInput - outputSats - actualFee
+
+    // Add BSV change output
+    if (bsvChange > 0) {
+      tx.addOutput({
+        lockingScript: new P2PKH().lock(fundingFromAddress),
+        satoshis: bsvChange
+      })
+    }
+
+    await tx.sign()
+    const txid = await broadcastTransaction(tx)
+
+    console.log(`[Tokens] Transferred ${amount} ${ticker} to ${toAddress}, txid: ${txid}`)
+
+    return { success: true, txid }
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Token transfer failed'
+    console.error('[Tokens] Transfer error:', e)
+    return { success: false, error }
+  }
+}
+
+/**
+ * Simple token send function that handles UTXO selection
+ */
+export async function sendToken(
+  walletAddress: string,
+  ordAddress: string,
+  walletWif: string,
+  ordWif: string,
+  fundingUtxos: UTXO[],
+  ticker: string,
+  protocol: 'bsv20' | 'bsv21',
+  amount: string,
+  toAddress: string
+): Promise<{ success: boolean; txid?: string; error?: string }> {
+  try {
+    // Fetch token UTXOs from both addresses
+    const [walletTokenUtxos, ordTokenUtxos] = await Promise.all([
+      getTokenUtxosForSend(walletAddress, protocol === 'bsv21' ? ticker : ticker, protocol),
+      getTokenUtxosForSend(ordAddress, protocol === 'bsv21' ? ticker : ticker, protocol)
+    ])
+
+    // Combine and sort by amount (largest first for efficient selection)
+    const allTokenUtxos = [...walletTokenUtxos, ...ordTokenUtxos]
+      .sort((a, b) => Number(BigInt(b.amt) - BigInt(a.amt)))
+
+    if (allTokenUtxos.length === 0) {
+      return { success: false, error: 'No token UTXOs found' }
+    }
+
+    // Determine which WIF to use based on where tokens are
+    // Use the address that has the most tokens
+    const walletTotal = walletTokenUtxos.reduce((sum, u) => sum + BigInt(u.amt), 0n)
+    const ordTotal = ordTokenUtxos.reduce((sum, u) => sum + BigInt(u.amt), 0n)
+
+    const useOrdWallet = ordTotal > walletTotal
+    const tokenWif = useOrdWallet ? ordWif : walletWif
+    const changeAddress = useOrdWallet ? ordAddress : walletAddress
+
+    // Filter UTXOs to match the selected wallet
+    const tokenUtxos = useOrdWallet ? ordTokenUtxos : walletTokenUtxos
+
+    if (tokenUtxos.length === 0) {
+      // Fall back to other wallet if primary has no UTXOs
+      const fallbackUtxos = useOrdWallet ? walletTokenUtxos : ordTokenUtxos
+      const fallbackWif = useOrdWallet ? walletWif : ordWif
+      const fallbackChange = useOrdWallet ? walletAddress : ordAddress
+
+      return transferToken(
+        fallbackWif,
+        fallbackUtxos,
+        ticker,
+        protocol,
+        amount,
+        toAddress,
+        walletWif,
+        fundingUtxos,
+        fallbackChange
+      )
+    }
+
+    return transferToken(
+      tokenWif,
+      tokenUtxos,
+      ticker,
+      protocol,
+      amount,
+      toAddress,
+      walletWif,
+      fundingUtxos,
+      changeAddress
+    )
+  } catch (e) {
+    const error = e instanceof Error ? e.message : 'Token send failed'
+    console.error('[Tokens] Send error:', e)
+    return { success: false, error }
+  }
 }
