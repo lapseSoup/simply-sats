@@ -26,7 +26,8 @@ import {
   RestoreModal,
   SettingsModal,
   LockScreenModal,
-  OrdinalTransferModal
+  OrdinalTransferModal,
+  AccountModal
 } from './components/modals'
 import {
   ActivityTab,
@@ -53,7 +54,8 @@ import { getDerivedAddresses } from './services/database'
 import { needsInitialSync } from './services/sync'
 
 type Tab = 'activity' | 'ordinals' | 'tokens' | 'locks'
-type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | 'brc100' | 'lock' | 'transfer-ordinal' | null
+type Modal = 'send' | 'receive' | 'settings' | 'mnemonic' | 'restore' | 'ordinal' | 'brc100' | 'lock' | 'transfer-ordinal' | 'account' | null
+type AccountModalMode = 'create' | 'import' | 'manage'
 
 function WalletApp() {
   const {
@@ -73,13 +75,20 @@ function WalletApp() {
     unlockWallet,
     // Token state
     tokenBalances,
-    refreshTokens
+    refreshTokens,
+    // Multi-account state
+    accounts,
+    activeAccountId,
+    createNewAccount,
+    deleteAccount,
+    renameAccount
   } = useWallet()
 
   const { copyFeedback, showToast } = useUI()
 
   const [activeTab, setActiveTab] = useState<Tab>('activity')
   const [modal, setModal] = useState<Modal>(null)
+  const [accountModalMode, setAccountModalMode] = useState<AccountModalMode>('manage')
 
   // Tab order for keyboard navigation
   const tabOrder: Tab[] = ['activity', 'ordinals', 'tokens', 'locks']
@@ -122,6 +131,30 @@ function WalletApp() {
 
   // Payment alert
   const [newPaymentAlert, setNewPaymentAlert] = useState<PaymentNotification | null>(null)
+
+  // Account modal handlers
+  const handleAccountModalOpen = (mode: AccountModalMode) => {
+    setAccountModalMode(mode)
+    setModal('account')
+  }
+
+  // Handler for creating account from modal - returns mnemonic
+  const handleAccountCreate = async (name: string): Promise<string | null> => {
+    // For new accounts, we need a password - use empty for now (modal will handle)
+    // The AccountModal handles password collection internally
+    const password = '' // Will be prompted in modal
+    const success = await createNewAccount(name, password)
+    if (success && wallet?.mnemonic) {
+      return wallet.mnemonic
+    }
+    return null
+  }
+
+  // Handler for importing account from mnemonic
+  const handleAccountImport = async (_name: string, _mnemonic: string): Promise<boolean> => {
+    // Import is handled through restore flow
+    return false
+  }
 
   // Set up BRC-100 request handler
   useEffect(() => {
@@ -342,7 +375,10 @@ function WalletApp() {
     <div className="app">
       <SkipLink targetId="main-content">Skip to main content</SkipLink>
 
-      <Header onSettingsClick={() => setModal('settings')} />
+      <Header
+        onSettingsClick={() => setModal('settings')}
+        onAccountModalOpen={handleAccountModalOpen}
+      />
 
       <BalanceDisplay />
 
@@ -464,6 +500,19 @@ function WalletApp() {
       )}
       {modal === 'mnemonic' && newMnemonic && (
         <MnemonicModal mnemonic={newMnemonic} onConfirm={handleMnemonicConfirm} />
+      )}
+      {modal === 'account' && (
+        <AccountModal
+          isOpen={true}
+          onClose={() => setModal(null)}
+          mode={accountModalMode}
+          accounts={accounts}
+          activeAccountId={activeAccountId}
+          onCreateAccount={handleAccountCreate}
+          onImportAccount={handleAccountImport}
+          onDeleteAccount={deleteAccount}
+          onRenameAccount={renameAccount}
+        />
       )}
 
       {/* Unlock Confirm Modal */}

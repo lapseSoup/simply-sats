@@ -25,7 +25,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     disconnectApp,
     handleDeleteWallet,
     performSync,
-    fetchData
+    fetchData,
+    // Auto-lock settings
+    autoLockMinutes,
+    setAutoLockMinutes,
+    lockWallet
   } = useWallet()
   const { copyToClipboard, showToast } = useUI()
 
@@ -298,6 +302,61 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <div className="settings-section">
             <div className="settings-section-title">Security</div>
             <div className="settings-card">
+              {/* Auto-Lock Timer */}
+              <div className="settings-row">
+                <div className="settings-row-left">
+                  <div className="settings-row-icon" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <circle cx="8" cy="8" r="6" />
+                      <path d="M8 4V8L10.5 10.5" />
+                    </svg>
+                  </div>
+                  <div className="settings-row-content">
+                    <div className="settings-row-label">Auto-Lock Timer</div>
+                    <div className="settings-row-value">
+                      <select
+                        value={autoLockMinutes}
+                        onChange={(e) => setAutoLockMinutes(parseInt(e.target.value))}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label="Auto-lock timeout"
+                        style={{
+                          padding: '4px 8px',
+                          border: '1px solid var(--border)',
+                          borderRadius: '6px',
+                          background: 'var(--bg-primary)',
+                          color: 'var(--text-primary)',
+                          fontSize: '13px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="0">Never</option>
+                        <option value="5">5 minutes</option>
+                        <option value="10">10 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">1 hour</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Lock Now Button */}
+              <div className="settings-row" onClick={() => { lockWallet(); onClose(); }}>
+                <div className="settings-row-left">
+                  <div className="settings-row-icon" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="3" y="7" width="10" height="7" rx="1" />
+                      <path d="M5 7V5C5 3.34 6.34 2 8 2C9.66 2 11 3.34 11 5V7" />
+                    </svg>
+                  </div>
+                  <div className="settings-row-content">
+                    <div className="settings-row-label">Lock Wallet Now</div>
+                    <div className="settings-row-value">Require password to unlock</div>
+                  </div>
+                </div>
+                <span className="settings-row-arrow" aria-hidden="true">→</span>
+              </div>
+
               {wallet.mnemonic && (
                 <div className="settings-row" onClick={handleShowMnemonic}>
                   <div className="settings-row-left">

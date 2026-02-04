@@ -142,6 +142,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
               onClick={() => setReceiveType('wallet')}
               role="tab"
               aria-selected={receiveType === 'wallet'}
+              title="Standard payment address"
             >
               Payment
             </button>
@@ -150,6 +151,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
               onClick={() => setReceiveType('ordinals')}
               role="tab"
               aria-selected={receiveType === 'ordinals'}
+              title="Address for receiving NFTs and inscriptions"
             >
               Ordinals
             </button>
@@ -157,14 +159,20 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
               className={`pill-tab ${receiveType === 'brc100' ? 'active' : ''}`}
               onClick={() => {
                 setReceiveType('brc100')
-                setShowDeriveMode(false)
+                // If user has contacts, go directly to derive mode
+                if (localContacts.length > 0) {
+                  setShowDeriveMode(true)
+                } else {
+                  setShowDeriveMode(false)
+                }
                 setSenderPubKeyInput('')
                 setDerivedReceiveAddress('')
               }}
               role="tab"
               aria-selected={receiveType === 'brc100'}
+              title="Generate unique address per sender for enhanced privacy"
             >
-              Identity
+              Private
             </button>
           </div>
 
@@ -172,6 +180,12 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
             <div className="qr-container compact">
               {!showDeriveMode ? (
                 <>
+                  <div className="private-intro" style={{ textAlign: 'center', marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>
+                      Private addresses let you receive payments without reusing the same address.
+                      Each sender gets a unique address derived from your identity key.
+                    </div>
+                  </div>
                   <div className="brc100-qr-label" style={{ marginBottom: 8 }}>Your Identity Public Key</div>
                   <div className="qr-wrapper compact">
                     <QRCodeSVG value={wallet.identityPubKey} size={100} level="L" bgColor="#fff" fgColor="#000" />
@@ -183,11 +197,11 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                     className="copy-btn compact"
                     onClick={() => copyToClipboard(wallet.identityPubKey, 'Public key copied!')}
                   >
-                    📋 Copy Public Key
+                    Copy Identity Key
                   </button>
                   <button
-                    className="btn btn-secondary"
-                    style={{ marginTop: 8 }}
+                    className="btn btn-primary"
+                    style={{ marginTop: 12, width: '100%' }}
                     onClick={() => {
                       setShowDeriveMode(true)
                       setSenderPubKeyInput('')
@@ -198,33 +212,51 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                       setCurrentInvoiceIndex(1)
                     }}
                   >
-                    🔐 Generate Receive Address
+                    Generate Private Address
                   </button>
-                  <div className="address-type-hint">
-                    Share your public key with sender for BRC-100 payments
+                  <div className="address-type-hint" style={{ marginTop: 8 }}>
+                    Share your identity key with the sender, then generate a unique address for them
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="form-group" style={{ width: '100%', marginBottom: 12 }}>
-                    <label className="form-label">Sender (Contact)</label>
-                    {localContacts.length > 0 && (
-                      <select
-                        className="form-input"
-                        value={selectedContactId || ''}
-                        onChange={(e) => handleContactSelect(e.target.value ? parseInt(e.target.value) : null)}
-                        style={{ marginBottom: 8 }}
-                      >
-                        <option value="">-- Select a contact --</option>
-                        {localContacts.map(c => (
-                          <option key={c.id} value={c.id}>{c.label}</option>
+                  {/* Quick Contact Selection */}
+                  {localContacts.length > 0 && !derivedReceiveAddress && (
+                    <div className="contact-quick-select" style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                        Quick select a contact:
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {localContacts.slice(0, 4).map(c => (
+                          <button
+                            key={c.id}
+                            className={`contact-chip ${selectedContactId === c.id ? 'active' : ''}`}
+                            onClick={() => handleContactSelect(c.id!)}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '16px',
+                              border: selectedContactId === c.id ? '1px solid var(--primary)' : '1px solid var(--border)',
+                              background: selectedContactId === c.id ? 'var(--primary-bg)' : 'transparent',
+                              color: 'var(--text-primary)',
+                              fontSize: 12,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {c.label}
+                          </button>
                         ))}
-                      </select>
-                    )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-group" style={{ width: '100%', marginBottom: 12 }}>
+                    <label className="form-label" style={{ fontSize: 12, marginBottom: 6 }}>
+                      {localContacts.length > 0 ? 'Or enter public key manually:' : "Sender's Identity Public Key"}
+                    </label>
                     <input
                       type="text"
                       className="form-input mono"
-                      placeholder="Or enter sender's identity public key..."
+                      placeholder="Enter sender's identity public key (66 characters)..."
                       value={senderPubKeyInput}
                       onChange={(e) => handlePubKeyChange(e.target.value.trim())}
                       style={{ fontSize: 11 }}
@@ -236,16 +268,16 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                           <button
                             className="btn btn-small"
                             onClick={() => setShowAddContact(true)}
-                            style={{ fontSize: 11, padding: '4px 8px' }}
+                            style={{ fontSize: 12, padding: '6px 12px' }}
                           >
-                            ➕ Save as Contact
+                            + Save as Contact
                           </button>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
                             <input
                               type="text"
                               className="form-input"
-                              placeholder="Enter contact name..."
+                              placeholder="Contact name (e.g., Alice, Bob's Shop)..."
                               value={newContactLabel}
                               onChange={(e) => setNewContactLabel(e.target.value)}
                               style={{ fontSize: 14, padding: '10px 12px', width: '100%', boxSizing: 'border-box' }}
@@ -267,7 +299,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                                 onClick={handleSaveContact}
                                 style={{ flex: 1 }}
                               >
-                                Save
+                                Save Contact
                               </button>
                             </div>
                           </div>
@@ -275,35 +307,48 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                       </div>
                     )}
                   </div>
+
                   {derivedReceiveAddress ? (
                     <>
-                      <div className="brc100-qr-label" style={{ marginBottom: 8 }}>
-                        Derived Payment Address #{currentInvoiceIndex}
+                      <div className="derived-result" style={{
+                        background: 'var(--bg-success, rgba(34, 197, 94, 0.1))',
+                        border: '1px solid var(--border-success, rgba(34, 197, 94, 0.3))',
+                        borderRadius: 12,
+                        padding: 16,
+                        marginTop: 8
+                      }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, textAlign: 'center' }}>
+                          Private Address #{currentInvoiceIndex}
+                        </div>
+                        <div className="qr-wrapper compact" style={{ display: 'flex', justifyContent: 'center' }}>
+                          <QRCodeSVG value={derivedReceiveAddress} size={100} level="M" bgColor="#fff" fgColor="#000" />
+                        </div>
+                        <div className="address-display compact" style={{ marginTop: 12, textAlign: 'center' }}>
+                          {derivedReceiveAddress}
+                        </div>
+                        <button
+                          className="btn btn-primary"
+                          style={{ width: '100%', marginTop: 12 }}
+                          onClick={handleCopyAndSave}
+                        >
+                          Copy & Save Address
+                        </button>
                       </div>
-                      <div className="qr-wrapper compact">
-                        <QRCodeSVG value={derivedReceiveAddress} size={100} level="M" bgColor="#fff" fgColor="#000" />
-                      </div>
-                      <div className="address-display compact" style={{ marginTop: 12 }}>
-                        {derivedReceiveAddress}
-                      </div>
-                      <button
-                        className="copy-btn compact"
-                        onClick={handleCopyAndSave}
-                      >
-                        📋 Copy & Save Address
-                      </button>
-                      <div className="address-type-hint" style={{ marginTop: 4, fontSize: 10 }}>
-                        New address after funds received
+                      <div className="address-type-hint" style={{ marginTop: 8, fontSize: 11, textAlign: 'center' }}>
+                        This address is unique to this sender. A new one will be generated after payment.
                       </div>
                     </>
                   ) : (
-                    <div className="address-type-hint" style={{ padding: '40px 0' }}>
-                      {localContacts.length > 0 ? 'Select a contact or enter public key' : 'Enter sender\'s public key to generate a unique receive address'}
+                    <div className="address-type-hint" style={{ padding: '24px 0', textAlign: 'center' }}>
+                      {localContacts.length > 0
+                        ? 'Select a contact above or enter a public key'
+                        : 'Enter the sender\'s public key to generate a unique address'}
                     </div>
                   )}
+
                   <button
                     className="btn btn-secondary"
-                    style={{ marginTop: 8 }}
+                    style={{ marginTop: 16, width: '100%' }}
                     onClick={() => {
                       setShowDeriveMode(false)
                       setSenderPubKeyInput('')
@@ -312,11 +357,8 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                       setShowAddContact(false)
                     }}
                   >
-                    ← Back
+                    Back to Identity Key
                   </button>
-                  <div className="address-type-hint">
-                    Each address is unique to this sender (BRC-100)
-                  </div>
                 </>
               )}
             </div>
