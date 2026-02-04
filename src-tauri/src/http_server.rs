@@ -1,13 +1,18 @@
 use axum::{
     routing::post,
-    http::{StatusCode, Method, HeaderValue},
+    http::{StatusCode, Method, HeaderValue, Request},
+    body::Body,
+    middleware::{self, Next},
+    response::Response,
     Json, Router,
     extract::State,
 };
 use tower_http::cors::CorsLayer;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
-use crate::SharedBRC100State;
+use crate::{SharedBRC100State, SharedSessionState};
+
+const SESSION_TOKEN_HEADER: &str = "X-Simply-Sats-Token";
 
 const PORT: u16 = 3322; // Simply Sats uses 3322 (Metanet Desktop uses 3321)
 
@@ -25,6 +30,7 @@ const ALLOWED_ORIGINS: &[&str] = &[
 struct AppState {
     app_handle: AppHandle,
     brc100_state: SharedBRC100State,
+    session_state: SharedSessionState,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
@@ -60,10 +66,45 @@ struct HeightResponse {
     height: u32,
 }
 
-pub async fn start_server(app_handle: AppHandle, brc100_state: SharedBRC100State) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Middleware to validate session token on all requests except /getVersion
+async fn validate_session_token(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // Allow getVersion without token for connection testing
+    if request.uri().path() == "/getVersion" {
+        return Ok(next.run(request).await);
+    }
+
+    let token_header = request
+        .headers()
+        .get(SESSION_TOKEN_HEADER)
+        .and_then(|v| v.to_str().ok());
+
+    let session = state.session_state.lock().await;
+
+    match token_header {
+        Some(token) if token == session.token => {
+            drop(session);
+            Ok(next.run(request).await)
+        }
+        _ => {
+            eprintln!("Rejected request to {}: invalid or missing session token", request.uri().path());
+            Err(StatusCode::UNAUTHORIZED)
+        }
+    }
+}
+
+pub async fn start_server(
+    app_handle: AppHandle,
+    brc100_state: SharedBRC100State,
+    session_state: SharedSessionState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let state = AppState {
         app_handle,
         brc100_state,
+        session_state,
     };
 
     // Configure CORS to only allow localhost and Tauri webview origins
@@ -79,6 +120,7 @@ pub async fn start_server(app_handle: AppHandle, brc100_state: SharedBRC100State
         .allow_headers([
             axum::http::header::CONTENT_TYPE,
             axum::http::header::ACCEPT,
+            axum::http::HeaderName::from_static("x-simply-sats-token"),
         ]);
 
     // REST-style routes matching HTTPWalletJSON substrate format from @bsv/sdk
@@ -96,6 +138,7 @@ pub async fn start_server(app_handle: AppHandle, brc100_state: SharedBRC100State
         .route("/lockBSV", post(handle_lock_bsv))
         .route("/unlockBSV", post(handle_unlock_bsv))
         .route("/listLocks", post(handle_list_locks))
+        .layer(middleware::from_fn_with_state(state.clone(), validate_session_token))
         .layer(cors)
         .with_state(state);
 

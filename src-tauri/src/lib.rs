@@ -2,8 +2,33 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tauri_plugin_sql::{Migration, MigrationKind};
+use rand::Rng;
 
 mod http_server;
+
+// Session state for HTTP server authentication
+pub struct SessionState {
+    pub token: String,
+}
+
+impl SessionState {
+    pub fn new() -> Self {
+        let mut rng = rand::thread_rng();
+        let token: String = (0..32)
+            .map(|_| {
+                let idx = rng.gen_range(0..36);
+                if idx < 10 {
+                    (b'0' + idx) as char
+                } else {
+                    (b'a' + idx - 10) as char
+                }
+            })
+            .collect();
+        Self { token }
+    }
+}
+
+pub type SharedSessionState = Arc<Mutex<SessionState>>;
 
 // Database migrations
 fn include_migrations() -> Vec<Migration> {
@@ -84,10 +109,23 @@ async fn respond_to_brc100(
     Ok(())
 }
 
+// Command to get the session token for frontend use
+#[tauri::command]
+async fn get_session_token(
+    session_state: tauri::State<'_, SharedSessionState>,
+) -> Result<String, String> {
+    let session = session_state.lock().await;
+    Ok(session.token.clone())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let brc100_state: SharedBRC100State = Arc::new(Mutex::new(BRC100State::default()));
     let brc100_state_for_server = brc100_state.clone();
+
+    // Generate session token for HTTP server authentication
+    let session_state: SharedSessionState = Arc::new(Mutex::new(SessionState::new()));
+    let session_state_for_server = session_state.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -98,16 +136,18 @@ pub fn run() {
             .add_migrations("sqlite:simplysats.db", include_migrations())
             .build())
         .manage(brc100_state)
-        .invoke_handler(tauri::generate_handler![respond_to_brc100])
+        .manage(session_state)
+        .invoke_handler(tauri::generate_handler![respond_to_brc100, get_session_token])
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            let state = brc100_state_for_server;
+            let brc100_state = brc100_state_for_server;
+            let session_state = session_state_for_server;
 
             // Start HTTP server in background
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
-                    if let Err(e) = http_server::start_server(app_handle, state).await {
+                    if let Err(e) = http_server::start_server(app_handle, brc100_state, session_state).await {
                         eprintln!("HTTP server error: {}", e);
                     }
                 });
