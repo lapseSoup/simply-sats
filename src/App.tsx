@@ -401,9 +401,16 @@ function App() {
       }
 
       if (hasWallet()) {
-        const keys = loadWallet('')
-        if (keys) {
-          setWallet(keys)
+        try {
+          // Load wallet with empty password (legacy mode for now)
+          // TODO: Implement proper password entry on startup
+          const keys = await loadWallet('')
+          if (keys) {
+            setWallet(keys)
+          }
+        } catch (err) {
+          console.error('Failed to load wallet:', err)
+          // If load fails, wallet might need password - for now just log
         }
       }
       setLoading(false)
@@ -947,7 +954,7 @@ function App() {
     const keys = createWallet()
     setNewMnemonic(keys.mnemonic)
     setModal('mnemonic')
-    saveWallet(keys, '')
+    await saveWallet(keys, '')
     setWallet(keys)
 
     // Reset UI state
@@ -975,7 +982,7 @@ function App() {
       localStorage.removeItem('simply_sats_connected_apps')
 
       const keys = restoreWallet(restoreMnemonic.trim())
-      saveWallet(keys, '')
+      await saveWallet(keys, '')
       setWallet(keys)
       setRestoreMnemonic('')
       setModal(null)
@@ -1025,7 +1032,7 @@ function App() {
       localStorage.removeItem('simply_sats_connected_apps')
 
       const keys = importFromJSON(restoreJSON.trim())
-      saveWallet(keys, '')
+      await saveWallet(keys, '')
       setWallet(keys)
       setRestoreJSON('')
       setModal(null)

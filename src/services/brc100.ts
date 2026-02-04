@@ -1,4 +1,4 @@
-import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
+import { PrivateKey, P2PKH, Transaction, LockingScript } from '@bsv/sdk'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import type { WalletKeys, UTXO, LockedUTXO } from './wallet'
@@ -12,7 +12,9 @@ import {
   getLocks as getLocksFromDB,
   markLockUnlocked,
   addTransaction,
-  getBalanceFromDB
+  getBalanceFromDB,
+  recordActionRequest,
+  updateActionResult
 } from './database'
 import { BASKETS, getCurrentBlockHeight } from './sync'
 import {
@@ -21,6 +23,15 @@ import {
   getOverlayStatus,
   TOPICS
 } from './overlay'
+import { parseInscription, isInscriptionScript } from './inscription'
+import {
+  acquireCertificate as acquireCertificateService,
+  listCertificates as listCertificatesService,
+  proveCertificate as proveCertificateService,
+  type Certificate,
+  type CertificateType,
+  type AcquireCertificateArgs
+} from './certificates'
 
 // BRC-100 Protocol Types
 export interface BRC100Request {
@@ -823,6 +834,21 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
   const { request, resolve } = pending
 
+  // Record the action request
+  try {
+    await recordActionRequest({
+      requestId: request.id,
+      actionType: request.type,
+      description: request.params?.description || `${request.type} request`,
+      origin: request.origin,
+      approved: true,
+      inputParams: JSON.stringify(request.params),
+      requestedAt: Date.now()
+    })
+  } catch (e) {
+    console.warn('Failed to record action request:', e)
+  }
+
   try {
     let response: BRC100Response = { id: requestId }
 
@@ -1031,8 +1057,32 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
         response.error = { code: -32601, message: 'Method not found' }
     }
 
+    // Update action result with outcome
+    try {
+      await updateActionResult(requestId, {
+        txid: response.result?.txid,
+        approved: !response.error,
+        error: response.error?.message,
+        outputResult: JSON.stringify(response.result || response.error),
+        completedAt: Date.now()
+      })
+    } catch (e) {
+      console.warn('Failed to update action result:', e)
+    }
+
     resolve(response)
   } catch (error) {
+    // Update action result with error
+    try {
+      await updateActionResult(requestId, {
+        approved: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        completedAt: Date.now()
+      })
+    } catch (e) {
+      console.warn('Failed to update action result:', e)
+    }
+
     resolve({
       id: requestId,
       error: { code: -32000, message: error instanceof Error ? error.message : 'Unknown error' }
@@ -1040,6 +1090,19 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
   }
 
   pendingRequests.delete(requestId)
+}
+
+/**
+ * Convert a hex string to a proper LockingScript object
+ * Handles all BSV SDK requirements including toHex() and toUint8Array()
+ */
+function convertToLockingScript(scriptHex: string): LockingScript {
+  const scriptBytes = new Uint8Array(
+    scriptHex.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16))
+  )
+  // Convert Uint8Array to number[] for BSV SDK
+  const bytesArray: number[] = Array.from(scriptBytes)
+  return LockingScript.fromBinary(bytesArray)
 }
 
 // Check if this is an inscription transaction (1Sat Ordinals)
@@ -1131,14 +1194,10 @@ async function buildAndBroadcastAction(
 
   // Add outputs from request
   for (const output of actionRequest.outputs) {
-    // Convert hex string to Script-like object with both toHex and toUint8Array methods
-    const scriptHex = output.lockingScript
-    const scriptBytes = new Uint8Array(scriptHex.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)))
+    // Convert hex string to proper Script object
+    const lockingScript = convertToLockingScript(output.lockingScript)
     tx.addOutput({
-      lockingScript: {
-        toHex: () => scriptHex,
-        toUint8Array: () => scriptBytes
-      } as any,
+      lockingScript,
       satoshis: output.satoshis
     })
   }
@@ -1208,12 +1267,22 @@ async function buildAndBroadcastAction(
     }
 
     // Add new outputs to database if they belong to us
-    // For inscriptions, add the ordinal output
+    // For inscriptions, add the ordinal output with parsed content-type
     if (isInscription) {
       for (let i = 0; i < actionRequest.outputs.length; i++) {
         const output = actionRequest.outputs[i]
-        // Inscription outputs are typically 1 sat
-        if (output.satoshis === 1 && output.lockingScript.length > 100) {
+        // Inscription outputs are typically 1 sat with envelope script
+        if (output.satoshis === 1 && isInscriptionScript(output.lockingScript)) {
+          // Parse the inscription to extract content-type
+          const parsed = parseInscription(output.lockingScript)
+          const contentType = parsed.isValid ? parsed.contentType : 'application/octet-stream'
+
+          // Build tags including content-type
+          const tags = output.tags || []
+          if (!tags.includes('inscription')) tags.push('inscription')
+          if (!tags.includes('ordinal')) tags.push('ordinal')
+          tags.push(`content-type:${contentType}`)
+
           await addUTXO({
             txid,
             vout: i,
@@ -1222,9 +1291,9 @@ async function buildAndBroadcastAction(
             basket: BASKETS.ORDINALS,
             spendable: true,
             createdAt: Date.now(),
-            tags: output.tags || ['inscription', 'ordinal', 'wrootz']
+            tags
           })
-          console.log(`Inscription output added to ordinals basket: ${txid}:${i}`)
+          console.log(`Inscription added to ordinals basket: ${txid}:${i} (${contentType})`)
         }
       }
     }
@@ -1254,9 +1323,28 @@ async function buildAndBroadcastAction(
 }
 
 // Reject a pending request
-export function rejectRequest(requestId: string): void {
+export async function rejectRequest(requestId: string): Promise<void> {
   const pending = pendingRequests.get(requestId)
   if (!pending) return
+
+  const { request } = pending
+
+  // Record the rejected action
+  try {
+    await recordActionRequest({
+      requestId: request.id,
+      actionType: request.type,
+      description: request.params?.description || `${request.type} request`,
+      origin: request.origin,
+      approved: false,
+      error: 'User rejected request',
+      inputParams: JSON.stringify(request.params),
+      requestedAt: Date.now(),
+      completedAt: Date.now()
+    })
+  } catch (e) {
+    console.warn('Failed to record rejected action:', e)
+  }
 
   pending.resolve({
     id: requestId,
@@ -1271,39 +1359,47 @@ export function generateRequestId(): string {
   return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-// BRC-100 acquireCertificate - placeholder for future implementation
-export interface AcquireCertificateArgs {
-  type: string
-  certifier: string
-  acquisitionProtocol: 'direct' | 'issuance'
-  fields?: Record<string, string>
-  serialNumber?: string
+// BRC-100 acquireCertificate - delegates to certificate service
+export async function acquireCertificate(args: AcquireCertificateArgs): Promise<Certificate> {
+  const keys = getWalletKeys()
+  if (!keys) {
+    throw new Error('No wallet loaded')
+  }
+  return acquireCertificateService(args, keys)
 }
 
-export async function acquireCertificate(_args: AcquireCertificateArgs): Promise<{
-  type: string
-  subject: string
-  certifier: string
-  serialNumber: string
-  fields: Record<string, string>
-  signature: string
-}> {
-  // TODO: Implement certificate acquisition
-  throw new Error('Certificate acquisition not yet implemented')
-}
-
-// BRC-100 listCertificates - placeholder for future implementation
-export async function listCertificates(_args: {
+// BRC-100 listCertificates - delegates to certificate service
+export async function listCertificates(args: {
   certifiers?: string[]
-  types?: string[]
+  types?: CertificateType[]
   limit?: number
   offset?: number
 }): Promise<{
-  certificates: any[]
+  certificates: Certificate[]
   totalCertificates: number
 }> {
-  // TODO: Query certificates from database
-  return { certificates: [], totalCertificates: 0 }
+  const keys = getWalletKeys()
+  if (!keys) {
+    return { certificates: [], totalCertificates: 0 }
+  }
+  return listCertificatesService(args, keys)
+}
+
+// BRC-100 proveCertificate - creates a proof of certificate ownership
+export async function proveCertificate(args: {
+  certificate: Certificate
+  fieldsToReveal: string[]
+  verifier: string
+}): Promise<{
+  certificate: Certificate
+  revealedFields: Record<string, string>
+  verifier: string
+}> {
+  const keys = getWalletKeys()
+  if (!keys) {
+    throw new Error('No wallet loaded')
+  }
+  return proveCertificateService(args, keys)
 }
 
 // BRC-100 discoverByIdentityKey - find outputs belonging to an identity
