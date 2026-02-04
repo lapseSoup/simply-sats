@@ -45,11 +45,8 @@ import {
   getActiveAccount,
   migrateToMultiAccount
 } from '../services/accounts'
-import {
-  type TokenBalance,
-  syncTokenBalances,
-  sendToken
-} from '../services/tokens'
+import { type TokenBalance } from '../services/tokens'
+import { useTokens } from './TokensContext'
 import {
   initAutoLock,
   stopAutoLock,
@@ -188,9 +185,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
     getKeysForAccount
   } = useAccounts()
 
-  // Token state
-  const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([])
-  const [tokensSyncing, setTokensSyncing] = useState(false)
+  // Token state from TokensContext
+  const {
+    tokenBalances,
+    tokensSyncing,
+    refreshTokens: tokensRefresh,
+    sendTokenAction
+  } = useTokens()
 
   // Lock state
   const [isLocked, setIsLocked] = useState(false)
@@ -316,26 +317,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [accountsDeleteAccount, wallet, setWallet, getKeysForAccount])
 
 
-  // Refresh token balances
+  // Refresh token balances - wraps TokensContext to pass wallet
   const refreshTokens = useCallback(async () => {
-    if (!wallet || tokensSyncing) return
-
-    setTokensSyncing(true)
-    try {
-      const accountId = activeAccountId || 1
-      const balances = await syncTokenBalances(
-        accountId,
-        wallet.walletAddress,
-        wallet.ordAddress
-      )
-      setTokenBalances(balances)
-      console.log(`[Tokens] Synced ${balances.length} token balances`)
-    } catch (e) {
-      console.error('[Tokens] Failed to sync tokens:', e)
-    } finally {
-      setTokensSyncing(false)
-    }
-  }, [wallet, activeAccountId, tokensSyncing])
+    if (!wallet) return
+    const accountId = activeAccountId || 1
+    await tokensRefresh(wallet, accountId)
+  }, [wallet, activeAccountId, tokensRefresh])
 
   // Initialize database and load wallet on mount
   useEffect(() => {
@@ -776,7 +763,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [wallet, fetchData])
 
-  // Token send handler
+  // Token send handler - wraps TokensContext sendTokenAction
   const handleSendToken = useCallback(async (
     ticker: string,
     protocol: 'bsv20' | 'bsv21',
@@ -785,37 +772,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
   ): Promise<{ success: boolean; txid?: string; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet loaded' }
 
-    try {
-      // Get funding UTXOs from the wallet
-      const fundingUtxos = await getUTXOs(wallet.walletAddress)
+    const result = await sendTokenAction(wallet, ticker, protocol, amount, toAddress)
 
-      if (fundingUtxos.length === 0) {
-        return { success: false, error: 'No funding UTXOs available for transfer fee' }
-      }
-
-      const result = await sendToken(
-        wallet.walletAddress,
-        wallet.ordAddress,
-        wallet.walletWif,
-        wallet.ordWif,
-        fundingUtxos,
-        ticker,
-        protocol,
-        amount,
-        toAddress
-      )
-
-      if (result.success) {
-        // Refresh data
-        await fetchData()
-        await refreshTokens()
-      }
-
-      return result
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Token transfer failed' }
+    if (result.success) {
+      // Refresh data after successful send
+      await fetchData()
+      await refreshTokens()
     }
-  }, [wallet, fetchData, refreshTokens])
+
+    return result
+  }, [wallet, fetchData, refreshTokens, sendTokenAction])
 
   // Settings
   const setFeeRate = useCallback((rate: number) => {
