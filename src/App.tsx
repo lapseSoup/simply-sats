@@ -44,7 +44,7 @@ import {
   getNetworkStatus
 } from './services/brc100'
 import { setupDeepLinkListener } from './services/deeplink'
-import { initDatabase, exportDatabase, importDatabase, clearDatabase, resetUTXOs, repairUTXOs, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, ensureContactsTable, addContact, getContacts, getNextInvoiceNumber, getSpendableUTXOs, type DatabaseBackup, type Contact } from './services/database'
+import { initDatabase, exportDatabase, importDatabase, clearDatabase, resetUTXOs, repairUTXOs, getAllTransactions, addTransaction, upsertTransaction, addDerivedAddress, ensureDerivedAddressesTable, getDerivedAddresses as getDerivedAddressesFromDB, ensureContactsTable, addContact, getContacts, getNextInvoiceNumber, getSpendableUTXOs, getUTXOsByBasket, type DatabaseBackup, type Contact } from './services/database'
 import {
   syncWallet,
   needsInitialSync,
@@ -823,10 +823,30 @@ function App() {
       // 6. Update display
       setTxHistory(dbTxHistory.slice(0, 30))
 
-      // 7. Get ordinals for display
+      // 7. Get ordinals for display (from API + database)
       try {
-        const ords = await getOrdinals(wallet.ordAddress)
-        setOrdinals(ords)
+        // Get ordinals from API (traditional ordinals address)
+        const apiOrds = await getOrdinals(wallet.ordAddress)
+
+        // Also get ordinals from database (inscriptions created via BRC-100)
+        const dbOrdinals = await getUTXOsByBasket('ordinals', true)
+        const dbOrds: Ordinal[] = dbOrdinals.map(utxo => ({
+          origin: `${utxo.txid}_${utxo.vout}`,
+          txid: utxo.txid,
+          vout: utxo.vout,
+          satoshis: utxo.satoshis,
+          contentType: 'application/octet-stream' // Default, could parse from script
+        }))
+
+        // Merge and dedupe by origin
+        const allOrds = [...apiOrds]
+        for (const dbOrd of dbOrds) {
+          if (!allOrds.some(o => o.origin === dbOrd.origin)) {
+            allOrds.push(dbOrd)
+          }
+        }
+
+        setOrdinals(allOrds)
       } catch (e) {
         // Keep existing ordinals if rate limited
       }

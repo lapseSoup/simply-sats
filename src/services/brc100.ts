@@ -1131,9 +1131,13 @@ async function buildAndBroadcastAction(
 
   // Add outputs from request
   for (const output of actionRequest.outputs) {
+    // Convert hex string to Script-like object with both toHex and toUint8Array methods
+    const scriptHex = output.lockingScript
+    const scriptBytes = new Uint8Array(scriptHex.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16)))
     tx.addOutput({
       lockingScript: {
-        toHex: () => output.lockingScript
+        toHex: () => scriptHex,
+        toUint8Array: () => scriptBytes
       } as any,
       satoshis: output.satoshis
     })
