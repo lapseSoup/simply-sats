@@ -6,6 +6,7 @@ import { useWallet } from '../../contexts/WalletContext'
 import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../services/keyDerivation'
 import { checkForPayments, getPaymentNotifications } from '../../services/messageBox'
 import { exportDatabase, importDatabase, type DatabaseBackup } from '../../services/database'
+import { ConfirmationModal } from '../shared/ConfirmationModal'
 
 interface SettingsModalProps {
   onClose: () => void
@@ -42,6 +43,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   const [messageBoxStatus, setMessageBoxStatus] = useState<'idle' | 'checking' | 'error'>('idle')
   const [paymentNotifications, setPaymentNotifications] = useState(getPaymentNotifications())
+
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
 
   if (!wallet) return null
 
@@ -197,13 +200,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     }
   }
 
-  const handleDelete = async () => {
-    if (confirm('⚠️ Delete wallet? This cannot be undone!\n\nMake sure you have your recovery phrase saved.')) {
-      if (confirm('Are you really sure? All data will be lost.')) {
-        await handleDeleteWallet()
-        onClose()
-      }
-    }
+  const handleDeleteClick = () => {
+    setShowDeleteConfirmation(true)
+  }
+
+  const executeDelete = async () => {
+    setShowDeleteConfirmation(false)
+    await handleDeleteWallet()
+    onClose()
   }
 
   return (
@@ -529,12 +533,28 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           {/* DANGER ZONE */}
           <div className="settings-section">
             <div className="settings-section-title">Danger Zone</div>
-            <button className="btn btn-danger" onClick={handleDelete}>
+            <button className="btn btn-danger" onClick={handleDeleteClick}>
               Delete Wallet
             </button>
           </div>
         </div>
       </div>
+
+      {/* Delete Wallet Confirmation Modal */}
+      {showDeleteConfirmation && (
+        <ConfirmationModal
+          title="Delete Wallet"
+          message="This will permanently delete your wallet and all associated data. This action cannot be undone."
+          details="Make sure you have saved your recovery phrase before proceeding!"
+          type="danger"
+          confirmText="Delete Wallet"
+          cancelText="Cancel"
+          onConfirm={executeDelete}
+          onCancel={() => setShowDeleteConfirmation(false)}
+          requireTypedConfirmation="DELETE"
+          confirmDelaySeconds={3}
+        />
+      )}
     </div>
   )
 }

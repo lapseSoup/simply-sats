@@ -6,6 +6,7 @@
 
 import { useState } from 'react'
 import { Modal } from '../shared/Modal'
+import { ConfirmationModal } from '../shared/ConfirmationModal'
 import type { Ordinal } from '../../services/wallet'
 import { useWallet } from '../../contexts/WalletContext'
 
@@ -23,8 +24,9 @@ export function OrdinalTransferModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [txid, setTxid] = useState<string | null>(null)
+  const [showConfirmation, setShowConfirmation] = useState(false)
 
-  const handleTransfer = async () => {
+  const handleTransferClick = () => {
     if (!toAddress.trim()) {
       setError('Please enter a recipient address')
       return
@@ -36,6 +38,12 @@ export function OrdinalTransferModal({
       return
     }
 
+    // Show confirmation modal
+    setShowConfirmation(true)
+  }
+
+  const executeTransfer = async () => {
+    setShowConfirmation(false)
     setLoading(true)
     setError('')
 
@@ -68,6 +76,23 @@ export function OrdinalTransferModal({
       return ordinal.contentType.split('/')[1]?.toUpperCase() || 'File'
     }
     return 'Unknown'
+  }
+
+  // Confirmation modal for ordinal transfer
+  if (showConfirmation) {
+    return (
+      <ConfirmationModal
+        title="Confirm Ordinal Transfer"
+        message="You are about to permanently transfer this ordinal. This action cannot be undone."
+        details={`Ordinal: ${ordinal.origin}\nTo: ${toAddress}`}
+        type="danger"
+        confirmText="Transfer"
+        cancelText="Go Back"
+        onConfirm={executeTransfer}
+        onCancel={() => setShowConfirmation(false)}
+        confirmDelaySeconds={2}
+      />
+    )
   }
 
   if (txid) {

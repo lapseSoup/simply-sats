@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { calculateExactFee, calculateTxFee } from '../../services/wallet'
+import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 
 interface SendModalProps {
   onClose: () => void
@@ -20,6 +21,7 @@ export function SendModal({ onClose }: SendModalProps) {
   const [sendAmount, setSendAmount] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [showConfirmation, setShowConfirmation] = useState(false)
 
   if (!wallet) return null
 
@@ -50,9 +52,23 @@ export function SendModal({ onClose }: SendModalProps) {
   const maxFee = calculateTxFee(numInputs, 1)
   const maxSendSats = Math.max(0, totalUtxoValue - maxFee)
 
-  const handleSubmit = async () => {
+  // Check if confirmation is required based on amount
+  const requiresConfirmation = sendSats >= SEND_CONFIRMATION_THRESHOLD
+  const isHighValue = sendSats >= HIGH_VALUE_THRESHOLD
+
+  const handleSubmitClick = () => {
     if (!sendAddress || !sendAmount) return
 
+    // Show confirmation for large amounts
+    if (requiresConfirmation) {
+      setShowConfirmation(true)
+    } else {
+      executeSend()
+    }
+  }
+
+  const executeSend = async () => {
+    setShowConfirmation(false)
     setSending(true)
     setSendError('')
 
@@ -68,7 +84,33 @@ export function SendModal({ onClose }: SendModalProps) {
     setSending(false)
   }
 
+  // Format amount for display in confirmation
+  const formatAmount = (sats: number) => {
+    if (sats >= 100000000) {
+      return `${(sats / 100000000).toFixed(8)} BSV`
+    }
+    return `${sats.toLocaleString()} sats`
+  }
+
   return (
+    <>
+      {showConfirmation && (
+        <ConfirmationModal
+          title={isHighValue ? 'Large Transaction' : 'Confirm Send'}
+          message={
+            isHighValue
+              ? `You are about to send a large amount. Please verify the details carefully.`
+              : `Are you sure you want to send this transaction?`
+          }
+          details={`Amount: ${formatAmount(sendSats)}\nFee: ${fee} sats\nTotal: ${formatAmount(sendSats + fee)}\nTo: ${sendAddress}`}
+          type={isHighValue ? 'warning' : 'info'}
+          confirmText="Send"
+          cancelText="Cancel"
+          onConfirm={executeSend}
+          onCancel={() => setShowConfirmation(false)}
+          confirmDelaySeconds={isHighValue ? 3 : 0}
+        />
+      )}
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal send-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
@@ -143,7 +185,7 @@ export function SendModal({ onClose }: SendModalProps) {
           )}
           <button
             className="btn btn-primary"
-            onClick={handleSubmit}
+            onClick={handleSubmitClick}
             disabled={sending || !sendAddress || !sendAmount || sendSats + fee > availableSats}
           >
             {sending ? 'Sending...' : `Send ${sendSats > 0 ? sendSats.toLocaleString() + ' sats' : 'BSV'}`}
@@ -151,5 +193,6 @@ export function SendModal({ onClose }: SendModalProps) {
         </div>
       </div>
     </div>
+    </>
   )
 }
