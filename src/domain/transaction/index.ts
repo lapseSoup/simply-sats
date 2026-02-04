@@ -4,4 +4,3 @@
 
 export * from './fees'
 export * from './coinSelection'
-export * from './builder'
