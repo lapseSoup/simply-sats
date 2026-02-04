@@ -6,7 +6,7 @@
  */
 
 import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
-import type { UTXO, ExtendedUTXO, WalletKeys } from './wallet'
+import type { UTXO, ExtendedUTXO } from './wallet'
 import {
   getSpendableUtxosFromDatabase,
   recordSentTransaction,

@@ -59,10 +59,10 @@ export const API_ENDPOINTS = {
 /**
  * Get API endpoint for current network
  */
-export function getApiEndpoint(service: keyof typeof API_ENDPOINTS): string | string[] {
+export function getApiEndpoint(service: keyof typeof API_ENDPOINTS): string | readonly string[] {
   const network = getCurrentNetwork()
   const endpoints = API_ENDPOINTS[service]
-  return endpoints[network]
+  return endpoints[network] as string | readonly string[]
 }
 
 /**
