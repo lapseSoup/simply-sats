@@ -15,6 +15,7 @@ const OP_0 = 0x00
 const OP_1 = 0x51
 import { getDatabase } from './database'
 import { broadcastTransaction, calculateTxFee, type UTXO } from './wallet'
+import type { TokenRow, TokenBalanceRow, TokenTransferRow, IdCheckRow, SqlParams } from './database-types'
 
 // GorillaPool API endpoints
 const GORILLAPOOL_MAINNET = 'https://ordinals.gorillapool.io'
@@ -237,7 +238,7 @@ export async function ensureTokensTables(): Promise<void> {
   const database = getDatabase()
 
   try {
-    await database.select<any[]>('SELECT id FROM tokens LIMIT 1')
+    await database.select<IdCheckRow[]>('SELECT id FROM tokens LIMIT 1')
   } catch {
     console.log('[Tokens] Tables will be created by migration')
   }
@@ -304,7 +305,7 @@ export async function getTokenByTicker(
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<TokenRow[]>(
       'SELECT * FROM tokens WHERE ticker = $1 AND protocol = $2',
       [ticker, protocol]
     )
@@ -315,7 +316,7 @@ export async function getTokenByTicker(
     return {
       id: row.id,
       ticker: row.ticker,
-      protocol: row.protocol,
+      protocol: row.protocol as 'bsv20' | 'bsv21',
       contractTxid: row.contract_txid,
       name: row.name,
       decimals: row.decimals,
@@ -336,7 +337,7 @@ export async function getTokenById(tokenId: number): Promise<Token | null> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<TokenRow[]>(
       'SELECT * FROM tokens WHERE id = $1',
       [tokenId]
     )
@@ -347,7 +348,7 @@ export async function getTokenById(tokenId: number): Promise<Token | null> {
     return {
       id: row.id,
       ticker: row.ticker,
-      protocol: row.protocol,
+      protocol: row.protocol as 'bsv20' | 'bsv21',
       contractTxid: row.contract_txid,
       name: row.name,
       decimals: row.decimals,
@@ -368,14 +369,14 @@ export async function getAllTokens(): Promise<Token[]> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<TokenRow[]>(
       'SELECT * FROM tokens ORDER BY ticker ASC'
     )
 
     return rows.map(row => ({
       id: row.id,
       ticker: row.ticker,
-      protocol: row.protocol,
+      protocol: row.protocol as 'bsv20' | 'bsv21',
       contractTxid: row.contract_txid,
       name: row.name,
       decimals: row.decimals,
@@ -414,7 +415,7 @@ export async function getTokenBalancesFromDb(accountId: number): Promise<TokenBa
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<TokenBalanceRow[]>(
       `SELECT tb.*, t.*
        FROM token_balances tb
        INNER JOIN tokens t ON tb.token_id = t.id
@@ -433,7 +434,7 @@ export async function getTokenBalancesFromDb(accountId: number): Promise<TokenBa
           token: {
             id: row.token_id,
             ticker: row.ticker,
-            protocol: row.protocol,
+            protocol: row.protocol as 'bsv20' | 'bsv21',
             contractTxid: row.contract_txid,
             name: row.name,
             decimals: row.decimals,
@@ -493,7 +494,7 @@ export async function getTokenTransfers(
   accountId: number,
   tokenId?: number,
   limit = 50
-): Promise<any[]> {
+): Promise<TokenTransferRow[]> {
   const database = getDatabase()
 
   try {
@@ -503,7 +504,7 @@ export async function getTokenTransfers(
       INNER JOIN tokens t ON tt.token_id = t.id
       WHERE tt.account_id = $1
     `
-    const params: any[] = [accountId]
+    const params: SqlParams = [accountId]
 
     if (tokenId) {
       query += ' AND tt.token_id = $2'
@@ -513,7 +514,7 @@ export async function getTokenTransfers(
     query += ' ORDER BY tt.created_at DESC LIMIT $' + (params.length + 1)
     params.push(limit)
 
-    return await database.select<any[]>(query, params)
+    return await database.select<TokenTransferRow[]>(query, params)
   } catch (_e) {
     return []
   }
@@ -557,7 +558,7 @@ export async function toggleFavoriteToken(
 
   try {
     // Check if already favorite
-    const existing = await database.select<any[]>(
+    const existing = await database.select<IdCheckRow[]>(
       'SELECT id FROM favorite_tokens WHERE account_id = $1 AND token_id = $2',
       [accountId, tokenId]
     )
@@ -587,7 +588,7 @@ export async function getFavoriteTokens(accountId: number): Promise<Token[]> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<TokenRow[]>(
       `SELECT t.*
        FROM favorite_tokens ft
        INNER JOIN tokens t ON ft.token_id = t.id

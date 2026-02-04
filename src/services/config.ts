@@ -200,6 +200,38 @@ export const ENCRYPTION_CONFIG = {
 } as const
 
 /**
+ * Transaction Constants
+ */
+export const TX_CONSTANTS = {
+  // Default fee buffer for coin selection (satoshis)
+  // Ensures sufficient funds for fees during selection
+  defaultFeeBuffer: 100,
+
+  // Minimum change threshold (satoshis)
+  // If change would be less than this, skip change output
+  minChangeThreshold: 100,
+
+  // Dust threshold for BSV (satoshis)
+  // BSV has no dust limit, but we use 1 sat minimum
+  dustThreshold: 1,
+
+  // Default timelock script size (bytes)
+  // Used for Wrootz-style lock transactions
+  timelockScriptSize: 1090
+} as const
+
+/**
+ * Wallet Confirmation Thresholds
+ */
+export const CONFIRMATION_THRESHOLDS = {
+  // Amount (satoshis) above which to show a confirmation modal
+  sendConfirmation: 10000,
+
+  // Amount (satoshis) above which to require extra confirmation (typed input)
+  highValue: 100000
+} as const
+
+/**
  * Set the current network
  */
 export function setNetwork(network: NetworkType): void {

@@ -24,6 +24,17 @@ import {
 } from './database'
 import { RATE_LIMITS } from './config'
 import { getWocClient } from '../infrastructure/api/wocClient'
+import {
+  type CancellationToken,
+  startNewSync,
+  cancelSync,
+  isCancellationError,
+  cancellableDelay
+} from './cancellation'
+import { syncLogger } from './logger'
+
+// Re-export cancellation functions for external use
+export { cancelSync, startNewSync }
 
 // Basket names for different address types
 export const BASKETS = {
@@ -93,14 +104,14 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   const { address, basket } = addressInfo
   const syncId = ++syncCounter
 
-  console.log(`[SYNC #${syncId}] START: ${address.slice(0,12)}... (basket: ${basket})`)
+  syncLogger.debug(`[SYNC #${syncId}] START: ${address.slice(0,12)}... (basket: ${basket})`)
 
   // Generate locking script for this specific address
   const lockingScript = getLockingScript(address)
 
   // Fetch current UTXOs from WhatsOnChain
   const wocUtxos = await fetchUtxosFromWoc(address)
-  console.log(`[SYNC] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`)
+  syncLogger.debug(`[SYNC] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`)
 
   // Get existing spendable UTXOs from database FOR THIS SPECIFIC ADDRESS
   const existingUtxos = await getSpendableUTXOs()
@@ -129,7 +140,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
     if (!existingMap.has(key)) {
       // New UTXO - add to database with address
-      console.log(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats`)
+      syncLogger.debug(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats`)
       await addUTXO({
         txid: wocUtxo.txid,
         vout: wocUtxo.vout,
@@ -149,7 +160,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   for (const [key, utxo] of existingMap) {
     if (!currentUtxoKeys.has(key)) {
       // UTXO no longer exists at this address - mark as spent
-      console.log(`[SYNC] Marking spent: ${key}`)
+      syncLogger.debug(`[SYNC] Marking spent: ${key}`)
       await markUTXOSpent(utxo.txid, utxo.vout, 'unknown')
       spentUtxos++
     }
@@ -159,7 +170,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   const currentHeight = await getCurrentBlockHeight()
   await updateSyncState(address, currentHeight)
 
-  console.log(`[SYNC #${syncId}] DONE: ${newUtxos} new, ${spentUtxos} spent, ${totalBalance} sats`)
+  syncLogger.debug(`[SYNC #${syncId}] DONE: ${newUtxos} new, ${spentUtxos} spent, ${totalBalance} sats`)
 
   return {
     address,
@@ -172,23 +183,42 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
 /**
  * Sync all wallet addresses
+ * @param addresses - List of addresses to sync
+ * @param token - Optional cancellation token to abort the sync
  */
-export async function syncAllAddresses(addresses: AddressInfo[]): Promise<SyncResult[]> {
+export async function syncAllAddresses(
+  addresses: AddressInfo[],
+  token?: CancellationToken
+): Promise<SyncResult[]> {
   const results: SyncResult[] = []
 
   for (let i = 0; i < addresses.length; i++) {
+    // Check for cancellation before each address
+    if (token?.isCancelled) {
+      syncLogger.debug('[SYNC] Cancelled - stopping address sync')
+      break
+    }
+
     const addr = addresses[i]
     try {
       // Add delay between requests to avoid rate limiting (429 errors)
       // Use configurable delay from config
       if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
+        if (token) {
+          await cancellableDelay(RATE_LIMITS.addressSyncDelay, token)
+        } else {
+          await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
+        }
       }
       const result = await syncAddress(addr)
       results.push(result)
-      console.log(`Synced ${addr.basket}: ${result.newUtxos} new, ${result.spentUtxos} spent, ${result.totalBalance} sats`)
+      syncLogger.info(`Synced ${addr.basket}: ${result.newUtxos} new, ${result.spentUtxos} spent, ${result.totalBalance} sats`)
     } catch (error) {
-      console.error(`Failed to sync ${addr.address}:`, error)
+      if (isCancellationError(error)) {
+        syncLogger.debug('[SYNC] Cancelled during address sync')
+        break
+      }
+      syncLogger.error(`Failed to sync ${addr.address}:`, error)
       // Continue with other addresses
     }
   }
@@ -198,49 +228,75 @@ export async function syncAllAddresses(addresses: AddressInfo[]): Promise<SyncRe
 
 /**
  * Full wallet sync - syncs all three address types plus derived addresses
+ * Automatically cancels any previous sync in progress
+ * @param walletAddress - Main wallet address
+ * @param ordAddress - Ordinals address
+ * @param identityAddress - Identity address
+ * @returns Object with total balance and sync results, or undefined if cancelled
  */
 export async function syncWallet(
   walletAddress: string,
   ordAddress: string,
   identityAddress: string
-): Promise<{ total: number; results: SyncResult[] }> {
-  // Sync derived addresses FIRST (most important for correct balance)
-  const derivedAddresses = await getDerivedAddressesFromDB()
-  console.log('[SYNC] Found', derivedAddresses.length, 'derived addresses in database')
+): Promise<{ total: number; results: SyncResult[] } | undefined> {
+  // Start new sync (cancels any previous sync)
+  const token = startNewSync()
 
-  const addresses: AddressInfo[] = []
+  try {
+    // Sync derived addresses FIRST (most important for correct balance)
+    const derivedAddresses = await getDerivedAddressesFromDB()
+    syncLogger.debug('[SYNC] Found', derivedAddresses.length, 'derived addresses in database')
 
-  // Add derived addresses first (priority)
-  for (const derived of derivedAddresses) {
-    console.log('[SYNC] Adding derived address to sync (priority):', derived.address)
-    addresses.push({
-      address: derived.address,
-      basket: BASKETS.DERIVED,
-      wif: derived.privateKeyWif
-    })
-  }
-
-  // Then add main addresses
-  addresses.push(
-    { address: walletAddress, basket: BASKETS.DEFAULT },
-    { address: ordAddress, basket: BASKETS.ORDINALS },
-    { address: identityAddress, basket: BASKETS.IDENTITY }
-  )
-
-  console.log('[SYNC] Total addresses to sync:', addresses.length)
-  const results = await syncAllAddresses(addresses)
-
-  // Update sync timestamps for derived addresses
-  for (const derived of derivedAddresses) {
-    const result = results.find(r => r.address === derived.address)
-    if (result) {
-      await updateDerivedAddressSyncTime(derived.address)
+    if (token.isCancelled) {
+      syncLogger.debug('[SYNC] Cancelled before starting')
+      return undefined
     }
+
+    const addresses: AddressInfo[] = []
+
+    // Add derived addresses first (priority)
+    for (const derived of derivedAddresses) {
+      syncLogger.debug('[SYNC] Adding derived address to sync (priority):', derived.address)
+      addresses.push({
+        address: derived.address,
+        basket: BASKETS.DERIVED,
+        wif: derived.privateKeyWif
+      })
+    }
+
+    // Then add main addresses
+    addresses.push(
+      { address: walletAddress, basket: BASKETS.DEFAULT },
+      { address: ordAddress, basket: BASKETS.ORDINALS },
+      { address: identityAddress, basket: BASKETS.IDENTITY }
+    )
+
+    syncLogger.debug('[SYNC] Total addresses to sync:', addresses.length)
+    const results = await syncAllAddresses(addresses, token)
+
+    if (token.isCancelled) {
+      syncLogger.debug('[SYNC] Cancelled during sync')
+      return undefined
+    }
+
+    // Update sync timestamps for derived addresses
+    for (const derived of derivedAddresses) {
+      const result = results.find(r => r.address === derived.address)
+      if (result) {
+        await updateDerivedAddressSyncTime(derived.address)
+      }
+    }
+
+    const total = results.reduce((sum, r) => sum + r.totalBalance, 0)
+
+    return { total, results }
+  } catch (error) {
+    if (isCancellationError(error)) {
+      syncLogger.debug('[SYNC] Wallet sync cancelled')
+      return undefined
+    }
+    throw error
   }
-
-  const total = results.reduce((sum, r) => sum + r.totalBalance, 0)
-
-  return { total, results }
 }
 
 /**
@@ -253,9 +309,9 @@ export async function getBalanceFromDatabase(basket?: string): Promise<number> {
   if (basket) {
     const filtered = utxos.filter(u => u.basket === basket)
     const balance = filtered.reduce((sum, u) => sum + u.satoshis, 0)
-    console.log(`[BALANCE] getBalanceFromDatabase('${basket}'): ${filtered.length} UTXOs, ${balance} sats`)
+    syncLogger.debug(`[BALANCE] getBalanceFromDatabase('${basket}'): ${filtered.length} UTXOs, ${balance} sats`)
     if (basket === 'derived' && filtered.length > 0) {
-      console.log('[BALANCE] Derived UTXOs:', filtered.map(u => ({ txid: u.txid.slice(0, 8), vout: u.vout, sats: u.satoshis, basket: u.basket })))
+      syncLogger.debug('[BALANCE] Derived UTXOs:', filtered.map(u => ({ txid: u.txid.slice(0, 8), vout: u.vout, sats: u.satoshis, basket: u.basket })))
     }
     return balance
   }
@@ -281,7 +337,7 @@ export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEF
 export async function getOrdinalsFromDatabase(): Promise<{ txid: string; vout: number; satoshis: number; origin: string }[]> {
   const allUtxos = await getSpendableUTXOs()
   const ordinalUtxos = allUtxos.filter(u => u.basket === BASKETS.ORDINALS)
-  console.log(`[Ordinals] Found ${ordinalUtxos.length} ordinals in database`)
+  syncLogger.debug(`[Ordinals] Found ${ordinalUtxos.length} ordinals in database`)
   return ordinalUtxos.map(u => ({
     txid: u.txid,
     vout: u.vout,
@@ -353,13 +409,13 @@ export async function restoreFromBlockchain(
   ordAddress: string,
   identityAddress: string
 ): Promise<{ total: number; results: SyncResult[] }> {
-  console.log('Starting wallet restore from blockchain...')
+  syncLogger.info('Starting wallet restore from blockchain...')
 
   // Perform full sync
   const result = await syncWallet(walletAddress, ordAddress, identityAddress)
 
-  console.log(`Restore complete: ${result.total} total satoshis found`)
-  console.log('Results:', result.results)
+  syncLogger.info(`Restore complete: ${result.total} total satoshis found`)
+  syncLogger.debug('Results:', { results: result.results })
 
   return result
 }

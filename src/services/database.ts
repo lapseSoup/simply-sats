@@ -7,6 +7,27 @@
  */
 
 import Database from '@tauri-apps/plugin-sql'
+import { dbLogger } from './logger'
+import type {
+  UTXORow,
+  UTXOExistsRow,
+  UTXOVerifyRow,
+  PendingUTXORow,
+  AddressCheckRow,
+  SpendingStatusCheckRow,
+  TransactionRow,
+  LockWithUTXORow,
+  LockRow,
+  BasketRow,
+  SyncStateRow,
+  DerivedAddressRow,
+  ContactRow,
+  ActionResultRow,
+  BalanceSumRow,
+  CountRow,
+  TagRow,
+  SqlParams
+} from './database-types'
 
 // Database instance (singleton)
 let db: Database | null = null
@@ -66,7 +87,7 @@ export async function initDatabase(): Promise<Database> {
   if (db) return db
 
   db = await Database.load('sqlite:simplysats.db')
-  console.log('Database initialized')
+  dbLogger.info('Database initialized')
   return db
 }
 
@@ -111,10 +132,10 @@ async function ensureAddressColumn(): Promise<void> {
   const database = getDatabase()
   try {
     // Check if column exists by trying to select it
-    await database.select<any[]>('SELECT address FROM utxos LIMIT 1')
+    await database.select<AddressCheckRow[]>('SELECT address FROM utxos LIMIT 1')
   } catch {
     // Column doesn't exist, add it
-    console.log('[DB] Adding address column to utxos table...')
+    dbLogger.debug('[DB] Adding address column to utxos table...')
     await database.execute('ALTER TABLE utxos ADD COLUMN address TEXT')
     await database.execute('CREATE INDEX IF NOT EXISTS idx_utxos_address ON utxos(address)')
   }
@@ -137,7 +158,7 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
   await ensureAddressColumn()
 
   // Check if UTXO already exists - get ALL relevant fields
-  const existing = await database.select<any[]>(
+  const existing = await database.select<UTXOExistsRow[]>(
     'SELECT id, basket, address, spendable, spent_at FROM utxos WHERE txid = $1 AND vout = $2',
     [utxo.txid, utxo.vout]
   )
@@ -195,7 +216,7 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
   console.log(`[DB] INSERT OK: id=${utxoId}`)
 
   // Verify the insert by reading it back
-  const verify = await database.select<any[]>('SELECT id, basket, spendable FROM utxos WHERE id = $1', [utxoId])
+  const verify = await database.select<UTXOVerifyRow[]>('SELECT id, basket, spendable FROM utxos WHERE id = $1', [utxoId])
   console.log(`[DB] VERIFY: id=${verify[0]?.id} basket=${verify[0]?.basket} spendable=${verify[0]?.spendable}`)
 
   // Add tags if provided
@@ -223,7 +244,7 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true): Pr
     query += " AND spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
   }
 
-  const rows = await database.select<any[]>(query, [basket])
+  const rows = await database.select<UTXORow[]>(query, [basket])
 
   // Fetch tags for each UTXO
   const utxos: UTXO[] = []
@@ -259,7 +280,7 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true): Pr
 export async function getSpendableUTXOs(): Promise<UTXO[]> {
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<UTXORow[]>(
     "SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
   )
 
@@ -284,7 +305,7 @@ export async function getSpendableUTXOs(): Promise<UTXO[]> {
 export async function getSpendableUTXOsByAddress(address: string): Promise<UTXO[]> {
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<UTXORow[]>(
     "SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent') AND address = $1",
     [address]
   )
@@ -326,10 +347,10 @@ async function ensureSpendingStatusColumn(): Promise<void> {
   const database = getDatabase()
   try {
     // Check if column exists by trying to select it
-    await database.select<any[]>('SELECT spending_status FROM utxos LIMIT 1')
+    await database.select<SpendingStatusCheckRow[]>('SELECT spending_status FROM utxos LIMIT 1')
   } catch {
     // Column doesn't exist, add it
-    console.log('[DB] Adding spending_status columns to utxos table...')
+    dbLogger.debug('[DB] Adding spending_status columns to utxos table...')
     await database.execute("ALTER TABLE utxos ADD COLUMN spending_status TEXT DEFAULT 'unspent' CHECK(spending_status IN ('unspent', 'pending', 'spent'))")
     await database.execute('ALTER TABLE utxos ADD COLUMN pending_spending_txid TEXT')
     await database.execute('ALTER TABLE utxos ADD COLUMN pending_since INTEGER')
@@ -419,7 +440,7 @@ export async function getPendingUtxos(timeoutMs: number = 300000): Promise<Array
   const database = getDatabase()
 
   const cutoff = Date.now() - timeoutMs
-  const rows = await database.select<any[]>(
+  const rows = await database.select<PendingUTXORow[]>(
     `SELECT txid, vout, satoshis, pending_spending_txid, pending_since
      FROM utxos
      WHERE spending_status = 'pending' AND pending_since < $1`,
@@ -443,14 +464,14 @@ export async function getBalanceFromDB(basket?: string): Promise<number> {
   const database = getDatabase()
 
   let query = "SELECT SUM(satoshis) as total FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
-  const params: any[] = []
+  const params: SqlParams = []
 
   if (basket) {
     query += ' AND basket = $1'
     params.push(basket)
   }
 
-  const result = await database.select<{total: number}[]>(query, params)
+  const result = await database.select<BalanceSumRow[]>(query, params)
   return result[0]?.total || 0
 }
 
@@ -507,7 +528,7 @@ export async function upsertTransaction(tx: Omit<Transaction, 'id'>): Promise<st
 
   // Then update any provided fields (preserves existing data for null fields)
   const updates: string[] = []
-  const params: any[] = []
+  const params: SqlParams = []
   let paramIndex = 1
 
   if (tx.rawTx !== undefined) {
@@ -558,7 +579,7 @@ export async function upsertTransaction(tx: Omit<Transaction, 'id'>): Promise<st
 export async function getAllTransactions(limit = 30): Promise<Transaction[]> {
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<TransactionRow[]>(
     `SELECT * FROM transactions ORDER BY block_height DESC, created_at DESC LIMIT $1`,
     [limit]
   )
@@ -594,7 +615,7 @@ export async function updateTransactionAmount(txid: string, amount: number): Pro
 export async function getTransactionsByLabel(label: string): Promise<Transaction[]> {
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<TransactionRow[]>(
     `SELECT t.* FROM transactions t
      INNER JOIN transaction_labels tl ON t.txid = tl.txid
      WHERE tl.label = $1
@@ -655,7 +676,7 @@ export async function addLock(lock: Omit<Lock, 'id'>): Promise<number> {
 export async function getLocks(currentHeight: number): Promise<(Lock & { utxo: UTXO })[]> {
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<LockWithUTXORow[]>(
     `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket, u.address
      FROM locks l
      INNER JOIN utxos u ON l.utxo_id = u.id
@@ -754,7 +775,7 @@ export async function updateSyncState(address: string, height: number): Promise<
 export async function getBaskets(): Promise<Basket[]> {
   const database = getDatabase()
 
-  const rows = await database.select<any[]>('SELECT * FROM baskets ORDER BY name')
+  const rows = await database.select<BasketRow[]>('SELECT * FROM baskets ORDER BY name')
 
   return rows.map(row => ({
     id: row.id,
@@ -801,7 +822,7 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   const database = getDatabase()
 
   // Get all UTXOs
-  const utxoRows = await database.select<any[]>('SELECT * FROM utxos')
+  const utxoRows = await database.select<UTXORow[]>('SELECT * FROM utxos')
   const utxos: UTXO[] = []
   for (const row of utxoRows) {
     const tags = await database.select<{tag: string}[]>(
@@ -825,7 +846,7 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   }
 
   // Get all transactions
-  const txRows = await database.select<any[]>('SELECT * FROM transactions')
+  const txRows = await database.select<TransactionRow[]>('SELECT * FROM transactions')
   const transactions: Transaction[] = txRows.map(row => ({
     id: row.id,
     txid: row.txid,
@@ -838,7 +859,7 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   }))
 
   // Get all locks
-  const lockRows = await database.select<any[]>('SELECT * FROM locks')
+  const lockRows = await database.select<LockRow[]>('SELECT * FROM locks')
   const locks: Lock[] = lockRows.map(row => ({
     id: row.id,
     utxoId: row.utxo_id,
@@ -849,7 +870,7 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   }))
 
   // Get all baskets
-  const basketRows = await database.select<any[]>('SELECT * FROM baskets')
+  const basketRows = await database.select<BasketRow[]>('SELECT * FROM baskets')
   const baskets: Basket[] = basketRows.map(row => ({
     id: row.id,
     name: row.name,
@@ -858,7 +879,7 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   }))
 
   // Get sync state
-  const syncRows = await database.select<any[]>('SELECT * FROM sync_state')
+  const syncRows = await database.select<SyncStateRow[]>('SELECT * FROM sync_state')
   const syncState = syncRows.map(row => ({
     address: row.address,
     height: row.last_synced_height,
@@ -961,7 +982,7 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
         [derived.address, derived.senderPubkey, derived.invoiceNumber, derived.privateKeyWif, derived.label || null, derived.createdAt, derived.lastSyncedAt || null]
       )
     }
-    console.log('Imported', backup.derivedAddresses.length, 'derived addresses')
+    dbLogger.info('Imported', backup.derivedAddresses.length, 'derived addresses')
   }
 
   // Import contacts (if present - version 3+)
@@ -974,10 +995,10 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
         [contact.pubkey, contact.label, contact.createdAt]
       )
     }
-    console.log('Imported', backup.contacts.length, 'contacts')
+    dbLogger.info('Imported', backup.contacts.length, 'contacts')
   }
 
-  console.log('Database import complete')
+  dbLogger.info('Database import complete')
 }
 
 /**
@@ -1007,7 +1028,7 @@ export async function clearDatabase(): Promise<void> {
     // Table may not exist yet
   }
 
-  console.log('Database cleared')
+  dbLogger.info('Database cleared')
 }
 
 /**
@@ -1017,13 +1038,13 @@ export async function clearDatabase(): Promise<void> {
 export async function resetUTXOs(): Promise<void> {
   const database = getDatabase()
 
-  console.log('[DB] Resetting UTXOs and sync state...')
+  dbLogger.debug('[DB] Resetting UTXOs and sync state...')
   await database.execute('DELETE FROM utxo_tags')
   await database.execute('DELETE FROM locks')
   await database.execute('DELETE FROM utxos')
   await database.execute('DELETE FROM sync_state')
 
-  console.log('[DB] UTXOs reset complete - ready for fresh sync')
+  dbLogger.debug('[DB] UTXOs reset complete - ready for fresh sync')
 }
 
 /**
@@ -1095,7 +1116,7 @@ export async function ensureDerivedAddressesTable(): Promise<void> {
       [Date.now()]
     )
   } catch (e) {
-    console.error('Failed to ensure derived_addresses table:', e)
+    dbLogger.error('Failed to ensure derived_addresses table:', e)
   }
 }
 
@@ -1105,7 +1126,7 @@ export async function ensureDerivedAddressesTable(): Promise<void> {
 export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>): Promise<number> {
   const database = getDatabase()
 
-  console.log('[DB] Saving derived address:', {
+  dbLogger.debug('[DB] Saving derived address:', {
     address: derivedAddr.address,
     invoiceNumber: derivedAddr.invoiceNumber,
     senderPubkey: derivedAddr.senderPubkey.substring(0, 16) + '...'
@@ -1127,7 +1148,7 @@ export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>)
 
   // Verify the save by checking total count
   const allAddresses = await getDerivedAddresses()
-  console.log('[DB] Total derived addresses after save:', allAddresses.length)
+  dbLogger.debug('[DB] Total derived addresses after save:', allAddresses.length)
 
   return result.lastInsertId as number
 }
@@ -1139,7 +1160,7 @@ export async function getDerivedAddresses(): Promise<DerivedAddress[]> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>('SELECT * FROM derived_addresses ORDER BY created_at DESC')
+    const rows = await database.select<DerivedAddressRow[]>('SELECT * FROM derived_addresses ORDER BY created_at DESC')
 
     return rows.map(row => ({
       id: row.id,
@@ -1164,7 +1185,7 @@ export async function getDerivedAddressByAddress(address: string): Promise<Deriv
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<DerivedAddressRow[]>(
       'SELECT * FROM derived_addresses WHERE address = $1',
       [address]
     )
@@ -1256,7 +1277,7 @@ export async function ensureContactsTable(): Promise<void> {
     `)
     await database.execute('CREATE INDEX IF NOT EXISTS idx_contacts_pubkey ON contacts(pubkey)')
   } catch (e) {
-    console.error('Failed to ensure contacts table:', e)
+    dbLogger.error('Failed to ensure contacts table:', e)
   }
 }
 
@@ -1281,7 +1302,7 @@ export async function getContacts(): Promise<Contact[]> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>('SELECT * FROM contacts ORDER BY label ASC')
+    const rows = await database.select<ContactRow[]>('SELECT * FROM contacts ORDER BY label ASC')
 
     return rows.map(row => ({
       id: row.id,
@@ -1302,7 +1323,7 @@ export async function getContactByPubkey(pubkey: string): Promise<Contact | null
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<ContactRow[]>(
       'SELECT * FROM contacts WHERE pubkey = $1',
       [pubkey]
     )
@@ -1350,7 +1371,7 @@ export async function getNextInvoiceNumber(senderPubkey: string): Promise<number
 
   try {
     // Count existing derived addresses for this sender
-    const rows = await database.select<{count: number}[]>(
+    const rows = await database.select<CountRow[]>(
       'SELECT COUNT(*) as count FROM derived_addresses WHERE sender_pubkey = $1',
       [senderPubkey]
     )
@@ -1420,7 +1441,7 @@ export async function ensureActionResultsTable(): Promise<void> {
     await database.execute('CREATE INDEX IF NOT EXISTS idx_action_results_origin ON action_results(origin)')
     await database.execute('CREATE INDEX IF NOT EXISTS idx_action_results_requested ON action_results(requested_at)')
   } catch (e) {
-    console.error('Failed to ensure action_results table:', e)
+    dbLogger.error('Failed to ensure action_results table:', e)
   }
 }
 
@@ -1463,7 +1484,7 @@ export async function updateActionResult(
   const database = getDatabase()
 
   const setClauses: string[] = []
-  const params: any[] = []
+  const params: SqlParams = []
   let paramIndex = 1
 
   if (updates.txid !== undefined) {
@@ -1503,7 +1524,7 @@ export async function getRecentActionResults(limit = 50): Promise<ActionResult[]
   await ensureActionResultsTable()
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<ActionResultRow[]>(
     'SELECT * FROM action_results ORDER BY requested_at DESC LIMIT $1',
     [limit]
   )
@@ -1531,7 +1552,7 @@ export async function getActionResultsByOrigin(origin: string, limit = 50): Prom
   await ensureActionResultsTable()
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<ActionResultRow[]>(
     'SELECT * FROM action_results WHERE origin = $1 ORDER BY requested_at DESC LIMIT $2',
     [origin, limit]
   )
@@ -1559,7 +1580,7 @@ export async function getActionResultByTxid(txid: string): Promise<ActionResult 
   await ensureActionResultsTable()
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<ActionResultRow[]>(
     'SELECT * FROM action_results WHERE txid = $1',
     [txid]
   )

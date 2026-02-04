@@ -8,6 +8,8 @@
 import { getDatabase } from './database'
 import { encrypt, decrypt, type EncryptedData } from './crypto'
 import type { WalletKeys } from './wallet'
+import type { AccountRow, AccountSettingRow, IdCheckRow } from './database-types'
+import { validatePassword, DEFAULT_PASSWORD_REQUIREMENTS, LEGACY_PASSWORD_REQUIREMENTS } from './password-validation'
 
 // Account type
 export interface Account {
@@ -44,7 +46,7 @@ export async function ensureAccountsTables(): Promise<void> {
 
   try {
     // Check if accounts table exists
-    await database.select<any[]>('SELECT id FROM accounts LIMIT 1')
+    await database.select<IdCheckRow[]>('SELECT id FROM accounts LIMIT 1')
   } catch {
     // Tables don't exist yet - they'll be created by migration
     console.log('[Accounts] Tables will be created by migration')
@@ -57,15 +59,19 @@ export async function ensureAccountsTables(): Promise<void> {
 export async function createAccount(
   name: string,
   keys: WalletKeys,
-  password: string
+  password: string,
+  useLegacyRequirements = false
 ): Promise<number> {
   // Password is required - no unencrypted storage allowed
-  // Standardized to 12 characters minimum for security
   if (!password) {
     throw new Error('Password is required for wallet encryption')
   }
-  if (password.length < 12) {
-    throw new Error('Password must be at least 12 characters')
+
+  // Validate password against requirements
+  const requirements = useLegacyRequirements ? LEGACY_PASSWORD_REQUIREMENTS : DEFAULT_PASSWORD_REQUIREMENTS
+  const validation = validatePassword(password, requirements)
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join('. '))
   }
 
   const database = getDatabase()
@@ -114,7 +120,7 @@ export async function getAllAccounts(): Promise<Account[]> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<AccountRow[]>(
       'SELECT * FROM accounts ORDER BY last_accessed_at DESC'
     )
 
@@ -141,7 +147,7 @@ export async function getActiveAccount(): Promise<Account | null> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<AccountRow[]>(
       'SELECT * FROM accounts WHERE is_active = 1 LIMIT 1'
     )
 
@@ -169,7 +175,7 @@ export async function getAccountById(accountId: number): Promise<Account | null>
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<AccountRow[]>(
       'SELECT * FROM accounts WHERE id = $1',
       [accountId]
     )
@@ -198,7 +204,7 @@ export async function getAccountByIdentity(identityAddress: string): Promise<Acc
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<AccountRow[]>(
       'SELECT * FROM accounts WHERE identity_address = $1',
       [identityAddress]
     )
@@ -336,7 +342,7 @@ export async function getAccountSettings(accountId: number): Promise<AccountSett
   const database = getDatabase()
 
   try {
-    const rows = await database.select<any[]>(
+    const rows = await database.select<AccountSettingRow[]>(
       'SELECT setting_key, setting_value FROM account_settings WHERE account_id = $1',
       [accountId]
     )

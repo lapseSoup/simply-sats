@@ -13,6 +13,7 @@
 import { getDatabase } from './database'
 import { PrivateKey, Hash, PublicKey, Signature } from '@bsv/sdk'
 import type { WalletKeys } from './wallet'
+import type { CertificateRow, SqlParams } from './database-types'
 
 /**
  * Certificate types that can be issued
@@ -146,7 +147,7 @@ export async function getCertificatesBySubject(subject: string): Promise<Certifi
   await ensureCertificatesTable()
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<CertificateRow[]>(
     'SELECT * FROM certificates WHERE subject = $1 ORDER BY issued_at DESC',
     [subject]
   )
@@ -172,7 +173,7 @@ export async function getCertificatesByCertifier(certifier: string): Promise<Cer
   await ensureCertificatesTable()
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<CertificateRow[]>(
     'SELECT * FROM certificates WHERE certifier = $1 ORDER BY issued_at DESC',
     [certifier]
   )
@@ -199,7 +200,7 @@ export async function getCertificatesByType(type: CertificateType, subject?: str
   const database = getDatabase()
 
   let query = 'SELECT * FROM certificates WHERE type = $1'
-  const params: any[] = [type]
+  const params: SqlParams = [type]
 
   if (subject) {
     query += ' AND subject = $2'
@@ -208,7 +209,7 @@ export async function getCertificatesByType(type: CertificateType, subject?: str
 
   query += ' ORDER BY issued_at DESC'
 
-  const rows = await database.select<any[]>(query, params)
+  const rows = await database.select<CertificateRow[]>(query, params)
 
   return rows.map(row => ({
     id: row.id,
@@ -231,7 +232,7 @@ export async function getCertificateBySerial(serialNumber: string): Promise<Cert
   await ensureCertificatesTable()
   const database = getDatabase()
 
-  const rows = await database.select<any[]>(
+  const rows = await database.select<CertificateRow[]>(
     'SELECT * FROM certificates WHERE serial_number = $1',
     [serialNumber]
   )

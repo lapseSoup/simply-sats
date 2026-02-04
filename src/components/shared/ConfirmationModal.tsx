@@ -295,6 +295,7 @@ export function ConfirmationModal({
   )
 }
 
-// Threshold constants for different confirmation levels
-export const SEND_CONFIRMATION_THRESHOLD = 10000 // 10,000 sats
-export const HIGH_VALUE_THRESHOLD = 100000 // 100,000 sats (requires extra confirmation)
+// Re-export threshold constants from config for convenience
+import { CONFIRMATION_THRESHOLDS } from '../../services/config'
+export const SEND_CONFIRMATION_THRESHOLD = CONFIRMATION_THRESHOLDS.sendConfirmation
+export const HIGH_VALUE_THRESHOLD = CONFIRMATION_THRESHOLDS.highValue

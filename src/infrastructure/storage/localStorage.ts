@@ -11,14 +11,17 @@
 // ============================================
 
 export const STORAGE_KEYS = {
-  // Balance caching
+  // Balance caching (privacy-sensitive - cleared on exit)
   CACHED_BALANCE: 'simply_sats_cached_balance',
   CACHED_ORD_BALANCE: 'simply_sats_cached_ord_balance',
 
-  // User preferences
+  // User preferences (persisted)
   AUTO_LOCK_MINUTES: 'simply_sats_auto_lock_minutes',
   DISPLAY_SATS: 'simply_sats_display_sats',
   FEE_RATE: 'simply_sats_fee_rate',
+
+  // Network selection (persisted)
+  NETWORK: 'simply_sats_network',
 
   // Security
   TRUSTED_ORIGINS: 'simply_sats_trusted_origins',
@@ -33,6 +36,16 @@ export const STORAGE_KEYS = {
   ACTIVE_TAB: 'simply_sats_active_tab',
   SIDEBAR_COLLAPSED: 'simply_sats_sidebar_collapsed'
 } as const
+
+/**
+ * Keys that contain privacy-sensitive data and should be cleared on app exit
+ * These cache values that could reveal user activity patterns
+ */
+export const PRIVACY_SENSITIVE_KEYS = [
+  STORAGE_KEYS.CACHED_BALANCE,
+  STORAGE_KEYS.CACHED_ORD_BALANCE,
+  STORAGE_KEYS.LAST_SYNC
+] as const
 
 export type StorageKey = typeof STORAGE_KEYS[keyof typeof STORAGE_KEYS]
 
@@ -209,6 +222,22 @@ export const storage = {
   },
 
   // ==========================================
+  // Network
+  // ==========================================
+  network: {
+    get(): 'mainnet' | 'testnet' {
+      const value = localStorage.getItem(STORAGE_KEYS.NETWORK)
+      return value === 'testnet' ? 'testnet' : 'mainnet'
+    },
+    set(network: 'mainnet' | 'testnet'): void {
+      localStorage.setItem(STORAGE_KEYS.NETWORK, network)
+    },
+    clear(): void {
+      localStorage.removeItem(STORAGE_KEYS.NETWORK)
+    }
+  },
+
+  // ==========================================
   // Sync State
   // ==========================================
   lastSync: {
@@ -265,7 +294,36 @@ export const storage = {
     this.balance.clear()
     this.ordBalance.clear()
     this.lastSync.clear()
+  },
+
+  /**
+   * Clear privacy-sensitive data (call on app exit/close)
+   * This prevents balance information from persisting and revealing activity patterns
+   */
+  clearPrivacySensitive(): void {
+    PRIVACY_SENSITIVE_KEYS.forEach(key => {
+      localStorage.removeItem(key)
+    })
   }
+}
+
+/**
+ * Register cleanup handler for app exit/close
+ * Clears privacy-sensitive cached data when the app is closed
+ */
+export function registerExitCleanup(): void {
+  // Handle tab/window close
+  window.addEventListener('beforeunload', () => {
+    storage.clearPrivacySensitive()
+  })
+
+  // Handle visibility change (optional - clear when tab is hidden for extended period)
+  // This is commented out as it may be too aggressive for some use cases
+  // window.addEventListener('visibilitychange', () => {
+  //   if (document.visibilityState === 'hidden') {
+  //     storage.clearPrivacySensitive()
+  //   }
+  // })
 }
 
 // Default export for convenience

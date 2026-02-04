@@ -366,3 +366,23 @@ export const cryptoLogger = logger.child({ module: 'Crypto' })
  * Pre-configured logger for account operations
  */
 export const accountLogger = logger.child({ module: 'Accounts' })
+
+/**
+ * Pre-configured logger for token operations
+ */
+export const tokenLogger = logger.child({ module: 'Tokens' })
+
+/**
+ * Pre-configured logger for message/payment operations
+ */
+export const messageLogger = logger.child({ module: 'Messages' })
+
+/**
+ * Pre-configured logger for overlay network operations
+ */
+export const overlayLogger = logger.child({ module: 'Overlay' })
+
+/**
+ * Pre-configured logger for UI/context operations
+ */
+export const uiLogger = logger.child({ module: 'UI' })

@@ -191,16 +191,22 @@ describe('Account Management Service', () => {
       )
     })
 
-    it('should require password to be at least 12 characters', async () => {
+    it('should require password to meet minimum requirements', async () => {
       const keys = createMockWalletKeys()
+      // With default requirements, needs 16+ chars with complexity
       await expect(createAccount('Test Account', keys, 'short')).rejects.toThrow(
+        'Password must be at least 16 characters'
+      )
+      // Legacy mode only requires 12 chars
+      await expect(createAccount('Test Account', keys, 'short', true)).rejects.toThrow(
         'Password must be at least 12 characters'
       )
     })
 
     it('should create a new account with encrypted keys', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Test Account', keys, 'password1234545')
+      // Use legacy mode for simpler test passwords
+      const accountId = await createAccount('Test Account', keys, 'password12345', true, true)
 
       expect(accountId).toBe(1)
 
@@ -215,8 +221,8 @@ describe('Account Management Service', () => {
       const keys1 = createMockWalletKeys('1')
       const keys2 = createMockWalletKeys('2')
 
-      await createAccount('Account 1', keys1, 'password12345')
-      await createAccount('Account 2', keys2, 'password12345')
+      await createAccount('Account 1', keys1, 'password12345', true)
+      await createAccount('Account 2', keys2, 'password12345', true)
 
       const accounts = await getAllAccounts()
       expect(accounts).toHaveLength(2)
@@ -229,7 +235,7 @@ describe('Account Management Service', () => {
 
     it('should set default settings for new account', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Test Account', keys, 'password12345')
+      const accountId = await createAccount('Test Account', keys, 'password12345', true)
 
       const settings = await getAccountSettings(accountId)
       expect(settings.displayInSats).toBe(DEFAULT_ACCOUNT_SETTINGS.displayInSats)
@@ -248,8 +254,8 @@ describe('Account Management Service', () => {
       const keys1 = createMockWalletKeys('1')
       const keys2 = createMockWalletKeys('2')
 
-      await createAccount('Account 1', keys1, 'password12345')
-      await createAccount('Account 2', keys2, 'password12345')
+      await createAccount('Account 1', keys1, 'password12345', true)
+      await createAccount('Account 2', keys2, 'password12345', true)
 
       const accounts = await getAllAccounts()
       expect(accounts).toHaveLength(2)
@@ -264,7 +270,7 @@ describe('Account Management Service', () => {
 
     it('should return the active account', async () => {
       const keys = createMockWalletKeys()
-      await createAccount('Active Account', keys, 'password12345')
+      await createAccount('Active Account', keys, 'password12345', true)
 
       const active = await getActiveAccount()
       expect(active).not.toBeNull()
@@ -281,7 +287,7 @@ describe('Account Management Service', () => {
 
     it('should return account by ID', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('My Account', keys, 'password12345')
+      const accountId = await createAccount('My Account', keys, 'password12345', true)
 
       const account = await getAccountById(accountId)
       expect(account).not.toBeNull()
@@ -298,7 +304,7 @@ describe('Account Management Service', () => {
 
     it('should return account by identity address', async () => {
       const keys = createMockWalletKeys()
-      await createAccount('Identity Account', keys, 'password12345')
+      await createAccount('Identity Account', keys, 'password12345', true)
 
       const account = await getAccountByIdentity('identity-address-1')
       expect(account).not.toBeNull()
@@ -311,8 +317,8 @@ describe('Account Management Service', () => {
       const keys1 = createMockWalletKeys('1')
       const keys2 = createMockWalletKeys('2')
 
-      const id1 = await createAccount('Account 1', keys1, 'password12345')
-      await createAccount('Account 2', keys2, 'password12345')
+      const id1 = await createAccount('Account 1', keys1, 'password12345', true)
+      await createAccount('Account 2', keys2, 'password12345', true)
 
       // Account 2 is now active, switch to Account 1
       const result = await switchAccount(id1)
@@ -324,7 +330,7 @@ describe('Account Management Service', () => {
 
     it('should update last_accessed_at when switching', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Test Account', keys, 'password12345')
+      const accountId = await createAccount('Test Account', keys, 'password12345', true)
 
       const beforeSwitch = await getAccountById(accountId)
       const beforeTime = beforeSwitch!.lastAccessedAt
@@ -341,10 +347,10 @@ describe('Account Management Service', () => {
   describe('getAccountKeys', () => {
     it('should decrypt and return wallet keys', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Test Account', keys, 'password12345')
+      const accountId = await createAccount('Test Account', keys, 'password12345', true)
 
       const account = await getAccountById(accountId)
-      const decryptedKeys = await getAccountKeys(account!, 'password12345')
+      const decryptedKeys = await getAccountKeys(account!, 'password12345', true)
 
       expect(decryptedKeys).not.toBeNull()
       expect(decryptedKeys!.mnemonic).toBe(keys.mnemonic)
@@ -364,7 +370,7 @@ describe('Account Management Service', () => {
   describe('updateAccountName', () => {
     it('should update account name', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Original Name', keys, 'password12345')
+      const accountId = await createAccount('Original Name', keys, 'password12345', true)
 
       await updateAccountName(accountId, 'New Name')
 
@@ -376,7 +382,7 @@ describe('Account Management Service', () => {
   describe('deleteAccount', () => {
     it('should not delete the only account', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Only Account', keys, 'password12345')
+      const accountId = await createAccount('Only Account', keys, 'password12345', true)
 
       const result = await deleteAccount(accountId)
       expect(result).toBe(false)
@@ -389,8 +395,8 @@ describe('Account Management Service', () => {
       const keys1 = createMockWalletKeys('1')
       const keys2 = createMockWalletKeys('2')
 
-      const id1 = await createAccount('Account 1', keys1, 'password12345')
-      await createAccount('Account 2', keys2, 'password12345')
+      const id1 = await createAccount('Account 1', keys1, 'password12345', true)
+      await createAccount('Account 2', keys2, 'password12345', true)
 
       const result = await deleteAccount(id1)
       expect(result).toBe(true)
@@ -404,8 +410,8 @@ describe('Account Management Service', () => {
       const keys1 = createMockWalletKeys('1')
       const keys2 = createMockWalletKeys('2')
 
-      await createAccount('Account 1', keys1, 'password12345')
-      const id2 = await createAccount('Account 2', keys2, 'password12345')
+      await createAccount('Account 1', keys1, 'password12345', true)
+      const id2 = await createAccount('Account 2', keys2, 'password12345', true)
 
       // Account 2 is active, delete it
       await deleteAccount(id2)
@@ -419,7 +425,7 @@ describe('Account Management Service', () => {
   describe('Account Settings', () => {
     it('should return default settings for new account', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Test', keys, 'password12345')
+      const accountId = await createAccount('Test', keys, 'password12345', true)
 
       const settings = await getAccountSettings(accountId)
       expect(settings).toEqual(DEFAULT_ACCOUNT_SETTINGS)
@@ -427,7 +433,7 @@ describe('Account Management Service', () => {
 
     it('should update settings', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Test', keys, 'password12345')
+      const accountId = await createAccount('Test', keys, 'password12345', true)
 
       await setAccountSettings(accountId, {
         displayInSats: true,
@@ -441,7 +447,7 @@ describe('Account Management Service', () => {
 
     it('should update a single setting', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Test', keys, 'password12345')
+      const accountId = await createAccount('Test', keys, 'password12345', true)
 
       await updateAccountSetting(accountId, 'autoLockMinutes', 30)
 
@@ -451,7 +457,7 @@ describe('Account Management Service', () => {
 
     it('should handle trusted origins array', async () => {
       const keys = createMockWalletKeys()
-      const accountId = await createAccount('Test', keys, 'password12345')
+      const accountId = await createAccount('Test', keys, 'password12345', true)
 
       const origins = ['https://example.com', 'https://app.test.com']
       await setAccountSettings(accountId, { trustedOrigins: origins })
@@ -466,7 +472,7 @@ describe('Account Management Service', () => {
       expect(await getNextAccountNumber()).toBe(1)
 
       const keys = createMockWalletKeys()
-      await createAccount('Account 1', keys, 'password12345')
+      await createAccount('Account 1', keys, 'password12345', true)
 
       expect(await getNextAccountNumber()).toBe(2)
     })
@@ -475,7 +481,7 @@ describe('Account Management Service', () => {
       expect(await isAccountSystemInitialized()).toBe(false)
 
       const keys = createMockWalletKeys()
-      await createAccount('Account 1', keys, 'password12345')
+      await createAccount('Account 1', keys, 'password12345', true)
 
       expect(await isAccountSystemInitialized()).toBe(true)
     })
