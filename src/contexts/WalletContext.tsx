@@ -21,6 +21,7 @@ import {
 } from '../services/wallet'
 import { setWalletKeys } from '../services/brc100'
 import { useNetwork, type NetworkInfo } from './NetworkContext'
+import { useAccounts } from './AccountsContext'
 import {
   initDatabase,
   repairUTXOs,
@@ -42,11 +43,6 @@ import {
   type Account,
   getAllAccounts,
   getActiveAccount,
-  getAccountKeys,
-  switchAccount as switchAccountDb,
-  createAccount,
-  deleteAccount as deleteAccountDb,
-  updateAccountName,
   migrateToMultiAccount
 } from '../services/accounts'
 import {
@@ -179,10 +175,18 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const [txHistory, setTxHistory] = useState<TxHistoryItem[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
 
-  // Multi-account state
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [activeAccount, setActiveAccount] = useState<Account | null>(null)
-  const [activeAccountId, setActiveAccountId] = useState<number | null>(null)
+  // Get multi-account state from AccountsContext
+  const {
+    accounts,
+    activeAccount,
+    activeAccountId,
+    switchAccount: accountsSwitchAccount,
+    createNewAccount: accountsCreateNewAccount,
+    deleteAccount: accountsDeleteAccount,
+    renameAccount,
+    refreshAccounts,
+    getKeysForAccount
+  } = useAccounts()
 
   // Token state
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([])
@@ -245,7 +249,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
 
     try {
-      const keys = await getAccountKeys(activeAccount, password)
+      const keys = await getKeysForAccount(activeAccount, password)
       if (keys) {
         setWalletState(keys)
         setWalletKeys(keys)
@@ -259,7 +263,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       console.error('[Wallet] Failed to unlock:', e)
       return false
     }
-  }, [activeAccount])
+  }, [activeAccount, getKeysForAccount])
 
   // Set auto-lock timeout
   const setAutoLockMinutes = useCallback((minutes: number) => {
@@ -272,113 +276,45 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [])
 
-  // Refresh accounts list
-  const refreshAccounts = useCallback(async () => {
-    try {
-      const allAccounts = await getAllAccounts()
-      setAccounts(allAccounts)
 
-      const active = await getActiveAccount()
-      if (active) {
-        setActiveAccount(active)
-        setActiveAccountId(active.id || null)
-      }
-    } catch (e) {
-      console.error('[Wallet] Failed to refresh accounts:', e)
-    }
-  }, [])
-
-  // Switch to a different account
+  // Switch to a different account - wraps AccountsContext to also set wallet state
   const switchAccount = useCallback(async (accountId: number, password: string): Promise<boolean> => {
-    try {
-      // Get the account
-      const account = accounts.find(a => a.id === accountId)
-      if (!account) {
-        console.error('[Wallet] Account not found')
-        return false
-      }
-
-      // Try to decrypt keys
-      const keys = await getAccountKeys(account, password)
-      if (!keys) {
-        console.error('[Wallet] Invalid password')
-        return false
-      }
-
-      // Switch in database
-      const success = await switchAccountDb(accountId)
-      if (!success) return false
-
-      // Update state
-      setActiveAccount(account)
-      setActiveAccountId(accountId)
+    const keys = await accountsSwitchAccount(accountId, password)
+    if (keys) {
       setWallet(keys)
       setIsLocked(false)
-
-      // Refresh data for new account
-      await refreshAccounts()
-
-      console.log(`[Wallet] Switched to account ${account.name}`)
       return true
-    } catch (e) {
-      console.error('[Wallet] Failed to switch account:', e)
-      return false
     }
-  }, [accounts, setWallet, refreshAccounts])
+    return false
+  }, [accountsSwitchAccount, setWallet])
 
-  // Create a new account
+  // Create a new account - wraps AccountsContext to also set wallet state
   const createNewAccount = useCallback(async (name: string, password: string): Promise<boolean> => {
-    try {
-      // Create new wallet keys
-      const keys = createWallet()
-
-      // Create account in database
-      const accountId = await createAccount(name, keys, password)
-      if (!accountId) return false
-
-      // Set as active
+    const keys = await accountsCreateNewAccount(name, password)
+    if (keys) {
       setWallet(keys)
       setIsLocked(false)
-
-      // Refresh accounts
-      await refreshAccounts()
-
-      console.log(`[Wallet] Created new account: ${name}`)
       return true
-    } catch (e) {
-      console.error('[Wallet] Failed to create account:', e)
-      return false
     }
-  }, [setWallet, refreshAccounts])
+    return false
+  }, [accountsCreateNewAccount, setWallet])
 
-  // Delete an account
+  // Delete an account - wraps AccountsContext, may need to load new active account
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
-    try {
-      const success = await deleteAccountDb(accountId)
-      if (success) {
-        await refreshAccounts()
-
-        // If we deleted the active account, load the new active one
-        const active = await getActiveAccount()
-        if (active && wallet === null) {
-          const keys = await getAccountKeys(active, '')
-          if (keys) {
-            setWallet(keys)
-          }
+    const success = await accountsDeleteAccount(accountId)
+    if (success) {
+      // If we deleted the active account, load the new active one
+      const active = await getActiveAccount()
+      if (active && wallet === null) {
+        const keys = await getKeysForAccount(active, '')
+        if (keys) {
+          setWallet(keys)
         }
       }
-      return success
-    } catch (e) {
-      console.error('[Wallet] Failed to delete account:', e)
-      return false
     }
-  }, [wallet, setWallet, refreshAccounts])
+    return success
+  }, [accountsDeleteAccount, wallet, setWallet, getKeysForAccount])
 
-  // Rename an account
-  const renameAccount = useCallback(async (accountId: number, name: string): Promise<void> => {
-    await updateAccountName(accountId, name)
-    await refreshAccounts()
-  }, [refreshAccounts])
 
   // Refresh token balances
   const refreshTokens = useCallback(async () => {
@@ -436,15 +372,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
           console.log('No cached transactions yet')
         }
 
-        // Load accounts
-        const allAccounts = await getAllAccounts()
-        setAccounts(allAccounts)
-
-        const active = await getActiveAccount()
-        if (active) {
-          setActiveAccount(active)
-          setActiveAccountId(active.id || null)
-        }
+        // Load accounts from AccountsContext
+        await refreshAccounts()
       } catch (err) {
         console.error('Failed to initialize database:', err)
       }
@@ -461,13 +390,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
             if (allAccounts.length === 0) {
               console.log('[Wallet] Migrating to multi-account system')
               await migrateToMultiAccount(keys, '')
-              const accounts = await getAllAccounts()
-              setAccounts(accounts)
-              const active = await getActiveAccount()
-              if (active) {
-                setActiveAccount(active)
-                setActiveAccountId(active.id || null)
-              }
+              await refreshAccounts()
             }
           }
         } catch (err) {
@@ -482,7 +405,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }
     }
     init()
-  }, [setWallet])
+  }, [setWallet, refreshAccounts])
 
   // Initialize auto-lock when wallet is loaded
   useEffect(() => {

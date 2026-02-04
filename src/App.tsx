@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
-import { WalletProvider, useWallet, NetworkProvider, UIProvider, useUI } from './contexts'
+import { WalletProvider, useWallet, NetworkProvider, UIProvider, useUI, AccountsProvider } from './contexts'
 import {
   Toast,
   PaymentAlert,
@@ -493,9 +493,11 @@ function App() {
     <ScreenReaderAnnounceProvider>
       <NetworkProvider>
         <UIProvider>
-          <WalletProvider>
-            <WalletApp />
-          </WalletProvider>
+          <AccountsProvider>
+            <WalletProvider>
+              <WalletApp />
+            </WalletProvider>
+          </AccountsProvider>
         </UIProvider>
       </NetworkProvider>
     </ScreenReaderAnnounceProvider>
