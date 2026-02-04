@@ -120,10 +120,34 @@ async fn handle_wait_for_authentication(Json(_args): Json<EmptyArgs>) -> Json<Au
 
 async fn handle_get_height(Json(_args): Json<EmptyArgs>) -> Json<HeightResponse> {
     println!("getHeight request");
-    // Return a placeholder - frontend will fetch actual height
-    Json(HeightResponse {
-        height: 880000,
-    })
+
+    // Fetch real block height from WhatsOnChain
+    let height = match fetch_block_height().await {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("Failed to fetch block height: {}, using fallback", e);
+            880000 // Fallback value if API fails
+        }
+    };
+
+    Json(HeightResponse { height })
+}
+
+async fn fetch_block_height() -> Result<u32, Box<dyn std::error::Error + Send + Sync>> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.whatsonchain.com/v1/bsv/main/chain/info")
+        .header("Accept", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await?;
+
+    let data: serde_json::Value = response.json().await?;
+    let height = data["blocks"]
+        .as_u64()
+        .ok_or("Missing blocks field")? as u32;
+
+    Ok(height)
 }
 
 async fn handle_get_public_key(

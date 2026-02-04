@@ -24,6 +24,7 @@ tower-http = { version = "0.5", features = ["cors"] }
 tauri-plugin-sql = { version = "2.3.1", features = ["sqlite"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+reqwest = { version = "0.11", features = ["json"] }
 
 [profile.release]
 panic = "abort"

@@ -1197,16 +1197,51 @@ export function getTimelockScriptSize(publicKeyHex: string, blockHeight: number)
   return script.toBinary().length
 }
 
+/**
+ * Create a Wrootz protocol OP_RETURN script
+ * Format: OP_RETURN OP_FALSE "wrootz" <action> <data>
+ */
+function createWrootzOpReturn(action: string, data: string): LockingScript {
+  // Helper to push data bytes
+  const pushData = (bytes: number[]): number[] => {
+    const len = bytes.length
+    if (len < 0x4c) {
+      return [len, ...bytes]
+    } else if (len <= 0xff) {
+      return [0x4c, len, ...bytes]
+    } else if (len <= 0xffff) {
+      return [0x4d, len & 0xff, (len >> 8) & 0xff, ...bytes]
+    } else {
+      return [0x4e, len & 0xff, (len >> 8) & 0xff, (len >> 16) & 0xff, (len >> 24) & 0xff, ...bytes]
+    }
+  }
+
+  const toBytes = (str: string): number[] => Array.from(new TextEncoder().encode(str))
+
+  const scriptBytes: number[] = [
+    0x6a, // OP_RETURN
+    0x00, // OP_FALSE
+    ...pushData(toBytes('wrootz')),
+    ...pushData(toBytes(action)),
+    ...pushData(toBytes(data))
+  ]
+
+  return LockingScript.fromBinary(scriptBytes)
+}
+
 
 /**
  * Lock BSV until a specific block height using OP_PUSH_TX technique
  * Based on jdh7190's bsv-lock implementation
+ *
+ * @param ordinalOrigin - Optional ordinal origin to link this lock to (for Wrootz)
  */
 export async function lockBSV(
   wif: string,
   satoshis: number,
   unlockBlock: number,
-  utxos: UTXO[]
+  utxos: UTXO[],
+  ordinalOrigin?: string
 ): Promise<{ txid: string; lockedUtxo: LockedUTXO }> {
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
@@ -1274,6 +1309,16 @@ export async function lockBSV(
     lockingScript: LockingScript.fromBinary(lockScriptBytes),
     satoshis
   })
+
+  // Add OP_RETURN with ordinal reference if provided (output 1)
+  // Format: OP_RETURN OP_FALSE "wrootz" "lock" <ordinal_origin>
+  if (ordinalOrigin) {
+    const opReturnScript = createWrootzOpReturn('lock', ordinalOrigin)
+    tx.addOutput({
+      lockingScript: opReturnScript,
+      satoshis: 0
+    })
+  }
 
   // Add change output if above dust
   if (change > 546) {

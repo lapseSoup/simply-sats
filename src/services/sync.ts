@@ -28,6 +28,7 @@ export const BASKETS = {
   ORDINALS: 'ordinals',    // Ordinal inscriptions
   IDENTITY: 'identity',    // BRC-100 identity key
   LOCKS: 'locks',          // Time-locked outputs
+  WROOTZ_LOCKS: 'wrootz_locks', // Time-locked outputs created via Wrootz app
   DERIVED: 'derived'       // Received via derived addresses (BRC-42/43)
 } as const
 

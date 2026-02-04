@@ -951,12 +951,19 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
           }))
 
           // Use the wallet's native lockBSV function (OP_PUSH_TX)
+          // Pass ordinalOrigin so it can be included as OP_RETURN in the same transaction
           const result = await walletLockBSV(
             keys.walletWif,
             satoshis,
             unlockBlock,
-            walletUtxos
+            walletUtxos,
+            lockMetadata.ordinalOrigin || undefined
           )
+
+          // Determine basket based on app metadata or origin
+          // Use wrootz_locks for wrootz app, otherwise default to 'locks'
+          const isWrootzApp = lockMetadata.app === 'wrootz' || request.origin?.includes('wrootz')
+          const lockBasket = isWrootzApp ? 'wrootz_locks' : 'locks'
 
           // First add the locked UTXO to the database
           const utxoId = await addUTXO({
@@ -964,7 +971,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
             vout: 0,
             satoshis,
             lockingScript: result.lockedUtxo.lockingScript,
-            basket: 'locks',
+            basket: lockBasket,
             spendable: false,
             createdAt: Date.now()
           })
