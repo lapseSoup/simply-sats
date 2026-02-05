@@ -175,6 +175,7 @@ pub async fn start_server(
 }
 
 async fn handle_get_version(Json(_args): Json<EmptyArgs>) -> Json<VersionResponse> {
+    #[cfg(debug_assertions)]
     println!("getVersion request");
     Json(VersionResponse {
         version: "0.1.0".to_string(),
@@ -182,6 +183,7 @@ async fn handle_get_version(Json(_args): Json<EmptyArgs>) -> Json<VersionRespons
 }
 
 async fn handle_get_network(Json(_args): Json<EmptyArgs>) -> Json<NetworkResponse> {
+    #[cfg(debug_assertions)]
     println!("getNetwork request");
     Json(NetworkResponse {
         network: "mainnet".to_string(),
@@ -189,6 +191,7 @@ async fn handle_get_network(Json(_args): Json<EmptyArgs>) -> Json<NetworkRespons
 }
 
 async fn handle_is_authenticated(Json(_args): Json<EmptyArgs>) -> Json<AuthResponse> {
+    #[cfg(debug_assertions)]
     println!("isAuthenticated request");
     Json(AuthResponse {
         authenticated: true,
@@ -196,6 +199,7 @@ async fn handle_is_authenticated(Json(_args): Json<EmptyArgs>) -> Json<AuthRespo
 }
 
 async fn handle_wait_for_authentication(Json(_args): Json<EmptyArgs>) -> Json<AuthResponse> {
+    #[cfg(debug_assertions)]
     println!("waitForAuthentication request");
     // Simply Sats is always authenticated when wallet is loaded
     Json(AuthResponse {
@@ -204,14 +208,25 @@ async fn handle_wait_for_authentication(Json(_args): Json<EmptyArgs>) -> Json<Au
 }
 
 async fn handle_get_height(Json(_args): Json<EmptyArgs>) -> Json<HeightResponse> {
+    #[cfg(debug_assertions)]
     println!("getHeight request");
 
     // Fetch real block height from WhatsOnChain
     let height = match fetch_block_height().await {
         Ok(h) => h,
         Err(e) => {
-            eprintln!("Failed to fetch block height: {}, using fallback", e);
-            880000 // Fallback value if API fails
+            // Estimate block height based on time since genesis
+            // BSV genesis: Jan 3, 2009, ~10 min/block average
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let genesis_time: u64 = 1231006505; // Jan 3, 2009
+            let avg_block_time: u64 = 600; // 10 minutes in seconds
+            let estimated = ((now - genesis_time) / avg_block_time) as u32;
+            eprintln!("Failed to fetch block height: {}, using estimated: {}", e, estimated);
+            estimated
         }
     };
 
@@ -239,6 +254,7 @@ async fn handle_get_public_key(
     State(state): State<AppState>,
     Json(args): Json<GetPublicKeyArgs>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    #[cfg(debug_assertions)]
     println!("getPublicKey request: {:?}", args);
     forward_to_frontend(state, "getPublicKey", serde_json::json!({
         "identityKey": args.identity_key.unwrap_or(false),
@@ -249,6 +265,7 @@ async fn handle_create_signature(
     State(state): State<AppState>,
     Json(args): Json<serde_json::Value>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    #[cfg(debug_assertions)]
     println!("createSignature request: {:?}", args);
     forward_to_frontend(state, "createSignature", args).await
 }
@@ -257,6 +274,7 @@ async fn handle_create_action(
     State(state): State<AppState>,
     Json(args): Json<serde_json::Value>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    #[cfg(debug_assertions)]
     println!("createAction request: {:?}", args);
     forward_to_frontend(state, "createAction", args).await
 }
@@ -265,6 +283,7 @@ async fn handle_list_outputs(
     State(state): State<AppState>,
     Json(args): Json<serde_json::Value>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    #[cfg(debug_assertions)]
     println!("listOutputs request: {:?}", args);
     forward_to_frontend(state, "listOutputs", args).await
 }
@@ -273,6 +292,7 @@ async fn handle_lock_bsv(
     State(state): State<AppState>,
     Json(args): Json<serde_json::Value>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    #[cfg(debug_assertions)]
     println!("lockBSV request: {:?}", args);
     forward_to_frontend(state, "lockBSV", args).await
 }
@@ -281,6 +301,7 @@ async fn handle_unlock_bsv(
     State(state): State<AppState>,
     Json(args): Json<serde_json::Value>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    #[cfg(debug_assertions)]
     println!("unlockBSV request: {:?}", args);
     forward_to_frontend(state, "unlockBSV", args).await
 }
@@ -289,6 +310,7 @@ async fn handle_list_locks(
     State(state): State<AppState>,
     Json(args): Json<serde_json::Value>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    #[cfg(debug_assertions)]
     println!("listLocks request: {:?}", args);
     forward_to_frontend(state, "listLocks", args).await
 }

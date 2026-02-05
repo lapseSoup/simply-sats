@@ -167,6 +167,14 @@ export interface LockedOutput {
   blocksRemaining: number
 }
 
+// Discovered output from BRC-100 discovery methods
+export interface DiscoveredOutput {
+  outpoint: string
+  satoshis: number
+  lockingScript?: string
+  tags: string[]
+}
+
 // Pending request queue for user approval
 const pendingRequests: Map<string, {
   request: BRC100Request
@@ -1673,7 +1681,7 @@ export async function discoverByIdentityKey(args: {
   limit?: number
   offset?: number
 }): Promise<{
-  outputs: any[]
+  outputs: DiscoveredOutput[]
   totalOutputs: number
 }> {
   // First check local database
@@ -1723,7 +1731,7 @@ export async function discoverByAttributes(args: {
   limit?: number
   offset?: number
 }): Promise<{
-  outputs: any[]
+  outputs: DiscoveredOutput[]
   totalOutputs: number
 }> {
   // Search across all baskets for matching tags

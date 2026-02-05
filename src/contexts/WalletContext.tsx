@@ -341,27 +341,35 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Initialize database and load wallet on mount
   useEffect(() => {
+    let mounted = true
+
     const init = async () => {
       try {
         await initDatabase()
+        if (!mounted) return
         console.log('Database initialized successfully')
 
         const repaired = await repairUTXOs()
+        if (!mounted) return
         if (repaired > 0) {
           console.log(`Repaired ${repaired} UTXOs`)
         }
 
         await ensureDerivedAddressesTable()
+        if (!mounted) return
         console.log('Derived addresses table ready')
 
         await ensureContactsTable()
+        if (!mounted) return
         const loadedContacts = await getContacts()
+        if (!mounted) return
         setContacts(loadedContacts)
         console.log('Loaded', loadedContacts.length, 'contacts')
 
         // Load transactions from database
         try {
           const dbTxs = await getAllTransactions(30)
+          if (!mounted) return
           if (dbTxs.length > 0) {
             console.log('Loaded', dbTxs.length, 'transactions from database')
             setTxHistory(dbTxs.map(tx => ({
@@ -376,14 +384,18 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
         // Load accounts from AccountsContext
         await refreshAccounts()
+        if (!mounted) return
       } catch (err) {
         console.error('Failed to initialize database:', err)
       }
+
+      if (!mounted) return
 
       // Try to load wallet (legacy support + new account system)
       if (hasWallet()) {
         // Check if we have accounts in the database
         const allAccounts = await getAllAccounts()
+        if (!mounted) return
 
         if (allAccounts.length > 0) {
           // We have accounts - wallet is encrypted, show lock screen
@@ -394,20 +406,24 @@ export function WalletProvider({ children }: WalletProviderProps) {
           // No accounts yet - try loading with empty password (legacy unencrypted support)
           try {
             const keys = await loadWallet('')
+            if (!mounted) return
             if (keys) {
               setWallet(keys)
               // Migrate to multi-account system
               console.log('[Wallet] Migrating to multi-account system')
               await migrateToMultiAccount(keys, '')
+              if (!mounted) return
               await refreshAccounts()
             }
           } catch (_err) {
             // Wallet exists but couldn't load - it's encrypted, show lock screen
+            if (!mounted) return
             console.log('[Wallet] Wallet is encrypted, showing lock screen')
             setIsLocked(true)
           }
         }
       }
+      if (!mounted) return
       setLoading(false)
 
       const savedApps = localStorage.getItem('simply_sats_connected_apps')
@@ -416,6 +432,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }
     }
     init()
+
+    return () => {
+      mounted = false
+    }
   }, [setWallet, refreshAccounts])
 
   // Migration: remove old localStorage locks (database is source of truth)
@@ -483,7 +503,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     } finally {
       setSyncing(false)
     }
-  }, [wallet, syncing])
+  }, [wallet, syncing, setSyncing])
 
   // Fetch data from database and API
   const fetchData = useCallback(async () => {

@@ -57,6 +57,84 @@ export interface UTXO {
   script: string
 }
 
+// WhatsOnChain API response types
+export interface WocUtxo {
+  tx_hash: string
+  tx_pos: number
+  value: number
+  height?: number
+}
+
+export interface WocHistoryItem {
+  tx_hash: string
+  height: number
+}
+
+export interface WocTxOutput {
+  value: number
+  n: number
+  scriptPubKey: {
+    asm: string
+    hex: string
+    reqSigs?: number
+    type: string
+    addresses?: string[]
+  }
+}
+
+export interface WocTxInput {
+  txid: string
+  vout: number
+  scriptSig: {
+    asm: string
+    hex: string
+  }
+  sequence: number
+  // prevout is included in some API responses
+  prevout?: {
+    value: number
+    scriptPubKey: {
+      addresses?: string[]
+    }
+  }
+}
+
+export interface WocTransaction {
+  txid: string
+  hash: string
+  version: number
+  size: number
+  locktime: number
+  vin: WocTxInput[]
+  vout: WocTxOutput[]
+  blockhash?: string
+  confirmations?: number
+  time?: number
+  blocktime?: number
+  blockheight?: number
+}
+
+// GorillaPool Ordinals API response types
+interface GpOrdinalOrigin {
+  outpoint?: string
+  data?: {
+    insc?: {
+      file?: {
+        type?: string
+        hash?: string
+      }
+    }
+  }
+}
+
+interface GpOrdinalItem {
+  txid: string
+  vout: number
+  satoshis?: number
+  outpoint?: string
+  origin?: GpOrdinalOrigin
+}
+
 // Shaullet backup format
 interface ShaulletBackup {
   mnemonic?: string
@@ -275,7 +353,7 @@ export async function getUTXOs(address: string): Promise<UTXO[]> {
     // Generate the P2PKH locking script for this address
     const lockingScript = new P2PKH().lock(address)
 
-    return data.map((utxo: any) => ({
+    return data.map((utxo: WocUtxo) => ({
       txid: utxo.tx_hash,
       vout: utxo.tx_pos,
       satoshis: utxo.value,
@@ -288,7 +366,7 @@ export async function getUTXOs(address: string): Promise<UTXO[]> {
 }
 
 // Get transaction history
-export async function getTransactionHistory(address: string): Promise<any[]> {
+export async function getTransactionHistory(address: string): Promise<WocHistoryItem[]> {
   try {
     const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/history`)
     if (!response.ok) {
@@ -309,7 +387,7 @@ export async function getTransactionHistory(address: string): Promise<any[]> {
 }
 
 // Get transaction details including inputs/outputs
-export async function getTransactionDetails(txid: string): Promise<any | null> {
+export async function getTransactionDetails(txid: string): Promise<WocTransaction | null> {
   try {
     const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`)
     if (!response.ok) {
@@ -323,7 +401,7 @@ export async function getTransactionDetails(txid: string): Promise<any | null> {
 
 // Calculate amount for a transaction relative to an address or array of addresses (positive = received, negative = sent)
 // This is async because we may need to fetch previous tx details to get input amounts
-export async function calculateTxAmount(txDetails: any, addressOrAddresses: string | string[]): Promise<number> {
+export async function calculateTxAmount(txDetails: WocTransaction | null, addressOrAddresses: string | string[]): Promise<number> {
   if (!txDetails?.vin || !txDetails?.vout) return 0
 
   // Normalize to array
@@ -348,7 +426,7 @@ export async function calculateTxAmount(txDetails: any, addressOrAddresses: stri
   // Check inputs - WoC doesn't include prevout by default, so we need to fetch previous txs
   for (const vin of txDetails.vin) {
     // First check if prevout is available (some APIs include it)
-    if (isOurAddress(vin.prevout?.scriptPubKey?.addresses)) {
+    if (vin.prevout && isOurAddress(vin.prevout.scriptPubKey?.addresses)) {
       sent += Math.round(vin.prevout.value * 100000000)
     } else if (vin.txid && vin.vout !== undefined) {
       // Fetch the previous transaction to check if the spent output was ours
@@ -1102,14 +1180,14 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
       console.log(`[Ordinals] GorillaPool response:`, Array.isArray(gpData) ? `${gpData.length} items` : typeof gpData)
       if (Array.isArray(gpData) && gpData.length > 0) {
         // Filter for 1-sat UTXOs (actual ordinals) and those with origin set
-        const oneSatItems = gpData.filter((item: any) => item.satoshis === 1 || item.origin)
+        const oneSatItems = gpData.filter((item: GpOrdinalItem) => item.satoshis === 1 || item.origin)
         console.log(`[Ordinals] Found ${gpData.length} total UTXOs, ${oneSatItems.length} are 1-sat ordinals`)
 
         if (oneSatItems.length > 0) {
           // Log first item structure for debugging
           console.log(`[Ordinals] First ordinal structure:`, JSON.stringify(oneSatItems[0], null, 2))
 
-          const result = oneSatItems.map((item: any) => ({
+          const result = oneSatItems.map((item: GpOrdinalItem) => ({
             origin: item.origin?.outpoint || item.outpoint || `${item.txid}_${item.vout}`,
             txid: item.txid,
             vout: item.vout,

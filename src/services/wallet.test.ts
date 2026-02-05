@@ -19,7 +19,9 @@ import {
   feeFromBytes,
   saveWallet,
   changePassword,
-  type UTXO
+  type UTXO,
+  type WocTransaction,
+  type WocTxInput
 } from './wallet'
 
 // Test mnemonic for deterministic testing
@@ -198,7 +200,7 @@ describe('Wallet Service', () => {
     describe('getFeeRate / setFeeRate', () => {
       it('should return default fee rate when not set', () => {
         const rate = getFeeRate()
-        expect(rate).toBe(0.05) // Default rate
+        expect(rate).toBe(0.1) // Default rate (0.1 sat/byte)
       })
 
       it('should persist and retrieve custom fee rate', () => {
@@ -208,7 +210,7 @@ describe('Wallet Service', () => {
 
       it('should ignore invalid stored values', () => {
         localStorage.setItem('simply_sats_fee_rate', 'invalid')
-        expect(getFeeRate()).toBe(0.05) // Should return default
+        expect(getFeeRate()).toBe(0.1) // Should return default
       })
     })
 
@@ -440,7 +442,7 @@ describe('Wallet Service', () => {
         const tx = await getTransactionDetails('abc123')
 
         expect(tx).toBeDefined()
-        expect(tx.txid).toBe('abc123')
+        expect(tx?.txid).toBe('abc123')
       })
 
       it('should return null on error', async () => {
@@ -457,12 +459,18 @@ describe('Wallet Service', () => {
 
     describe('calculateTxAmount', () => {
       it('should calculate positive amount for received tx', async () => {
+        // Partial mock - only needs vin and vout for amount calculation
         const txDetails = {
-          vin: [],
+          txid: 'abc',
+          hash: 'abc',
+          version: 1,
+          size: 100,
+          locktime: 0,
+          vin: [] as WocTxInput[],
           vout: [
-            { value: 0.0001, scriptPubKey: { addresses: ['myaddress'] } }
+            { value: 0.0001, n: 0, scriptPubKey: { asm: '', hex: '', type: 'pubkeyhash', addresses: ['myaddress'] } }
           ]
-        }
+        } satisfies WocTransaction
 
         const amount = await calculateTxAmount(txDetails, 'myaddress')
 
@@ -471,12 +479,17 @@ describe('Wallet Service', () => {
 
       it('should support array of addresses', async () => {
         const txDetails = {
-          vin: [],
+          txid: 'def',
+          hash: 'def',
+          version: 1,
+          size: 100,
+          locktime: 0,
+          vin: [] as WocTxInput[],
           vout: [
-            { value: 0.0001, scriptPubKey: { addresses: ['addr1'] } },
-            { value: 0.0002, scriptPubKey: { addresses: ['addr2'] } }
+            { value: 0.0001, n: 0, scriptPubKey: { asm: '', hex: '', type: 'pubkeyhash', addresses: ['addr1'] } },
+            { value: 0.0002, n: 1, scriptPubKey: { asm: '', hex: '', type: 'pubkeyhash', addresses: ['addr2'] } }
           ]
-        }
+        } satisfies WocTransaction
 
         const amount = await calculateTxAmount(txDetails, ['addr1', 'addr2'])
 
@@ -485,8 +498,6 @@ describe('Wallet Service', () => {
 
       it('should return 0 for null/undefined tx', async () => {
         expect(await calculateTxAmount(null, 'addr')).toBe(0)
-        expect(await calculateTxAmount(undefined, 'addr')).toBe(0)
-        expect(await calculateTxAmount({}, 'addr')).toBe(0)
       })
     })
   })

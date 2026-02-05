@@ -2,6 +2,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tauri_plugin_sql::{Migration, MigrationKind};
+use rand::distributions::Alphanumeric;
 use rand::Rng;
 
 mod http_server;
@@ -13,16 +14,13 @@ pub struct SessionState {
 
 impl SessionState {
     pub fn new() -> Self {
-        let mut rng = rand::thread_rng();
-        let token: String = (0..32)
-            .map(|_| {
-                let idx = rng.gen_range(0..36);
-                if idx < 10 {
-                    (b'0' + idx) as char
-                } else {
-                    (b'a' + idx - 10) as char
-                }
-            })
+        // Generate 48-character alphanumeric token using CSPRNG
+        // 62 possible chars (a-z, A-Z, 0-9) = ~5.95 bits per char
+        // 48 chars = ~286 bits of entropy (exceeds 256-bit security)
+        let token: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(48)
+            .map(char::from)
             .collect();
         Self { token }
     }

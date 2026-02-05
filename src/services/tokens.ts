@@ -42,6 +42,16 @@ export interface Token {
   createdAt: number
 }
 
+// Token UTXO from GorillaPool API
+interface TokenUtxoResponse {
+  status: number
+  txid: string
+  vout: number
+  amt: string
+  tick?: string
+  id?: string
+}
+
 // Token balance type
 export interface TokenBalance {
   token: Token
@@ -220,7 +230,7 @@ export async function fetchTokenUtxos(
     }
 
     const data = await response.json()
-    return data.filter((item: any) => item.status === 1) // Only confirmed
+    return data.filter((item: TokenUtxoResponse) => item.status === 1) // Only confirmed
   } catch (e) {
     console.error('[Tokens] Error fetching token UTXOs:', e)
     return []
