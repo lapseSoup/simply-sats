@@ -423,9 +423,11 @@ export function AccountModal({
 
   return (
     <Modal onClose={handleClose} title="Account">
-      {mode === 'create' && renderCreateMode()}
-      {mode === 'import' && renderImportMode()}
-      {mode === 'manage' && renderManageMode()}
+      <div className="modal-content">
+        {mode === 'create' && renderCreateMode()}
+        {mode === 'import' && renderImportMode()}
+        {mode === 'manage' && renderManageMode()}
+      </div>
 
       <style>{`
         .account-modal-content {
@@ -438,13 +440,14 @@ export function AccountModal({
           margin: 0;
           font-size: 1.25rem;
           font-weight: 600;
-          color: var(--color-text, #fff);
+          color: var(--text-primary);
         }
 
         .modal-description {
           margin: 0;
           font-size: 0.875rem;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+          color: var(--text-secondary);
+          line-height: 1.5;
         }
 
         .form-group {
@@ -456,24 +459,30 @@ export function AccountModal({
         .form-group label {
           font-size: 0.875rem;
           font-weight: 500;
-          color: var(--color-text, #fff);
+          color: var(--text-primary);
         }
 
         .form-group input,
         .form-group textarea {
-          padding: 0.75rem;
-          background: var(--color-surface, rgba(255, 255, 255, 0.05));
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-          border-radius: 0.5rem;
-          color: var(--color-text, #fff);
-          font-size: 0.875rem;
+          padding: 0.75rem 1rem;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
+          color: var(--text-primary);
+          font-size: 0.9375rem;
           outline: none;
-          transition: border-color 0.15s ease;
+          transition: border-color 0.15s ease, background 0.15s ease;
+        }
+
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+          color: var(--text-tertiary);
         }
 
         .form-group input:focus,
         .form-group textarea:focus {
-          border-color: var(--color-primary, #f7931a);
+          border-color: var(--accent);
+          background: var(--bg-elevated);
         }
 
         .form-group textarea {
@@ -482,7 +491,7 @@ export function AccountModal({
         }
 
         .error-message {
-          color: var(--color-error, #ef4444);
+          color: var(--error);
           font-size: 0.875rem;
           margin: 0;
         }
@@ -497,45 +506,51 @@ export function AccountModal({
         .secondary-button,
         .close-button {
           flex: 1;
-          padding: 0.75rem 1rem;
-          border-radius: 0.5rem;
-          font-size: 0.875rem;
+          padding: 0.875rem 1.25rem;
+          border-radius: var(--radius-md);
+          font-size: 0.9375rem;
           font-weight: 500;
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: all 0.2s ease;
         }
 
         .primary-button {
-          background: linear-gradient(135deg, var(--color-primary, #f7931a), var(--color-secondary, #ff6b00));
+          background: var(--accent);
           border: none;
           color: white;
         }
 
         .primary-button:hover:not(:disabled) {
+          background: var(--accent-light);
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(247, 147, 26, 0.3);
         }
 
         .primary-button:disabled {
-          opacity: 0.6;
+          opacity: 0.5;
           cursor: not-allowed;
         }
 
         .secondary-button {
-          background: transparent;
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-          color: var(--color-text, #fff);
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border);
+          color: var(--text-primary);
         }
 
         .secondary-button:hover {
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+          background: var(--bg-elevated);
+          border-color: var(--border-light);
         }
 
         .close-button {
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+          background: var(--bg-tertiary);
           border: none;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));
+          color: var(--text-secondary);
           margin-top: 0.5rem;
+        }
+
+        .close-button:hover {
+          background: var(--bg-elevated);
+          color: var(--text-primary);
         }
 
         .success-icon {
@@ -547,18 +562,19 @@ export function AccountModal({
         .mnemonic-warning {
           background: rgba(234, 179, 8, 0.1);
           border: 1px solid rgba(234, 179, 8, 0.3);
-          border-radius: 0.5rem;
-          padding: 0.75rem;
-          font-size: 0.8125rem;
+          border-radius: var(--radius-md);
+          padding: 0.875rem;
+          font-size: 0.875rem;
           color: #eab308;
+          line-height: 1.5;
         }
 
         .mnemonic-display {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 0.5rem;
-          background: var(--color-surface, rgba(255, 255, 255, 0.05));
-          border-radius: 0.75rem;
+          background: var(--bg-tertiary);
+          border-radius: var(--radius-lg);
           padding: 1rem;
         }
 
@@ -566,36 +582,37 @@ export function AccountModal({
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          padding: 0.375rem 0.5rem;
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
-          border-radius: 0.375rem;
+          padding: 0.5rem 0.625rem;
+          background: var(--bg-elevated);
+          border-radius: var(--radius-sm);
         }
 
         .word-number {
-          font-size: 0.6875rem;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.4));
-          min-width: 1rem;
+          font-size: 0.75rem;
+          color: var(--text-tertiary);
+          min-width: 1.25rem;
         }
 
         .word-text {
-          font-family: monospace;
-          font-size: 0.8125rem;
-          color: var(--color-text, #fff);
+          font-family: var(--font-mono);
+          font-size: 0.875rem;
+          color: var(--text-primary);
         }
 
         .copy-button {
-          padding: 0.5rem 1rem;
-          background: transparent;
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-          border-radius: 0.5rem;
-          color: var(--color-text, #fff);
+          padding: 0.625rem 1rem;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
+          color: var(--text-primary);
           font-size: 0.875rem;
           cursor: pointer;
           transition: all 0.15s ease;
         }
 
         .copy-button:hover {
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+          background: var(--bg-elevated);
+          border-color: var(--border-light);
         }
 
         .account-list-manage {
@@ -610,14 +627,14 @@ export function AccountModal({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0.75rem;
-          background: var(--color-surface, rgba(255, 255, 255, 0.05));
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-          border-radius: 0.5rem;
+          padding: 0.875rem;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
         }
 
         .account-item-manage.active {
-          border-color: var(--color-primary, #f7931a);
+          border-color: var(--accent);
         }
 
         .account-info-manage {
@@ -628,14 +645,14 @@ export function AccountModal({
         }
 
         .account-avatar-manage {
-          width: 32px;
-          height: 32px;
+          width: 36px;
+          height: 36px;
           border-radius: 50%;
-          background: linear-gradient(135deg, var(--color-primary, #f7931a), var(--color-secondary, #ff6b00));
+          background: var(--accent);
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 0.875rem;
+          font-size: 0.9375rem;
           font-weight: 600;
           color: white;
         }
@@ -643,25 +660,26 @@ export function AccountModal({
         .account-details {
           display: flex;
           flex-direction: column;
+          gap: 0.125rem;
         }
 
         .account-name-manage {
-          font-size: 0.875rem;
+          font-size: 0.9375rem;
           font-weight: 500;
-          color: var(--color-text, #fff);
+          color: var(--text-primary);
         }
 
         .account-address-manage {
-          font-size: 0.75rem;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.5));
-          font-family: monospace;
+          font-size: 0.8125rem;
+          color: var(--text-tertiary);
+          font-family: var(--font-mono);
         }
 
         .active-badge {
-          padding: 0.125rem 0.5rem;
-          background: var(--color-primary, #f7931a);
+          padding: 0.1875rem 0.625rem;
+          background: var(--accent);
           border-radius: 9999px;
-          font-size: 0.6875rem;
+          font-size: 0.75rem;
           font-weight: 600;
           color: white;
         }
@@ -672,26 +690,26 @@ export function AccountModal({
         }
 
         .icon-button {
-          padding: 0.375rem;
+          padding: 0.5rem;
           background: transparent;
           border: none;
-          border-radius: 0.375rem;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+          border-radius: var(--radius-sm);
+          color: var(--text-secondary);
           cursor: pointer;
           transition: all 0.15s ease;
         }
 
         .icon-button:hover {
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.1));
-          color: var(--color-text, #fff);
+          background: var(--bg-elevated);
+          color: var(--text-primary);
         }
 
         .icon-button.delete:hover {
-          color: var(--color-error, #ef4444);
+          color: var(--error);
         }
 
         .icon-button.save:hover {
-          color: #22c55e;
+          color: var(--success);
         }
 
         .edit-name-row,
@@ -704,18 +722,18 @@ export function AccountModal({
 
         .edit-name-row input {
           flex: 1;
-          padding: 0.375rem 0.5rem;
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-          border-radius: 0.375rem;
-          color: var(--color-text, #fff);
+          padding: 0.5rem 0.75rem;
+          background: var(--bg-elevated);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          color: var(--text-primary);
           font-size: 0.875rem;
         }
 
         .confirm-delete-row span {
           flex: 1;
           font-size: 0.875rem;
-          color: var(--color-error, #ef4444);
+          color: var(--error);
         }
       `}</style>
     </Modal>

@@ -181,28 +181,29 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
             <div className="qr-container compact">
               {!showDeriveMode ? (
                 <>
-                  <div className="private-intro" style={{ textAlign: 'center', marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>
+                  <div className="private-intro" style={{ textAlign: 'center', marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                       Private addresses let you receive payments without reusing the same address.
                       Each sender gets a unique address derived from your identity key.
                     </div>
                   </div>
-                  <div className="brc100-qr-label" style={{ marginBottom: 8 }}>Your Identity Public Key</div>
-                  <div className="qr-wrapper compact">
-                    <QRCodeSVG value={wallet.identityPubKey} size={100} level="L" bgColor="#fff" fgColor="#000" />
+                  <div className="brc100-qr-label" style={{ marginBottom: 6, fontSize: 12 }}>Your Identity Public Key</div>
+                  <div className="qr-wrapper compact" style={{ padding: 10 }}>
+                    <QRCodeSVG value={wallet.identityPubKey} size={80} level="L" bgColor="#fff" fgColor="#000" />
                   </div>
-                  <div className="address-display compact" style={{ marginTop: 12 }}>
+                  <div className="address-display compact" style={{ marginTop: 8 }}>
                     {wallet.identityPubKey}
                   </div>
                   <button
                     className="copy-btn compact"
                     onClick={() => copyToClipboard(wallet.identityPubKey, 'Public key copied!')}
+                    style={{ padding: '8px 12px' }}
                   >
                     Copy Identity Key
                   </button>
                   <button
                     className="btn btn-primary"
-                    style={{ marginTop: 12, width: '100%' }}
+                    style={{ marginTop: 8, width: '100%', padding: '10px 16px' }}
                     onClick={() => {
                       setShowDeriveMode(true)
                       setSenderPubKeyInput('')
@@ -215,7 +216,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                   >
                     Generate Private Address
                   </button>
-                  <div className="address-type-hint" style={{ marginTop: 8 }}>
+                  <div className="address-type-hint" style={{ marginTop: 4, fontSize: 11, minHeight: 'auto' }}>
                     Share your identity key with the sender, then generate a unique address for them
                   </div>
                 </>
@@ -365,10 +366,10 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
             </div>
           ) : (
             <div className="qr-container compact">
-              <div className="qr-wrapper compact">
+              <div className="qr-wrapper compact" style={{ padding: 10 }}>
                 <QRCodeSVG
                   value={receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress}
-                  size={120}
+                  size={100}
                   level="M"
                   bgColor="#ffffff"
                   fgColor="#000000"
@@ -383,10 +384,15 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                   receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress,
                   'Address copied!'
                 )}
+                style={{ padding: '8px 12px' }}
               >
-                📋 Copy Address
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copy Address
               </button>
-              <div className="address-type-hint">
+              <div className="address-type-hint" style={{ fontSize: 11, minHeight: 'auto' }}>
                 {receiveType === 'wallet'
                   ? 'Standard payment address — same address each time'
                   : 'Use for receiving 1Sat Ordinals & inscriptions'}

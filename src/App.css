@@ -815,6 +815,8 @@ body {
   font-size: 48px;
   margin-bottom: 16px;
   opacity: 0.4;
+  display: flex;
+  justify-content: center;
 }
 
 .empty-title {
@@ -1169,9 +1171,8 @@ textarea.form-input {
 }
 
 .qr-container.compact {
-  gap: 12px;
-  min-height: 320px;
-  justify-content: center;
+  gap: 8px;
+  justify-content: flex-start;
 }
 
 .qr-wrapper {

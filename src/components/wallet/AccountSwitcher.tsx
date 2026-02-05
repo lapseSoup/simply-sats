@@ -204,30 +204,31 @@ export function AccountSwitcher({
         .account-switcher-button {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          padding: 0.375rem 0.75rem;
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-          border-radius: 0.5rem;
+          gap: 8px;
+          padding: 4px 10px 4px 4px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
           cursor: pointer;
-          transition: all 0.15s ease;
-          min-width: 140px;
+          transition: all 0.2s ease;
+          min-width: 130px;
+          height: 30px;
         }
 
         .account-switcher-button:hover {
-          background: var(--color-surface-3, rgba(255, 255, 255, 0.08));
-          border-color: var(--color-border-hover, rgba(255, 255, 255, 0.2));
+          background: var(--bg-tertiary);
+          border-color: var(--border-light);
         }
 
         .account-avatar {
-          width: 24px;
-          height: 24px;
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
-          background: linear-gradient(135deg, var(--color-primary, #f7931a), var(--color-secondary, #ff6b00));
+          background: var(--accent);
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 0.75rem;
+          font-size: 11px;
           font-weight: 600;
           color: white;
           flex-shrink: 0;
@@ -239,25 +240,27 @@ export function AccountSwitcher({
           align-items: flex-start;
           flex: 1;
           min-width: 0;
+          line-height: 1.2;
         }
 
         .account-name {
-          font-size: 0.8125rem;
+          font-size: 12px;
           font-weight: 500;
-          color: var(--color-text, #fff);
+          color: var(--text-primary);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
 
         .account-balance-preview {
-          font-size: 0.6875rem;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+          font-size: 10px;
+          color: var(--text-tertiary);
         }
 
         .dropdown-arrow {
           transition: transform 0.15s ease;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+          color: var(--text-tertiary);
+          margin-left: auto;
         }
 
         .dropdown-arrow.open {
@@ -266,12 +269,12 @@ export function AccountSwitcher({
 
         .account-dropdown {
           position: absolute;
-          top: calc(100% + 0.5rem);
-          right: 0;
-          min-width: 220px;
-          background: var(--color-surface, #1a1a2e);
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-          border-radius: 0.75rem;
+          top: calc(100% + 8px);
+          left: 0;
+          min-width: 240px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
           box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
           z-index: 100;
           overflow: hidden;
@@ -280,29 +283,29 @@ export function AccountSwitcher({
         .account-list {
           max-height: 240px;
           overflow-y: auto;
-          padding: 0.5rem;
+          padding: 8px;
         }
 
         .account-item {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
+          gap: 10px;
           width: 100%;
-          padding: 0.625rem 0.75rem;
+          padding: 10px 12px;
           background: transparent;
           border: none;
-          border-radius: 0.5rem;
+          border-radius: var(--radius-md);
           cursor: pointer;
           transition: background 0.15s ease;
           text-align: left;
         }
 
         .account-item:hover {
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+          background: var(--bg-tertiary);
         }
 
         .account-item.active {
-          background: var(--color-surface-3, rgba(255, 255, 255, 0.08));
+          background: var(--bg-elevated);
         }
 
         .account-item-info {
@@ -310,51 +313,56 @@ export function AccountSwitcher({
           flex-direction: column;
           flex: 1;
           min-width: 0;
+          gap: 2px;
         }
 
         .account-item-name {
-          font-size: 0.875rem;
+          font-size: 13px;
           font-weight: 500;
-          color: var(--color-text, #fff);
+          color: var(--text-primary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 140px;
         }
 
         .account-item-address {
-          font-size: 0.75rem;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.5));
-          font-family: monospace;
+          font-size: 11px;
+          color: var(--text-tertiary);
+          font-family: var(--font-mono);
         }
 
         .check-icon {
-          color: var(--color-primary, #f7931a);
+          color: var(--accent);
           flex-shrink: 0;
         }
 
         .account-actions {
-          padding: 0.5rem;
-          border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+          padding: 8px;
+          border-top: 1px solid var(--border);
           display: flex;
           flex-direction: column;
-          gap: 0.25rem;
+          gap: 4px;
         }
 
         .account-action-button {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
+          gap: 8px;
           width: 100%;
-          padding: 0.5rem 0.75rem;
+          padding: 8px 12px;
           background: transparent;
           border: none;
-          border-radius: 0.375rem;
+          border-radius: var(--radius-sm);
           cursor: pointer;
-          font-size: 0.8125rem;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));
+          font-size: 13px;
+          color: var(--text-secondary);
           transition: all 0.15s ease;
         }
 
         .account-action-button:hover {
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
-          color: var(--color-text, #fff);
+          background: var(--bg-tertiary);
+          color: var(--text-primary);
         }
 
         .account-action-button svg {

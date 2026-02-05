@@ -115,7 +115,19 @@ function ProgressRing({ progress, size = 48, strokeWidth = 4, isUnlockable = fal
         />
       </svg>
       <div className="progress-ring-content">
-        {isUnlockable ? '🔓' : '🔒'}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {isUnlockable ? (
+            <>
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+            </>
+          ) : (
+            <>
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </>
+          )}
+        </svg>
       </div>
     </div>
   )
@@ -174,7 +186,11 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
           onClick={onLock}
           aria-label="Create a new lock"
         >
-          🔒 Lock BSV
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          Lock BSV
         </button>
         {unlockableLocks.length > 1 && (
           <button
@@ -182,7 +198,11 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
             onClick={onUnlockAll}
             aria-label={`Unlock all ${unlockableLocks.length} ready locks`}
           >
-            🔓 Unlock All ({unlockableLocks.length})
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+            </svg>
+            Unlock All ({unlockableLocks.length})
           </button>
         )}
       </div>
@@ -190,7 +210,12 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
       {/* Locks List */}
       {locks.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-icon" aria-hidden="true">🔓</div>
+          <div className="empty-icon" aria-hidden="true">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </div>
           <div className="empty-title">No Locks Yet</div>
           <div className="empty-text">
             Lock your BSV until a specific block height.
