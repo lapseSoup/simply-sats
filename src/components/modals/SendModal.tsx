@@ -3,6 +3,8 @@ import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
+import { CoinControlModal } from './CoinControlModal'
+import type { UTXO as DatabaseUTXO } from '../../services/database'
 
 interface SendModalProps {
   onClose: () => void
@@ -22,6 +24,8 @@ export function SendModal({ onClose }: SendModalProps) {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const [showCoinControl, setShowCoinControl] = useState(false)
+  const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
 
   if (!wallet) return null
 
@@ -186,6 +190,41 @@ export function SendModal({ onClose }: SendModalProps) {
             )}
           </div>
 
+          {/* Coin Control Section */}
+          <div style={{
+            borderTop: '1px solid var(--border)',
+            paddingTop: 12,
+            marginTop: 12
+          }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setShowCoinControl(true)}
+              style={{ width: '100%', fontSize: 12, padding: '8px 12px' }}
+            >
+              {selectedUtxos
+                ? `🎯 Using ${selectedUtxos.length} selected UTXOs`
+                : '⚙️ Coin Control (Advanced)'}
+            </button>
+            {selectedUtxos && (
+              <button
+                type="button"
+                onClick={() => setSelectedUtxos(null)}
+                style={{
+                  width: '100%',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-tertiary)',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  marginTop: 4
+                }}
+              >
+                Clear selection (use automatic)
+              </button>
+            )}
+          </div>
+
           {sendError && (
             <div className="warning compact" role="alert">
               <span className="warning-icon">⚠️</span>
@@ -202,6 +241,18 @@ export function SendModal({ onClose }: SendModalProps) {
         </div>
       </div>
     </div>
+
+    {/* Coin Control Modal */}
+    {showCoinControl && (
+      <CoinControlModal
+        requiredAmount={sendSats + fee}
+        onConfirm={(utxos) => {
+          setSelectedUtxos(utxos)
+          setShowCoinControl(false)
+        }}
+        onCancel={() => setShowCoinControl(false)}
+      />
+    )}
     </>
   )
 }

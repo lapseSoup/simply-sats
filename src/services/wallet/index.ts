@@ -74,7 +74,8 @@ export {
   broadcastTransaction,
   sendBSV,
   getAllSpendableUTXOs,
-  sendBSVMultiKey
+  sendBSVMultiKey,
+  consolidateUtxos
 } from './transactions'
 
 // Ordinal operations

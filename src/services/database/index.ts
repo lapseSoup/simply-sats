@@ -33,7 +33,8 @@ export {
   getPendingUtxos,
   getBalanceFromDB,
   getAllUTXOs,
-  repairUTXOs
+  repairUTXOs,
+  toggleUtxoLocked
 } from './utxoRepository'
 
 // Transaction operations

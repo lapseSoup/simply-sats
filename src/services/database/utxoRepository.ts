@@ -418,6 +418,27 @@ export async function getAllUTXOs(): Promise<UTXO[]> {
 }
 
 /**
+ * Toggle a UTXO's locked status
+ * When locked=true, the UTXO becomes unspendable (frozen)
+ * When locked=false, the UTXO becomes spendable again
+ */
+export async function toggleUtxoLocked(
+  txid: string,
+  vout: number,
+  locked: boolean
+): Promise<void> {
+  const database = getDatabase()
+  const spendable = locked ? 0 : 1
+
+  dbLogger.debug(`[DB] Setting UTXO ${txid.slice(0, 8)}:${vout} locked=${locked} (spendable=${spendable})`)
+
+  await database.execute(
+    'UPDATE utxos SET spendable = $1 WHERE txid = $2 AND vout = $3',
+    [spendable, txid, vout]
+  )
+}
+
+/**
  * Repair UTXOs - fix any broken spendable flags
  * Call this to fix UTXOs that should be spendable but aren't
  */

@@ -1,4 +1,4 @@
-import { ActivityTab, OrdinalsTab, LocksTab, TokensTab } from './components/tabs'
+import { ActivityTab, OrdinalsTab, LocksTab, TokensTab, UTXOsTab } from './components/tabs'
 import type { Ordinal, LockedUTXO } from './services/wallet'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 
@@ -33,7 +33,7 @@ function TabErrorFallback({ tabName, error, reset }: { tabName: string; error: E
   )
 }
 
-export type Tab = 'activity' | 'ordinals' | 'tokens' | 'locks'
+export type Tab = 'activity' | 'ordinals' | 'tokens' | 'locks' | 'utxos'
 
 interface TabButtonProps {
   id: Tab
@@ -72,6 +72,7 @@ interface AppTabsProps {
     ordinals: number
     tokens: number
     locks: number
+    utxos: number
   }
 }
 
@@ -106,6 +107,13 @@ export function AppTabNav({ activeTab, onTabChange, counts }: AppTabsProps) {
         id="locks"
         label="Locks"
         count={counts.locks}
+        activeTab={activeTab}
+        onSelect={onTabChange}
+      />
+      <TabButton
+        id="utxos"
+        label="UTXOs"
+        count={counts.utxos}
         activeTab={activeTab}
         onSelect={onTabChange}
       />
@@ -191,6 +199,16 @@ export function AppTabContent({
             onUnlockAll={onUnlockAll}
             unlocking={unlocking}
           />
+        </ErrorBoundary>
+      )}
+      {activeTab === 'utxos' && (
+        <ErrorBoundary
+          context="UTXOsTab"
+          fallback={(error, reset) => (
+            <TabErrorFallback tabName="UTXOs" error={error} reset={reset} />
+          )}
+        >
+          <UTXOsTab />
         </ErrorBoundary>
       )}
     </main>

@@ -472,3 +472,108 @@ export async function sendBSVMultiKey(
 
   return txid
 }
+
+/**
+ * Consolidate multiple UTXOs into a single UTXO
+ * Combines all selected UTXOs minus fees into one output back to the wallet address
+ */
+export async function consolidateUtxos(
+  wif: string,
+  utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>
+): Promise<{ txid: string; outputSats: number; fee: number }> {
+  if (utxoIds.length < 2) {
+    throw new Error('Need at least 2 UTXOs to consolidate')
+  }
+
+  const privateKey = PrivateKey.fromWif(wif)
+  const publicKey = privateKey.toPublicKey()
+  const address = publicKey.toAddress()
+  const lockingScript = new P2PKH().lock(address)
+
+  const tx = new Transaction()
+
+  // Calculate total input
+  let totalInput = 0
+  for (const utxo of utxoIds) {
+    totalInput += utxo.satoshis
+  }
+
+  // Calculate fee (n inputs, 1 output)
+  const fee = calculateTxFee(utxoIds.length, 1)
+  const outputSats = totalInput - fee
+
+  if (outputSats <= 0) {
+    throw new Error(`Cannot consolidate: total ${totalInput} sats minus ${fee} fee leaves no output`)
+  }
+
+  // Add all inputs
+  for (const utxo of utxoIds) {
+    tx.addInput({
+      sourceTXID: utxo.txid,
+      sourceOutputIndex: utxo.vout,
+      unlockingScriptTemplate: new P2PKH().unlock(
+        privateKey,
+        'all',
+        false,
+        utxo.satoshis,
+        lockingScript
+      ),
+      sequence: 0xffffffff
+    })
+  }
+
+  // Single output back to our address
+  tx.addOutput({
+    lockingScript: new P2PKH().lock(address),
+    satoshis: outputSats
+  })
+
+  await tx.sign()
+
+  // Get the UTXOs we're about to spend
+  const utxosToSpend = utxoIds.map(u => ({ txid: u.txid, vout: u.vout }))
+
+  // Compute txid before broadcast
+  const pendingTxid = tx.id('hex')
+
+  // Mark UTXOs as pending
+  try {
+    await markUtxosPendingSpend(utxosToSpend, pendingTxid)
+    walletLogger.debug('Marked UTXOs as pending for consolidation', { txid: pendingTxid })
+  } catch (error) {
+    walletLogger.error('Failed to mark UTXOs as pending', error)
+    throw new Error('Failed to prepare consolidation - UTXOs could not be locked')
+  }
+
+  // Broadcast
+  let txid: string
+  try {
+    txid = await broadcastTransaction(tx)
+  } catch (broadcastError) {
+    walletLogger.error('Consolidation broadcast failed, rolling back', broadcastError)
+    try {
+      await rollbackPendingSpend(utxosToSpend)
+    } catch (rollbackError) {
+      walletLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
+    }
+    throw broadcastError
+  }
+
+  // Record transaction
+  try {
+    await withTransaction(async () => {
+      await recordSentTransaction(
+        txid,
+        tx.toHex(),
+        `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`,
+        ['consolidate']
+      )
+      await confirmUtxosSpent(utxosToSpend, txid)
+    })
+    walletLogger.info('Consolidation complete', { txid, inputCount: utxoIds.length, outputSats })
+  } catch (error) {
+    walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
+  }
+
+  return { txid, outputSats, fee }
+}

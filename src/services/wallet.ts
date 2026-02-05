@@ -86,7 +86,8 @@ export {
   broadcastTransaction,
   sendBSV,
   getAllSpendableUTXOs,
-  sendBSVMultiKey
+  sendBSVMultiKey,
+  consolidateUtxos
 } from './wallet/transactions'
 
 // Ordinal operations

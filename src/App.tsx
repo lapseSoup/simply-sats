@@ -20,7 +20,7 @@ import { getDerivedAddresses } from './services/database'
 import { needsInitialSync } from './services/sync'
 
 // Tab order for keyboard navigation
-const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks']
+const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'utxos']
 
 function WalletApp() {
   const {
@@ -29,6 +29,7 @@ function WalletApp() {
     txHistory,
     ordinals,
     locks,
+    utxos,
     networkInfo,
     handleUnlock,
     handleCreateWallet,
@@ -304,7 +305,8 @@ function WalletApp() {
           activity: txHistory.length,
           ordinals: ordinals.length,
           tokens: tokenBalances.length,
-          locks: locks.length
+          locks: locks.length,
+          utxos: utxos.length
         }}
       />
 
