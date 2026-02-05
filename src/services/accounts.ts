@@ -10,6 +10,7 @@ import { encrypt, decrypt, type EncryptedData } from './crypto'
 import type { WalletKeys } from './wallet'
 import type { AccountRow, AccountSettingRow, IdCheckRow } from './database-types'
 import { validatePassword, DEFAULT_PASSWORD_REQUIREMENTS, LEGACY_PASSWORD_REQUIREMENTS } from './password-validation'
+import { accountLogger } from './logger'
 
 // Account type
 export interface Account {
@@ -49,7 +50,7 @@ export async function ensureAccountsTables(): Promise<void> {
     await database.select<IdCheckRow[]>('SELECT id FROM accounts LIMIT 1')
   } catch {
     // Tables don't exist yet - they'll be created by migration
-    console.log('[Accounts] Tables will be created by migration')
+    accountLogger.info('Tables will be created by migration')
   }
 }
 
@@ -105,7 +106,7 @@ export async function createAccount(
   )
 
   const accountId = result.lastInsertId as number
-  console.log(`[Accounts] Created account "${name}" with ID ${accountId}`)
+  accountLogger.info('Created account', { name, accountId })
 
   // Set default settings for new account
   await setAccountSettings(accountId, DEFAULT_ACCOUNT_SETTINGS)
@@ -135,7 +136,7 @@ export async function getAllAccounts(): Promise<Account[]> {
     }))
   } catch (_e) {
     // Table may not exist yet
-    console.log('[Accounts] No accounts table yet')
+    accountLogger.info('No accounts table yet')
     return []
   }
 }
@@ -242,10 +243,10 @@ export async function switchAccount(accountId: number): Promise<boolean> {
       [Date.now(), accountId]
     )
 
-    console.log(`[Accounts] Switched to account ID ${accountId}`)
+    accountLogger.info('Switched to account', { accountId })
     return true
   } catch (e) {
-    console.error('[Accounts] Failed to switch account:', e)
+    accountLogger.error('Failed to switch account', e, { accountId })
     return false
   }
 }
@@ -278,7 +279,7 @@ export async function getAccountKeys(
     const keys = JSON.parse(keysJson)
     return keys as WalletKeys
   } catch (e) {
-    console.error('[Accounts] Failed to decrypt keys:', e)
+    accountLogger.error('Failed to decrypt keys', e)
     return null
   }
 }
@@ -305,7 +306,7 @@ export async function deleteAccount(accountId: number): Promise<boolean> {
     // Check if this is the only account
     const accounts = await getAllAccounts()
     if (accounts.length <= 1) {
-      console.error('[Accounts] Cannot delete the only account')
+      accountLogger.error('Cannot delete the only account')
       return false
     }
 
@@ -327,10 +328,10 @@ export async function deleteAccount(accountId: number): Promise<boolean> {
       }
     }
 
-    console.log(`[Accounts] Deleted account ID ${accountId}`)
+    accountLogger.info('Deleted account', { accountId })
     return true
   } catch (e) {
-    console.error('[Accounts] Failed to delete account:', e)
+    accountLogger.error('Failed to delete account', e, { accountId })
     return false
   }
 }
@@ -416,18 +417,18 @@ export async function migrateToMultiAccount(
     const existingAccount = accounts.find(a => a.identityAddress === existingKeys.identityAddress)
 
     if (existingAccount) {
-      console.log('[Accounts] Account already exists, skipping migration')
+      accountLogger.info('Account already exists, skipping migration')
       return existingAccount.id!
     }
 
     // Create account for existing wallet using legacy password requirements
     // The UI has already validated the password meets minimum requirements
     const accountId = await createAccount('Account 1', existingKeys, password, true)
-    console.log('[Accounts] Migrated existing wallet to account system')
+    accountLogger.info('Migrated existing wallet to account system')
 
     return accountId
   } catch (e) {
-    console.error('[Accounts] Migration failed:', e)
+    accountLogger.error('Migration failed', e)
     return null
   }
 }

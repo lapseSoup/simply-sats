@@ -13,6 +13,60 @@ import {
 import type { Ordinal, LockedUTXO } from './services/wallet'
 import type { BRC100Request } from './services/brc100'
 import type { Account } from './services/accounts'
+import { ErrorBoundary } from './components/shared/ErrorBoundary'
+
+/**
+ * Fallback UI for modal errors - shows error with close button
+ */
+function ModalErrorFallback({ modalName, error, reset, onClose }: {
+  modalName: string
+  error: Error
+  reset: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true">
+      <div className="modal modal-error-fallback" role="alert">
+        <div className="modal-header">
+          <h2>Error in {modalName}</h2>
+          <button
+            type="button"
+            className="close-button"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="modal-content">
+          <svg
+            width="48"
+            height="48"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <p className="error-message">{error.message}</p>
+          <div className="error-actions">
+            <button type="button" className="button primary" onClick={reset}>
+              Try Again
+            </button>
+            <button type="button" className="button secondary" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export type Modal =
   | 'send'
@@ -104,59 +158,137 @@ export function AppModals({
 }: AppModalsProps) {
   return (
     <>
-      {modal === 'send' && <SendModal onClose={onCloseModal} />}
-      {modal === 'lock' && <LockModal onClose={onCloseModal} />}
-      {modal === 'receive' && <ReceiveModal onClose={onCloseModal} />}
-      {modal === 'settings' && <SettingsModal onClose={onCloseModal} />}
+      {modal === 'send' && (
+        <ErrorBoundary
+          context="SendModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Send" error={error} reset={reset} onClose={onCloseModal} />
+          )}
+        >
+          <SendModal onClose={onCloseModal} />
+        </ErrorBoundary>
+      )}
+      {modal === 'lock' && (
+        <ErrorBoundary
+          context="LockModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Lock" error={error} reset={reset} onClose={onCloseModal} />
+          )}
+        >
+          <LockModal onClose={onCloseModal} />
+        </ErrorBoundary>
+      )}
+      {modal === 'receive' && (
+        <ErrorBoundary
+          context="ReceiveModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Receive" error={error} reset={reset} onClose={onCloseModal} />
+          )}
+        >
+          <ReceiveModal onClose={onCloseModal} />
+        </ErrorBoundary>
+      )}
+      {modal === 'settings' && (
+        <ErrorBoundary
+          context="SettingsModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Settings" error={error} reset={reset} onClose={onCloseModal} />
+          )}
+        >
+          <SettingsModal onClose={onCloseModal} />
+        </ErrorBoundary>
+      )}
 
       {modal === 'ordinal' && selectedOrdinal && (
-        <OrdinalModal
-          ordinal={selectedOrdinal}
-          onClose={onCloseModal}
-          onTransfer={() => onTransferOrdinal(selectedOrdinal)}
-        />
+        <ErrorBoundary
+          context="OrdinalModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Ordinal" error={error} reset={reset} onClose={onCloseModal} />
+          )}
+        >
+          <OrdinalModal
+            ordinal={selectedOrdinal}
+            onClose={onCloseModal}
+            onTransfer={() => onTransferOrdinal(selectedOrdinal)}
+          />
+        </ErrorBoundary>
       )}
 
       {modal === 'transfer-ordinal' && ordinalToTransfer && (
-        <OrdinalTransferModal
-          ordinal={ordinalToTransfer}
-          onClose={onTransferComplete}
-        />
+        <ErrorBoundary
+          context="OrdinalTransferModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Transfer Ordinal" error={error} reset={reset} onClose={onTransferComplete} />
+          )}
+        >
+          <OrdinalTransferModal
+            ordinal={ordinalToTransfer}
+            onClose={onTransferComplete}
+          />
+        </ErrorBoundary>
       )}
 
       {modal === 'brc100' && brc100Request && (
-        <BRC100Modal
-          request={brc100Request}
-          onApprove={onApproveBRC100}
-          onReject={onRejectBRC100}
-        />
+        <ErrorBoundary
+          context="BRC100Modal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="BRC-100 Request" error={error} reset={reset} onClose={onRejectBRC100} />
+          )}
+        >
+          <BRC100Modal
+            request={brc100Request}
+            onApprove={onApproveBRC100}
+            onReject={onRejectBRC100}
+          />
+        </ErrorBoundary>
       )}
 
       {modal === 'mnemonic' && newMnemonic && (
-        <MnemonicModal mnemonic={newMnemonic} onConfirm={onMnemonicConfirm} />
+        <ErrorBoundary
+          context="MnemonicModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Recovery Phrase" error={error} reset={reset} onClose={onMnemonicConfirm} />
+          )}
+        >
+          <MnemonicModal mnemonic={newMnemonic} onConfirm={onMnemonicConfirm} />
+        </ErrorBoundary>
       )}
 
       {modal === 'account' && (
-        <AccountModal
-          isOpen={true}
-          onClose={onCloseModal}
-          mode={accountModalMode}
-          accounts={accounts}
-          activeAccountId={activeAccountId}
-          onCreateAccount={onCreateAccount}
-          onImportAccount={onImportAccount}
-          onDeleteAccount={onDeleteAccount}
-          onRenameAccount={onRenameAccount}
-        />
+        <ErrorBoundary
+          context="AccountModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Account" error={error} reset={reset} onClose={onCloseModal} />
+          )}
+        >
+          <AccountModal
+            isOpen={true}
+            onClose={onCloseModal}
+            mode={accountModalMode}
+            accounts={accounts}
+            activeAccountId={activeAccountId}
+            onCreateAccount={onCreateAccount}
+            onImportAccount={onImportAccount}
+            onDeleteAccount={onDeleteAccount}
+            onRenameAccount={onRenameAccount}
+          />
+        </ErrorBoundary>
       )}
 
       {unlockConfirm && (
-        <UnlockConfirmModal
-          locks={unlockConfirm === 'all' ? unlockableLocks : [unlockConfirm]}
-          onConfirm={onConfirmUnlock}
-          onCancel={onCancelUnlock}
-          unlocking={isUnlocking}
-        />
+        <ErrorBoundary
+          context="UnlockConfirmModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="Unlock Confirmation" error={error} reset={reset} onClose={onCancelUnlock} />
+          )}
+        >
+          <UnlockConfirmModal
+            locks={unlockConfirm === 'all' ? unlockableLocks : [unlockConfirm]}
+            onConfirm={onConfirmUnlock}
+            onCancel={onCancelUnlock}
+            unlocking={isUnlocking}
+          />
+        </ErrorBoundary>
       )}
     </>
   )

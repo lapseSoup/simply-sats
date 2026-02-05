@@ -26,6 +26,8 @@
  * ```
  */
 
+import { cryptoLogger } from './logger'
+
 // Use Web Crypto API (available in both browser and Tauri)
 // Using a getter function allows tests to override globalThis.crypto
 const getCrypto = () => globalThis.crypto
@@ -161,7 +163,7 @@ export async function encrypt(plaintext: string | object, password: string): Pro
 export async function decrypt(encryptedData: EncryptedData, password: string): Promise<string> {
   // Handle version upgrades if needed in the future
   if (encryptedData.version !== CURRENT_VERSION) {
-    console.warn(`Encrypted data version ${encryptedData.version}, current is ${CURRENT_VERSION}`)
+    cryptoLogger.warn(`Encrypted data version ${encryptedData.version}, current is ${CURRENT_VERSION}`)
   }
 
   // Decode base64 data

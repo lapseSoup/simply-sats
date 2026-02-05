@@ -1,0 +1,107 @@
+/**
+ * Lock Repository
+ *
+ * CRUD operations for time-locked outputs.
+ */
+
+import { getDatabase } from './connection'
+import { dbLogger } from '../logger'
+import type { Lock, UTXO } from './types'
+import type { LockRow, LockWithUTXORow } from '../database-types'
+
+/**
+ * Add a time-locked output
+ */
+export async function addLock(lock: Omit<Lock, 'id'>): Promise<number> {
+  const database = getDatabase()
+
+  const result = await database.execute(
+    `INSERT INTO locks (utxo_id, unlock_block, ordinal_origin, created_at)
+     VALUES ($1, $2, $3, $4)`,
+    [lock.utxoId, lock.unlockBlock, lock.ordinalOrigin || null, lock.createdAt]
+  )
+
+  return result.lastInsertId as number
+}
+
+/**
+ * Get all locks with UTXO details
+ */
+export async function getLocks(currentHeight: number): Promise<(Lock & { utxo: UTXO })[]> {
+  const database = getDatabase()
+
+  const rows = await database.select<LockWithUTXORow[]>(
+    `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket, u.address
+     FROM locks l
+     INNER JOIN utxos u ON l.utxo_id = u.id
+     WHERE l.unlocked_at IS NULL
+     ORDER BY l.unlock_block ASC`
+  )
+
+  return rows.map(row => ({
+    id: row.id,
+    utxoId: row.utxo_id,
+    unlockBlock: row.unlock_block,
+    ordinalOrigin: row.ordinal_origin ?? undefined,
+    createdAt: row.created_at,
+    unlockedAt: row.unlocked_at ?? undefined,
+    utxo: {
+      id: row.utxo_id,
+      txid: row.txid,
+      vout: row.vout,
+      satoshis: row.satoshis,
+      lockingScript: row.locking_script,
+      address: row.address ?? undefined,
+      basket: row.basket,
+      spendable: currentHeight >= row.unlock_block,
+      createdAt: row.created_at,
+      tags: []
+    }
+  }))
+}
+
+/**
+ * Mark a lock as unlocked
+ */
+export async function markLockUnlocked(lockId: number): Promise<void> {
+  const database = getDatabase()
+
+  await database.execute(
+    'UPDATE locks SET unlocked_at = $1 WHERE id = $2',
+    [Date.now(), lockId]
+  )
+}
+
+/**
+ * Mark a lock as unlocked by its UTXO txid and vout
+ */
+export async function markLockUnlockedByTxid(txid: string, vout: number): Promise<void> {
+  const database = getDatabase()
+
+  // Find the lock by joining with utxos table
+  await database.execute(
+    `UPDATE locks SET unlocked_at = $1
+     WHERE utxo_id IN (SELECT id FROM utxos WHERE txid = $2 AND vout = $3)
+     AND unlocked_at IS NULL`,
+    [Date.now(), txid, vout]
+  )
+  dbLogger.debug(`[DB] Marked lock as unlocked: ${txid}:${vout}`)
+}
+
+/**
+ * Get all locks for export
+ */
+export async function getAllLocks(): Promise<Lock[]> {
+  const database = getDatabase()
+
+  const rows = await database.select<LockRow[]>('SELECT * FROM locks')
+
+  return rows.map(row => ({
+    id: row.id,
+    utxoId: row.utxo_id,
+    unlockBlock: row.unlock_block,
+    ordinalOrigin: row.ordinal_origin ?? undefined,
+    createdAt: row.created_at,
+    unlockedAt: row.unlocked_at ?? undefined
+  }))
+}

@@ -29,12 +29,14 @@ import {
   startNewSync,
   cancelSync,
   isCancellationError,
-  cancellableDelay
+  cancellableDelay,
+  acquireSyncLock,
+  isSyncInProgress
 } from './cancellation'
 import { syncLogger } from './logger'
 
 // Re-export cancellation functions for external use
-export { cancelSync, startNewSync }
+export { cancelSync, startNewSync, isSyncInProgress }
 
 // Basket names for different address types
 export const BASKETS = {
@@ -239,6 +241,10 @@ export async function syncWallet(
   ordAddress: string,
   identityAddress: string
 ): Promise<{ total: number; results: SyncResult[] } | undefined> {
+  // Acquire sync lock to prevent database race conditions
+  // This ensures only one sync runs at a time
+  const releaseLock = await acquireSyncLock()
+
   // Start new sync (cancels any previous sync)
   const token = startNewSync()
 
@@ -296,6 +302,9 @@ export async function syncWallet(
       return undefined
     }
     throw error
+  } finally {
+    // Always release the lock when done
+    releaseLock()
   }
 }
 

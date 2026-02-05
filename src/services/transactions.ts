@@ -18,6 +18,7 @@ import {
 import { getDerivedAddresses } from './database'
 import { TIMEOUTS } from './config'
 import { BroadcastError, AppError, ErrorCodes } from './errors'
+import { walletLogger } from './logger'
 
 // Default fee rate: 0.1 sat/byte (100 sat/KB) - reliable confirmation
 const DEFAULT_FEE_RATE = 0.1
@@ -164,13 +165,13 @@ export function calculateExactFee(
  */
 export async function broadcastTransaction(tx: Transaction): Promise<string> {
   const txhex = tx.toHex()
-  console.log('Broadcasting transaction:', txhex.substring(0, 100) + '...')
+  walletLogger.info('Broadcasting transaction', { txhexPreview: txhex.substring(0, 100) })
 
   const errors: string[] = []
 
   // Try WhatsOnChain first
   try {
-    console.log('Trying WhatsOnChain...')
+    walletLogger.debug('Trying WhatsOnChain...')
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUTS.broadcast)
 
@@ -184,21 +185,21 @@ export async function broadcastTransaction(tx: Transaction): Promise<string> {
     clearTimeout(timeoutId)
 
     if (response.ok) {
-      console.log('WhatsOnChain broadcast successful!')
+      walletLogger.info('WhatsOnChain broadcast successful')
       return tx.id('hex')
     }
 
     const errorText = await response.text()
-    console.warn('WoC broadcast failed:', errorText)
+    walletLogger.warn('WoC broadcast failed', { error: errorText })
     errors.push(`WoC: ${errorText}`)
   } catch (error) {
-    console.warn('WoC error:', error)
+    walletLogger.warn('WoC error', undefined, error instanceof Error ? error : undefined)
     errors.push(`WoC: ${error}`)
   }
 
   // Try GorillaPool ARC
   try {
-    console.log('Trying GorillaPool ARC...')
+    walletLogger.debug('Trying GorillaPool ARC...')
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUTS.broadcast)
 
@@ -220,18 +221,18 @@ export async function broadcastTransaction(tx: Transaction): Promise<string> {
     const arcResult = await arcResponse.json()
 
     if (arcResult.txid && (arcResult.txStatus === 'SEEN_ON_NETWORK' || arcResult.txStatus === 'ACCEPTED')) {
-      console.log('ARC broadcast successful! txid:', arcResult.txid)
+      walletLogger.info('ARC broadcast successful', { txid: arcResult.txid })
       return arcResult.txid
     } else if (arcResult.txid && !arcResult.detail) {
-      console.log('ARC broadcast possibly successful, txid:', arcResult.txid)
+      walletLogger.info('ARC broadcast possibly successful', { txid: arcResult.txid })
       return arcResult.txid
     } else {
       const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
-      console.warn('ARC rejected transaction:', errorMsg)
+      walletLogger.warn('ARC rejected transaction', { error: errorMsg })
       errors.push(`ARC: ${errorMsg}`)
     }
   } catch (error) {
-    console.warn('GorillaPool ARC error:', error)
+    walletLogger.warn('GorillaPool ARC error', undefined, error instanceof Error ? error : undefined)
     errors.push(`ARC: ${error}`)
   }
 
@@ -325,9 +326,9 @@ export async function sendBSV(
   // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
   try {
     await markUtxosPendingSpend(utxosToSpend, pendingTxid)
-    console.log('Marked UTXOs as pending spend:', pendingTxid)
+    walletLogger.info('Marked UTXOs as pending spend', { txid: pendingTxid })
   } catch (error) {
-    console.error('Failed to mark UTXOs as pending:', error)
+    walletLogger.error('Failed to mark UTXOs as pending', error)
     throw new Error('Failed to prepare transaction - UTXOs could not be locked')
   }
 
@@ -337,12 +338,12 @@ export async function sendBSV(
     txid = await broadcastTransaction(tx)
   } catch (broadcastError) {
     // Broadcast failed - rollback the pending status
-    console.error('Broadcast failed, rolling back pending status:', broadcastError)
+    walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)
     try {
       await rollbackPendingSpend(utxosToSpend)
-      console.log('Rolled back pending status for UTXOs')
+      walletLogger.info('Rolled back pending status for UTXOs')
     } catch (rollbackError) {
-      console.error('CRITICAL: Failed to rollback pending status:', rollbackError)
+      walletLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
     }
     throw broadcastError
   }
@@ -358,7 +359,7 @@ export async function sendBSV(
     // Confirm UTXOs as spent (updates from pending -> spent)
     await confirmUtxosSpent(utxosToSpend, txid)
   } catch (error) {
-    console.warn('Failed to track transaction locally:', error)
+    walletLogger.warn('Failed to track transaction locally', undefined, error instanceof Error ? error : undefined)
   }
 
   return txid
@@ -497,9 +498,9 @@ export async function sendBSVMultiKey(
   // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
   try {
     await markUtxosPendingSpend(utxosToSpend, pendingTxid)
-    console.log('Marked UTXOs as pending spend:', pendingTxid)
+    walletLogger.info('Marked UTXOs as pending spend', { txid: pendingTxid })
   } catch (error) {
-    console.error('Failed to mark UTXOs as pending:', error)
+    walletLogger.error('Failed to mark UTXOs as pending', error)
     throw new Error('Failed to prepare transaction - UTXOs could not be locked')
   }
 
@@ -509,12 +510,12 @@ export async function sendBSVMultiKey(
     txid = await broadcastTransaction(tx)
   } catch (broadcastError) {
     // Broadcast failed - rollback the pending status
-    console.error('Broadcast failed, rolling back pending status:', broadcastError)
+    walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)
     try {
       await rollbackPendingSpend(utxosToSpend)
-      console.log('Rolled back pending status for UTXOs')
+      walletLogger.info('Rolled back pending status for UTXOs')
     } catch (rollbackError) {
-      console.error('CRITICAL: Failed to rollback pending status:', rollbackError)
+      walletLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
     }
     throw broadcastError
   }
@@ -530,7 +531,7 @@ export async function sendBSVMultiKey(
     // Confirm UTXOs as spent (updates from pending -> spent)
     await confirmUtxosSpent(utxosToSpend, txid)
   } catch (error) {
-    console.warn('Failed to track transaction locally:', error)
+    walletLogger.warn('Failed to track transaction locally', undefined, error instanceof Error ? error : undefined)
   }
 
   return txid

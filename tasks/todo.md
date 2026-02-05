@@ -40,7 +40,66 @@
 - [ ] Implement optimistic updates for transactions
 - [ ] Add automatic refetching and stale data handling
 
-## Code Quality
+## High Priority (Phase 9) - Code Review Findings
+
+### Task 9.1: App.tsx Decomposition
+- [ ] Extract modal rendering to `src/AppModals.tsx`
+- [ ] Extract tab management to `src/AppTabs.tsx`
+- [ ] Create `src/hooks/useBrc100Handler.ts` hook for BRC-100 logic
+- [ ] Create `src/AppProviders.tsx` wrapper component
+- [ ] Refactor App.tsx to use new components
+- [ ] Target: Reduce App.tsx from 558 lines to ~150
+
+### Task 9.2: HTTP Server Rate Limiting
+- [ ] Add rate limiting middleware to Axum server (`src-tauri/src/http_server.rs`)
+- [ ] Limit requests per session token (e.g., 60/minute)
+- [ ] Add logging for rate limit violations
+- [ ] May need `tower-governor` crate in Cargo.toml
+
+### Task 9.3: CI Pipeline Enhancement
+- [ ] Add test execution step (`npm run test:run`) to `.github/workflows/build.yml`
+- [ ] Add linting step (`npm run lint`)
+- [ ] Add coverage reporting
+- [ ] Add `npm audit` for security scanning
+
+## Medium Priority (Phase 10) - Code Review Findings
+
+### Task 10.1: Base HTTP Client
+- [ ] Create shared HTTP client in `src/infrastructure/api/httpClient.ts`
+- [ ] Add consistent error handling
+- [ ] Add request/response logging (dev mode)
+- [ ] Add retry logic with exponential backoff
+- [ ] Refactor wocClient.ts to use base client
+- [ ] Refactor feeService.ts to use base client
+
+### Task 10.2: Result Type Pattern
+- [ ] Create `Result<T, E>` type in `src/domain/types.ts`
+- [ ] Add helper functions: `ok()`, `err()`, `isOk()`, `isErr()`
+- [ ] Migrate wallet.ts critical paths to use Result pattern
+- [ ] Migrate sync.ts to use Result pattern
+
+### Task 10.3: Database Timestamp Audit
+- [ ] Audit tables for missing created_at/updated_at columns
+- [ ] Create migration 007 for timestamp columns
+- [ ] Update database.ts to populate timestamps on insert/update
+
+## Code Quality (Phase 11) - Code Review Findings
+
+### Task 11.1: JSDoc Documentation
+- [ ] Add JSDoc to all domain functions in `src/domain/`
+- [ ] Add JSDoc to service public methods
+- [ ] Document SDK exports in `sdk/src/index.ts`
+- [ ] Add parameter descriptions and examples
+
+### Task 11.2: TypeScript Strictness
+- [ ] Enable `noImplicitAny` in tsconfig.json
+- [ ] Enable `strictNullChecks`
+- [ ] Enable `noUncheckedIndexedAccess`
+- [ ] Fix all resulting type errors
+
+---
+
+## Code Quality (Phase 8)
 
 ### Task 8.1: Reduce Bundle Size
 - [ ] Analyze bundle with `npm run build -- --analyze`
@@ -92,3 +151,14 @@
 - Task 5.2: LockModal → domain layer
 - Task 5.3: sync.ts → infrastructure layer
 - Task 5.4: wallet.ts → adapters
+
+### Refactoring Sprint (Feb 2026) ✅
+- Split wallet.ts (2,267 lines) into 8 modules: types, core, transactions, locks, ordinals, balance, storage, fees
+- Split database.ts (1,604 lines) into 10 repositories: connection, utxo, tx, lock, sync, basket, address, contact, action, backup
+- Split brc100.ts (1,808 lines) into 7 modules: types, RequestManager (class), state, signing, cryptography, script, utils
+- Added SyncMutex to cancellation.ts for preventing concurrent sync race conditions
+- Migrated 315+ console.log statements to structured logger across 38+ files
+- Added ErrorBoundary coverage to all 4 tabs and 10 modals with custom fallback UI
+- Fixed 8+ production `any` types with proper TypeScript interfaces
+- Added 38 new tests for RequestManager (21) and script utilities (17)
+- Total test count: 657 passing tests (up from 619)

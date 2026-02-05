@@ -1,4 +1,5 @@
-import { PrivateKey, P2PKH, Transaction, LockingScript, PublicKey, Hash, SymmetricKey, Signature } from '@bsv/sdk'
+import { PrivateKey, P2PKH, Transaction, PublicKey, Hash, SymmetricKey } from '@bsv/sdk'
+import { brc100Logger } from './logger'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import type { WalletKeys, UTXO, LockedUTXO } from './wallet'
@@ -34,174 +35,96 @@ import {
 } from './certificates'
 import { deriveTaggedKey, type DerivationTag } from './keyDerivation'
 
-// BRC-100 Protocol Types
-// Valid BRC-100 request types - used for validation
-export const BRC100_REQUEST_TYPES = [
-  'getPublicKey',
-  'createSignature',
-  'createAction',
-  'getNetwork',
-  'getVersion',
-  'isAuthenticated',
-  'getHeight',
-  'listOutputs',
-  'lockBSV',
-  'unlockBSV',
-  'listLocks',
-  'encrypt',
-  'decrypt',
-  'getTaggedKeys'
-] as const
+// Import from modular brc100 files
+import {
+  BRC100_REQUEST_TYPES,
+  isValidBRC100RequestType,
+  getParams,
+  type BRC100Request,
+  type BRC100Response,
+  type BRC100RequestType,
+  type SignatureRequest,
+  type CreateActionRequest,
+  type ListOutputsParams,
+  type LockBSVParams,
+  type UnlockBSVParams,
+  type GetPublicKeyParams,
+  type EncryptDecryptParams,
+  type GetTaggedKeysParams,
+  type LockedOutput,
+  type DiscoveredOutput
+} from './brc100/types'
+import { getRequestManager } from './brc100/RequestManager'
+import { setWalletKeys, getWalletKeys } from './brc100/state'
+import { signMessage, signData, verifySignature } from './brc100/signing'
+// Note: encryptECIES/decryptECIES available in './brc100/cryptography' for future use
+import {
+  createCLTVLockingScript,
+  createWrootzOpReturn,
+  convertToLockingScript,
+  createScriptFromHex
+} from './brc100/script'
+import {
+  getBlockHeight,
+  generateRequestId,
+  formatIdentityKey,
+  getIdentityKeyForApp,
+  isInscriptionTransaction
+} from './brc100/utils'
 
-export type BRC100RequestType = typeof BRC100_REQUEST_TYPES[number]
-
-/**
- * Validate that a string is a valid BRC-100 request type
- */
-export function isValidBRC100RequestType(type: string): type is BRC100RequestType {
-  return BRC100_REQUEST_TYPES.includes(type as BRC100RequestType)
+// Re-export types for backward compatibility
+export {
+  BRC100_REQUEST_TYPES,
+  isValidBRC100RequestType,
+  setWalletKeys,
+  getWalletKeys,
+  signMessage,
+  signData,
+  verifySignature,
+  getBlockHeight,
+  generateRequestId,
+  formatIdentityKey,
+  getIdentityKeyForApp,
+  createCLTVLockingScript
+}
+export type {
+  BRC100Request,
+  BRC100Response,
+  BRC100RequestType,
+  SignatureRequest,
+  CreateActionRequest,
+  ListOutputsParams,
+  LockBSVParams,
+  UnlockBSVParams,
+  GetPublicKeyParams,
+  EncryptDecryptParams,
+  GetTaggedKeysParams,
+  LockedOutput,
+  DiscoveredOutput
 }
 
-export interface BRC100Request {
-  id: string
-  type: BRC100RequestType
-  params?: Record<string, unknown>
-  origin?: string // The app requesting (e.g., "wrootz.com")
-}
+// Get request manager instance
+const requestManager = getRequestManager()
 
-export interface BRC100Response {
-  id: string
-  result?: any
-  error?: { code: number; message: string }
-}
-
-export interface SignatureRequest {
-  data: number[] // Message as byte array
-  protocolID: [number, string] // [securityLevel, protocolName]
-  keyID: string
-  counterparty?: string
-}
-
-export interface CreateActionRequest {
-  description: string
-  outputs: Array<{
-    lockingScript: string
-    satoshis: number
-    outputDescription?: string
-    basket?: string
-    tags?: string[]
-  }>
-  inputs?: Array<{
-    outpoint: string
-    inputDescription?: string
-    unlockingScript?: string
-    sequenceNumber?: number
-    unlockingScriptLength?: number
-  }>
-  lockTime?: number
-  labels?: string[]
-  options?: {
-    signAndProcess?: boolean
-    noSend?: boolean
-    randomizeOutputs?: boolean
+// Legacy pendingRequests map - redirects to RequestManager
+const pendingRequests = {
+  get: (id: string) => requestManager.get(id),
+  set: (id: string, value: { request: BRC100Request; resolve: (r: BRC100Response) => void; reject: (e: Error) => void }) => {
+    requestManager.add(id, value.request, value.resolve, value.reject)
+  },
+  delete: (id: string) => requestManager.remove(id),
+  values: () => {
+    const all = requestManager.getAll()
+    return all.map(request => ({ request }))
   }
 }
 
-// Parameter interfaces for various request types
-export interface ListOutputsParams {
-  basket?: string
-  includeSpent?: boolean
-  includeTags?: string[]
-  limit?: number
-  offset?: number
-}
-
-export interface LockBSVParams {
-  satoshis?: number
-  blocks?: number
-  ordinalOrigin?: string
-  app?: string
-}
-
-export interface UnlockBSVParams {
-  outpoints?: string[]
-}
-
-export interface GetPublicKeyParams {
-  identityKey?: boolean
-  forOrdinals?: boolean
-  protocolID?: [number, string]
-  keyID?: string
-  counterparty?: string
-  privileged?: boolean
-}
-
-export interface EncryptDecryptParams {
-  plaintext?: number[]
-  ciphertext?: number[]
-  protocolID?: [number, string]
-  keyID?: string
-  counterparty?: string
-}
-
-export interface GetTaggedKeysParams {
-  tag?: string
-  limit?: number
-  offset?: number
-}
-
-// Helper to safely get typed params
-function getParams<T>(request: BRC100Request): T {
-  return (request.params || {}) as T
-}
-
-// Lock tracking
-export interface LockedOutput {
-  outpoint: string
-  txid: string
-  vout: number
-  satoshis: number
-  unlockBlock: number
-  tags: string[]
-  spendable: boolean
-  blocksRemaining: number
-}
-
-// Discovered output from BRC-100 discovery methods
-export interface DiscoveredOutput {
-  outpoint: string
-  satoshis: number
-  lockingScript?: string
-  tags: string[]
-}
-
-// Pending request queue for user approval
-const pendingRequests: Map<string, {
-  request: BRC100Request
-  resolve: (response: BRC100Response) => void
-  reject: (error: any) => void
-}> = new Map()
-
-// Callbacks for UI to handle requests
-let onRequestCallback: ((request: BRC100Request) => void) | null = null
-
-// Current wallet keys (set by App component for HTTP server requests)
-let currentWalletKeys: WalletKeys | null = null
-
-export function setWalletKeys(keys: WalletKeys | null) {
-  currentWalletKeys = keys
-}
-
-export function getWalletKeys(): WalletKeys | null {
-  return currentWalletKeys
-}
-
 export function setRequestHandler(callback: (request: BRC100Request) => void) {
-  onRequestCallback = callback
+  requestManager.setRequestHandler(callback)
 }
 
 export function getPendingRequests(): BRC100Request[] {
-  return Array.from(pendingRequests.values()).map(p => p.request)
+  return requestManager.getAll()
 }
 
 // Set up listener for HTTP server requests via Tauri events
@@ -210,21 +133,21 @@ export async function setupHttpServerListener(): Promise<() => void> {
     const unlisten = await listen<{
       id: string
       method: string
-      params: any
+      params: Record<string, unknown>
       origin?: string
     }>('brc100-request', async (event) => {
       try {
         // Validate the request type before processing
         const requestMethod = event.payload.method
         if (!isValidBRC100RequestType(requestMethod)) {
-          console.error(`BRC-100: Invalid request type: ${requestMethod}`)
+          brc100Logger.error(`Invalid request type: ${requestMethod}`)
           try {
             await invoke('respond_to_brc100', {
               requestId: event.payload.id,
               response: { error: { code: -32601, message: `Invalid method: ${requestMethod}` } }
             })
           } catch (e) {
-            console.error('Failed to send error response for invalid method:', e)
+            brc100Logger.error('Failed to send error response for invalid method', e)
           }
           return
         }
@@ -237,7 +160,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
         }
 
       // If no wallet is loaded, return error for requests that need it
-      if (!currentWalletKeys) {
+      if (!getWalletKeys()) {
         if (request.type === 'getPublicKey' || request.type === 'createSignature' ||
             request.type === 'createAction' || request.type === 'listOutputs' ||
             request.type === 'lockBSV' || request.type === 'unlockBSV' || request.type === 'listLocks') {
@@ -247,21 +170,22 @@ export async function setupHttpServerListener(): Promise<() => void> {
               response: { error: { code: -32002, message: 'No wallet loaded' } }
             })
           } catch (e) {
-            console.error('Failed to send error response:', e)
+            brc100Logger.error('Failed to send error response', e)
           }
           return
         }
       }
 
-      if (request.type === 'getPublicKey' && currentWalletKeys) {
+      const walletKeys = getWalletKeys()
+      if (request.type === 'getPublicKey' && walletKeys) {
         const params = request.params || {}
         let publicKey: string
         if (params.identityKey) {
-          publicKey = currentWalletKeys.identityPubKey
+          publicKey = walletKeys.identityPubKey
         } else if (params.forOrdinals) {
-          publicKey = currentWalletKeys.ordPubKey
+          publicKey = walletKeys.ordPubKey
         } else {
-          publicKey = currentWalletKeys.walletPubKey
+          publicKey = walletKeys.walletPubKey
         }
 
         try {
@@ -270,13 +194,13 @@ export async function setupHttpServerListener(): Promise<() => void> {
             response: { result: { publicKey } }
           })
         } catch (e) {
-          console.error('Failed to send auto-response:', e)
+          brc100Logger.error('Failed to send auto-response', e)
         }
         return
       }
 
       // Auto-respond to listOutputs using database
-      if (request.type === 'listOutputs' && currentWalletKeys) {
+      if (request.type === 'listOutputs' && getWalletKeys()) {
         const params = getParams<ListOutputsParams>(request)
         const basket = params.basket
         const includeSpent = params.includeSpent || false
@@ -349,7 +273,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
           })
           return
         } catch (e) {
-          console.error('Failed to list outputs:', e)
+          brc100Logger.error('Failed to list outputs', e)
           await invoke('respond_to_brc100', {
             requestId: request.id,
             response: { error: { code: -32000, message: 'Failed to list outputs' } }
@@ -359,7 +283,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
       }
 
       // Handle listLocks - returns all time-locked outputs
-      if (request.type === 'listLocks' && currentWalletKeys) {
+      if (request.type === 'listLocks' && getWalletKeys()) {
         try {
           const currentHeight = await getCurrentBlockHeight()
           const locks = await getLocksFromDB(currentHeight)
@@ -381,7 +305,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
           })
           return
         } catch (e) {
-          console.error('Failed to list locks:', e)
+          brc100Logger.error('Failed to list locks', e)
           await invoke('respond_to_brc100', {
             requestId: request.id,
             response: { error: { code: -32000, message: 'Failed to list locks' } }
@@ -392,7 +316,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
 
       // Handle lockBSV - creates time-locked output using OP_PUSH_TX
       // This requires user approval as it spends funds
-      if (request.type === 'lockBSV' && currentWalletKeys) {
+      if (request.type === 'lockBSV' && getWalletKeys()) {
         const params = getParams<LockBSVParams>(request)
         const satoshis = params.satoshis
         const blocks = params.blocks
@@ -419,7 +343,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
 
       // Handle unlockBSV - spends time-locked output back to wallet
       // This requires user approval as it spends funds
-      if (request.type === 'unlockBSV' && currentWalletKeys) {
+      if (request.type === 'unlockBSV' && getWalletKeys()) {
         const params = getParams<UnlockBSVParams>(request)
         const outpoint = params.outpoints?.[0]
 
@@ -446,7 +370,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
               response
             })
           } catch (e) {
-            console.error('Failed to send BRC-100 response:', e)
+            brc100Logger.error('Failed to send BRC-100 response', e)
           }
         },
         reject: async (error) => {
@@ -459,16 +383,17 @@ export async function setupHttpServerListener(): Promise<() => void> {
               }
             })
           } catch (e) {
-            console.error('Failed to send BRC-100 error:', e)
+            brc100Logger.error('Failed to send BRC-100 error', e)
           }
         }
       })
 
-      if (onRequestCallback) {
-        onRequestCallback(request)
+      const requestHandler = requestManager.getRequestHandler()
+      if (requestHandler) {
+        requestHandler(request)
       }
       } catch (err) {
-        console.error('BRC-100: Error in event handler:', err)
+        brc100Logger.error('Error in event handler', err)
       }
     })
 
@@ -476,134 +401,6 @@ export async function setupHttpServerListener(): Promise<() => void> {
   } catch {
     return () => {}
   }
-}
-
-// Sign a message with the identity key
-export function signMessage(keys: WalletKeys, message: string): string {
-  const privateKey = PrivateKey.fromWif(keys.identityWif)
-  const messageBytes = new TextEncoder().encode(message)
-  const signature = privateKey.sign(Array.from(messageBytes))
-  // Convert signature to DER-encoded hex string
-  const sigDER = signature.toDER() as number[]
-  return Buffer.from(sigDER).toString('hex')
-}
-
-// Sign arbitrary data with specified key
-export function signData(keys: WalletKeys, data: number[], keyType: 'identity' | 'wallet' | 'ordinals' = 'identity'): string {
-  let wif: string
-  switch (keyType) {
-    case 'wallet':
-      wif = keys.walletWif
-      break
-    case 'ordinals':
-      wif = keys.ordWif
-      break
-    default:
-      wif = keys.identityWif
-  }
-
-  const privateKey = PrivateKey.fromWif(wif)
-  const signature = privateKey.sign(data)
-  // Convert signature to DER-encoded hex string
-  const sigDER = signature.toDER() as number[]
-  return Buffer.from(sigDER).toString('hex')
-}
-
-// Verify a signature
-export function verifySignature(publicKeyHex: string, message: string, signatureHex: string): boolean {
-  try {
-    // Reject empty signatures
-    if (!signatureHex || signatureHex.length === 0) {
-      return false
-    }
-
-    // Validate hex format
-    if (!/^[0-9a-fA-F]+$/.test(signatureHex)) {
-      return false
-    }
-
-    // Parse the public key
-    const publicKey = PublicKey.fromString(publicKeyHex)
-
-    // Parse the DER-encoded signature
-    const sigBytes = Buffer.from(signatureHex, 'hex')
-    const signature = Signature.fromDER(Array.from(sigBytes))
-
-    // Convert message to bytes (must match how it was signed)
-    const messageBytes = Array.from(new TextEncoder().encode(message))
-
-    // Verify the signature
-    return publicKey.verify(messageBytes, signature)
-  } catch {
-    // Any parsing or verification error means invalid signature
-    return false
-  }
-}
-
-// Get current block height from WhatsOnChain
-export async function getBlockHeight(): Promise<number> {
-  try {
-    const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/chain/info')
-    const data = await response.json()
-    return data.blocks
-  } catch {
-    return 0
-  }
-}
-
-// Create a CLTV time-locked locking script
-export function createCLTVLockingScript(pubKeyHex: string, lockTime: number): string {
-  const lockTimeHex = encodeScriptNum(lockTime)
-  return lockTimeHex + 'b175' + pushData(pubKeyHex) + 'ac'
-}
-
-// Encode number for script
-function encodeScriptNum(num: number): string {
-  if (num === 0) return '00'
-  if (num >= 1 && num <= 16) return (0x50 + num).toString(16)
-
-  const bytes: number[] = []
-  let n = Math.abs(num)
-  while (n > 0) {
-    bytes.push(n & 0xff)
-    n >>= 8
-  }
-
-  // Add sign bit if needed
-  if (bytes[bytes.length - 1] & 0x80) {
-    bytes.push(num < 0 ? 0x80 : 0x00)
-  } else if (num < 0) {
-    bytes[bytes.length - 1] |= 0x80
-  }
-
-  const len = bytes.length
-  const lenHex = len.toString(16).padStart(2, '0')
-  const dataHex = bytes.map(b => b.toString(16).padStart(2, '0')).join('')
-
-  return lenHex + dataHex
-}
-
-// Create push data opcode
-function pushData(hexData: string): string {
-  const len = hexData.length / 2
-  if (len < 0x4c) {
-    return len.toString(16).padStart(2, '0') + hexData
-  } else if (len <= 0xff) {
-    return '4c' + len.toString(16).padStart(2, '0') + hexData
-  } else if (len <= 0xffff) {
-    return '4d' + len.toString(16).padStart(4, '0').match(/.{2}/g)!.reverse().join('') + hexData
-  } else {
-    return '4e' + len.toString(16).padStart(8, '0').match(/.{2}/g)!.reverse().join('') + hexData
-  }
-}
-
-// Create OP_RETURN script for Wrootz protocol data
-function createWrootzOpReturn(action: string, data: string): string {
-  let script = '6a00' // OP_RETURN OP_FALSE
-  script += pushData(Buffer.from('wrootz').toString('hex'))
-  script += pushData(Buffer.from(action).toString('hex'))
-  script += pushData(Buffer.from(data).toString('hex'))
-  return script
 }
 
 // Lock management - now uses database
@@ -623,7 +420,7 @@ export async function getLocks(): Promise<LockedOutput[]> {
       blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
     }))
   } catch (error) {
-    console.error('Failed to get locks from database:', error)
+    brc100Logger.error('Failed to get locks from database', error)
     return []
   }
 }
@@ -714,9 +511,7 @@ export async function createLockTransaction(
 
   // Add lock output
   tx.addOutput({
-    lockingScript: {
-      toHex: () => lockingScript
-    } as any,
+    lockingScript: createScriptFromHex(lockingScript),
     satoshis
   })
 
@@ -724,9 +519,7 @@ export async function createLockTransaction(
   if (ordinalOrigin) {
     const opReturnScript = createWrootzOpReturn('lock', ordinalOrigin)
     tx.addOutput({
-      lockingScript: {
-        toHex: () => opReturnScript
-      } as any,
+      lockingScript: createScriptFromHex(opReturnScript),
       satoshis: 0
     })
   }
@@ -781,9 +574,9 @@ export async function createLockTransaction(
       labels: ['lock', 'wrootz']
     })
 
-    console.log('Lock saved to database:', { txid, utxoId, unlockBlock })
+    brc100Logger.info('Lock saved to database', { txid, utxoId, unlockBlock })
   } catch (error) {
-    console.error('Failed to save lock to database:', error)
+    brc100Logger.error('Failed to save lock to database', error)
     // Transaction is already broadcast, so we continue
   }
 
@@ -879,7 +672,7 @@ export async function handleBRC100Request(
             }
           }
         } catch (error) {
-          console.error('listOutputs error:', error)
+          brc100Logger.error('listOutputs error', error)
           // Fallback to balance from database
           const balance = await getBalanceFromDB(basket || undefined)
           response.result = {
@@ -897,8 +690,9 @@ export async function handleBRC100Request(
         if (!autoApprove) {
           return new Promise((resolve, reject) => {
             pendingRequests.set(request.id, { request, resolve, reject })
-            if (onRequestCallback) {
-              onRequestCallback(request)
+            const handler = requestManager.getRequestHandler()
+            if (handler) {
+              handler(request)
             }
           })
         }
@@ -913,8 +707,9 @@ export async function handleBRC100Request(
         // Queue for user approval - transactions always need approval
         return new Promise((resolve, reject) => {
           pendingRequests.set(request.id, { request, resolve, reject })
-          if (onRequestCallback) {
-            onRequestCallback(request)
+          const handler = requestManager.getRequestHandler()
+          if (handler) {
+            handler(request)
           }
         })
       }
@@ -966,7 +761,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
       requestedAt: Date.now()
     })
   } catch (e) {
-    console.warn('Failed to record action request:', e)
+    brc100Logger.warn('Failed to record action request', undefined, e instanceof Error ? e : undefined)
   }
 
   try {
@@ -1330,15 +1125,16 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
     // Update action result with outcome
     try {
+      const resultObj = response.result as Record<string, unknown> | undefined
       await updateActionResult(requestId, {
-        txid: response.result?.txid,
+        txid: resultObj?.txid as string | undefined,
         approved: !response.error,
         error: response.error?.message,
         outputResult: JSON.stringify(response.result || response.error),
         completedAt: Date.now()
       })
     } catch (e) {
-      console.warn('Failed to update action result:', e)
+      brc100Logger.warn('Failed to update action result', undefined, e instanceof Error ? e : undefined)
     }
 
     resolve(response)
@@ -1351,7 +1147,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
         completedAt: Date.now()
       })
     } catch (e) {
-      console.warn('Failed to update action result:', e)
+      brc100Logger.warn('Failed to update action result', undefined, e instanceof Error ? e : undefined)
     }
 
     resolve({
@@ -1361,39 +1157,6 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
   }
 
   pendingRequests.delete(requestId)
-}
-
-/**
- * Convert a hex string to a proper LockingScript object
- * Handles all BSV SDK requirements including toHex() and toUint8Array()
- */
-function convertToLockingScript(scriptHex: string): LockingScript {
-  const scriptBytes = new Uint8Array(
-    scriptHex.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16))
-  )
-  // Convert Uint8Array to number[] for BSV SDK
-  const bytesArray: number[] = Array.from(scriptBytes)
-  return LockingScript.fromBinary(bytesArray)
-}
-
-// Check if this is an inscription transaction (1Sat Ordinals)
-function isInscriptionTransaction(actionRequest: CreateActionRequest): boolean {
-  // Check for inscription markers in outputs
-  return actionRequest.outputs.some(o => {
-    // Check basket name
-    if (o.basket?.includes('ordinal') || o.basket?.includes('inscription')) return true
-    // Check tags
-    if (o.tags?.some(t => t.includes('inscription') || t.includes('ordinal'))) return true
-    // Check for 1-sat outputs with long locking scripts (inscription envelope)
-    // Inscription scripts start with OP_FALSE OP_IF "ord" ... OP_ENDIF
-    if (o.satoshis === 1 && o.lockingScript.length > 100) {
-      // Check for inscription envelope marker: 0063 (OP_FALSE OP_IF) followed by "ord" push
-      if (o.lockingScript.startsWith('0063') && o.lockingScript.includes('036f7264')) {
-        return true
-      }
-    }
-    return false
-  })
 }
 
 // Build and broadcast a transaction from createAction request
@@ -1409,7 +1172,7 @@ async function buildAndBroadcastAction(
   // Check if this is an inscription
   const isInscription = isInscriptionTransaction(actionRequest)
   if (isInscription) {
-    console.log('Detected inscription transaction, using ordinals address')
+    brc100Logger.debug('Detected inscription transaction, using ordinals address')
   }
 
   // Get UTXOs - for inscriptions, we still use wallet UTXOs as funding
@@ -1514,7 +1277,7 @@ async function buildAndBroadcastAction(
   const txid = broadcastResult.txid || tx.id('hex')
 
   // Log overlay results
-  console.log('Overlay broadcast results:', {
+  brc100Logger.info('Overlay broadcast results', {
     txid,
     overlayAccepted: overlaySuccess,
     wocAccepted: wocSuccess,
@@ -1565,7 +1328,7 @@ async function buildAndBroadcastAction(
             createdAt: Date.now(),
             tags
           })
-          console.log(`Inscription added to ordinals basket: ${txid}:${i} (${contentType})`)
+          brc100Logger.info('Inscription added to ordinals basket', { outpoint: `${txid}:${i}`, contentType })
         }
       }
     }
@@ -1586,9 +1349,9 @@ async function buildAndBroadcastAction(
       })
     }
 
-    console.log('Transaction tracked in database:', txid)
+    brc100Logger.info('Transaction tracked in database', { txid })
   } catch (error) {
-    console.error('Failed to track transaction in database:', error)
+    brc100Logger.error('Failed to track transaction in database', error)
     // Transaction is already broadcast, continue
   }
 
@@ -1616,7 +1379,7 @@ export async function rejectRequest(requestId: string): Promise<void> {
       completedAt: Date.now()
     })
   } catch (e) {
-    console.warn('Failed to record rejected action:', e)
+    brc100Logger.warn('Failed to record rejected action', undefined, e instanceof Error ? e : undefined)
   }
 
   pending.resolve({
@@ -1625,11 +1388,6 @@ export async function rejectRequest(requestId: string): Promise<void> {
   })
 
   pendingRequests.delete(requestId)
-}
-
-// Generate a unique request ID
-export function generateRequestId(): string {
-  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
 // BRC-100 acquireCertificate - delegates to certificate service
@@ -1713,7 +1471,7 @@ export async function discoverByIdentityKey(args: {
         }
       }
     } catch (overlayError) {
-      console.warn('Overlay lookup failed:', overlayError)
+      brc100Logger.warn('Overlay lookup failed', undefined, overlayError instanceof Error ? overlayError : undefined)
     }
 
     return {
@@ -1759,23 +1517,6 @@ export async function discoverByAttributes(args: {
     }
   } catch {
     return { outputs: [], totalOutputs: 0 }
-  }
-}
-
-// Format identity key for display (similar to Yours Wallet)
-export function formatIdentityKey(pubKey: string): string {
-  if (pubKey.length <= 16) return pubKey
-  return `${pubKey.slice(0, 8)}...${pubKey.slice(-8)}`
-}
-
-// Get the identity key in the format apps expect
-export function getIdentityKeyForApp(keys: WalletKeys): {
-  identityKey: string
-  identityAddress: string
-} {
-  return {
-    identityKey: keys.identityPubKey,
-    identityAddress: keys.identityAddress
   }
 }
 

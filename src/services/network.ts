@@ -10,6 +10,7 @@
 
 import { TIMEOUTS, RETRY_CONFIG, getWocApiUrl, getGpApiUrl } from './config'
 import { NetworkError, TimeoutError, AppError, ErrorCodes } from './errors'
+import { apiLogger } from './logger'
 
 /**
  * Options for fetch requests
@@ -132,7 +133,7 @@ export async function fetchWithRetry(
       // Check if we should retry based on status
       if (!response.ok && isRetryableStatus(response.status) && attempt < retries) {
         const delay = calculateBackoff(attempt, retryDelay, RETRY_CONFIG.maxDelay)
-        console.warn(`[Network] ${url} returned ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`)
+        apiLogger.warn(`[Network] ${url} returned ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`)
         await sleep(delay)
         attempt++
         continue
@@ -145,7 +146,7 @@ export async function fetchWithRetry(
       // Check if we should retry
       if (isNetworkError(error) && attempt < retries) {
         const delay = calculateBackoff(attempt, retryDelay, RETRY_CONFIG.maxDelay)
-        console.warn(`[Network] ${url} failed: ${lastError.message}, retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`)
+        apiLogger.warn(`[Network] ${url} failed: ${lastError.message}, retrying in ${delay}ms (attempt ${attempt + 1}/${retries})`)
         await sleep(delay)
         attempt++
         continue
@@ -297,7 +298,7 @@ export async function fetchBalance(address: string): Promise<{ confirmed: number
       { timeout: TIMEOUTS.default }
     )
   } catch (error) {
-    console.warn(`[Network] Failed to fetch balance for ${address}:`, error)
+    apiLogger.warn(`[Network] Failed to fetch balance for ${address}`, { address }, error instanceof Error ? error : undefined)
     return null
   }
 }
@@ -328,7 +329,7 @@ export async function fetchUtxos(address: string): Promise<Array<{
 
     return await response.json()
   } catch (error) {
-    console.warn(`[Network] Failed to fetch UTXOs for ${address}:`, error)
+    apiLogger.warn(`[Network] Failed to fetch UTXOs for ${address}`, { address }, error instanceof Error ? error : undefined)
     return []
   }
 }

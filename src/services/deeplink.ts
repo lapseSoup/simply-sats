@@ -1,6 +1,7 @@
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
-import { handleBRC100Request, generateRequestId, type BRC100Request } from './brc100'
+import { handleBRC100Request, generateRequestId, type BRC100Request, type BRC100Response } from './brc100'
 import type { WalletKeys } from './wallet'
+import { logger } from './logger'
 
 /**
  * Safely parse JSON from untrusted deep link parameters
@@ -12,12 +13,12 @@ function safeJsonParse<T>(value: string | undefined): T | undefined {
     const parsed = JSON.parse(value)
     // Basic validation - ensure we got an expected type
     if (parsed === null || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
-      console.warn('Deep link JSON parsed to unexpected type:', typeof parsed)
+      logger.warn('Deep link JSON parsed to unexpected type:', { type: typeof parsed })
       return undefined
     }
     return parsed as T
   } catch (error) {
-    console.warn('Failed to parse deep link JSON parameter:', error)
+    logger.warn('Failed to parse deep link JSON parameter', undefined, error instanceof Error ? error : undefined)
     return undefined
   }
 }
@@ -76,11 +77,11 @@ export function parseDeepLink(url: string): BRC100Request | null {
         }
 
       default:
-        console.warn('Unknown deep link action:', action)
+        logger.warn('Unknown deep link action:', { action })
         return null
     }
   } catch (error) {
-    console.error('Failed to parse deep link:', error)
+    logger.error('Failed to parse deep link', error)
     return null
   }
 }
@@ -92,7 +93,7 @@ export async function setupDeepLinkListener(
   try {
     const unlisten = await onOpenUrl((urls: string[]) => {
       for (const url of urls) {
-        console.log('Received deep link:', url)
+        logger.info('Received deep link', { url })
         const request = parseDeepLink(url)
         if (request) {
           onRequest(request)
@@ -100,10 +101,10 @@ export async function setupDeepLinkListener(
       }
     })
 
-    console.log('Deep link listener registered')
+    logger.info('Deep link listener registered')
     return unlisten
   } catch (error) {
-    console.error('Failed to set up deep link listener:', error)
+    logger.error('Failed to set up deep link listener', error)
     return () => {}
   }
 }
@@ -113,7 +114,7 @@ export async function handleDeepLink(
   url: string,
   wallet: WalletKeys,
   autoApprove: boolean = false
-): Promise<any> {
+): Promise<BRC100Response> {
   const request = parseDeepLink(url)
   if (!request) {
     throw new Error('Invalid deep link')

@@ -7,6 +7,7 @@
 
 import type { WalletKeys } from './wallet'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData } from './crypto'
+import { walletLogger } from './logger'
 
 // Storage key in localStorage
 const STORAGE_KEY = 'simply_sats_wallet'
@@ -56,7 +57,7 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
 
     // If it's a plain object with wallet keys (shouldn't happen, but handle it)
     if (parsed.mnemonic && parsed.walletWif) {
-      console.warn('Found unencrypted wallet data - this should not happen')
+      walletLogger.warn('Found unencrypted wallet data - this should not happen')
       // Re-save with encryption
       await saveWallet(parsed, password)
       return parsed
@@ -67,7 +68,7 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
 
   // Try legacy base64 format
   if (isLegacyEncrypted(stored)) {
-    console.log('Migrating legacy wallet format to secure encryption...')
+    walletLogger.info('Migrating legacy wallet format to secure encryption...')
     try {
       // Decode the old format
       const decoded = atob(stored)
@@ -77,7 +78,7 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
       const encryptedData = await migrateLegacyData(stored, password)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
 
-      console.log('Wallet migrated to secure encryption successfully')
+      walletLogger.info('Wallet migrated to secure encryption successfully')
       return keys
     } catch {
       // Legacy decoding failed

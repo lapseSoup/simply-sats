@@ -5,6 +5,7 @@ import {
   sendToken
 } from '../services/tokens'
 import { getUTXOs, type WalletKeys } from '../services/wallet'
+import { tokenLogger } from '../services/logger'
 
 interface TokensContextType {
   tokenBalances: TokenBalance[]
@@ -49,9 +50,9 @@ export function TokensProvider({ children }: TokensProviderProps) {
         wallet.ordAddress
       )
       setTokenBalances(balances)
-      console.log(`[Tokens] Synced ${balances.length} token balances`)
+      tokenLogger.info(`Synced ${balances.length} token balances`)
     } catch (e) {
-      console.error('[Tokens] Failed to sync tokens:', e)
+      tokenLogger.error('Failed to sync tokens', e)
     } finally {
       setTokensSyncing(false)
     }

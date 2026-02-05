@@ -5,6 +5,8 @@
  * after a period of user inactivity.
  */
 
+import { walletLogger } from './logger'
+
 // Default inactivity limit in milliseconds (10 minutes)
 export const DEFAULT_INACTIVITY_LIMIT = 10 * 60 * 1000
 
@@ -82,12 +84,12 @@ export function initAutoLock(
     const timeSinceActive = Date.now() - state.lastActiveTime
 
     if (timeSinceActive >= state.inactivityLimit) {
-      console.log('[AutoLock] Inactivity timeout reached, locking wallet')
+      walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
       onLock()
     }
   }, 60000) // Check every minute
 
-  console.log(`[AutoLock] Initialized with ${inactivityLimitMs / 60000} minute timeout`)
+  walletLogger.info(`[AutoLock] Initialized with ${inactivityLimitMs / 60000} minute timeout`)
 
   // Return cleanup function
   return stopAutoLock
@@ -109,7 +111,7 @@ export function stopAutoLock(): void {
     state.eventCleanup = null
   }
 
-  console.log('[AutoLock] Stopped')
+  walletLogger.debug('[AutoLock] Stopped')
 }
 
 /**
@@ -143,7 +145,7 @@ export function getTimeUntilLock(): number {
  */
 export function setInactivityLimit(limitMs: number): void {
   state.inactivityLimit = limitMs
-  console.log(`[AutoLock] Updated timeout to ${limitMs / 60000} minutes`)
+  walletLogger.debug(`[AutoLock] Updated timeout to ${limitMs / 60000} minutes`)
 }
 
 /**
@@ -161,7 +163,7 @@ export function pauseAutoLock(): void {
     clearInterval(state.checkInterval)
     state.checkInterval = null
   }
-  console.log('[AutoLock] Paused')
+  walletLogger.debug('[AutoLock] Paused')
 }
 
 /**
@@ -178,12 +180,12 @@ export function resumeAutoLock(onLock: () => void): void {
     const timeSinceActive = Date.now() - state.lastActiveTime
 
     if (timeSinceActive >= state.inactivityLimit) {
-      console.log('[AutoLock] Inactivity timeout reached, locking wallet')
+      walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
       onLock()
     }
   }, 60000)
 
-  console.log('[AutoLock] Resumed')
+  walletLogger.debug('[AutoLock] Resumed')
 }
 
 /**

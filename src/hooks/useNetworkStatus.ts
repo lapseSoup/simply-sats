@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getNetworkStatus } from '../services/brc100'
 import { TIMEOUTS } from '../services/config'
+import { apiLogger } from '../services/logger'
 
 export interface NetworkInfo {
   blockHeight: number
@@ -37,7 +38,7 @@ export function useNetworkStatus(): UseNetworkStatusResult {
       const status = await getNetworkStatus()
       setNetworkInfo(status)
     } catch (error) {
-      console.error('[Network] Failed to fetch network status:', error)
+      apiLogger.error('[Network] Failed to fetch network status:', error)
     }
   }, [])
 
@@ -58,7 +59,7 @@ export function useNetworkStatus(): UseNetworkStatusResult {
         setUsdPrice(data.rate)
       }
     } catch (error) {
-      console.error('[Network] Failed to fetch USD price:', error)
+      apiLogger.error('[Network] Failed to fetch USD price:', error)
     }
   }, [])
 

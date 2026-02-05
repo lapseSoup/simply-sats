@@ -13,6 +13,7 @@ import {
   setRequestHandler,
   type BRC100Request
 } from '../services/brc100'
+import { brc100Logger } from '../services/logger'
 
 export interface UseBRC100Options {
   wallet: WalletKeys | null
@@ -32,7 +33,7 @@ export function useBRC100({ wallet, onRequest }: UseBRC100Options): UseBRC100Res
 
   // Handle incoming BRC-100 requests
   const handleRequest = useCallback((request: BRC100Request) => {
-    console.log('[BRC100] Received request:', request.type, 'from', request.origin)
+    brc100Logger.info('Received BRC-100 request', { type: request.type, origin: request.origin })
     setPendingRequest(request)
     onRequest?.(request)
   }, [onRequest])
@@ -60,9 +61,9 @@ export function useBRC100({ wallet, onRequest }: UseBRC100Options): UseBRC100Res
 
     setupHttpServerListener().then(cleanup => {
       cleanupListener = cleanup
-      console.log('[BRC100] HTTP server listener active')
+      brc100Logger.info('[BRC100] HTTP server listener active')
     }).catch(error => {
-      console.error('[BRC100] Failed to setup listener:', error)
+      brc100Logger.error('[BRC100] Failed to setup listener:', error)
     })
 
     return () => {

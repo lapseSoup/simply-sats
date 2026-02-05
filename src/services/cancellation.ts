@@ -92,6 +92,64 @@ export function isCancellationError(error: unknown): error is CancellationError 
 let syncController: CancellationController | null = null
 
 /**
+ * Sync mutex to prevent database race conditions
+ * Ensures only one sync operation runs at a time
+ */
+class SyncMutex {
+  private locked = false
+  private currentSyncPromise: Promise<void> | null = null
+  private resolveCurrentSync: (() => void) | null = null
+
+  /**
+   * Acquire the mutex. If locked, waits for current sync to complete.
+   * Returns a release function that must be called when sync is done.
+   */
+  async acquire(): Promise<() => void> {
+    // If there's a sync in progress, wait for it to complete
+    if (this.locked && this.currentSyncPromise) {
+      await this.currentSyncPromise
+    }
+
+    this.locked = true
+    this.currentSyncPromise = new Promise(resolve => {
+      this.resolveCurrentSync = resolve
+    })
+
+    return () => this.release()
+  }
+
+  private release(): void {
+    this.locked = false
+    if (this.resolveCurrentSync) {
+      this.resolveCurrentSync()
+      this.resolveCurrentSync = null
+      this.currentSyncPromise = null
+    }
+  }
+
+  get isLocked(): boolean {
+    return this.locked
+  }
+}
+
+const syncMutex = new SyncMutex()
+
+/**
+ * Check if a sync is currently in progress
+ */
+export function isSyncInProgress(): boolean {
+  return syncMutex.isLocked
+}
+
+/**
+ * Acquire the sync mutex. Returns a release function.
+ * Use this to ensure exclusive access during sync operations.
+ */
+export async function acquireSyncLock(): Promise<() => void> {
+  return syncMutex.acquire()
+}
+
+/**
  * Get the current sync cancellation controller, creating one if needed
  */
 export function getSyncController(): CancellationController {

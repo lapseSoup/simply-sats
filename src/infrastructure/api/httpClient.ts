@@ -9,6 +9,7 @@
  */
 
 import { type Result, ok, err } from '../../domain/types'
+import { apiLogger } from '../../services/logger'
 
 /**
  * HTTP client configuration options
@@ -163,7 +164,7 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
    */
   function logRequest(method: string, url: string, body?: unknown): void {
     if (cfg.enableLogging) {
-      console.log(`[HTTP] ${method} ${url}`, body ? { body } : '')
+      apiLogger.debug(`[HTTP] ${method} ${url}`, body ? { body } : undefined)
     }
   }
 
@@ -172,7 +173,7 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
    */
   function logResponse(method: string, url: string, status: number, duration: number): void {
     if (cfg.enableLogging) {
-      console.log(`[HTTP] ${method} ${url} -> ${status} (${duration}ms)`)
+      apiLogger.debug(`[HTTP] ${method} ${url} -> ${status} (${duration}ms)`)
     }
   }
 
@@ -181,7 +182,7 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
    */
   function logError(method: string, url: string, error: HttpError, attempt: number): void {
     if (cfg.enableLogging) {
-      console.error(`[HTTP] ${method} ${url} failed (attempt ${attempt}):`, error.message)
+      apiLogger.error(`[HTTP] ${method} ${url} failed (attempt ${attempt}):`, error.message)
     }
   }
 
@@ -240,7 +241,7 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
         )
 
         if (cfg.enableLogging) {
-          console.error(`[HTTP] ${method} ${fullUrl} error after ${duration}ms:`, error.message)
+          apiLogger.error(`[HTTP] ${method} ${fullUrl} error after ${duration}ms:`, error.message)
         }
 
         // Only retry if it's a retryable error and we have attempts left

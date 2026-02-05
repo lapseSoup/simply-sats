@@ -11,6 +11,7 @@ import {
   deleteAccount as deleteAccountDb,
   updateAccountName,
 } from '../services/accounts'
+import { accountLogger } from '../services/logger'
 
 interface AccountsContextType {
   // Account state
@@ -68,7 +69,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
         setActiveAccountId(active.id || null)
       }
     } catch (e) {
-      console.error('[Accounts] Failed to refresh accounts:', e)
+      accountLogger.error('Failed to refresh accounts', e)
     }
   }, [])
 
@@ -76,7 +77,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     try {
       return await getAccountKeys(account, password)
     } catch (e) {
-      console.error('[Accounts] Failed to get account keys:', e)
+      accountLogger.error('Failed to get account keys', e)
       return null
     }
   }, [])
@@ -86,13 +87,13 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     try {
       const account = accounts.find(a => a.id === accountId)
       if (!account) {
-        console.error('[Accounts] Account not found')
+        accountLogger.error('Account not found')
         return null
       }
 
       const keys = await getAccountKeys(account, password)
       if (!keys) {
-        console.error('[Accounts] Invalid password')
+        accountLogger.error('Invalid password')
         return null
       }
 
@@ -103,10 +104,10 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
       setActiveAccountId(accountId)
       await refreshAccounts()
 
-      console.log(`[Accounts] Switched to account ${account.name}`)
+      accountLogger.info(`Switched to account ${account.name}`)
       return keys
     } catch (e) {
-      console.error('[Accounts] Failed to switch account:', e)
+      accountLogger.error('Failed to switch account', e)
       return null
     }
   }, [accounts, refreshAccounts])
@@ -119,10 +120,10 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
       if (!accountId) return null
 
       await refreshAccounts()
-      console.log(`[Accounts] Created new account: ${name}`)
+      accountLogger.info(`Created new account: ${name}`)
       return keys
     } catch (e) {
-      console.error('[Accounts] Failed to create account:', e)
+      accountLogger.error('Failed to create account', e)
       return null
     }
   }, [refreshAccounts])
@@ -136,7 +137,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
       }
       return success
     } catch (e) {
-      console.error('[Accounts] Failed to delete account:', e)
+      accountLogger.error('Failed to delete account', e)
       return false
     }
   }, [refreshAccounts])

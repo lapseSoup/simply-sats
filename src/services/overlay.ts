@@ -12,6 +12,7 @@
  */
 
 import { P2PKH } from '@bsv/sdk'
+import { overlayLogger } from './logger'
 
 // Known overlay network nodes (can be expanded)
 const KNOWN_OVERLAY_NODES = [
@@ -70,6 +71,26 @@ export interface LookupResult {
     beef?: string
   }>
   node: string
+}
+
+// API response types for type safety
+interface ServiceLookupResponse {
+  services?: Array<{
+    url?: string
+    serviceUrl?: string
+    description?: string
+    publicKey?: string
+  }>
+}
+
+// Lookup output from overlay
+export interface OverlayOutput {
+  txid: string
+  vout: number
+  satoshis: number
+  lockingScript: string
+  topic: string
+  beef?: string
 }
 
 // Cached node status
@@ -170,7 +191,7 @@ export async function submitToOverlay(
   const nodes = await findNodesForTopic(topic)
 
   if (nodes.length === 0) {
-    console.warn('No overlay nodes available for topic:', topic)
+    overlayLogger.warn('No overlay nodes available for topic', { topic })
     return results
   }
 
@@ -333,11 +354,11 @@ export async function lookupServices(topic: string): Promise<SlapService[]> {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as ServiceLookupResponse
         if (data.services) {
-          services.push(...data.services.map((s: any) => ({
+          services.push(...data.services.map((s) => ({
             topic,
-            serviceUrl: s.url || s.serviceUrl,
+            serviceUrl: s.url || s.serviceUrl || '',
             description: s.description,
             publicKey: s.publicKey
           })))
@@ -497,10 +518,10 @@ export async function broadcastWithOverlay(
  */
 export function subscribeToTopic(
   topic: string,
-  callback: (output: any) => void
+  callback: (output: OverlayOutput) => void
 ): () => void {
   // Placeholder - full implementation would use WebSocket
-  console.log(`Subscribed to topic: ${topic}`)
+  overlayLogger.info('Subscribed to topic', { topic })
 
   // Poll for updates every 30 seconds as fallback
   const interval = setInterval(async () => {
@@ -513,7 +534,7 @@ export function subscribeToTopic(
   // Return unsubscribe function
   return () => {
     clearInterval(interval)
-    console.log(`Unsubscribed from topic: ${topic}`)
+    overlayLogger.info('Unsubscribed from topic', { topic })
   }
 }
 

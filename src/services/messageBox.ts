@@ -9,6 +9,7 @@
  */
 
 import { PrivateKey, PublicKey, Hash, Random } from '@bsv/sdk'
+import { messageLogger } from './logger'
 
 // MessageBox server endpoint
 const MESSAGEBOX_HOST = 'https://messagebox.babbage.systems'
@@ -43,10 +44,10 @@ export function loadNotifications(): void {
     const saved = localStorage.getItem('simply_sats_payment_notifications')
     if (saved) {
       paymentNotifications = JSON.parse(saved)
-      console.log(`Loaded ${paymentNotifications.length} payment notifications from storage`)
+      messageLogger.info('Loaded payment notifications from storage', { count: paymentNotifications.length })
     }
   } catch (e) {
-    console.error('Failed to load payment notifications:', e)
+    messageLogger.error('Failed to load payment notifications', e)
   }
 }
 
@@ -55,7 +56,7 @@ function saveNotifications(): void {
   try {
     localStorage.setItem('simply_sats_payment_notifications', JSON.stringify(paymentNotifications))
   } catch (e) {
-    console.error('Failed to save payment notifications:', e)
+    messageLogger.error('Failed to save payment notifications', e)
   }
 }
 
@@ -109,14 +110,14 @@ export async function listPaymentMessages(identityPrivateKey: PrivateKey): Promi
         return [] // No messages
       }
       const errorText = await response.text()
-      console.error('MessageBox error:', response.status, errorText)
+      messageLogger.error('MessageBox error', undefined, { status: response.status, errorText })
       return []
     }
 
     const data = await response.json()
     return data.messages || []
   } catch (error) {
-    console.error('Failed to list payment messages:', error)
+    messageLogger.error('Failed to list payment messages', error)
     return []
   }
 }
@@ -144,7 +145,7 @@ export async function acknowledgeMessages(
 
     return response.ok
   } catch (error) {
-    console.error('Failed to acknowledge messages:', error)
+    messageLogger.error('Failed to acknowledge messages', error)
     return false
   }
 }
@@ -158,7 +159,7 @@ function parsePaymentMessage(message: PaymentMessage): PaymentNotification | nul
 
     // Check if this is a payment notification
     if (!bodyData.txid || !bodyData.derivationPrefix || !bodyData.derivationSuffix) {
-      console.log('Message is not a payment notification:', bodyData)
+      messageLogger.debug('Message is not a payment notification', { bodyData })
       return null
     }
 
@@ -171,7 +172,7 @@ function parsePaymentMessage(message: PaymentMessage): PaymentNotification | nul
       senderPublicKey: message.sender
     }
   } catch (e) {
-    console.error('Failed to parse payment message:', e)
+    messageLogger.error('Failed to parse payment message', e)
     return null
   }
 }
@@ -180,10 +181,10 @@ function parsePaymentMessage(message: PaymentMessage): PaymentNotification | nul
  * Check for new payment messages and process them
  */
 export async function checkForPayments(identityPrivateKey: PrivateKey): Promise<PaymentNotification[]> {
-  console.log('Checking MessageBox for payment notifications...')
+  messageLogger.info('Checking MessageBox for payment notifications')
 
   const messages = await listPaymentMessages(identityPrivateKey)
-  console.log(`Found ${messages.length} messages in payment inbox`)
+  messageLogger.info('Found messages in payment inbox', { count: messages.length })
 
   const newNotifications: PaymentNotification[] = []
   const processedIds: string[] = []
@@ -199,7 +200,7 @@ export async function checkForPayments(identityPrivateKey: PrivateKey): Promise<
       if (!exists) {
         paymentNotifications.push(notification)
         newNotifications.push(notification)
-        console.log('New payment notification:', notification)
+        messageLogger.info('New payment notification', { txid: notification.txid, vout: notification.vout, amount: notification.amount })
       }
 
       processedIds.push(msg.messageId)
@@ -279,12 +280,12 @@ export function startPaymentListener(
   intervalMs = 30000 // Check every 30 seconds
 ): () => void {
   if (isListening) {
-    console.log('Payment listener already running')
+    messageLogger.debug('Payment listener already running')
     return () => {}
   }
 
   isListening = true
-  console.log('Starting payment message listener...')
+  messageLogger.info('Starting payment message listener')
 
   // Initial check
   checkForPayments(identityPrivateKey).then(newPayments => {
@@ -301,7 +302,7 @@ export function startPaymentListener(
         onNewPayment?.(payment)
       }
     } catch (e) {
-      console.error('Payment check failed:', e)
+      messageLogger.error('Payment check failed', e)
     }
   }, intervalMs)
 
@@ -309,7 +310,7 @@ export function startPaymentListener(
   return () => {
     clearInterval(intervalId)
     isListening = false
-    console.log('Payment listener stopped')
+    messageLogger.info('Payment listener stopped')
   }
 }
 

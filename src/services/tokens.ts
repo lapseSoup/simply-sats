@@ -13,6 +13,7 @@ const OP_IF = 0x63
 const OP_ENDIF = 0x68
 const OP_0 = 0x00
 const OP_1 = 0x51
+import { tokenLogger } from './logger'
 import { getDatabase } from './database'
 import { broadcastTransaction, calculateTxFee, type UTXO } from './wallet'
 import type { TokenRow, TokenBalanceRow, TokenTransferRow, IdCheckRow, SqlParams } from './database-types'
@@ -110,7 +111,7 @@ export async function fetchTokenBalances(address: string): Promise<TokenBalance[
     const response = await fetch(`${getBaseUrl()}/api/bsv20/${address}/balance`)
 
     if (!response.ok) {
-      console.error('[Tokens] Failed to fetch balances:', response.status)
+      tokenLogger.error('Failed to fetch balances', undefined, { status: response.status })
       return []
     }
 
@@ -149,7 +150,7 @@ export async function fetchTokenBalances(address: string): Promise<TokenBalance[
 
     return balances
   } catch (e) {
-    console.error('[Tokens] Error fetching balances:', e)
+    tokenLogger.error('Error fetching balances', e)
     return []
   }
 }
@@ -178,7 +179,7 @@ export async function fetchTokenDetails(ticker: string): Promise<Token | null> {
       createdAt: Date.now()
     }
   } catch (e) {
-    console.error('[Tokens] Error fetching token details:', e)
+    tokenLogger.error('Error fetching token details', e)
     return null
   }
 }
@@ -208,7 +209,7 @@ export async function fetchBsv21Details(contractId: string): Promise<Token | nul
       createdAt: Date.now()
     }
   } catch (e) {
-    console.error('[Tokens] Error fetching BSV21 details:', e)
+    tokenLogger.error('Error fetching BSV21 details', e)
     return null
   }
 }
@@ -232,7 +233,7 @@ export async function fetchTokenUtxos(
     const data = await response.json()
     return data.filter((item: TokenUtxoResponse) => item.status === 1) // Only confirmed
   } catch (e) {
-    console.error('[Tokens] Error fetching token UTXOs:', e)
+    tokenLogger.error('Error fetching token UTXOs', e)
     return []
   }
 }
@@ -250,7 +251,7 @@ export async function ensureTokensTables(): Promise<void> {
   try {
     await database.select<IdCheckRow[]>('SELECT id FROM tokens LIMIT 1')
   } catch {
-    console.log('[Tokens] Tables will be created by migration')
+    tokenLogger.info('Tables will be created by migration')
   }
 }
 
@@ -779,7 +780,7 @@ export async function getTokenUtxosForSend(
     const response = await fetch(endpoint)
 
     if (!response.ok) {
-      console.error('[Tokens] Failed to fetch token UTXOs:', response.status)
+      tokenLogger.error('Failed to fetch token UTXOs', undefined, { status: response.status })
       return []
     }
 
@@ -788,7 +789,7 @@ export async function getTokenUtxosForSend(
     // Filter for confirmed UTXOs (status === 1)
     return data.filter((item: TokenUTXO) => item.status === 1)
   } catch (e) {
-    console.error('[Tokens] Error fetching token UTXOs for send:', e)
+    tokenLogger.error('Error fetching token UTXOs for send', e)
     return []
   }
 }
@@ -967,12 +968,12 @@ export async function transferToken(
     await tx.sign()
     const txid = await broadcastTransaction(tx)
 
-    console.log(`[Tokens] Transferred ${amount} ${ticker} to ${toAddress}, txid: ${txid}`)
+    tokenLogger.info('Token transfer completed', { amount, ticker, toAddress, txid })
 
     return { success: true, txid }
   } catch (e) {
     const error = e instanceof Error ? e.message : 'Token transfer failed'
-    console.error('[Tokens] Transfer error:', e)
+    tokenLogger.error('Transfer error', e)
     return { success: false, error }
   }
 }
@@ -1050,7 +1051,7 @@ export async function sendToken(
     )
   } catch (e) {
     const error = e instanceof Error ? e.message : 'Token send failed'
-    console.error('[Tokens] Send error:', e)
+    tokenLogger.error('Send error', e)
     return { success: false, error }
   }
 }

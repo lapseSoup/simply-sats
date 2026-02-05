@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
 import { useWallet, useUI } from './contexts'
+import { logger } from './services/logger'
 import { Toast, PaymentAlert, SkipLink } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
 import { Header, BalanceDisplay, BasketChips, QuickActions } from './components/wallet'
@@ -103,7 +104,7 @@ function WalletApp() {
     loadNotifications()
 
     const handleNewPayment = (payment: PaymentNotification) => {
-      console.log('New payment received:', payment)
+      logger.info('New payment received', { txid: payment.txid, amount: payment.amount })
       setNewPaymentAlert(payment)
       showToast(`Received ${payment.amount?.toLocaleString() || 'unknown'} sats!`)
       fetchData()
@@ -129,12 +130,12 @@ function WalletApp() {
         wallet.identityAddress
       ])
       if (needsSync) {
-        console.log('Initial sync needed, starting...')
+        logger.info('Initial sync needed, starting...')
         performSync(true)
       } else {
         const derivedAddrs = await getDerivedAddresses()
         if (derivedAddrs.length > 0) {
-          console.log('Auto-syncing', derivedAddrs.length, 'derived addresses...')
+          logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length })
           performSync(false)
         }
       }

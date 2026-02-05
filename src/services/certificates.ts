@@ -14,6 +14,7 @@ import { getDatabase } from './database'
 import { PrivateKey, Hash, PublicKey, Signature } from '@bsv/sdk'
 import type { WalletKeys } from './wallet'
 import type { CertificateRow, SqlParams } from './database-types'
+import { brc100Logger } from './logger'
 
 /**
  * Certificate types that can be issued
@@ -108,7 +109,7 @@ export async function ensureCertificatesTable(): Promise<void> {
     await database.execute('CREATE INDEX IF NOT EXISTS idx_certificates_certifier ON certificates(certifier)')
     await database.execute('CREATE INDEX IF NOT EXISTS idx_certificates_type ON certificates(type)')
   } catch (e) {
-    console.error('Failed to ensure certificates table:', e)
+    brc100Logger.error('Failed to ensure certificates table:', e)
   }
 }
 
@@ -337,7 +338,7 @@ export function verifyCertificateSignature(cert: Certificate): boolean {
     // Verify
     return publicKey.verify(hash, signature)
   } catch (error) {
-    console.error('Certificate verification failed:', error)
+    brc100Logger.error('Certificate verification failed', error)
     return false
   }
 }

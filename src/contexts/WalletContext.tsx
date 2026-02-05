@@ -55,6 +55,7 @@ import {
   minutesToMs
 } from '../services/autoLock'
 import { isValidOrigin, normalizeOrigin } from '../utils/validation'
+import { walletLogger, syncLogger, uiLogger } from '../services/logger'
 
 interface TxHistoryItem {
   tx_hash: string
@@ -234,7 +235,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Lock wallet (clear keys from memory)
   const lockWallet = useCallback(() => {
-    console.log('[Wallet] Locking wallet')
+    walletLogger.info('Locking wallet')
     setIsLocked(true)
     // Clear sensitive data from memory
     setWalletState(null)
@@ -247,7 +248,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       // Try to get active account from state, or fetch from database
       let account = activeAccount
       if (!account) {
-        console.log('[Wallet] No active account in state, fetching from database...')
+        walletLogger.debug('No active account in state, fetching from database...')
         account = await getActiveAccount()
         if (!account) {
           // No accounts at all - try to get first available account
@@ -259,7 +260,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }
 
       if (!account) {
-        console.error('[Wallet] No account found to unlock')
+        walletLogger.error('No account found to unlock')
         return false
       }
 
@@ -271,13 +272,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
         resetInactivityTimer()
         // Refresh accounts to ensure state is in sync
         await refreshAccounts()
-        console.log('[Wallet] Wallet unlocked successfully')
+        walletLogger.info('Wallet unlocked successfully')
         return true
       }
-      console.log('[Wallet] Failed to decrypt keys - incorrect password')
+      walletLogger.warn('Failed to decrypt keys - incorrect password')
       return false
     } catch (e) {
-      console.error('[Wallet] Failed to unlock:', e)
+      walletLogger.error('Failed to unlock', e)
       return false
     }
   }, [activeAccount, getKeysForAccount, refreshAccounts])
@@ -348,31 +349,31 @@ export function WalletProvider({ children }: WalletProviderProps) {
       try {
         await initDatabase()
         if (!mounted) return
-        console.log('Database initialized successfully')
+        uiLogger.info('Database initialized successfully')
 
         const repaired = await repairUTXOs()
         if (!mounted) return
         if (repaired > 0) {
-          console.log(`Repaired ${repaired} UTXOs`)
+          uiLogger.info('Repaired UTXOs', { count: repaired })
         }
 
         await ensureDerivedAddressesTable()
         if (!mounted) return
-        console.log('Derived addresses table ready')
+        uiLogger.debug('Derived addresses table ready')
 
         await ensureContactsTable()
         if (!mounted) return
         const loadedContacts = await getContacts()
         if (!mounted) return
         setContacts(loadedContacts)
-        console.log('Loaded', loadedContacts.length, 'contacts')
+        uiLogger.info('Loaded contacts', { count: loadedContacts.length })
 
         // Load transactions from database
         try {
           const dbTxs = await getAllTransactions(30)
           if (!mounted) return
           if (dbTxs.length > 0) {
-            console.log('Loaded', dbTxs.length, 'transactions from database')
+            uiLogger.info('Loaded transactions from database', { count: dbTxs.length })
             setTxHistory(dbTxs.map(tx => ({
               tx_hash: tx.txid,
               height: tx.blockHeight || 0,
@@ -380,14 +381,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
             })))
           }
         } catch (_e) {
-          console.log('No cached transactions yet')
+          uiLogger.debug('No cached transactions yet')
         }
 
         // Load accounts from AccountsContext
         await refreshAccounts()
         if (!mounted) return
       } catch (err) {
-        console.error('Failed to initialize database:', err)
+        uiLogger.error('Failed to initialize database', err)
       }
 
       if (!mounted) return
@@ -400,7 +401,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
         if (allAccounts.length > 0) {
           // We have accounts - wallet is encrypted, show lock screen
-          console.log('[Wallet] Found encrypted wallet with accounts, showing lock screen')
+          walletLogger.info('Found encrypted wallet with accounts, showing lock screen')
           setIsLocked(true)
           // Don't try to load wallet - it requires password
         } else {
@@ -411,7 +412,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
             if (keys) {
               setWallet(keys)
               // Migrate to multi-account system
-              console.log('[Wallet] Migrating to multi-account system')
+              walletLogger.info('Migrating to multi-account system')
               await migrateToMultiAccount(keys, '')
               if (!mounted) return
               await refreshAccounts()
@@ -419,7 +420,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
           } catch (_err) {
             // Wallet exists but couldn't load - it's encrypted, show lock screen
             if (!mounted) return
-            console.log('[Wallet] Wallet is encrypted, showing lock screen')
+            walletLogger.info('Wallet is encrypted, showing lock screen')
             setIsLocked(true)
           }
         }
@@ -447,7 +448,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Initialize auto-lock when wallet is loaded
   useEffect(() => {
     if (wallet && autoLockMinutes > 0) {
-      console.log(`[AutoLock] Initializing with ${autoLockMinutes} minute timeout`)
+      walletLogger.debug('AutoLock initializing', { timeoutMinutes: autoLockMinutes })
       const cleanup = initAutoLock(lockWallet, minutesToMs(autoLockMinutes))
       return cleanup
     }
@@ -459,7 +460,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     setSyncing(true)
     try {
-      console.log('Starting wallet sync...')
+      syncLogger.info('Starting wallet sync...')
       if (isRestore) {
         await restoreFromBlockchain(
           wallet.walletAddress,
@@ -473,7 +474,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
           wallet.identityAddress
         )
       }
-      console.log('Sync complete')
+      syncLogger.info('Sync complete')
 
       // Update basket balances from database
       try {
@@ -497,10 +498,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setBalance(totalBalance)
         localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
       } catch (e) {
-        console.error('Failed to get basket balances:', e)
+        syncLogger.error('Failed to get basket balances', e)
       }
     } catch (error) {
-      console.error('Sync failed:', error)
+      syncLogger.error('Sync failed', error)
     } finally {
       setSyncing(false)
     }
@@ -510,7 +511,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const fetchData = useCallback(async () => {
     if (!wallet) return
 
-    console.log('Fetching data (database-first approach)...')
+    syncLogger.debug('Fetching data (database-first approach)...')
 
     try {
       const [defaultBal, derivedBal] = await Promise.all([
@@ -559,10 +560,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
       try {
         // First get ordinals already in the database (synced from blockchain)
         const dbOrdinals = await getOrdinalsFromDatabase()
-        console.log(`[WalletContext] Found ${dbOrdinals.length} ordinals in database`)
+        syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length })
 
         // Also fetch from APIs for any that might not be in database yet
-        console.log(`[WalletContext] Fetching additional ordinals from APIs...`)
+        syncLogger.debug('Fetching additional ordinals from APIs...')
 
         // Get derived addresses
         const derivedAddrs = await getDerivedAddresses()
@@ -590,10 +591,17 @@ export function WalletProvider({ children }: WalletProviderProps) {
         })
 
         const derivedCount = derivedOrdinals.flat().length
-        console.log(`[WalletContext] Got ${dbOrdinals.length} from database, ${ordAddressOrdinals.length} from ordAddress, ${walletAddressOrdinals.length} from walletAddress, ${identityAddressOrdinals.length} from identityAddress, ${derivedCount} from derived addresses, ${allOrdinals.length} total unique`)
+        syncLogger.debug('Ordinals fetched', {
+          fromDatabase: dbOrdinals.length,
+          fromOrdAddress: ordAddressOrdinals.length,
+          fromWalletAddress: walletAddressOrdinals.length,
+          fromIdentityAddress: identityAddressOrdinals.length,
+          fromDerived: derivedCount,
+          totalUnique: allOrdinals.length
+        })
         setOrdinals(allOrdinals)
       } catch (e) {
-        console.error('[WalletContext] Failed to fetch ordinals:', e)
+        syncLogger.error('Failed to fetch ordinals', e)
       }
 
       // Detect locks
@@ -613,10 +621,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
           setLocks([])
         }
       } catch (e) {
-        console.error('Failed to detect locks:', e)
+        walletLogger.error('Failed to detect locks', e)
       }
     } catch (error) {
-      console.error('Failed to fetch data:', error)
+      syncLogger.error('Failed to fetch data', error)
     }
   }, [wallet, knownUnlockedLocks])
 
@@ -635,7 +643,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       setWallet({ ...keys })
       return keys.mnemonic || null
     } catch (err) {
-      console.error('Failed to create wallet:', err)
+      walletLogger.error('Failed to create wallet', err)
       return null
     }
   }, [setWallet, refreshAccounts])
@@ -653,7 +661,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       setWallet({ ...keys, mnemonic: mnemonic.trim() })
       return true
     } catch (err) {
-      console.error('Failed to restore wallet:', err)
+      walletLogger.error('Failed to restore wallet', err)
       return false
     }
   }, [setWallet, refreshAccounts])
@@ -671,7 +679,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       setWallet(keys)
       return true
     } catch (err) {
-      console.error('Failed to import JSON:', err)
+      walletLogger.error('Failed to import JSON', err)
       return false
     }
   }, [setWallet, refreshAccounts])
@@ -857,7 +865,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Trusted origins
   const addTrustedOrigin = useCallback((origin: string) => {
     if (!isValidOrigin(origin)) {
-      console.warn('Invalid origin format:', origin)
+      walletLogger.warn('Invalid origin format', { origin })
       return false
     }
     const normalized = normalizeOrigin(origin)

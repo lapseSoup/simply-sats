@@ -2,6 +2,7 @@ import { useState, useEffect, memo, useCallback } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { getTransactionsByLabel } from '../../services/database'
+import { uiLogger } from '../../services/logger'
 
 // Memoized transaction item to prevent unnecessary re-renders
 const TransactionItem = memo(function TransactionItem({
@@ -55,7 +56,7 @@ export function ActivityTab() {
         const unlockTxs = await getTransactionsByLabel('unlock')
         setUnlockTxids(new Set(unlockTxs.map(tx => tx.txid)))
       } catch (e) {
-        console.warn('Failed to fetch unlock transactions:', e)
+        uiLogger.warn('Failed to fetch unlock transactions', { error: String(e) })
       }
     }
     fetchUnlockTxids()

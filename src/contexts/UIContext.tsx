@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import { useNetwork } from './NetworkContext'
+import { uiLogger } from '../services/logger'
 
 interface UIContextType {
   // Display settings
@@ -53,7 +54,7 @@ export function UIProvider({ children }: UIProviderProps) {
       setCopyFeedback(feedback)
       setTimeout(() => setCopyFeedback(null), 2000)
     } catch (err) {
-      console.error('Failed to copy:', err)
+      uiLogger.error('Failed to copy', err)
     }
   }, [])
 

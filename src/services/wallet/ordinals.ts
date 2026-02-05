@@ -1,0 +1,385 @@
+/**
+ * Ordinals operations
+ * Fetching, scanning, and transferring 1Sat Ordinals
+ */
+
+import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
+import type { UTXO, Ordinal, GpOrdinalItem, OrdinalDetails } from './types'
+import { calculateTxFee } from './fees'
+import { broadcastTransaction } from './transactions'
+import { getTransactionHistory, getTransactionDetails } from './balance'
+import {
+  recordSentTransaction,
+  markUtxosPendingSpend,
+  confirmUtxosSpent,
+  rollbackPendingSpend
+} from '../sync'
+import { walletLogger } from '../logger'
+
+// Create a child logger for ordinals-specific logging
+const ordLogger = walletLogger
+
+/**
+ * Get 1Sat Ordinals from the ordinals address
+ * Uses the GorillaPool 1Sat Ordinals API for reliable inscription detection
+ */
+export async function getOrdinals(address: string): Promise<Ordinal[]> {
+  try {
+    // First, try the GorillaPool 1Sat Ordinals API for proper inscription data
+    ordLogger.debug('Fetching ordinals from GorillaPool', { address })
+    const gpResponse = await fetch(`https://ordinals.gorillapool.io/api/txos/address/${address}/unspent?limit=100`)
+    ordLogger.debug('GorillaPool response', { status: gpResponse.status })
+    if (gpResponse.ok) {
+      const gpData = await gpResponse.json()
+      ordLogger.debug('GorillaPool response data', { count: Array.isArray(gpData) ? gpData.length : 0 })
+      if (Array.isArray(gpData) && gpData.length > 0) {
+        // Filter for 1-sat UTXOs (actual ordinals) and those with origin set
+        const oneSatItems = gpData.filter((item: GpOrdinalItem) => item.satoshis === 1 || item.origin)
+        ordLogger.debug('Filtered ordinals', { totalUtxos: gpData.length, oneSatOrdinals: oneSatItems.length })
+
+        if (oneSatItems.length > 0) {
+          // Log first item structure for debugging
+          ordLogger.debug('First ordinal structure', { sample: oneSatItems[0] })
+
+          const result = oneSatItems.map((item: GpOrdinalItem) => ({
+            origin: item.origin?.outpoint || item.outpoint || `${item.txid}_${item.vout}`,
+            txid: item.txid,
+            vout: item.vout,
+            satoshis: item.satoshis || 1,
+            contentType: item.origin?.data?.insc?.file?.type,
+            content: item.origin?.data?.insc?.file?.hash
+          }))
+          ordLogger.info('Returning ordinals', { count: result.length })
+          return result
+        }
+        ordLogger.debug('No 1-sat ordinals found, falling back to WhatsOnChain')
+      } else {
+        ordLogger.debug('GorillaPool returned empty array, falling back to WhatsOnChain', { address })
+      }
+    } else {
+      ordLogger.debug('GorillaPool API error, falling back to WhatsOnChain', { status: gpResponse.status })
+    }
+
+    // Fallback: Use WhatsOnChain to get 1-sat UTXOs, then verify each with GorillaPool
+    ordLogger.debug('Using WhatsOnChain for ordinals detection')
+    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
+    if (!response.ok) {
+      ordLogger.warn('Failed to fetch ordinals from WhatsOnChain', { address, status: response.status })
+      return []
+    }
+    const utxos = await response.json()
+    if (!Array.isArray(utxos)) {
+      ordLogger.warn('Unexpected ordinals response from WhatsOnChain', { address, type: typeof utxos })
+      return []
+    }
+    ordLogger.debug('WhatsOnChain returned UTXOs', { address, count: utxos.length })
+
+    const ordinals: Ordinal[] = []
+
+    for (const utxo of utxos) {
+      // Check 1-sat UTXOs - these might be ordinals
+      if (utxo.value === 1) {
+        const origin = `${utxo.tx_hash}_${utxo.tx_pos}`
+        ordLogger.debug('Found 1-sat UTXO', { origin })
+
+        // Try to get inscription details from GorillaPool
+        try {
+          const details = await getOrdinalDetails(origin)
+          if (details && details.origin) {
+            ordinals.push({
+              origin: details.origin || origin,
+              txid: utxo.tx_hash,
+              vout: utxo.tx_pos,
+              satoshis: 1,
+              contentType: details.data?.insc?.file?.type,
+              content: details.data?.insc?.file?.hash
+            })
+          } else {
+            // Still include as potential ordinal even if no metadata
+            ordinals.push({
+              origin,
+              txid: utxo.tx_hash,
+              vout: utxo.tx_pos,
+              satoshis: 1
+            })
+          }
+        } catch {
+          // Include without metadata on error
+          ordinals.push({
+            origin,
+            txid: utxo.tx_hash,
+            vout: utxo.tx_pos,
+            satoshis: 1
+          })
+        }
+      }
+    }
+
+    ordLogger.info('WhatsOnChain fallback found ordinals', { count: ordinals.length })
+    return ordinals
+  } catch (error) {
+    ordLogger.error('Error fetching ordinals', error, { address })
+    return []
+  }
+}
+
+/**
+ * Get ordinal metadata from 1Sat Ordinals API
+ */
+export async function getOrdinalDetails(origin: string): Promise<OrdinalDetails | null> {
+  try {
+    const response = await fetch(`https://ordinals.gorillapool.io/api/inscriptions/${origin}`)
+    if (!response.ok) return null
+    return response.json() as Promise<OrdinalDetails>
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Scan transaction history to find ordinals with non-standard scripts
+ * (e.g., 1Sat Ordinal inscriptions with OP_IF envelope that don't show up in address queries)
+ */
+export async function scanHistoryForOrdinals(
+  walletAddress: string,
+  publicKeyHash: string
+): Promise<Ordinal[]> {
+  ordLogger.info('Scanning transaction history for inscriptions', { publicKeyHash: publicKeyHash.slice(0, 16) + '...' })
+  const ordinals: Ordinal[] = []
+
+  try {
+    const history = await getTransactionHistory(walletAddress)
+    if (!history || history.length === 0) {
+      ordLogger.debug('No transaction history found')
+      return []
+    }
+
+    ordLogger.debug('Checking transactions for ordinal outputs', { count: history.length })
+
+    for (const historyItem of history) {
+      const txid = historyItem.tx_hash
+
+      try {
+        const txDetails = await getTransactionDetails(txid)
+        if (!txDetails?.vout) continue
+
+        for (let vout = 0; vout < txDetails.vout.length; vout++) {
+          const output = txDetails.vout[vout]
+          const value = output.value
+          const scriptHex = output.scriptPubKey?.hex
+
+          // Only check 1-sat outputs (potential ordinals)
+          if (value !== 0.00000001 || !scriptHex) continue
+
+          // Check if this is an ordinal inscription (starts with OP_IF 'ord')
+          // OP_IF = 63, then push 'ord' = 03 6f7264
+          if (scriptHex.startsWith('63036f7264')) {
+            // Extract PKH from the script - it's after OP_ENDIF (68) OP_DUP (76) OP_HASH160 (a9) OP_PUSHBYTES_20 (14)
+            const pkhMarker = '6876a914'
+            const pkhIndex = scriptHex.indexOf(pkhMarker)
+            if (pkhIndex !== -1) {
+              const extractedPkh = scriptHex.substring(pkhIndex + pkhMarker.length, pkhIndex + pkhMarker.length + 40)
+
+              if (extractedPkh.toLowerCase() === publicKeyHash.toLowerCase()) {
+                // Check if still unspent by querying GorillaPool
+                const origin = `${txid}_${vout}`
+                const details = await getOrdinalDetails(origin)
+
+                // Check if spent
+                if (details && details.spend && details.spend !== '') {
+                  ordLogger.debug('Found inscription but spent', { origin })
+                  continue
+                }
+
+                ordLogger.debug('Found unspent inscription', { origin })
+
+                // Try to extract content type from script
+                let contentType: string | undefined
+                // Content type is after 'ord' push and OP_1, usually like: 10 6170706c69636174696f6e2f6a736f6e
+                const contentTypeMatch = scriptHex.match(/63036f726451([0-9a-f]{2})([0-9a-f]+)00/)
+                if (contentTypeMatch) {
+                  const ctLen = parseInt(contentTypeMatch[1], 16)
+                  const ctHex = contentTypeMatch[2].substring(0, ctLen * 2)
+                  try {
+                    contentType = Buffer.from(ctHex, 'hex').toString('utf8')
+                  } catch { /* ignore */ }
+                }
+
+                ordinals.push({
+                  origin,
+                  txid,
+                  vout,
+                  satoshis: 1,
+                  contentType
+                })
+              }
+            }
+          }
+        }
+      } catch (error) {
+        ordLogger.warn('Error processing tx for ordinals', { txid, error: String(error) })
+      }
+    }
+
+    ordLogger.info('History scan complete', { ordinalsFound: ordinals.length })
+    return ordinals
+  } catch (error) {
+    ordLogger.error('Error scanning history for ordinals', error)
+    return []
+  }
+}
+
+/**
+ * Transfer a 1Sat Ordinal to another address
+ *
+ * @param ordWif - The ordinals private key WIF
+ * @param ordinalUtxo - The 1-sat ordinal UTXO to transfer
+ * @param toAddress - Recipient's address
+ * @param fundingWif - WIF for funding UTXOs (for the fee)
+ * @param fundingUtxos - UTXOs to use for paying the fee
+ * @returns Transaction ID
+ */
+export async function transferOrdinal(
+  ordWif: string,
+  ordinalUtxo: UTXO,
+  toAddress: string,
+  fundingWif: string,
+  fundingUtxos: UTXO[]
+): Promise<string> {
+  const ordPrivateKey = PrivateKey.fromWif(ordWif)
+  const ordPublicKey = ordPrivateKey.toPublicKey()
+  const ordFromAddress = ordPublicKey.toAddress()
+  const ordSourceLockingScript = new P2PKH().lock(ordFromAddress)
+
+  const fundingPrivateKey = PrivateKey.fromWif(fundingWif)
+  const fundingPublicKey = fundingPrivateKey.toPublicKey()
+  const fundingFromAddress = fundingPublicKey.toAddress()
+  const fundingSourceLockingScript = new P2PKH().lock(fundingFromAddress)
+
+  const tx = new Transaction()
+
+  // Add ordinal input first (the 1-sat inscription)
+  tx.addInput({
+    sourceTXID: ordinalUtxo.txid,
+    sourceOutputIndex: ordinalUtxo.vout,
+    unlockingScriptTemplate: new P2PKH().unlock(
+      ordPrivateKey,
+      'all',
+      false,
+      ordinalUtxo.satoshis,
+      ordSourceLockingScript
+    ),
+    sequence: 0xffffffff
+  })
+
+  // Calculate fee for the transaction
+  // 1 ordinal input + funding inputs, 1 ordinal output + possibly change output
+  const numFundingInputs = Math.min(fundingUtxos.length, 2) // Usually 1-2 inputs enough
+  const estimatedFee = calculateTxFee(1 + numFundingInputs, 2)
+
+  // Select funding UTXOs
+  const fundingToUse: UTXO[] = []
+  let totalFunding = 0
+
+  for (const utxo of fundingUtxos) {
+    fundingToUse.push(utxo)
+    totalFunding += utxo.satoshis
+
+    if (totalFunding >= estimatedFee + 100) break
+  }
+
+  if (totalFunding < estimatedFee) {
+    throw new Error(`Insufficient funds for fee (need ~${estimatedFee} sats)`)
+  }
+
+  // Add funding inputs
+  for (const utxo of fundingToUse) {
+    tx.addInput({
+      sourceTXID: utxo.txid,
+      sourceOutputIndex: utxo.vout,
+      unlockingScriptTemplate: new P2PKH().unlock(
+        fundingPrivateKey,
+        'all',
+        false,
+        utxo.satoshis,
+        fundingSourceLockingScript
+      ),
+      sequence: 0xffffffff
+    })
+  }
+
+  // Add ordinal output first (important: ordinals go to first output)
+  tx.addOutput({
+    lockingScript: new P2PKH().lock(toAddress),
+    satoshis: 1 // Always 1 sat for ordinals
+  })
+
+  // Calculate actual fee and change
+  const totalInput = ordinalUtxo.satoshis + totalFunding
+  const actualFee = calculateTxFee(1 + fundingToUse.length, 2)
+  const change = totalInput - 1 - actualFee
+
+  // Add change output if there is any change
+  // Note: BSV has no dust limit - all change amounts are valid
+  if (change > 0) {
+    tx.addOutput({
+      lockingScript: new P2PKH().lock(fundingFromAddress),
+      satoshis: change
+    })
+  }
+
+  await tx.sign()
+
+  // Get the UTXOs we're about to spend
+  const utxosToSpend = [
+    { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
+    ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+  ]
+
+  // Compute txid before broadcast for pending marking
+  const pendingTxid = tx.id('hex')
+
+  // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
+  try {
+    await markUtxosPendingSpend(utxosToSpend, pendingTxid)
+    ordLogger.debug('Marked UTXOs as pending spend for ordinal transfer', { txid: pendingTxid })
+  } catch (error) {
+    ordLogger.error('Failed to mark UTXOs as pending', error)
+    throw new Error('Failed to prepare ordinal transfer - UTXOs could not be locked')
+  }
+
+  // Now broadcast the transaction
+  let txid: string
+  try {
+    txid = await broadcastTransaction(tx)
+  } catch (broadcastError) {
+    // Broadcast failed - rollback the pending status
+    ordLogger.error('Ordinal transfer broadcast failed, rolling back pending status', broadcastError)
+    try {
+      await rollbackPendingSpend(utxosToSpend)
+      ordLogger.debug('Rolled back pending status for UTXOs')
+    } catch (rollbackError) {
+      ordLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
+    }
+    throw broadcastError
+  }
+
+  // Track transaction locally
+  try {
+    await recordSentTransaction(
+      txid,
+      tx.toHex(),
+      `Transferred ordinal ${ordinalUtxo.txid.slice(0, 8)}... to ${toAddress.slice(0, 8)}...`,
+      ['ordinal', 'transfer']
+    )
+
+    // Confirm UTXOs as spent (updates from pending -> spent)
+    await confirmUtxosSpent(utxosToSpend, txid)
+
+    ordLogger.info('Ordinal transfer tracked locally', { txid })
+  } catch (error) {
+    ordLogger.warn('Failed to track ordinal transfer locally', { error: String(error) })
+  }
+
+  return txid
+}

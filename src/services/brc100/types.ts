@@ -1,0 +1,147 @@
+/**
+ * BRC-100 Protocol Types
+ *
+ * Type definitions for BRC-100 wallet interface requests and responses.
+ */
+
+// Valid BRC-100 request types - used for validation
+export const BRC100_REQUEST_TYPES = [
+  'getPublicKey',
+  'createSignature',
+  'createAction',
+  'getNetwork',
+  'getVersion',
+  'isAuthenticated',
+  'getHeight',
+  'listOutputs',
+  'lockBSV',
+  'unlockBSV',
+  'listLocks',
+  'encrypt',
+  'decrypt',
+  'getTaggedKeys'
+] as const
+
+export type BRC100RequestType = typeof BRC100_REQUEST_TYPES[number]
+
+/**
+ * Validate that a string is a valid BRC-100 request type
+ */
+export function isValidBRC100RequestType(type: string): type is BRC100RequestType {
+  return BRC100_REQUEST_TYPES.includes(type as BRC100RequestType)
+}
+
+export interface BRC100Request {
+  id: string
+  type: BRC100RequestType
+  params?: Record<string, unknown>
+  origin?: string // The app requesting (e.g., "wrootz.com")
+}
+
+export interface BRC100Response {
+  id: string
+  result?: unknown
+  error?: { code: number; message: string }
+}
+
+export interface SignatureRequest {
+  data: number[] // Message as byte array
+  protocolID: [number, string] // [securityLevel, protocolName]
+  keyID: string
+  counterparty?: string
+}
+
+export interface CreateActionRequest {
+  description: string
+  outputs: Array<{
+    lockingScript: string
+    satoshis: number
+    outputDescription?: string
+    basket?: string
+    tags?: string[]
+  }>
+  inputs?: Array<{
+    outpoint: string
+    inputDescription?: string
+    unlockingScript?: string
+    sequenceNumber?: number
+    unlockingScriptLength?: number
+  }>
+  lockTime?: number
+  labels?: string[]
+  options?: {
+    signAndProcess?: boolean
+    noSend?: boolean
+    randomizeOutputs?: boolean
+  }
+}
+
+// Parameter interfaces for various request types
+export interface ListOutputsParams {
+  basket?: string
+  includeSpent?: boolean
+  includeTags?: string[]
+  limit?: number
+  offset?: number
+}
+
+export interface LockBSVParams {
+  satoshis?: number
+  blocks?: number
+  ordinalOrigin?: string
+  app?: string
+}
+
+export interface UnlockBSVParams {
+  outpoints?: string[]
+}
+
+export interface GetPublicKeyParams {
+  identityKey?: boolean
+  forOrdinals?: boolean
+  protocolID?: [number, string]
+  keyID?: string
+  counterparty?: string
+  privileged?: boolean
+}
+
+export interface EncryptDecryptParams {
+  plaintext?: number[]
+  ciphertext?: number[]
+  protocolID?: [number, string]
+  keyID?: string
+  counterparty?: string
+}
+
+export interface GetTaggedKeysParams {
+  tag?: string
+  limit?: number
+  offset?: number
+}
+
+// Lock tracking
+export interface LockedOutput {
+  outpoint: string
+  txid: string
+  vout: number
+  satoshis: number
+  unlockBlock: number
+  tags: string[]
+  spendable: boolean
+  blocksRemaining: number
+}
+
+// Discovered output from BRC-100 discovery methods
+export interface DiscoveredOutput {
+  outpoint: string
+  satoshis: number
+  lockingScript?: string
+  tags: string[]
+}
+
+/**
+ * Helper to safely get typed params from a request
+ */
+export function getParams<T>(request: BRC100Request): T {
+  return (request.params || {}) as T
+}

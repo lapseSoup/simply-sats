@@ -9,6 +9,7 @@ import {
 } from '../services/brc100'
 import { setupDeepLinkListener } from '../services/deeplink'
 import type { WalletKeys } from '../services/wallet'
+import { brc100Logger } from '../services/logger'
 
 interface UseBrc100HandlerOptions {
   wallet: WalletKeys | null
@@ -47,7 +48,7 @@ export function useBrc100Handler({
       const isTrusted = request.origin && savedTrustedOrigins.includes(request.origin)
 
       if (isTrusted && wallet) {
-        console.log(`Auto-approving request from trusted origin: ${request.origin}`)
+        brc100Logger.info(`Auto-approving request from trusted origin: ${request.origin}`)
         approveRequest(request.id, wallet)
         return
       }

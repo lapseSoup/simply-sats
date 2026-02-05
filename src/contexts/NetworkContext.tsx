@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { getNetworkStatus } from '../services/brc100'
+import { apiLogger } from '../services/logger'
 
 export interface NetworkInfo {
   blockHeight: number
@@ -41,7 +42,7 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
         const status = await getNetworkStatus()
         setNetworkInfo(status)
       } catch (error) {
-        console.error('Failed to fetch network status:', error)
+        apiLogger.error('Failed to fetch network status', error)
       }
     }
     fetchNetworkStatus()
@@ -59,7 +60,7 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
           setUsdPrice(data.rate)
         }
       } catch (e) {
-        console.error('Failed to fetch USD price:', e)
+        apiLogger.error('Failed to fetch USD price', e)
       }
     }
     fetchPrice()

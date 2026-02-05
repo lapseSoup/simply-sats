@@ -2893,3 +2893,169 @@ select:focus-visible {
   background: linear-gradient(90deg, var(--accent-dark) 0%, var(--accent) 100%);
   transition: width 0.3s ease;
 }
+
+/* ============================================
+   Error Boundary Styles
+   ============================================ */
+
+/* Tab Error Fallback */
+.tab-error-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 32px;
+}
+
+.tab-error-content {
+  text-align: center;
+  max-width: 300px;
+}
+
+.tab-error-content svg {
+  color: var(--error);
+  margin-bottom: 16px;
+}
+
+.tab-error-content h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.tab-error-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.tab-error-retry {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-error-retry:hover {
+  background: var(--accent-light);
+  transform: translateY(-1px);
+}
+
+/* Modal Error Fallback */
+.modal-error-fallback {
+  max-width: 400px;
+  text-align: center;
+}
+
+.modal-error-fallback .modal-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px;
+  gap: 16px;
+}
+
+.modal-error-fallback .error-message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.modal-error-fallback .error-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* Generic Error Boundary */
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 32px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+}
+
+.error-boundary-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.error-boundary .error-icon {
+  color: var(--error);
+  margin-bottom: 16px;
+}
+
+.error-boundary h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.error-boundary .error-message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.error-boundary .error-hint {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin-bottom: 16px;
+}
+
+.error-boundary .error-retry-button {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.error-boundary .error-retry-button:hover {
+  background: var(--accent-light);
+  transform: translateY(-1px);
+}
+
+.error-boundary .error-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.error-boundary .error-refresh-button {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.error-boundary .error-refresh-button:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-light);
+}
+
+/* Wallet-specific error boundary */
+.error-boundary.wallet-error .error-icon {
+  color: var(--error);
+}

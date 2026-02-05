@@ -10,6 +10,7 @@ import {
   getNextInvoiceNumber
 } from '../../services/database'
 import { deriveSenderAddress, deriveChildPrivateKey } from '../../services/keyDerivation'
+import { uiLogger } from '../../services/logger'
 
 interface ReceiveModalProps {
   onClose: () => void
@@ -41,7 +42,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       const invoiceNumber = `2-3241645161d8-simply-sats ${invoiceIndex}`
       return deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
     } catch (e) {
-      console.error('Failed to derive address:', e)
+      uiLogger.error('Failed to derive address:', e)
       return ''
     }
   }
@@ -69,7 +70,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       })
       return true
     } catch (e) {
-      console.error('Failed to save derived address:', e)
+      uiLogger.error('Failed to save derived address:', e)
       return false
     }
   }
