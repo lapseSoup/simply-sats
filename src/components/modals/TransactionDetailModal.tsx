@@ -3,6 +3,7 @@ import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { getTransactionLabels, updateTransactionLabels } from '../../services/database'
 import { uiLogger } from '../../services/logger'
+import { Modal } from '../shared/Modal'
 
 // Common label suggestions for quick selection
 const SUGGESTED_LABELS = [
@@ -100,172 +101,302 @@ export function TransactionDetailModal({
   const availableSuggestions = SUGGESTED_LABELS.filter(s => !labels.includes(s))
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-handle" />
-        <div className="modal-header">
-          <h2 className="modal-title">Transaction Details</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="modal-content">
-          {/* Transaction Info */}
-          <div className="tx-detail-section">
-            <div className="tx-detail-row">
-              <span className="tx-detail-label">Transaction ID</span>
-              <span className="tx-detail-value mono" style={{ fontSize: 11 }}>
-                {transaction.tx_hash.slice(0, 16)}...{transaction.tx_hash.slice(-8)}
-              </span>
-            </div>
+    <Modal title="Transaction Details" onClose={onClose}>
+      <div className="modal-content">
+        {/* Transaction Info */}
+        <div className="tx-detail-section">
+          <div className="tx-detail-row">
+            <span className="tx-detail-label">Transaction ID</span>
+            <span className="tx-detail-value tx-detail-mono">
+              {transaction.tx_hash.slice(0, 12)}...{transaction.tx_hash.slice(-8)}
+            </span>
+          </div>
 
-            {transaction.amount !== undefined && (
-              <div className="tx-detail-row">
-                <span className="tx-detail-label">Amount</span>
-                <span className={`tx-detail-value ${transaction.amount > 0 ? 'positive' : 'negative'}`}>
-                  {transaction.amount > 0 ? '+' : ''}{transaction.amount.toLocaleString()} sats
-                  <span style={{ color: 'var(--text-tertiary)', marginLeft: 8 }}>
-                    (${formatUSD(Math.abs(transaction.amount))})
-                  </span>
+          {transaction.amount !== undefined && (
+            <div className="tx-detail-row">
+              <span className="tx-detail-label">Amount</span>
+              <span className={`tx-detail-value ${transaction.amount > 0 ? 'positive' : 'negative'}`}>
+                {transaction.amount > 0 ? '+' : ''}{transaction.amount.toLocaleString()} sats
+                <span className="tx-detail-usd">
+                  (${formatUSD(Math.abs(transaction.amount))})
                 </span>
-              </div>
-            )}
-
-            {transaction.height > 0 && (
-              <div className="tx-detail-row">
-                <span className="tx-detail-label">Block Height</span>
-                <span className="tx-detail-value">{transaction.height.toLocaleString()}</span>
-              </div>
-            )}
-
-            <div className="tx-detail-row">
-              <span className="tx-detail-label">Status</span>
-              <span className="tx-detail-value">
-                {transaction.height > 0 ? 'Confirmed' : 'Pending'}
               </span>
             </div>
+          )}
+
+          {transaction.height > 0 && (
+            <div className="tx-detail-row">
+              <span className="tx-detail-label">Block Height</span>
+              <span className="tx-detail-value">{transaction.height.toLocaleString()}</span>
+            </div>
+          )}
+
+          <div className="tx-detail-row">
+            <span className="tx-detail-label">Status</span>
+            <span className={`tx-detail-value tx-status ${transaction.height > 0 ? 'confirmed' : 'pending'}`}>
+              {transaction.height > 0 ? 'Confirmed' : 'Pending'}
+            </span>
           </div>
+        </div>
 
-          {/* Labels Section */}
-          <div className="tx-labels-section" style={{ marginTop: 16 }}>
-            <div className="tx-detail-label" style={{ marginBottom: 8 }}>Labels</div>
+        {/* Labels Section */}
+        <div className="tx-labels-section">
+          <div className="tx-labels-header">Labels</div>
 
-            {loading ? (
-              <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>Loading...</div>
-            ) : (
-              <>
-                {/* Current Labels */}
-                <div className="tx-labels-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                  {labels.length === 0 ? (
-                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>No labels yet</span>
-                  ) : (
-                    labels.map(label => (
-                      <span
-                        key={label}
-                        className="tx-label-chip"
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '4px 10px',
-                          borderRadius: 12,
-                          background: 'var(--primary-bg)',
-                          border: '1px solid var(--primary)',
-                          color: 'var(--primary)',
-                          fontSize: 12
-                        }}
+          {loading ? (
+            <div className="tx-labels-loading">Loading...</div>
+          ) : (
+            <>
+              {/* Current Labels */}
+              <div className="tx-labels-list">
+                {labels.length === 0 ? (
+                  <span className="tx-labels-empty">No labels yet</span>
+                ) : (
+                  labels.map(label => (
+                    <span key={label} className="tx-label-chip">
+                      {label}
+                      <button
+                        onClick={() => handleRemoveLabel(label)}
+                        className="tx-label-remove"
+                        aria-label={`Remove ${label} label`}
                       >
-                        {label}
-                        <button
-                          onClick={() => handleRemoveLabel(label)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--primary)',
-                            cursor: 'pointer',
-                            padding: 0,
-                            marginLeft: 2,
-                            fontSize: 14,
-                            lineHeight: 1
-                          }}
-                          aria-label={`Remove ${label} label`}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
-
-                {/* Add Label Input */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Add custom label..."
-                    value={newLabel}
-                    onChange={e => setNewLabel(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    style={{ flex: 1, fontSize: 13 }}
-                  />
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => handleAddLabel(newLabel)}
-                    disabled={!newLabel.trim()}
-                    style={{ padding: '8px 16px' }}
-                  >
-                    Add
-                  </button>
-                </div>
-
-                {/* Quick Suggestions */}
-                {availableSuggestions.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>
-                      Quick add:
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {availableSuggestions.slice(0, 5).map(suggestion => (
-                        <button
-                          key={suggestion}
-                          onClick={() => handleAddLabel(suggestion)}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: 12,
-                            background: 'transparent',
-                            border: '1px solid var(--border)',
-                            color: 'var(--text-secondary)',
-                            fontSize: 11,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          + {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                        ×
+                      </button>
+                    </span>
+                  ))
                 )}
-              </>
-            )}
-          </div>
+              </div>
 
-          {/* Actions */}
-          <div className="tx-detail-actions" style={{ marginTop: 20, display: 'flex', gap: 8 }}>
-            <button
-              className="btn btn-secondary"
-              onClick={() => copyToClipboard(transaction.tx_hash, 'TXID copied!')}
-              style={{ flex: 1 }}
-            >
-              Copy TXID
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={openOnWoC}
-              style={{ flex: 1 }}
-            >
-              View on Explorer
-            </button>
-          </div>
+              {/* Add Label Input */}
+              <div className="tx-label-input-row">
+                <input
+                  type="text"
+                  className="tx-label-input"
+                  placeholder="Add custom label..."
+                  value={newLabel}
+                  onChange={e => setNewLabel(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                />
+                <button
+                  className="btn btn-secondary tx-label-add-btn"
+                  onClick={() => handleAddLabel(newLabel)}
+                  disabled={!newLabel.trim()}
+                >
+                  Add
+                </button>
+              </div>
+
+              {/* Quick Suggestions */}
+              {availableSuggestions.length > 0 && (
+                <div className="tx-suggestions">
+                  <div className="tx-suggestions-label">Quick add:</div>
+                  <div className="tx-suggestions-list">
+                    {availableSuggestions.slice(0, 5).map(suggestion => (
+                      <button
+                        key={suggestion}
+                        onClick={() => handleAddLabel(suggestion)}
+                        className="tx-suggestion-btn"
+                      >
+                        + {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="modal-actions">
+          <button
+            className="btn btn-secondary"
+            onClick={() => copyToClipboard(transaction.tx_hash, 'TXID copied!')}
+          >
+            Copy TXID
+          </button>
+          <button className="btn btn-primary" onClick={openOnWoC}>
+            View on Explorer
+          </button>
         </div>
       </div>
-    </div>
+
+      <style>{`
+        .tx-detail-section {
+          background: var(--bg-secondary);
+          border-radius: var(--radius-md);
+          padding: 16px;
+          margin-bottom: 20px;
+        }
+
+        .tx-detail-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 10px 0;
+          border-bottom: 1px solid var(--border);
+        }
+
+        .tx-detail-row:last-child {
+          border-bottom: none;
+          padding-bottom: 0;
+        }
+
+        .tx-detail-row:first-child {
+          padding-top: 0;
+        }
+
+        .tx-detail-label {
+          color: var(--text-secondary);
+          font-size: 13px;
+        }
+
+        .tx-detail-value {
+          font-weight: 500;
+          font-size: 14px;
+        }
+
+        .tx-detail-mono {
+          font-family: var(--font-mono);
+          font-size: 12px;
+        }
+
+        .tx-detail-usd {
+          color: var(--text-tertiary);
+          margin-left: 8px;
+          font-weight: 400;
+        }
+
+        .tx-detail-value.positive {
+          color: var(--success);
+        }
+
+        .tx-detail-value.negative {
+          color: var(--error);
+        }
+
+        .tx-status.confirmed {
+          color: var(--success);
+        }
+
+        .tx-status.pending {
+          color: var(--accent);
+        }
+
+        .tx-labels-section {
+          margin-bottom: 20px;
+        }
+
+        .tx-labels-header {
+          font-weight: 600;
+          margin-bottom: 12px;
+        }
+
+        .tx-labels-loading,
+        .tx-labels-empty {
+          color: var(--text-tertiary);
+          font-size: 13px;
+        }
+
+        .tx-labels-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .tx-label-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border-radius: 16px;
+          background: rgba(247, 147, 26, 0.1);
+          border: 1px solid var(--accent);
+          color: var(--accent);
+          font-size: 13px;
+        }
+
+        .tx-label-remove {
+          background: none;
+          border: none;
+          color: var(--accent);
+          cursor: pointer;
+          padding: 0;
+          font-size: 16px;
+          line-height: 1;
+          opacity: 0.7;
+          transition: opacity 0.15s ease;
+        }
+
+        .tx-label-remove:hover {
+          opacity: 1;
+        }
+
+        .tx-label-input-row {
+          display: flex;
+          gap: 10px;
+          margin-bottom: 16px;
+        }
+
+        .tx-label-input {
+          flex: 1;
+          padding: 10px 14px;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
+          color: var(--text-primary);
+          font-size: 14px;
+          outline: none;
+          transition: border-color 0.15s ease;
+        }
+
+        .tx-label-input:focus {
+          border-color: var(--accent);
+        }
+
+        .tx-label-input::placeholder {
+          color: var(--text-tertiary);
+        }
+
+        .tx-label-add-btn {
+          padding: 10px 20px !important;
+          width: auto !important;
+        }
+
+        .tx-suggestions {
+          margin-top: 8px;
+        }
+
+        .tx-suggestions-label {
+          font-size: 12px;
+          color: var(--text-tertiary);
+          margin-bottom: 8px;
+        }
+
+        .tx-suggestions-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .tx-suggestion-btn {
+          padding: 6px 12px;
+          border-radius: 16px;
+          background: transparent;
+          border: 1px solid var(--border);
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .tx-suggestion-btn:hover {
+          background: var(--bg-secondary);
+          border-color: var(--text-tertiary);
+          color: var(--text-primary);
+        }
+      `}</style>
+    </Modal>
   )
 }

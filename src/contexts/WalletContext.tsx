@@ -217,6 +217,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Used for creating new accounts without re-prompting
   const [sessionPassword, setSessionPassword] = useState<string | null>(null)
 
+  // Debug: log when session password changes
+  useEffect(() => {
+    walletLogger.debug('Session password state changed', { hasPassword: !!sessionPassword })
+  }, [sessionPassword])
+
   // Track recently unlocked locks to prevent re-detection race condition
   // Keys are "txid:vout" strings
   const [knownUnlockedLocks, setKnownUnlockedLocks] = useState<Set<string>>(new Set())
@@ -296,6 +301,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setWalletKeys(keys)
         setIsLocked(false)
         setSessionPassword(password) // Store password for session operations
+        walletLogger.debug('Session password stored for account switching')
         resetInactivityTimer()
         // Refresh accounts to ensure state is in sync
         await refreshAccounts()
@@ -342,17 +348,25 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Switch to a different account using session password
   const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
+    walletLogger.debug('switchAccount called', { accountId, hasSessionPassword: !!sessionPassword })
     if (!sessionPassword) {
-      walletLogger.error('Cannot switch account - no session password available')
+      walletLogger.error('Cannot switch account - no session password available. User must re-unlock wallet.')
       return false
     }
-    const keys = await accountsSwitchAccount(accountId, sessionPassword)
-    if (keys) {
-      setWallet(keys)
-      setIsLocked(false)
-      return true
+    try {
+      const keys = await accountsSwitchAccount(accountId, sessionPassword)
+      if (keys) {
+        setWallet(keys)
+        setIsLocked(false)
+        walletLogger.info('Account switched successfully', { accountId })
+        return true
+      }
+      walletLogger.error('Failed to switch account - invalid password or account not found')
+      return false
+    } catch (e) {
+      walletLogger.error('Error switching account', e)
+      return false
     }
-    return false
   }, [accountsSwitchAccount, setWallet, sessionPassword])
 
   // Create a new account - wraps AccountsContext to also set wallet state
@@ -438,21 +452,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setContacts(loadedContacts)
         uiLogger.info('Loaded contacts', { count: loadedContacts.length })
 
-        // Load transactions from database
-        try {
-          const dbTxs = await getAllTransactions(30)
-          if (!mounted) return
-          if (dbTxs.length > 0) {
-            uiLogger.info('Loaded transactions from database', { count: dbTxs.length })
-            setTxHistory(dbTxs.map(tx => ({
-              tx_hash: tx.txid,
-              height: tx.blockHeight || 0,
-              amount: tx.amount
-            })))
-          }
-        } catch (_e) {
-          uiLogger.debug('No cached transactions yet')
-        }
+        // Note: Transactions are loaded per-account in fetchData, not here
+        // This prevents showing wrong account's transactions on startup
 
         // Load accounts from AccountsContext
         await refreshAccounts()
@@ -530,30 +531,32 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     setSyncing(true)
     try {
-      syncLogger.info('Starting wallet sync...')
+      syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })
       if (isRestore) {
         await restoreFromBlockchain(
           wallet.walletAddress,
           wallet.ordAddress,
-          wallet.identityAddress
+          wallet.identityAddress,
+          activeAccountId || undefined
         )
       } else {
         await syncWallet(
           wallet.walletAddress,
           wallet.ordAddress,
-          wallet.identityAddress
+          wallet.identityAddress,
+          activeAccountId || undefined
         )
       }
       syncLogger.info('Sync complete')
 
-      // Update basket balances from database
+      // Update basket balances from database (scoped to account)
       try {
         const [defaultBal, ordBal, idBal, lockBal, derivedBal] = await Promise.all([
-          getBalanceFromDatabase('default'),
-          getBalanceFromDatabase('ordinals'),
-          getBalanceFromDatabase('identity'),
-          getBalanceFromDatabase('locks'),
-          getBalanceFromDatabase('derived')
+          getBalanceFromDatabase('default', activeAccountId || undefined),
+          getBalanceFromDatabase('ordinals', activeAccountId || undefined),
+          getBalanceFromDatabase('identity', activeAccountId || undefined),
+          getBalanceFromDatabase('locks', activeAccountId || undefined),
+          getBalanceFromDatabase('derived', activeAccountId || undefined)
         ])
 
         setBasketBalances({
@@ -575,18 +578,23 @@ export function WalletProvider({ children }: WalletProviderProps) {
     } finally {
       setSyncing(false)
     }
-  }, [wallet, syncing, setSyncing])
+  }, [wallet, syncing, setSyncing, activeAccountId])
 
   // Fetch data from database and API
   const fetchData = useCallback(async () => {
     if (!wallet) return
 
-    syncLogger.debug('Fetching data (database-first approach)...')
+    const effectiveAccountId = activeAccountId || undefined
+    syncLogger.debug('Fetching data (database-first approach)...', {
+      activeAccountId,
+      effectiveAccountId,
+      walletAddress: wallet.walletAddress.slice(0, 12) + '...'
+    })
 
     try {
       const [defaultBal, derivedBal] = await Promise.all([
-        getBalanceFromDatabase('default'),
-        getBalanceFromDatabase('derived')
+        getBalanceFromDatabase('default', activeAccountId || undefined),
+        getBalanceFromDatabase('derived', activeAccountId || undefined)
       ])
       const totalBalance = defaultBal + derivedBal
       setBalance(totalBalance)
@@ -608,8 +616,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
         if (cached > 0) setOrdBalance(cached)
       }
 
-      // Get transaction history from DATABASE
-      const dbTxs = await getAllTransactions(30)
+      // Get transaction history from DATABASE (scoped to account)
+      console.log('[FETCH DEBUG] Calling getAllTransactions with accountId:', activeAccountId)
+      const dbTxs = await getAllTransactions(30, activeAccountId || undefined)
+      console.log('[FETCH DEBUG] Got', dbTxs.length, 'transactions:', dbTxs.map(tx => tx.txid.slice(0, 8)))
       const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
         tx_hash: tx.txid,
         height: tx.blockHeight || 0,
@@ -628,9 +638,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       // Get ordinals - first from database (already synced), then supplement with API calls
       try {
-        // First get ordinals already in the database (synced from blockchain)
-        const dbOrdinals = await getOrdinalsFromDatabase()
-        syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length })
+        // First get ordinals already in the database (synced from blockchain, scoped to account)
+        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId || undefined)
+        syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length, accountId: activeAccountId })
 
         // Also fetch from APIs for any that might not be in database yet
         syncLogger.debug('Fetching additional ordinals from APIs...')
@@ -696,7 +706,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     } catch (error) {
       syncLogger.error('Failed to fetch data', error)
     }
-  }, [wallet, knownUnlockedLocks])
+  }, [wallet, knownUnlockedLocks, activeAccountId])
 
   // Wallet actions
   const handleCreateWallet = useCallback(async (password: string): Promise<string | null> => {

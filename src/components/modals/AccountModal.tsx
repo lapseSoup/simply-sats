@@ -621,16 +621,18 @@ export function AccountModal({
           gap: 0.5rem;
           max-height: 300px;
           overflow-y: auto;
+          overflow-x: hidden;
         }
 
         .account-item-manage {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 0.875rem;
+          gap: 0.5rem;
+          padding: 0.75rem;
           background: var(--bg-tertiary);
           border: 1px solid var(--border);
           border-radius: var(--radius-md);
+          min-width: 0;
         }
 
         .account-item-manage.active {
@@ -642,10 +644,13 @@ export function AccountModal({
           align-items: center;
           gap: 0.75rem;
           flex: 1;
+          min-width: 0;
+          overflow: hidden;
         }
 
         .account-avatar-manage {
           width: 36px;
+          min-width: 36px;
           height: 36px;
           border-radius: 50%;
           background: var(--accent);
@@ -655,38 +660,49 @@ export function AccountModal({
           font-size: 0.9375rem;
           font-weight: 600;
           color: white;
+          flex-shrink: 0;
         }
 
         .account-details {
           display: flex;
           flex-direction: column;
           gap: 0.125rem;
+          min-width: 0;
+          overflow: hidden;
         }
 
         .account-name-manage {
           font-size: 0.9375rem;
           font-weight: 500;
           color: var(--text-primary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .account-address-manage {
-          font-size: 0.8125rem;
+          font-size: 0.75rem;
           color: var(--text-tertiary);
           font-family: var(--font-mono);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .active-badge {
-          padding: 0.1875rem 0.625rem;
+          padding: 0.125rem 0.5rem;
           background: var(--accent);
           border-radius: 9999px;
-          font-size: 0.75rem;
+          font-size: 0.6875rem;
           font-weight: 600;
           color: white;
+          flex-shrink: 0;
         }
 
         .account-actions-manage {
           display: flex;
           gap: 0.25rem;
+          flex-shrink: 0;
         }
 
         .icon-button {

@@ -258,24 +258,17 @@ export async function getAccountKeys(
   account: Account,
   password: string
 ): Promise<WalletKeys | null> {
+  // Password is required for all encrypted accounts
+  // Empty password is a security vulnerability - reject immediately
+  if (!password || password.trim().length === 0) {
+    accountLogger.error('Password is required to decrypt account keys')
+    return null
+  }
+
   try {
-    // Try to decrypt (or parse if not encrypted)
-    let keysJson: string
-
-    if (password) {
-      // Try to parse as encrypted data
-      try {
-        const encryptedData = JSON.parse(account.encryptedKeys) as EncryptedData
-        keysJson = await decrypt(encryptedData, password)
-      } catch {
-        // Might not be encrypted, try parsing directly
-        keysJson = account.encryptedKeys
-      }
-    } else {
-      // No password, should be unencrypted
-      keysJson = account.encryptedKeys
-    }
-
+    // All accounts should be encrypted - try to decrypt
+    const encryptedData = JSON.parse(account.encryptedKeys) as EncryptedData
+    const keysJson = await decrypt(encryptedData, password)
     const keys = JSON.parse(keysJson)
     return keys as WalletKeys
   } catch (e) {

@@ -54,6 +54,7 @@ export interface AddressInfo {
   address: string
   basket: string
   wif?: string // Optional - for signing
+  accountId?: number // Account ID for scoping data
 }
 
 
@@ -104,9 +105,10 @@ let syncCounter = 0
  * Now uses address field for precise tracking (no more locking script matching)
  */
 export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult> {
-  const { address, basket } = addressInfo
+  const { address, basket, accountId } = addressInfo
   const syncId = ++syncCounter
 
+  console.log(`[SYNC DEBUG #${syncId}] START: ${address.slice(0,12)}... (basket: ${basket}, accountId: ${accountId})`)
   syncLogger.debug(`[SYNC #${syncId}] START: ${address.slice(0,12)}... (basket: ${basket})`)
 
   // Generate locking script for this specific address
@@ -114,10 +116,11 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
   // Fetch current UTXOs from WhatsOnChain
   const wocUtxos = await fetchUtxosFromWoc(address)
+  console.log(`[SYNC DEBUG] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`, wocUtxos)
   syncLogger.debug(`[SYNC] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`)
 
-  // Get existing spendable UTXOs from database FOR THIS SPECIFIC ADDRESS
-  const existingUtxos = await getSpendableUTXOs()
+  // Get existing spendable UTXOs from database FOR THIS SPECIFIC ADDRESS AND ACCOUNT
+  const existingUtxos = await getSpendableUTXOs(accountId)
   const existingMap = new Map<string, DBUtxo>()
   for (const utxo of existingUtxos) {
     // Match by address field (new way) OR locking script (fallback for old records)
@@ -142,20 +145,28 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
     totalBalance += wocUtxo.satoshis
 
     if (!existingMap.has(key)) {
-      // New UTXO - add to database with address
-      syncLogger.debug(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats`)
-      await addUTXO({
-        txid: wocUtxo.txid,
-        vout: wocUtxo.vout,
-        satoshis: wocUtxo.satoshis,
-        lockingScript,
-        address,  // Store the address!
-        basket,
-        spendable: true,
-        createdAt: Date.now(),
-        tags: basket === BASKETS.ORDINALS && wocUtxo.satoshis === 1 ? ['ordinal'] : []
-      })
+      // New UTXO - add to database with address and account ID
+      console.log(`[SYNC DEBUG] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats (account=${accountId || 1})`)
+      syncLogger.debug(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats (account=${accountId || 1})`)
+      try {
+        await addUTXO({
+          txid: wocUtxo.txid,
+          vout: wocUtxo.vout,
+          satoshis: wocUtxo.satoshis,
+          lockingScript,
+          address,  // Store the address!
+          basket,
+          spendable: true,
+          createdAt: Date.now(),
+          tags: basket === BASKETS.ORDINALS && wocUtxo.satoshis === 1 ? ['ordinal'] : []
+        }, accountId)
+        console.log(`[SYNC DEBUG] UTXO added successfully`)
+      } catch (e) {
+        console.error(`[SYNC DEBUG] Failed to add UTXO:`, e)
+      }
       newUtxos++
+    } else {
+      console.log(`[SYNC DEBUG] UTXO already exists: ${key}`)
     }
   }
 
@@ -210,8 +221,11 @@ function calculateTxAmount(tx: WocTransaction, address: string): number {
 /**
  * Sync transaction history for an address
  * Fetches from WhatsOnChain and stores in database
+ * @param address - The address to sync
+ * @param limit - Maximum transactions to sync
+ * @param accountId - Account ID for scoping data
  */
-async function syncTransactionHistory(address: string, limit: number = 50): Promise<number> {
+async function syncTransactionHistory(address: string, limit: number = 50, accountId?: number): Promise<number> {
   const wocClient = getWocClient()
 
   // Fetch transaction history
@@ -241,7 +255,7 @@ async function syncTransactionHistory(address: string, limit: number = 50): Prom
         blockHeight: txRef.height > 0 ? txRef.height : undefined,
         status: txRef.height > 0 ? 'confirmed' : 'pending',
         amount
-      })
+      }, accountId)
       newTxCount++
     } catch (_e) {
       // Ignore duplicates
@@ -249,7 +263,7 @@ async function syncTransactionHistory(address: string, limit: number = 50): Prom
     }
   }
 
-  syncLogger.debug(`[TX HISTORY] Synced ${newTxCount} transactions for ${address.slice(0,12)}...`)
+  syncLogger.debug(`[TX HISTORY] Synced ${newTxCount} transactions for ${address.slice(0,12)}... (account=${accountId || 1})`)
   return newTxCount
 }
 
@@ -304,12 +318,14 @@ export async function syncAllAddresses(
  * @param walletAddress - Main wallet address
  * @param ordAddress - Ordinals address
  * @param identityAddress - Identity address
+ * @param accountId - Account ID for scoping data (optional, defaults to 1)
  * @returns Object with total balance and sync results, or undefined if cancelled
  */
 export async function syncWallet(
   walletAddress: string,
   ordAddress: string,
-  identityAddress: string
+  identityAddress: string,
+  accountId?: number
 ): Promise<{ total: number; results: SyncResult[] } | undefined> {
   // Acquire sync lock to prevent database race conditions
   // This ensures only one sync runs at a time
@@ -336,15 +352,16 @@ export async function syncWallet(
       addresses.push({
         address: derived.address,
         basket: BASKETS.DERIVED,
-        wif: derived.privateKeyWif
+        wif: derived.privateKeyWif,
+        accountId
       })
     }
 
     // Then add main addresses
     addresses.push(
-      { address: walletAddress, basket: BASKETS.DEFAULT },
-      { address: ordAddress, basket: BASKETS.ORDINALS },
-      { address: identityAddress, basket: BASKETS.IDENTITY }
+      { address: walletAddress, basket: BASKETS.DEFAULT, accountId },
+      { address: ordAddress, basket: BASKETS.ORDINALS, accountId },
+      { address: identityAddress, basket: BASKETS.IDENTITY, accountId }
     )
 
     syncLogger.debug(`[SYNC] Total addresses to sync: ${addresses.length}`)
@@ -358,12 +375,12 @@ export async function syncWallet(
     // Sync transaction history for main addresses (not ordinals/identity to reduce API calls)
     // Include derived addresses since they receive payments
     const txHistoryAddresses = [walletAddress, ...derivedAddresses.map(d => d.address)]
-    syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses`)
+    syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses (account=${accountId || 1})`)
 
     for (const addr of txHistoryAddresses) {
       if (token.isCancelled) break
       try {
-        await syncTransactionHistory(addr, 30)
+        await syncTransactionHistory(addr, 30, accountId)
         // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
       } catch (e) {
@@ -397,14 +414,16 @@ export async function syncWallet(
 /**
  * Quick balance check - just sums current spendable UTXOs from database
  * Much faster than fetching from blockchain
+ * @param basket - Optional basket filter
+ * @param accountId - Account ID to filter by (optional)
  */
-export async function getBalanceFromDatabase(basket?: string): Promise<number> {
-  const utxos = await getSpendableUTXOs()
+export async function getBalanceFromDatabase(basket?: string, accountId?: number): Promise<number> {
+  const utxos = await getSpendableUTXOs(accountId)
 
   if (basket) {
     const filtered = utxos.filter(u => u.basket === basket)
     const balance = filtered.reduce((sum, u) => sum + u.satoshis, 0)
-    syncLogger.debug(`[BALANCE] getBalanceFromDatabase('${basket}'): ${filtered.length} UTXOs, ${balance} sats`)
+    syncLogger.debug(`[BALANCE] getBalanceFromDatabase('${basket}', account=${accountId}): ${filtered.length} UTXOs, ${balance} sats`)
     if (basket === 'derived' && filtered.length > 0) {
       syncLogger.debug('[BALANCE] Derived UTXOs', { utxos: filtered.map(u => ({ txid: u.txid.slice(0, 8), vout: u.vout, sats: u.satoshis, basket: u.basket })) })
     }
@@ -417,9 +436,11 @@ export async function getBalanceFromDatabase(basket?: string): Promise<number> {
 /**
  * Get UTXOs for spending from database
  * Returns UTXOs from the specified basket, sorted by value (smallest first for coin selection)
+ * @param basket - The basket to filter by
+ * @param accountId - Account ID to filter by (optional)
  */
-export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEFAULT): Promise<DBUtxo[]> {
-  const allUtxos = await getSpendableUTXOs()
+export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEFAULT, accountId?: number): Promise<DBUtxo[]> {
+  const allUtxos = await getSpendableUTXOs(accountId)
   return allUtxos
     .filter(u => u.basket === basket)
     .sort((a, b) => a.satoshis - b.satoshis)
@@ -428,11 +449,12 @@ export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEF
 /**
  * Get ordinals from the database (ordinals basket)
  * Returns ordinals that are stored in the database from syncing
+ * @param accountId - Account ID to filter by (optional)
  */
-export async function getOrdinalsFromDatabase(): Promise<{ txid: string; vout: number; satoshis: number; origin: string }[]> {
-  const allUtxos = await getSpendableUTXOs()
+export async function getOrdinalsFromDatabase(accountId?: number): Promise<{ txid: string; vout: number; satoshis: number; origin: string }[]> {
+  const allUtxos = await getSpendableUTXOs(accountId)
   const ordinalUtxos = allUtxos.filter(u => u.basket === BASKETS.ORDINALS)
-  syncLogger.debug(`[Ordinals] Found ${ordinalUtxos.length} ordinals in database`)
+  syncLogger.debug(`[Ordinals] Found ${ordinalUtxos.length} ordinals in database (account=${accountId})`)
   return ordinalUtxos.map(u => ({
     txid: u.txid,
     vout: u.vout,
@@ -443,13 +465,20 @@ export async function getOrdinalsFromDatabase(): Promise<{ txid: string; vout: n
 
 /**
  * Record a transaction we sent
+ * @param txid - Transaction ID
+ * @param rawTx - Raw transaction hex
+ * @param description - Transaction description
+ * @param labels - Transaction labels
+ * @param amount - Transaction amount in satoshis
+ * @param accountId - Account ID for scoping data
  */
 export async function recordSentTransaction(
   txid: string,
   rawTx: string,
   description: string,
   labels: string[] = [],
-  amount?: number
+  amount?: number,
+  accountId?: number
 ): Promise<void> {
   await upsertTransaction({
     txid,
@@ -459,7 +488,7 @@ export async function recordSentTransaction(
     status: 'pending',
     labels,
     amount
-  })
+  }, accountId)
 }
 
 /**
@@ -498,16 +527,21 @@ export async function needsInitialSync(addresses: string[]): Promise<boolean> {
 /**
  * Restore wallet - full sync that rebuilds the database from blockchain
  * This is what happens when you restore from 12 words
+ * @param walletAddress - Main wallet address
+ * @param ordAddress - Ordinals address
+ * @param identityAddress - Identity address
+ * @param accountId - Account ID for scoping data
  */
 export async function restoreFromBlockchain(
   walletAddress: string,
   ordAddress: string,
-  identityAddress: string
+  identityAddress: string,
+  accountId?: number
 ): Promise<{ total: number; results: SyncResult[] }> {
   syncLogger.info('Starting wallet restore from blockchain...')
 
   // Perform full sync
-  const result = await syncWallet(walletAddress, ordAddress, identityAddress)
+  const result = await syncWallet(walletAddress, ordAddress, identityAddress, accountId)
 
   syncLogger.info(`Restore complete: ${result?.total ?? 0} total satoshis found`)
   if (result) {

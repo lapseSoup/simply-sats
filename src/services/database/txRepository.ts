@@ -10,15 +10,18 @@ import type { TransactionRow, SqlParams } from '../database-types'
 
 /**
  * Add a new transaction (won't overwrite if exists)
+ * @param tx - Transaction data
+ * @param accountId - Account ID (defaults to 1 for backwards compat)
  */
-export async function addTransaction(tx: Omit<Transaction, 'id'>): Promise<string> {
+export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: number): Promise<string> {
   const database = getDatabase()
+  const accId = accountId || 1
 
   // Use INSERT OR IGNORE to not overwrite existing transactions
   await database.execute(
-    `INSERT OR IGNORE INTO transactions (txid, raw_tx, description, created_at, confirmed_at, block_height, status, amount)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status, tx.amount ?? null]
+    `INSERT OR IGNORE INTO transactions (txid, raw_tx, description, created_at, confirmed_at, block_height, status, amount, account_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status, tx.amount ?? null, accId]
   )
 
   // If amount was provided and row already existed, update the amount
@@ -44,15 +47,18 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>): Promise<strin
 
 /**
  * Add or update a transaction (will update fields if exists)
+ * @param tx - Transaction data
+ * @param accountId - Account ID (defaults to 1 for backwards compat)
  */
-export async function upsertTransaction(tx: Omit<Transaction, 'id'>): Promise<string> {
+export async function upsertTransaction(tx: Omit<Transaction, 'id'>, accountId?: number): Promise<string> {
   const database = getDatabase()
+  const accId = accountId || 1
 
   // First try to insert
   await database.execute(
-    `INSERT OR IGNORE INTO transactions (txid, raw_tx, description, created_at, confirmed_at, block_height, status, amount)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status, tx.amount ?? null]
+    `INSERT OR IGNORE INTO transactions (txid, raw_tx, description, created_at, confirmed_at, block_height, status, amount, account_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status, tx.amount ?? null, accId]
   )
 
   // Then update any provided fields (preserves existing data for null fields)
@@ -103,15 +109,35 @@ export async function upsertTransaction(tx: Omit<Transaction, 'id'>): Promise<st
 }
 
 /**
- * Get all transactions from database
+ * Get all transactions from database for a specific account
+ * Orders pending (unconfirmed) transactions first, then by block height descending
+ * @param limit - Maximum number of transactions to return
+ * @param accountId - Account ID to filter by (optional)
  */
-export async function getAllTransactions(limit = 30): Promise<Transaction[]> {
+export async function getAllTransactions(limit = 30, accountId?: number): Promise<Transaction[]> {
   const database = getDatabase()
 
-  const rows = await database.select<TransactionRow[]>(
-    `SELECT * FROM transactions ORDER BY block_height DESC, created_at DESC LIMIT $1`,
-    [limit]
-  )
+  let query = `SELECT * FROM transactions`
+  const params: SqlParams = []
+  let paramIndex = 1
+
+  // Filter by account ID if provided (check for both undefined AND null)
+  if (accountId !== undefined && accountId !== null) {
+    query += ` WHERE account_id = $${paramIndex++}`
+    params.push(accountId)
+  }
+
+  query += ` ORDER BY
+       CASE WHEN block_height IS NULL THEN 0 ELSE 1 END,
+       block_height DESC,
+       created_at DESC
+     LIMIT $${paramIndex}`
+  params.push(limit)
+
+  // Order: pending transactions first (NULL block_height), then confirmed by height DESC
+  console.log('[TX DEBUG] getAllTransactions query:', query, 'params:', params, 'accountId:', accountId)
+  const rows = await database.select<TransactionRow[]>(query, params)
+  console.log('[TX DEBUG] getAllTransactions returned', rows.length, 'rows')
 
   return rows.map(row => ({
     id: row.id,

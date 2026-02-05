@@ -121,9 +121,9 @@ function WalletApp() {
     }
   }, [wallet?.identityWif, showToast, fetchData])
 
-  // Auto-sync on wallet load
+  // Auto-sync on wallet load (only when account is set)
   useEffect(() => {
-    if (!wallet) return
+    if (!wallet || activeAccountId === null) return
 
     const checkSync = async () => {
       const needsSync = await needsInitialSync([
@@ -132,26 +132,26 @@ function WalletApp() {
         wallet.identityAddress
       ])
       if (needsSync) {
-        logger.info('Initial sync needed, starting...')
+        logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
         performSync(true)
       } else {
         const derivedAddrs = await getDerivedAddresses()
         if (derivedAddrs.length > 0) {
-          logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length })
+          logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
           performSync(false)
         }
       }
     }
 
     checkSync()
-  }, [wallet, performSync])
+  }, [wallet, performSync, activeAccountId])
 
-  // Fetch data on wallet load
+  // Fetch data on wallet load and when account changes
   useEffect(() => {
-    if (wallet) {
+    if (wallet && activeAccountId !== null) {
       fetchData()
     }
-  }, [wallet, fetchData])
+  }, [wallet, fetchData, activeAccountId])
 
   // Handlers
   const handleAccountModalOpen = (mode: AccountModalMode) => {

@@ -12,11 +12,15 @@ import type { Account } from '../../services/accounts'
 const AccountItem = memo(function AccountItem({
   account,
   isActive,
-  onSelect
+  onSelect,
+  balance,
+  formatBalance
 }: {
   account: Account
   isActive: boolean
   onSelect: () => void
+  balance?: number
+  formatBalance: (sats: number) => string
 }) {
   return (
     <button
@@ -29,7 +33,12 @@ const AccountItem = memo(function AccountItem({
         {account.name.charAt(0).toUpperCase()}
       </div>
       <div className="account-item-info">
-        <span className="account-item-name">{account.name}</span>
+        <div className="account-item-row">
+          <span className="account-item-name">{account.name}</span>
+          {balance !== undefined && (
+            <span className="account-item-balance">{formatBalance(balance)}</span>
+          )}
+        </div>
         <span className="account-item-address">
           {account.identityAddress.slice(0, 8)}...{account.identityAddress.slice(-6)}
         </span>
@@ -102,6 +111,12 @@ export function AccountSwitcher({
     [accounts, activeAccountId]
   )
 
+  // Sort accounts alphabetically by name
+  const sortedAccounts = useMemo(
+    () => [...accounts].sort((a, b) => a.name.localeCompare(b.name)),
+    [accounts]
+  )
+
   // Memoized handler to handle account selection
   const handleAccountSelect = useCallback((accountId: number) => {
     if (accountId !== activeAccountId) {
@@ -162,12 +177,14 @@ export function AccountSwitcher({
       {isOpen && (
         <div className="account-dropdown" role="listbox">
           <div className="account-list">
-            {accounts.map(account => (
+            {sortedAccounts.map(account => (
               <AccountItem
                 key={account.id}
                 account={account}
                 isActive={account.id === activeAccountId}
                 onSelect={() => handleAccountSelect(account.id!)}
+                balance={account.id ? accountBalances[account.id] : undefined}
+                formatBalance={formatBalance}
               />
             ))}
           </div>
@@ -316,6 +333,13 @@ export function AccountSwitcher({
           gap: 2px;
         }
 
+        .account-item-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+
         .account-item-name {
           font-size: 13px;
           font-weight: 500;
@@ -323,7 +347,14 @@ export function AccountSwitcher({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          max-width: 140px;
+          max-width: 100px;
+        }
+
+        .account-item-balance {
+          font-size: 11px;
+          color: var(--text-secondary);
+          white-space: nowrap;
+          font-weight: 500;
         }
 
         .account-item-address {

@@ -152,61 +152,14 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
   const currentHeight = networkInfo?.blockHeight || 0
 
   // Memoize lock categorization
-  const { unlockableLocks, lockedLocks, totalLocked } = useMemo(() => {
+  const { unlockableLocks, lockedLocks } = useMemo(() => {
     const unlockable = locks.filter(lock => currentHeight >= lock.unlockBlock)
     const locked = locks.filter(lock => currentHeight < lock.unlockBlock)
-    const total = locks.reduce((sum, lock) => sum + lock.satoshis, 0)
-    return { unlockableLocks: unlockable, lockedLocks: locked, totalLocked: total }
+    return { unlockableLocks: unlockable, lockedLocks: locked }
   }, [locks, currentHeight])
 
   return (
     <div className="locks-tab">
-      {/* Summary Card */}
-      {locks.length > 0 && (
-        <div className="locks-summary">
-          <div className="locks-summary-item">
-            <span className="locks-summary-label">Total Locked</span>
-            <span className="locks-summary-value">{totalLocked.toLocaleString()} sats</span>
-          </div>
-          <div className="locks-summary-item">
-            <span className="locks-summary-label">Active Locks</span>
-            <span className="locks-summary-value">{lockedLocks.length}</span>
-          </div>
-          <div className="locks-summary-item">
-            <span className="locks-summary-label">Ready to Unlock</span>
-            <span className="locks-summary-value unlockable">{unlockableLocks.length}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="locks-actions">
-        <button
-          className="btn btn-primary"
-          onClick={onLock}
-          aria-label="Create a new lock"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-          Lock BSV
-        </button>
-        {unlockableLocks.length > 1 && (
-          <button
-            className="btn btn-secondary"
-            onClick={onUnlockAll}
-            aria-label={`Unlock all ${unlockableLocks.length} ready locks`}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-            </svg>
-            Unlock All ({unlockableLocks.length})
-          </button>
-        )}
-      </div>
-
       {/* Locks List */}
       {locks.length === 0 ? (
         <div className="empty-state">
@@ -221,6 +174,14 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
             Lock your BSV until a specific block height.
             Great for savings goals and commitments.
           </div>
+          <button
+            className="btn btn-secondary"
+            onClick={onLock}
+            aria-label="Create a new lock"
+            style={{ marginTop: 16, width: 'auto', padding: '10px 20px' }}
+          >
+            Lock BSV
+          </button>
         </div>
       ) : (
         <div className="locks-list" role="list" aria-label="Locked UTXOs">
@@ -267,6 +228,26 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
               ))}
             </div>
           )}
+
+          {/* Action buttons at bottom */}
+          <div className="locks-footer-actions">
+            <button
+              className="btn btn-secondary"
+              onClick={onLock}
+              aria-label="Create a new lock"
+            >
+              + New Lock
+            </button>
+            {unlockableLocks.length > 1 && (
+              <button
+                className="btn btn-secondary"
+                onClick={onUnlockAll}
+                aria-label={`Unlock all ${unlockableLocks.length} ready locks`}
+              >
+                Unlock All ({unlockableLocks.length})
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -70,7 +70,7 @@ async function ensureSpendingStatusColumn(): Promise<void> {
  * 4. ALWAYS ensure spendable=1 for regular UTXOs (not locks)
  * 5. ALWAYS update address/locking_script when upgrading to derived
  */
-export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
+export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promise<number> {
   const database = getDatabase()
 
   // Ensure migration is done
@@ -124,11 +124,12 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
   }
 
   // UTXO doesn't exist - INSERT it
-  dbLogger.debug(`[DB] INSERT: ${utxo.txid.slice(0,8)}:${utxo.vout} ${utxo.satoshis}sats basket=${utxo.basket} spendable=${utxo.spendable}`)
+  const accId = accountId || 1 // Default to account 1 for backwards compatibility
+  dbLogger.debug(`[DB] INSERT: ${utxo.txid.slice(0,8)}:${utxo.vout} ${utxo.satoshis}sats basket=${utxo.basket} spendable=${utxo.spendable} account=${accId}`)
   const result = await database.execute(
-    `INSERT INTO utxos (txid, vout, satoshis, locking_script, address, basket, spendable, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [utxo.txid, utxo.vout, utxo.satoshis, utxo.lockingScript, utxo.address, utxo.basket, utxo.spendable ? 1 : 0, utxo.createdAt]
+    `INSERT INTO utxos (txid, vout, satoshis, locking_script, address, basket, spendable, created_at, account_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [utxo.txid, utxo.vout, utxo.satoshis, utxo.lockingScript, utxo.address, utxo.basket, utxo.spendable ? 1 : 0, utxo.createdAt, accId]
   )
 
   const utxoId = result.lastInsertId as number
@@ -152,18 +153,29 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>): Promise<number> {
 }
 
 /**
- * Get UTXOs by basket
+ * Get UTXOs by basket for a specific account
  * When spendableOnly is true, excludes pending UTXOs to prevent race conditions
+ * @param basket - The basket name
+ * @param spendableOnly - Whether to only return spendable UTXOs
+ * @param accountId - The account ID to filter by (optional)
  */
-export async function getUTXOsByBasket(basket: string, spendableOnly = true): Promise<UTXO[]> {
+export async function getUTXOsByBasket(basket: string, spendableOnly = true, accountId?: number): Promise<UTXO[]> {
   const database = getDatabase()
 
   let query = 'SELECT * FROM utxos WHERE basket = $1'
+  const params: SqlParams = [basket]
+  const paramIndex = 2
+
   if (spendableOnly) {
     query += " AND spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
   }
 
-  const rows = await database.select<UTXORow[]>(query, [basket])
+  if (accountId !== undefined) {
+    query += ` AND account_id = $${paramIndex}`
+    params.push(accountId)
+  }
+
+  const rows = await database.select<UTXORow[]>(query, params)
 
   // Fetch tags for each UTXO
   const utxos: UTXO[] = []
@@ -193,15 +205,25 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true): Pr
 }
 
 /**
- * Get all spendable UTXOs across all baskets
+ * Get all spendable UTXOs across all baskets for a specific account
  * Excludes UTXOs that are pending (being spent) to prevent race conditions
+ * @param accountId - The account ID to filter by (optional, defaults to all accounts for backwards compat)
  */
-export async function getSpendableUTXOs(): Promise<UTXO[]> {
+export async function getSpendableUTXOs(accountId?: number): Promise<UTXO[]> {
   const database = getDatabase()
 
-  const rows = await database.select<UTXORow[]>(
-    "SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
-  )
+  // Ensure migration is done
+  await ensureSpendingStatusColumn()
+
+  let query = "SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
+  const params: SqlParams = []
+
+  if (accountId !== undefined) {
+    query += ' AND account_id = $1'
+    params.push(accountId)
+  }
+
+  const rows = await database.select<UTXORow[]>(query, params)
 
   return rows.map(row => ({
     id: row.id,
@@ -223,6 +245,9 @@ export async function getSpendableUTXOs(): Promise<UTXO[]> {
  */
 export async function getSpendableUTXOsByAddress(address: string): Promise<UTXO[]> {
   const database = getDatabase()
+
+  // Ensure migration is done
+  await ensureSpendingStatusColumn()
 
   const rows = await database.select<UTXORow[]>(
     "SELECT * FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent') AND address = $1",
@@ -362,18 +387,29 @@ export async function getPendingUtxos(timeoutMs: number = 300000): Promise<Array
 // ============================================
 
 /**
- * Get total balance from database
+ * Get total balance from database for a specific account
  * Excludes UTXOs that are pending (being spent) to prevent double-counting
+ * @param basket - Optional basket filter
+ * @param accountId - The account ID to filter by (optional)
  */
-export async function getBalanceFromDB(basket?: string): Promise<number> {
+export async function getBalanceFromDB(basket?: string, accountId?: number): Promise<number> {
   const database = getDatabase()
+
+  // Ensure migration is done
+  await ensureSpendingStatusColumn()
 
   let query = "SELECT SUM(satoshis) as total FROM utxos WHERE spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
   const params: SqlParams = []
+  let paramIndex = 1
 
   if (basket) {
-    query += ' AND basket = $1'
+    query += ` AND basket = $${paramIndex++}`
     params.push(basket)
+  }
+
+  if (accountId !== undefined) {
+    query += ` AND account_id = $${paramIndex}`
+    params.push(accountId)
   }
 
   const result = await database.select<BalanceSumRow[]>(query, params)
@@ -385,12 +421,21 @@ export async function getBalanceFromDB(basket?: string): Promise<number> {
 // ============================================
 
 /**
- * Get all UTXOs for export
+ * Get all UTXOs for export or display (optionally filtered by account)
+ * @param accountId - Optional account ID to filter by
  */
-export async function getAllUTXOs(): Promise<UTXO[]> {
+export async function getAllUTXOs(accountId?: number): Promise<UTXO[]> {
   const database = getDatabase()
 
-  const rows = await database.select<UTXORow[]>('SELECT * FROM utxos')
+  let query = 'SELECT * FROM utxos'
+  const params: SqlParams = []
+
+  if (accountId !== undefined) {
+    query += ' WHERE account_id = $1'
+    params.push(accountId)
+  }
+
+  const rows = await database.select<UTXORow[]>(query, params)
 
   const utxos: UTXO[] = []
   for (const row of rows) {

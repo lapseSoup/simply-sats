@@ -24,17 +24,19 @@ export function BalanceDisplay() {
               sats
               <svg
                 className="toggle-hint"
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.5"
                 strokeLinecap="round"
                 aria-hidden="true"
               >
-                <path d="M1 6C1 3.24 3.24 1 6 1C7.38 1 8.63 1.56 9.53 2.47L11 1V4.5H7.5L9 3C8.25 2.37 7.17 2 6 2C3.79 2 2 3.79 2 6" />
-                <path d="M11 6C11 8.76 8.76 11 6 11C4.62 11 3.37 10.44 2.47 9.53L1 11V7.5H4.5L3 9C3.75 9.63 4.83 10 6 10C8.21 10 10 8.21 10 6" />
+                {/* Simple up/down arrows to indicate toggle */}
+                <path d="M5 1L5 9" />
+                <path d="M2 3.5L5 1L8 3.5" />
+                <path d="M2 6.5L5 9L8 6.5" />
               </svg>
             </span>
           </>
@@ -45,17 +47,19 @@ export function BalanceDisplay() {
               BSV
               <svg
                 className="toggle-hint"
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.5"
                 strokeLinecap="round"
                 aria-hidden="true"
               >
-                <path d="M1 6C1 3.24 3.24 1 6 1C7.38 1 8.63 1.56 9.53 2.47L11 1V4.5H7.5L9 3C8.25 2.37 7.17 2 6 2C3.79 2 2 3.79 2 6" />
-                <path d="M11 6C11 8.76 8.76 11 6 11C4.62 11 3.37 10.44 2.47 9.53L1 11V7.5H4.5L3 9C3.75 9.63 4.83 10 6 10C8.21 10 10 8.21 10 6" />
+                {/* Simple up/down arrows to indicate toggle */}
+                <path d="M5 1L5 9" />
+                <path d="M2 3.5L5 1L8 3.5" />
+                <path d="M2 6.5L5 9L8 6.5" />
               </svg>
             </span>
           </>
