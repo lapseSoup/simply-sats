@@ -25,12 +25,16 @@ const RATE_LIMIT_PER_MINUTE: u32 = 60;
 // Type alias for the rate limiter
 type SharedRateLimiter = Arc<RateLimiter<governor::state::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>;
 
-// Allowed origins for CORS - only localhost and Tauri webview
+// Allowed origins for CORS - localhost, Tauri webview, and integrated apps
 const ALLOWED_ORIGINS: &[&str] = &[
     "http://localhost",
     "http://localhost:1420",      // Vite dev server
+    "http://localhost:3000",      // Next.js dev server (Wrootz)
+    "http://localhost:3001",      // Next.js alternate port
     "http://127.0.0.1",
     "http://127.0.0.1:1420",
+    "http://127.0.0.1:3000",      // Next.js dev server (Wrootz)
+    "http://127.0.0.1:3001",      // Next.js alternate port
     "tauri://localhost",          // Tauri webview on macOS/Linux
     "https://tauri.localhost",    // Tauri webview on Windows
 ];
