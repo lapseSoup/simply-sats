@@ -403,7 +403,8 @@ export async function updateAccountSetting<K extends keyof AccountSettings>(
 
 /**
  * Migrate existing single-account wallet to multi-account system
- * Called when upgrading from old version
+ * Called when upgrading from old version or creating new wallets
+ * Uses legacy password requirements (12 chars min) since the UI validates this already
  */
 export async function migrateToMultiAccount(
   existingKeys: WalletKeys,
@@ -419,8 +420,9 @@ export async function migrateToMultiAccount(
       return existingAccount.id!
     }
 
-    // Create account for existing wallet
-    const accountId = await createAccount('Account 1', existingKeys, password)
+    // Create account for existing wallet using legacy password requirements
+    // The UI has already validated the password meets minimum requirements
+    const accountId = await createAccount('Account 1', existingKeys, password, true)
     console.log('[Accounts] Migrated existing wallet to account system')
 
     return accountId

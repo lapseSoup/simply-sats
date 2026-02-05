@@ -101,15 +101,31 @@ export function MnemonicInput({
     e.preventDefault()
     const pastedText = e.clipboardData.getData('text')
 
-    // Normalize pasted text: lowercase, trim, collapse whitespace
-    const normalized = pastedText
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, ' ')
+    // Normalize pasted text: lowercase, trim
+    let normalized = pastedText.toLowerCase().trim()
+
+    // Remove common copy/paste artifacts:
+    // - Numbered words like "1. word" or "1) word" or "1 word"
+    normalized = normalized.replace(/^\d+[\.\)\s]+/gm, '')
+    // - Commas between words
+    normalized = normalized.replace(/,/g, ' ')
+    // - Bullet points
+    normalized = normalized.replace(/[•\-\*]/g, ' ')
+    // - Newlines to spaces
+    normalized = normalized.replace(/[\r\n]+/g, ' ')
+    // - Multiple spaces to single space
+    normalized = normalized.replace(/\s+/g, ' ').trim()
 
     onChange(normalized)
     setShowSuggestions(false)
     setSuggestions([])
+  }
+
+  const handleClear = () => {
+    onChange('')
+    setSuggestions([])
+    setShowSuggestions(false)
+    textareaRef.current?.focus()
   }
 
   const selectSuggestion = (suggestion: string) => {
@@ -152,32 +168,56 @@ export function MnemonicInput({
     if (invalidWords.length > 0) {
       const invalidList = invalidWords.slice(0, 3).map(w => `"${w.word}"`).join(', ')
       const moreCount = invalidWords.length - 3
-      return `Invalid word${invalidWords.length > 1 ? 's' : ''}: ${invalidList}${moreCount > 0 ? ` +${moreCount} more` : ''}`
+      // Check for common typo patterns
+      const hasNumbers = invalidWords.some(w => /\d/.test(w.word))
+      const hasSpecialChars = invalidWords.some(w => /[^a-z]/.test(w.word))
+      let hint = ''
+      if (hasNumbers) hint = ' (remove numbers)'
+      else if (hasSpecialChars) hint = ' (letters only)'
+      return `Invalid word${invalidWords.length > 1 ? 's' : ''}: ${invalidList}${moreCount > 0 ? ` +${moreCount} more` : ''}${hint}`
     }
-    if (!isValidCount) return `${wordCount}/${expectedWords} words`
-    if (isChecksumValid) return 'Valid recovery phrase'
-    return 'Invalid checksum - please check your words'
+    if (!isValidCount) {
+      if (wordCount < expectedWords) {
+        return `${wordCount}/${expectedWords} words - need ${expectedWords - wordCount} more`
+      }
+      return `${wordCount}/${expectedWords} words - too many words`
+    }
+    if (isChecksumValid) return 'Valid recovery phrase ✓'
+    return 'Words are correct but order may be wrong - please verify'
   }
 
   return (
     <div className="mnemonic-input-container">
-      <textarea
-        ref={textareaRef}
-        className={`form-input mnemonic-textarea ${invalidWords.length > 0 ? 'has-errors' : ''} ${isChecksumValid ? 'is-valid' : ''}`}
-        placeholder={placeholder || `Enter your ${expectedWords} word recovery phrase`}
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-        aria-label="Recovery phrase input"
-        aria-describedby="mnemonic-status"
-        aria-invalid={invalidWords.length > 0 || (isValidCount && !isChecksumValid)}
-        autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="off"
-        spellCheck={false}
-      />
+      <div className="mnemonic-textarea-wrapper">
+        <textarea
+          ref={textareaRef}
+          className={`form-input mnemonic-textarea ${invalidWords.length > 0 ? 'has-errors' : ''} ${isChecksumValid ? 'is-valid' : ''}`}
+          placeholder={placeholder || `Enter your ${expectedWords} word recovery phrase`}
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+          aria-label="Recovery phrase input"
+          aria-describedby="mnemonic-status"
+          aria-invalid={invalidWords.length > 0 || (isValidCount && !isChecksumValid)}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+        />
+        {value && (
+          <button
+            type="button"
+            className="mnemonic-clear-btn"
+            onClick={handleClear}
+            aria-label="Clear recovery phrase"
+            title="Clear"
+          >
+            ×
+          </button>
+        )}
+      </div>
 
       {/* Word count and validation status */}
       <div
@@ -243,12 +283,41 @@ export function MnemonicInput({
           gap: 0.5rem;
         }
 
+        .mnemonic-textarea-wrapper {
+          position: relative;
+        }
+
         .mnemonic-textarea {
           min-height: 100px;
           resize: vertical;
           font-family: monospace;
           line-height: 1.6;
           transition: border-color 0.2s ease, box-shadow 0.2s ease;
+          padding-right: 2.5rem;
+        }
+
+        .mnemonic-clear-btn {
+          position: absolute;
+          top: 0.5rem;
+          right: 0.5rem;
+          width: 1.75rem;
+          height: 1.75rem;
+          border-radius: 50%;
+          border: none;
+          background: var(--color-surface, rgba(255, 255, 255, 0.1));
+          color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+          font-size: 1.25rem;
+          line-height: 1;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s ease;
+        }
+
+        .mnemonic-clear-btn:hover {
+          background: var(--color-error, #ef4444);
+          color: white;
         }
 
         .mnemonic-textarea.has-errors {

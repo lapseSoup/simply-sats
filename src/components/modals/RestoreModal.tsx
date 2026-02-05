@@ -7,6 +7,7 @@ import { restoreWallet, importFromJSON } from '../../services/wallet'
 import { importDatabase, type DatabaseBackup } from '../../services/database'
 import { setWalletKeys } from '../../services/brc100'
 import { saveWallet } from '../../services/wallet'
+import { migrateToMultiAccount } from '../../services/accounts'
 
 interface RestoreModalProps {
   onClose: () => void
@@ -92,11 +93,15 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       if (backup.wallet.mnemonic) {
         const keys = restoreWallet(backup.wallet.mnemonic)
         await saveWallet(keys, password)
+        // Create account in database for persistence across app restarts
+        await migrateToMultiAccount({ ...keys, mnemonic: backup.wallet.mnemonic }, password)
         setWallet({ ...keys, mnemonic: backup.wallet.mnemonic })
         setWalletKeys(keys)
       } else if (backup.wallet.keys) {
         const keys = await importFromJSON(JSON.stringify(backup.wallet.keys))
         await saveWallet(keys, password)
+        // Create account in database for persistence across app restarts
+        await migrateToMultiAccount(keys, password)
         setWallet(keys)
         setWalletKeys(keys)
       } else {

@@ -137,10 +137,12 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
             className="icon-btn"
             onClick={onSettingsClick}
             aria-label="Settings"
+            title="Settings"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              {/* Gear/cog icon */}
+              <path d="M6.5 1.5h3l.3 1.8.7.3 1.5-1 2.1 2.1-1 1.5.3.7 1.8.3v3l-1.8.3-.3.7 1 1.5-2.1 2.1-1.5-1-.7.3-.3 1.8h-3l-.3-1.8-.7-.3-1.5 1-2.1-2.1 1-1.5-.3-.7-1.8-.3v-3l1.8-.3.3-.7-1-1.5 2.1-2.1 1.5 1 .7-.3.3-1.8z" />
               <circle cx="8" cy="8" r="2" />
-              <path d="M8 1V3M8 13V15M1 8H3M13 8H15M2.5 2.5L4 4M12 12L13.5 13.5M2.5 13.5L4 12M12 4L13.5 2.5" />
             </svg>
           </button>
         </div>

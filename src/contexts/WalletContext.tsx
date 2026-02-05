@@ -628,13 +628,17 @@ export function WalletProvider({ children }: WalletProviderProps) {
     try {
       const keys = createWallet()
       await saveWallet(keys, password)
+      // Create account in database for persistence across app restarts
+      // Use legacy password requirements since we've already validated length above
+      await migrateToMultiAccount(keys, password)
+      await refreshAccounts()
       setWallet({ ...keys })
       return keys.mnemonic || null
     } catch (err) {
       console.error('Failed to create wallet:', err)
       return null
     }
-  }, [setWallet])
+  }, [setWallet, refreshAccounts])
 
   const handleRestoreWallet = useCallback(async (mnemonic: string, password: string): Promise<boolean> => {
     if (!password || password.length < 12) {
@@ -643,13 +647,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
     try {
       const keys = restoreWallet(mnemonic.trim())
       await saveWallet(keys, password)
+      // Create account in database for persistence across app restarts
+      await migrateToMultiAccount({ ...keys, mnemonic: mnemonic.trim() }, password)
+      await refreshAccounts()
       setWallet({ ...keys, mnemonic: mnemonic.trim() })
       return true
     } catch (err) {
       console.error('Failed to restore wallet:', err)
       return false
     }
-  }, [setWallet])
+  }, [setWallet, refreshAccounts])
 
   const handleImportJSON = useCallback(async (json: string, password: string): Promise<boolean> => {
     if (!password || password.length < 12) {
@@ -658,13 +665,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
     try {
       const keys = await importFromJSON(json)
       await saveWallet(keys, password)
+      // Create account in database for persistence across app restarts
+      await migrateToMultiAccount(keys, password)
+      await refreshAccounts()
       setWallet(keys)
       return true
     } catch (err) {
       console.error('Failed to import JSON:', err)
       return false
     }
-  }, [setWallet])
+  }, [setWallet, refreshAccounts])
 
   const handleDeleteWallet = useCallback(async () => {
     await clearWallet()
