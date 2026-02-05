@@ -22,15 +22,12 @@ const SENSITIVE_KEYS = new Set([
   'rate_limit',
 ])
 
-// Keys that remain unencrypted (non-sensitive preferences)
-// Note: This set is kept for documentation but not currently used
-// since we determine encryption based on SENSITIVE_KEYS
-const _UNENCRYPTED_KEYS = new Set([
-  'cached_balance',
-  'cached_ord_balance',
-  'auto_lock_minutes',
-  'display_unit',
-])
+// Keys that remain unencrypted (non-sensitive preferences):
+// - cached_balance
+// - cached_ord_balance
+// - auto_lock_minutes
+// - display_unit
+// Note: Encryption is determined by checking SENSITIVE_KEYS instead
 
 // Web Crypto API
 const getCrypto = () => globalThis.crypto

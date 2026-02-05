@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$CLAUDE_FILE_PATHS\"; if [[ \"$file\" =~ \\.(ts|tsx)$ ]]; then npx eslint --fix \"$file\" 2>/dev/null; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=\"$CLAUDE_FILE_PATHS\"; if [[ \"$file\" =~ \\.(ts|tsx)$ ]]; then npx eslint --fix \"$file\" 2>/dev/null; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

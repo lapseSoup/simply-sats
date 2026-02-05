@@ -105,14 +105,21 @@ export type ErrorCode =
  * Standardized application error
  */
 export class AppError extends Error {
+  readonly code: ErrorCode
+  readonly details?: Record<string, unknown>
+  override readonly cause?: Error
+
   constructor(
-    public readonly code: ErrorCode,
+    code: ErrorCode,
     message: string,
-    public readonly details?: Record<string, unknown>,
-    public readonly cause?: Error
+    details?: Record<string, unknown>,
+    cause?: Error
   ) {
     super(message)
     this.name = 'AppError'
+    this.code = code
+    this.details = details
+    this.cause = cause
   }
 
   /** Create a JSON-serializable representation */
@@ -385,12 +392,12 @@ export function fromLegacy<T>(
  */
 export function toLegacy<T>(
   result: Result<T, AppError>
-): { success: boolean; error?: string } & (T extends object ? T : { value?: T }) {
+): { success: boolean; error?: string; value?: T } {
   if (isOk(result)) {
     if (typeof result.value === 'object' && result.value !== null) {
-      return { success: true, ...result.value } as { success: true } & T
+      return { success: true, ...result.value }
     }
-    return { success: true, value: result.value } as { success: true; value: T }
+    return { success: true, value: result.value }
   }
-  return { success: false, error: result.error.message } as { success: false; error: string }
+  return { success: false, error: result.error.message }
 }

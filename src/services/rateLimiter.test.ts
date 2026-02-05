@@ -4,7 +4,7 @@
  * Tests for security-critical rate limiting logic.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   checkUnlockRateLimit,
   recordFailedUnlockAttempt,
