@@ -344,15 +344,18 @@ describe('Wallet Service', () => {
         const balance = await getBalance('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')
 
         expect(balance).toBe(10500)
+        // wocClient uses fetchWithTimeout which adds AbortController signal
         expect(fetch).toHaveBeenCalledWith(
-          'https://api.whatsonchain.com/v1/bsv/main/address/1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2/balance'
+          'https://api.whatsonchain.com/v1/bsv/main/address/1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2/balance',
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
         )
       })
 
       it('should return 0 on API error', async () => {
         vi.mocked(fetch).mockResolvedValueOnce({
           ok: false,
-          status: 500
+          status: 500,
+          statusText: 'Internal Server Error'
         } as Response)
 
         const balance = await getBalance('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')

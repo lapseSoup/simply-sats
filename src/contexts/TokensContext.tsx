@@ -21,6 +21,7 @@ interface TokensContextType {
 
 const TokensContext = createContext<TokensContextType | null>(null)
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTokens() {
   const context = useContext(TokensContext)
   if (!context) {

@@ -6,6 +6,7 @@ interface AnnouncementContext {
 
 const AnnouncementCtx = createContext<AnnouncementContext | null>(null)
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAnnounce() {
   const ctx = useContext(AnnouncementCtx)
   if (!ctx) {

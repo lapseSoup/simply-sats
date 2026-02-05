@@ -29,6 +29,7 @@ import {
   MIN_FEE_RATE,
   MAX_FEE_RATE
 } from '../domain/transaction/fees'
+import { getWocClient } from '../infrastructure/api/wocClient'
 
 // Re-export WALLET_PATHS for backward compatibility
 export { WALLET_PATHS }
@@ -290,24 +291,9 @@ export function importFromJSON(jsonString: string): WalletKeys {
   }
 }
 
-// Get balance from WhatsOnChain (legacy method)
+// Get balance from WhatsOnChain (uses wocClient infrastructure)
 export async function getBalance(address: string): Promise<number> {
-  try {
-    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/balance`)
-    if (!response.ok) {
-      console.warn(`Failed to fetch balance for ${address}: ${response.status}`)
-      return 0
-    }
-    const data = await response.json()
-    if (typeof data.confirmed !== 'number' || typeof data.unconfirmed !== 'number') {
-      console.warn(`Unexpected balance response for ${address}:`, data)
-      return 0
-    }
-    return data.confirmed + data.unconfirmed
-  } catch (error) {
-    console.error(`Error fetching balance for ${address}:`, error)
-    return 0
-  }
+  return getWocClient().getBalance(address)
 }
 
 // Get balance from local database (BRC-100 method - faster!)
@@ -336,67 +322,24 @@ export async function getUTXOsFromDB(basket = BASKETS.DEFAULT): Promise<UTXO[]> 
   }
 }
 
-// Get UTXOs from WhatsOnChain with locking scripts
+// Get UTXOs from WhatsOnChain with locking scripts (uses wocClient infrastructure)
 export async function getUTXOs(address: string): Promise<UTXO[]> {
-  try {
-    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
-    if (!response.ok) {
-      console.warn(`Failed to fetch UTXOs for ${address}: ${response.status}`)
-      return []
-    }
-    const data = await response.json()
-    if (!Array.isArray(data)) {
-      console.warn(`Unexpected UTXO response for ${address}:`, data)
-      return []
-    }
-
-    // Generate the P2PKH locking script for this address
-    const lockingScript = new P2PKH().lock(address)
-
-    return data.map((utxo: WocUtxo) => ({
-      txid: utxo.tx_hash,
-      vout: utxo.tx_pos,
-      satoshis: utxo.value,
-      script: lockingScript.toHex()
-    }))
-  } catch (error) {
-    console.error(`Error fetching UTXOs for ${address}:`, error)
-    return []
-  }
+  return getWocClient().getUtxos(address)
 }
 
-// Get transaction history
+// Get transaction history (uses wocClient infrastructure)
 export async function getTransactionHistory(address: string): Promise<WocHistoryItem[]> {
-  try {
-    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/history`)
-    if (!response.ok) {
-      console.warn(`Failed to fetch history for ${address}: ${response.status}`)
-      return []
-    }
-    const data = await response.json()
-    // Handle case where API returns error object instead of array
-    if (!Array.isArray(data)) {
-      console.warn(`Unexpected history response for ${address}:`, data)
-      return []
-    }
-    return data
-  } catch (error) {
-    console.error(`Error fetching history for ${address}:`, error)
-    return []
-  }
+  const result = await getWocClient().getTransactionHistory(address)
+  // Map to ensure WocHistoryItem type compatibility
+  return result.map(item => ({ tx_hash: item.tx_hash, height: item.height }))
 }
 
-// Get transaction details including inputs/outputs
+// Get transaction details including inputs/outputs (uses wocClient infrastructure)
 export async function getTransactionDetails(txid: string): Promise<WocTransaction | null> {
-  try {
-    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`)
-    if (!response.ok) {
-      return null
-    }
-    return await response.json()
-  } catch {
-    return null
-  }
+  // Note: wocClient returns a compatible WocTransaction type
+  const result = await getWocClient().getTransactionDetails(txid)
+  // Convert to our local WocTransaction type (they're compatible)
+  return result as unknown as WocTransaction | null
 }
 
 // Calculate amount for a transaction relative to an address or array of addresses (positive = received, negative = sent)

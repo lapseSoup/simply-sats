@@ -34,6 +34,7 @@ interface AccountsContextType {
 
 const AccountsContext = createContext<AccountsContextType | null>(null)
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAccounts() {
   const context = useContext(AccountsContext)
   if (!context) {

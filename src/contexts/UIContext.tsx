@@ -18,6 +18,7 @@ interface UIContextType {
 
 const UIContext = createContext<UIContextType | null>(null)
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useUI() {
   const context = useContext(UIContext)
   if (!context) {

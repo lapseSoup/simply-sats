@@ -194,6 +194,7 @@ export class WalletErrorBoundary extends Component<
 /**
  * HOC to wrap a component with an error boundary
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function withErrorBoundary<P extends object>(
   WrappedComponent: React.ComponentType<P>,
   errorBoundaryProps?: Omit<ErrorBoundaryProps, 'children'>

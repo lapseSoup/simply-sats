@@ -98,6 +98,7 @@ export function useModalKeyboard(options: UseModalKeyboardOptions = {}): UseModa
   // Reset selection when modal opens/closes
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset on open is intentional
       setSelectedIndex(initialIndex)
     }
   }, [isOpen, initialIndex])

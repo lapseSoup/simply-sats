@@ -16,6 +16,7 @@ interface NetworkContextType {
 
 const NetworkContext = createContext<NetworkContextType | null>(null)
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useNetwork() {
   const context = useContext(NetworkContext)
   if (!context) {
