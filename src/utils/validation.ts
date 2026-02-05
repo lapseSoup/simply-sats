@@ -20,6 +20,35 @@ function isLocalhost(hostname: string): boolean {
 }
 
 /**
+ * Normalize URL by stripping default ports (443 for HTTPS, 80 for HTTP)
+ */
+function normalizeOriginUrl(url: URL): string {
+  const port = url.port
+  const isDefaultPort =
+    (url.protocol === 'https:' && (port === '443' || port === '')) ||
+    (url.protocol === 'http:' && (port === '80' || port === ''))
+
+  // Reconstruct without port if it's the default
+  if (isDefaultPort || !port) {
+    return `${url.protocol}//${url.hostname}`
+  }
+  return `${url.protocol}//${url.hostname}:${port}`
+}
+
+/**
+ * Check if hostname is valid (not empty, not just dots, etc.)
+ */
+function isValidHostname(hostname: string): boolean {
+  if (!hostname) return false
+  if (hostname === '.') return false
+  if (hostname.startsWith('.')) return false
+  if (hostname.endsWith('.') && hostname !== 'localhost.') return false
+  // Check for multiple consecutive dots
+  if (hostname.includes('..')) return false
+  return true
+}
+
+/**
  * Validate that a string is a properly formatted origin URL
  *
  * Security requirements:
@@ -35,14 +64,26 @@ export function isValidOrigin(origin: string): boolean {
   try {
     const url = new URL(origin)
 
-    // Verify origin format (protocol + host only, no path)
-    const reconstructed = `${url.protocol}//${url.host}`
-    if (origin !== reconstructed) {
+    // Must have a valid hostname
+    if (!isValidHostname(url.hostname)) {
       return false
     }
 
-    // Must have a hostname
-    if (!url.hostname) {
+    // Reject if URL has query string or hash (origins should not have these)
+    if (url.search || url.hash) {
+      return false
+    }
+
+    // Reject if URL has a path other than just "/"
+    // The URL parser adds "/" as default, so we check if there's more than that
+    if (url.pathname !== '/') {
+      return false
+    }
+
+    // Also check the original string doesn't have a trailing slash or path
+    // e.g., "https://example.com/path" should fail even though URL() parses it
+    const afterHost = origin.replace(/^[a-zA-Z]+:\/\/[^/]+/, '')
+    if (afterHost.length > 0 && afterHost !== '') {
       return false
     }
 
@@ -75,21 +116,28 @@ export function validateOriginWithReason(origin: string): string | null {
   try {
     const url = new URL(origin)
 
-    const reconstructed = `${url.protocol}//${url.host}`
-    if (origin !== reconstructed) {
+    if (!isValidHostname(url.hostname)) {
+      return 'Origin must have a valid hostname'
+    }
+
+    // Reject query strings, hash, or paths
+    if (url.search || url.hash || url.pathname !== '/') {
       return 'Origin must be protocol + host only (no path or query)'
     }
 
-    if (!url.hostname) {
-      return 'Origin must have a hostname'
+    // Also check the original string doesn't have a trailing slash or path
+    const afterHost = origin.replace(/^[a-zA-Z]+:\/\/[^/]+/, '')
+    if (afterHost.length > 0 && afterHost !== '') {
+      return 'Origin must be protocol + host only (no path or query)'
+    }
+
+    // Check protocol before path check
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return 'Only HTTP and HTTPS protocols are allowed'
     }
 
     if (url.protocol === 'http:' && !isLocalhost(url.hostname)) {
       return 'HTTP is only allowed for localhost. Use HTTPS for remote origins.'
-    }
-
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      return 'Only HTTP and HTTPS protocols are allowed'
     }
 
     return null
@@ -99,11 +147,11 @@ export function validateOriginWithReason(origin: string): string | null {
 }
 
 /**
- * Normalize an origin URL
+ * Normalize an origin URL (strips default ports)
  */
 export function normalizeOrigin(origin: string): string {
   const url = new URL(origin)
-  return `${url.protocol}//${url.host}`
+  return normalizeOriginUrl(url)
 }
 
 /**

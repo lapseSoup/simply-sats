@@ -8,6 +8,20 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 
 mod http_server;
+mod rate_limiter;
+mod secure_storage;
+
+use rate_limiter::{
+    SharedRateLimitState, RateLimitState,
+    check_unlock_rate_limit, record_failed_unlock,
+    record_successful_unlock, get_remaining_unlock_attempts
+};
+
+use secure_storage::{
+    secure_storage_save, secure_storage_load,
+    secure_storage_exists, secure_storage_clear,
+    secure_storage_migrate
+};
 
 // CSRF/Replay protection constants
 const NONCE_EXPIRY_SECS: u64 = 300; // 5 minutes
@@ -247,17 +261,35 @@ pub fn run() {
     let session_state: SharedSessionState = Arc::new(Mutex::new(SessionState::new()));
     let session_state_for_server = session_state.clone();
 
+    // Rate limiter state for unlock attempts (stored in memory, not localStorage)
+    let rate_limit_state: SharedRateLimitState = Arc::new(Mutex::new(RateLimitState::new()));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_sql::Builder::new()
             .add_migrations("sqlite:simplysats.db", include_migrations())
             .build())
         .manage(brc100_state)
         .manage(session_state)
-        .invoke_handler(tauri::generate_handler![respond_to_brc100, get_session_token, generate_csrf_nonce])
+        .manage(rate_limit_state)
+        .invoke_handler(tauri::generate_handler![
+            respond_to_brc100,
+            get_session_token,
+            generate_csrf_nonce,
+            check_unlock_rate_limit,
+            record_failed_unlock,
+            record_successful_unlock,
+            get_remaining_unlock_attempts,
+            secure_storage_save,
+            secure_storage_load,
+            secure_storage_exists,
+            secure_storage_clear,
+            secure_storage_migrate
+        ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let brc100_state = brc100_state_for_server;

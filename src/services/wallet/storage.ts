@@ -1,13 +1,99 @@
 /**
  * Wallet storage operations
  * Save, load, and manage wallet persistence
+ *
+ * Security: Uses Tauri secure storage when available (desktop app),
+ * falls back to localStorage for web builds.
  */
 
+import { invoke } from '@tauri-apps/api/core'
 import type { WalletKeys } from './types'
-import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData } from '../crypto'
+import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData, type EncryptedData } from '../crypto'
 import { walletLogger } from '../logger'
+import { SECURITY } from '../../config'
 
 const STORAGE_KEY = 'simply_sats_wallet'
+
+/**
+ * Check if we're running in Tauri environment
+ */
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+/**
+ * Save encrypted data to Tauri secure storage
+ */
+async function saveToSecureStorage(data: EncryptedData): Promise<boolean> {
+  if (!isTauri()) return false
+
+  try {
+    await invoke('secure_storage_save', { data })
+    return true
+  } catch (error) {
+    walletLogger.error('Failed to save to secure storage', { error })
+    return false
+  }
+}
+
+/**
+ * Load encrypted data from Tauri secure storage
+ */
+async function loadFromSecureStorage(): Promise<EncryptedData | null> {
+  if (!isTauri()) return null
+
+  try {
+    const data = await invoke<EncryptedData | null>('secure_storage_load')
+    return data
+  } catch (error) {
+    walletLogger.error('Failed to load from secure storage', { error })
+    return null
+  }
+}
+
+/**
+ * Check if wallet exists in Tauri secure storage
+ */
+async function existsInSecureStorage(): Promise<boolean> {
+  if (!isTauri()) return false
+
+  try {
+    return await invoke<boolean>('secure_storage_exists')
+  } catch (error) {
+    walletLogger.error('Failed to check secure storage', { error })
+    return false
+  }
+}
+
+/**
+ * Clear wallet from Tauri secure storage
+ */
+async function clearSecureStorage(): Promise<boolean> {
+  if (!isTauri()) return false
+
+  try {
+    await invoke('secure_storage_clear')
+    return true
+  } catch (error) {
+    walletLogger.error('Failed to clear secure storage', { error })
+    return false
+  }
+}
+
+/**
+ * Migrate data from localStorage to secure storage
+ */
+async function migrateToSecureStorage(data: string): Promise<boolean> {
+  if (!isTauri()) return false
+
+  try {
+    const migrated = await invoke<boolean>('secure_storage_migrate', { legacyData: data })
+    return migrated
+  } catch (error) {
+    walletLogger.error('Failed to migrate to secure storage', { error })
+    return false
+  }
+}
 
 /**
  * Save wallet keys with proper AES-GCM encryption
@@ -16,12 +102,24 @@ const STORAGE_KEY = 'simply_sats_wallet'
  * @param password - Password for encryption
  */
 export async function saveWallet(keys: WalletKeys, password: string): Promise<void> {
-  if (!password || password.length < 12) {
-    throw new Error('Password must be at least 12 characters')
+  if (!password || password.length < SECURITY.MIN_PASSWORD_LENGTH) {
+    throw new Error(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
   }
 
   const encryptedData = await encrypt(keys, password)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
+
+  // Try to save to secure storage first (Tauri desktop)
+  const savedSecurely = await saveToSecureStorage(encryptedData)
+
+  if (savedSecurely) {
+    // Also remove from localStorage if it was there (migration complete)
+    localStorage.removeItem(STORAGE_KEY)
+    walletLogger.info('Wallet saved to secure storage')
+  } else {
+    // Fallback to localStorage (web build)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
+    walletLogger.info('Wallet saved to localStorage')
+  }
 }
 
 /**
@@ -35,6 +133,14 @@ export async function saveWallet(keys: WalletKeys, password: string): Promise<vo
  * @throws Error if password is wrong or data is corrupted
  */
 export async function loadWallet(password: string): Promise<WalletKeys | null> {
+  // Try secure storage first (Tauri desktop)
+  const secureData = await loadFromSecureStorage()
+  if (secureData) {
+    const decrypted = await decrypt(secureData, password)
+    return JSON.parse(decrypted)
+  }
+
+  // Fall back to localStorage
   const stored = localStorage.getItem(STORAGE_KEY)
   if (!stored) return null
 
@@ -45,7 +151,16 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
     if (isEncryptedData(parsed)) {
       // New encrypted format - decrypt it
       const decrypted = await decrypt(parsed, password)
-      return JSON.parse(decrypted)
+      const keys = JSON.parse(decrypted) as WalletKeys
+
+      // Migrate to secure storage if available
+      const migrated = await migrateToSecureStorage(stored)
+      if (migrated) {
+        localStorage.removeItem(STORAGE_KEY)
+        walletLogger.info('Wallet migrated from localStorage to secure storage')
+      }
+
+      return keys
     }
 
     // If it's a plain object with wallet keys (shouldn't happen, but handle it)
@@ -69,9 +184,17 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
 
       // Migrate to new encrypted format
       const encryptedData = await migrateLegacyData(stored, password)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
 
-      walletLogger.info('Wallet migrated to secure encryption successfully')
+      // Try to save to secure storage
+      const savedSecurely = await saveToSecureStorage(encryptedData)
+      if (savedSecurely) {
+        localStorage.removeItem(STORAGE_KEY)
+        walletLogger.info('Wallet migrated to secure storage')
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
+        walletLogger.info('Wallet migrated to new encrypted format')
+      }
+
       return keys
     } catch {
       // Legacy decoding failed
@@ -85,15 +208,45 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
 /**
  * Check if a wallet exists in storage
  */
-export function hasWallet(): boolean {
+export async function hasWallet(): Promise<boolean> {
+  // Check secure storage first
+  const existsSecure = await existsInSecureStorage()
+  if (existsSecure) return true
+
+  // Fall back to localStorage
+  return localStorage.getItem(STORAGE_KEY) !== null
+}
+
+/**
+ * Synchronous version for backward compatibility
+ * Note: This only checks localStorage, not secure storage
+ * @deprecated Use hasWallet() async version instead
+ */
+export function hasWalletSync(): boolean {
+  // This can only check localStorage - secure storage requires async
   return localStorage.getItem(STORAGE_KEY) !== null
 }
 
 /**
  * Clear wallet from storage
  */
-export function clearWallet(): void {
+export async function clearWallet(): Promise<void> {
+  // Clear from both storages
+  await clearSecureStorage()
   localStorage.removeItem(STORAGE_KEY)
+}
+
+/**
+ * Synchronous version for backward compatibility
+ * @deprecated Use clearWallet() async version instead
+ */
+export function clearWalletSync(): void {
+  // This can only clear localStorage - secure storage requires async
+  localStorage.removeItem(STORAGE_KEY)
+  // Also try to clear secure storage in background
+  clearSecureStorage().catch(() => {
+    // Ignore errors - best effort
+  })
 }
 
 /**
@@ -105,8 +258,8 @@ export function clearWallet(): void {
  * @throws Error if old password is wrong
  */
 export async function changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
-  if (!newPassword || newPassword.length < 12) {
-    throw new Error('Password must be at least 12 characters')
+  if (!newPassword || newPassword.length < SECURITY.MIN_PASSWORD_LENGTH) {
+    throw new Error(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
   }
 
   const keys = await loadWallet(oldPassword)

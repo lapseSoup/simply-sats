@@ -14,6 +14,8 @@ export interface SimplySatsConfig {
   timeout?: number
   /** Origin identifier for your app (for trusted origin auto-approval) */
   origin?: string
+  /** Session token for authentication (obtained from Simply Sats wallet) */
+  sessionToken?: string
 }
 
 export interface LockedUTXO {
@@ -112,27 +114,65 @@ export class SimplySats {
   private baseUrl: string
   private timeout: number
   private origin: string
+  private sessionToken: string | null
 
   constructor(config: SimplySatsConfig = {}) {
     this.baseUrl = config.baseUrl || 'http://127.0.0.1:3322'
     this.timeout = config.timeout || 120000
     this.origin = config.origin || 'sdk'
+    this.sessionToken = config.sessionToken || null
+  }
+
+  /**
+   * Set the session token for authenticated requests
+   * @param token - Session token obtained from Simply Sats wallet
+   */
+  setSessionToken(token: string): void {
+    this.sessionToken = token
+  }
+
+  /**
+   * Clear the session token
+   */
+  clearSessionToken(): void {
+    this.sessionToken = null
+  }
+
+  /**
+   * Get a CSRF nonce for state-changing operations
+   * Required for: createSignature, createAction, lockBSV, unlockBSV
+   */
+  async getNonce(): Promise<string> {
+    const result = await this.request<{ nonce: string }>('getNonce')
+    return result.nonce
   }
 
   /**
    * Make an HTTP request to Simply Sats
    */
-  private async request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  private async request<T>(method: string, params: Record<string, unknown> = {}, nonce?: string): Promise<T> {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Origin': this.origin
+      }
+
+      // Add session token if available
+      if (this.sessionToken) {
+        headers['X-Simply-Sats-Token'] = this.sessionToken
+      }
+
+      // Add CSRF nonce for state-changing operations
+      if (nonce) {
+        headers['X-Simply-Sats-Nonce'] = nonce
+      }
+
       const response = await fetch(`${this.baseUrl}/${method}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Origin': this.origin
-        },
+        headers,
         body: JSON.stringify(params),
         signal: controller.signal
       })
@@ -215,10 +255,12 @@ export class SimplySats {
 
   /**
    * Create a signature for a message
+   * Note: This is a state-changing operation that requires a CSRF nonce
    */
   async createSignature(options: {
     data: string | Uint8Array
     hashToDirectlySign?: string
+    nonce?: string
   }): Promise<SignatureResult> {
     const params: Record<string, unknown> = {}
 
@@ -230,13 +272,16 @@ export class SimplySats {
       params.data = Array.from(options.data)
     }
 
-    return this.request<SignatureResult>('createSignature', params)
+    // Get nonce if not provided
+    const nonce = options.nonce || await this.getNonce()
+    return this.request<SignatureResult>('createSignature', params, nonce)
   }
 
   // ==================== Transaction Operations ====================
 
   /**
    * Create a transaction action
+   * Note: This is a state-changing operation that requires a CSRF nonce
    */
   async createAction(options: {
     description?: string
@@ -252,8 +297,12 @@ export class SimplySats {
       inputDescription?: string
     }>
     lockTime?: number
+    nonce?: string
   }): Promise<ActionResult> {
-    return this.request<ActionResult>('createAction', options)
+    // Get nonce if not provided
+    const nonce = options.nonce || await this.getNonce()
+    const { nonce: _, ...params } = options
+    return this.request<ActionResult>('createAction', params, nonce)
   }
 
   /**
@@ -274,10 +323,12 @@ export class SimplySats {
    * Lock BSV using OP_PUSH_TX timelock
    *
    * Creates a time-locked output that can only be spent after the specified number of blocks.
+   * Note: This is a state-changing operation that requires a CSRF nonce
    *
    * @param options.satoshis - Amount to lock in satoshis
    * @param options.blocks - Number of blocks to lock for (144 blocks ~ 1 day)
    * @param options.metadata - Optional metadata (ordinalOrigin, app name, etc.)
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
    *
    * @example
    * ```typescript
@@ -300,8 +351,12 @@ export class SimplySats {
       app?: string
       [key: string]: unknown
     }
+    nonce?: string
   }): Promise<LockResult> {
-    return this.request<LockResult>('lockBSV', options)
+    // Get nonce if not provided
+    const nonce = options.nonce || await this.getNonce()
+    const { nonce: _, ...params } = options
+    return this.request<LockResult>('lockBSV', params, nonce)
   }
 
   /**
@@ -309,8 +364,10 @@ export class SimplySats {
    *
    * Spends a previously locked output back to the wallet. Only works if
    * the current block height has passed the unlock block.
+   * Note: This is a state-changing operation that requires a CSRF nonce
    *
    * @param outpoint - The outpoint to unlock (format: "txid.vout")
+   * @param nonce - Optional CSRF nonce (auto-fetched if not provided)
    *
    * @example
    * ```typescript
@@ -318,8 +375,10 @@ export class SimplySats {
    * console.log(`Unlocked ${result.amount} sats in tx ${result.txid}`)
    * ```
    */
-  async unlockBSV(outpoint: string): Promise<UnlockResult> {
-    return this.request<UnlockResult>('unlockBSV', { outpoint })
+  async unlockBSV(outpoint: string, nonce?: string): Promise<UnlockResult> {
+    // Get nonce if not provided
+    const actualNonce = nonce || await this.getNonce()
+    return this.request<UnlockResult>('unlockBSV', { outpoint }, actualNonce)
   }
 
   /**

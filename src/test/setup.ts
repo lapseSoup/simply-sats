@@ -82,12 +82,13 @@ expect.extend({
 
 // Extend Vitest's expect types
 declare module 'vitest' {
-  interface Assertion<T = any> {
-    toBeValidBSVAddress(): T
-    toBeValidHex(): T
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface Assertion<T = unknown> {
+    toBeValidBSVAddress(): void
+    toBeValidHex(): void
   }
   interface AsymmetricMatchersContaining {
-    toBeValidBSVAddress(): any
-    toBeValidHex(): any
+    toBeValidBSVAddress(): void
+    toBeValidHex(): void
   }
 }

@@ -220,7 +220,7 @@ export async function fetchBsv21Details(contractId: string): Promise<Token | nul
 export async function fetchTokenUtxos(
   ticker: string,
   address: string
-): Promise<any[]> {
+): Promise<TokenUtxoResponse[]> {
   try {
     const response = await fetch(
       `${getBaseUrl()}/api/bsv20/${address}/tick/${ticker}`

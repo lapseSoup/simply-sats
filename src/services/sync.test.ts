@@ -249,15 +249,18 @@ describe('Sync Service', () => {
         1000
       )
 
-      expect(upsertTransaction).toHaveBeenCalledWith({
-        txid: 'txid123',
-        rawTx: 'rawtx...',
-        description: 'Sent 1000 sats',
-        createdAt: expect.any(Number),
-        status: 'pending',
-        labels: ['payment', 'send'],
-        amount: 1000
-      })
+      expect(upsertTransaction).toHaveBeenCalledWith(
+        {
+          txid: 'txid123',
+          rawTx: 'rawtx...',
+          description: 'Sent 1000 sats',
+          createdAt: expect.any(Number),
+          status: 'pending',
+          labels: ['payment', 'send'],
+          amount: 1000
+        },
+        undefined // accountId parameter
+      )
     })
 
     it('should record transaction with default labels', async () => {
@@ -265,9 +268,11 @@ describe('Sync Service', () => {
 
       expect(upsertTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
+          txid: 'txid123',
           labels: [],
           amount: undefined
-        })
+        }),
+        undefined // accountId parameter
       )
     })
 
@@ -275,7 +280,17 @@ describe('Sync Service', () => {
       await recordSentTransaction('txid123', 'rawtx...', 'Test')
 
       expect(upsertTransaction).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'pending' })
+        expect.objectContaining({ status: 'pending' }),
+        undefined // accountId parameter
+      )
+    })
+
+    it('should pass accountId when provided', async () => {
+      await recordSentTransaction('txid123', 'rawtx...', 'Test tx', [], undefined, 42)
+
+      expect(upsertTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({ txid: 'txid123' }),
+        42 // accountId parameter
       )
     })
   })

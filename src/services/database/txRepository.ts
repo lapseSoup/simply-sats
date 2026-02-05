@@ -135,9 +135,7 @@ export async function getAllTransactions(limit = 30, accountId?: number): Promis
   params.push(limit)
 
   // Order: pending transactions first (NULL block_height), then confirmed by height DESC
-  console.log('[TX DEBUG] getAllTransactions query:', query, 'params:', params, 'accountId:', accountId)
   const rows = await database.select<TransactionRow[]>(query, params)
-  console.log('[TX DEBUG] getAllTransactions returned', rows.length, 'rows')
 
   return rows.map(row => ({
     id: row.id,

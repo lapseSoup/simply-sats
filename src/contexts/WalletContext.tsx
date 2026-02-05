@@ -4,17 +4,12 @@ import {
   createWallet,
   restoreWallet,
   importFromJSON,
-  getBalance,
   getUTXOs,
-  getOrdinals,
   sendBSVMultiKey,
   saveWallet,
   loadWallet,
   hasWallet,
   clearWallet,
-  lockBSV,
-  unlockBSV,
-  detectLockedUtxos,
   getFeeRatePerKB,
   setFeeRateFromKB,
   transferOrdinal
@@ -22,22 +17,20 @@ import {
 import { setWalletKeys } from '../services/brc100'
 import { useNetwork, type NetworkInfo } from './NetworkContext'
 import { useAccounts } from './AccountsContext'
+import { useSyncContext, type TxHistoryItem, type BasketBalances } from './SyncContext'
+import { useLocksContext } from './LocksContext'
 import {
   initDatabase,
   repairUTXOs,
   ensureDerivedAddressesTable,
   ensureContactsTable,
   getContacts,
-  getAllTransactions,
   getDerivedAddresses,
-  type Contact
+  type Contact,
+  type UTXO as DatabaseUTXO
 } from '../services/database'
 import {
-  syncWallet,
-  restoreFromBlockchain,
-  getBalanceFromDatabase,
-  getSpendableUtxosFromDatabase,
-  getOrdinalsFromDatabase
+  getSpendableUtxosFromDatabase
 } from '../services/sync'
 import {
   type Account,
@@ -56,7 +49,7 @@ import {
 } from '../services/autoLock'
 import { isValidOrigin, normalizeOrigin } from '../utils/validation'
 import { validatePassword, MIN_PASSWORD_LENGTH } from '../utils/passwordValidation'
-import { walletLogger, syncLogger, uiLogger } from '../services/logger'
+import { walletLogger, uiLogger } from '../services/logger'
 import {
   checkUnlockRateLimit,
   recordFailedUnlockAttempt,
@@ -70,20 +63,8 @@ import {
 } from '../services/secureStorage'
 import { audit } from '../services/auditLog'
 
-interface TxHistoryItem {
-  tx_hash: string
-  height: number
-  amount?: number
-  address?: string
-}
-
-interface BasketBalances {
-  default: number
-  ordinals: number
-  identity: number
-  derived: number
-  locks: number
-}
+// Re-export types for backward compatibility
+export type { TxHistoryItem, BasketBalances } from './SyncContext'
 
 interface WalletContextType {
   // Wallet state
@@ -144,7 +125,7 @@ interface WalletContextType {
   handleRestoreWallet: (mnemonic: string, password: string) => Promise<boolean>
   handleImportJSON: (json: string, password: string) => Promise<boolean>
   handleDeleteWallet: () => Promise<void>
-  handleSend: (address: string, amountSats: number) => Promise<{ success: boolean; txid?: string; error?: string }>
+  handleSend: (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleLock: (amountSats: number, blocks: number) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleUnlock: (lock: LockedUTXO) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
@@ -171,19 +152,33 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Core wallet state
   const [wallet, setWalletState] = useState<WalletKeys | null>(null)
   const [loading, setLoading] = useState(true)
-  const [balance, setBalance] = useState<number>(() => {
-    const cached = localStorage.getItem('simply_sats_cached_balance')
-    return cached ? parseInt(cached, 10) : 0
-  })
-  const [ordBalance, setOrdBalance] = useState<number>(() => {
-    const cached = localStorage.getItem('simply_sats_cached_ord_balance')
-    return cached ? parseInt(cached, 10) : 0
-  })
-  const [utxos, setUtxos] = useState<UTXO[]>([])
-  const [ordinals, setOrdinals] = useState<Ordinal[]>([])
-  const [locks, setLocks] = useState<LockedUTXO[]>([])
-  const [txHistory, setTxHistory] = useState<TxHistoryItem[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
+
+  // Get sync state from SyncContext
+  const {
+    utxos,
+    ordinals,
+    txHistory,
+    basketBalances,
+    balance,
+    ordBalance,
+    setBalance,
+    setOrdBalance,
+    setOrdinals,
+    setTxHistory,
+    performSync: syncPerformSync,
+    fetchData: syncFetchData
+  } = useSyncContext()
+
+  // Get lock state from LocksContext
+  const {
+    locks,
+    knownUnlockedLocks,
+    setLocks,
+    handleLock: locksHandleLock,
+    handleUnlock: locksHandleUnlock,
+    detectLocks
+  } = useLocksContext()
 
   // Get multi-account state from AccountsContext
   const {
@@ -215,6 +210,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Session password - stored in memory only while wallet is unlocked
   // Used for creating new accounts without re-prompting
+  //
+  // Security note: A CryptoKey-based approach was considered but provides minimal benefit:
+  // - Each account has unique salt, requiring re-derivation for every decrypt anyway
+  // - Auto-lock (configurable timeout) clears all sensitive data including this
+  // - Memory protection relies on OS/browser security, not JavaScript variable type
+  // - CryptoKey cannot be serialized to React state (would require complex workarounds)
   const [sessionPassword, setSessionPassword] = useState<string | null>(null)
 
   // Debug: log when session password changes
@@ -222,21 +223,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     walletLogger.debug('Session password state changed', { hasPassword: !!sessionPassword })
   }, [sessionPassword])
 
-  // Track recently unlocked locks to prevent re-detection race condition
-  // Keys are "txid:vout" strings
-  const [knownUnlockedLocks, setKnownUnlockedLocks] = useState<Set<string>>(new Set())
-
-  // Basket balances
-  const [basketBalances, setBasketBalances] = useState<BasketBalances>({
-    default: 0,
-    ordinals: 0,
-    identity: 0,
-    derived: 0,
-    locks: 0
-  })
-
   // Get network state from NetworkContext
-  const { networkInfo, syncing, setSyncing, usdPrice } = useNetwork()
+  const { networkInfo, syncing, usdPrice } = useNetwork()
 
   // Settings
   const [feeRateKB, setFeeRateKBState] = useState<number>(() => getFeeRatePerKB())
@@ -267,7 +255,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Unlock wallet with password (with rate limiting)
   const unlockWallet = useCallback(async (password: string): Promise<boolean> => {
     // Check rate limit before attempting unlock
-    const rateLimit = checkUnlockRateLimit()
+    const rateLimit = await checkUnlockRateLimit()
     if (rateLimit.isLimited) {
       const timeStr = formatLockoutTime(rateLimit.remainingMs)
       walletLogger.warn('Unlock blocked by rate limit', { remainingMs: rateLimit.remainingMs })
@@ -296,7 +284,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       const keys = await getKeysForAccount(account, password)
       if (keys) {
-        recordSuccessfulUnlock()
+        await recordSuccessfulUnlock()
         setWalletState(keys)
         setWalletKeys(keys)
         setIsLocked(false)
@@ -312,7 +300,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }
 
       // Record failed attempt and check for lockout
-      const result = recordFailedUnlockAttempt()
+      const result = await recordFailedUnlockAttempt()
       // Audit log failed unlock
       audit.unlockFailed(account.id, 'incorrect_password')
       if (result.isLocked) {
@@ -465,7 +453,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       if (!mounted) return
 
       // Try to load wallet (legacy support + new account system)
-      if (hasWallet()) {
+      if (await hasWallet()) {
         // Check if we have accounts in the database
         const allAccounts = await getAllAccounts()
         if (!mounted) return
@@ -525,188 +513,36 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [wallet, autoLockMinutes, lockWallet])
 
-  // Sync wallet with blockchain
+  // Sync wallet with blockchain - delegates to SyncContext
   const performSync = useCallback(async (isRestore = false, _forceReset = false) => {
-    if (!wallet || syncing) return
+    if (!wallet) return
+    await syncPerformSync(wallet, activeAccountId, isRestore)
+  }, [wallet, activeAccountId, syncPerformSync])
 
-    setSyncing(true)
-    try {
-      syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })
-      if (isRestore) {
-        await restoreFromBlockchain(
-          wallet.walletAddress,
-          wallet.ordAddress,
-          wallet.identityAddress,
-          activeAccountId || undefined
-        )
-      } else {
-        await syncWallet(
-          wallet.walletAddress,
-          wallet.ordAddress,
-          wallet.identityAddress,
-          activeAccountId || undefined
-        )
-      }
-      syncLogger.info('Sync complete')
-
-      // Update basket balances from database (scoped to account)
-      try {
-        const [defaultBal, ordBal, idBal, lockBal, derivedBal] = await Promise.all([
-          getBalanceFromDatabase('default', activeAccountId || undefined),
-          getBalanceFromDatabase('ordinals', activeAccountId || undefined),
-          getBalanceFromDatabase('identity', activeAccountId || undefined),
-          getBalanceFromDatabase('locks', activeAccountId || undefined),
-          getBalanceFromDatabase('derived', activeAccountId || undefined)
-        ])
-
-        setBasketBalances({
-          default: defaultBal,
-          ordinals: ordBal,
-          identity: idBal,
-          locks: lockBal,
-          derived: derivedBal
-        })
-
-        const totalBalance = defaultBal + derivedBal
-        setBalance(totalBalance)
-        localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
-      } catch (e) {
-        syncLogger.error('Failed to get basket balances', e)
-      }
-    } catch (error) {
-      syncLogger.error('Sync failed', error)
-    } finally {
-      setSyncing(false)
-    }
-  }, [wallet, syncing, setSyncing, activeAccountId])
-
-  // Fetch data from database and API
+  // Fetch data from database and API - delegates to SyncContext with lock detection callback
   const fetchData = useCallback(async () => {
     if (!wallet) return
 
-    const effectiveAccountId = activeAccountId || undefined
-    syncLogger.debug('Fetching data (database-first approach)...', {
+    await syncFetchData(
+      wallet,
       activeAccountId,
-      effectiveAccountId,
-      walletAddress: wallet.walletAddress.slice(0, 12) + '...'
-    })
-
-    try {
-      const [defaultBal, derivedBal] = await Promise.all([
-        getBalanceFromDatabase('default', activeAccountId || undefined),
-        getBalanceFromDatabase('derived', activeAccountId || undefined)
-      ])
-      const totalBalance = defaultBal + derivedBal
-      setBalance(totalBalance)
-      localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
-
-      // Get ordinals balance from API
-      try {
-        const [ordBal, idBal] = await Promise.all([
-          getBalance(wallet.ordAddress),
-          getBalance(wallet.identityAddress)
-        ])
-        const totalOrdBalance = ordBal + idBal
-        if (totalOrdBalance > 0) {
-          setOrdBalance(totalOrdBalance)
-          localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance))
+      knownUnlockedLocks,
+      async ({ utxos: fetchedUtxos, shouldClearLocks }) => {
+        // Detect locks after UTXOs are fetched
+        try {
+          const detectedLocks = await detectLocks(wallet, fetchedUtxos)
+          if (detectedLocks.length > 0) {
+            setLocks(detectedLocks)
+          } else if (shouldClearLocks) {
+            // If we had unlocked locks and now there are none, clear the list
+            setLocks([])
+          }
+        } catch (e) {
+          walletLogger.error('Failed to detect locks', e)
         }
-      } catch (_e) {
-        const cached = parseInt(localStorage.getItem('simply_sats_cached_ord_balance') || '0', 10)
-        if (cached > 0) setOrdBalance(cached)
       }
-
-      // Get transaction history from DATABASE (scoped to account)
-      console.log('[FETCH DEBUG] Calling getAllTransactions with accountId:', activeAccountId)
-      const dbTxs = await getAllTransactions(30, activeAccountId || undefined)
-      console.log('[FETCH DEBUG] Got', dbTxs.length, 'transactions:', dbTxs.map(tx => tx.txid.slice(0, 8)))
-      const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
-        tx_hash: tx.txid,
-        height: tx.blockHeight || 0,
-        amount: tx.amount
-      }))
-
-      dbTxHistory.sort((a, b) => {
-        const aHeight = a.height || 0
-        const bHeight = b.height || 0
-        if (aHeight === 0 && bHeight !== 0) return -1
-        if (bHeight === 0 && aHeight !== 0) return 1
-        return bHeight - aHeight
-      })
-
-      setTxHistory(dbTxHistory)
-
-      // Get ordinals - first from database (already synced), then supplement with API calls
-      try {
-        // First get ordinals already in the database (synced from blockchain, scoped to account)
-        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId || undefined)
-        syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length, accountId: activeAccountId })
-
-        // Also fetch from APIs for any that might not be in database yet
-        syncLogger.debug('Fetching additional ordinals from APIs...')
-
-        // Get derived addresses
-        const derivedAddrs = await getDerivedAddresses()
-
-        // Fetch from all addresses in parallel
-        const [ordAddressOrdinals, walletAddressOrdinals, identityAddressOrdinals, ...derivedOrdinals] = await Promise.all([
-          getOrdinals(wallet.ordAddress).catch(() => []),
-          getOrdinals(wallet.walletAddress).catch(() => []),
-          getOrdinals(wallet.identityAddress).catch(() => []),
-          ...derivedAddrs.map(d => getOrdinals(d.address).catch(() => []))
-        ])
-
-        // Combine and deduplicate by origin
-        const seen = new Set<string>()
-        const allOrdinals = [
-          ...dbOrdinals,  // Database ordinals first (most reliable)
-          ...ordAddressOrdinals,
-          ...walletAddressOrdinals,
-          ...identityAddressOrdinals,
-          ...derivedOrdinals.flat()
-        ].filter(ord => {
-          if (seen.has(ord.origin)) return false
-          seen.add(ord.origin)
-          return true
-        })
-
-        const derivedCount = derivedOrdinals.flat().length
-        syncLogger.debug('Ordinals fetched', {
-          fromDatabase: dbOrdinals.length,
-          fromOrdAddress: ordAddressOrdinals.length,
-          fromWalletAddress: walletAddressOrdinals.length,
-          fromIdentityAddress: identityAddressOrdinals.length,
-          fromDerived: derivedCount,
-          totalUnique: allOrdinals.length
-        })
-        setOrdinals(allOrdinals)
-      } catch (e) {
-        syncLogger.error('Failed to fetch ordinals', e)
-      }
-
-      // Detect locks
-      try {
-        const utxoList = await getUTXOs(wallet.walletAddress)
-        setUtxos(utxoList)
-        // Pass knownUnlockedLocks to prevent re-adding recently unlocked locks
-        const detectedLocks = await detectLockedUtxos(
-          wallet.walletAddress,
-          wallet.walletPubKey,
-          knownUnlockedLocks
-        )
-        if (detectedLocks.length > 0) {
-          setLocks(detectedLocks)
-        } else if (knownUnlockedLocks.size > 0) {
-          // If we had unlocked locks and now there are none, clear the list
-          setLocks([])
-        }
-      } catch (e) {
-        walletLogger.error('Failed to detect locks', e)
-      }
-    } catch (error) {
-      syncLogger.error('Failed to fetch data', error)
-    }
-  }, [wallet, knownUnlockedLocks, activeAccountId])
+    )
+  }, [wallet, activeAccountId, knownUnlockedLocks, syncFetchData, detectLocks, setLocks])
 
   // Wallet actions
   const handleCreateWallet = useCallback(async (password: string): Promise<string | null> => {
@@ -780,14 +616,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setLocks([])
     setTxHistory([])
     setConnectedApps([])
-  }, [setWallet])
+  }, [setWallet, setBalance, setOrdBalance, setOrdinals, setLocks, setTxHistory])
 
-  const handleSend = useCallback(async (address: string, amountSats: number): Promise<{ success: boolean; txid?: string; error?: string }> => {
+  const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<{ success: boolean; txid?: string; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet loaded' }
 
     try {
-      // Get spendable UTXOs from database
-      const spendableUtxos = await getSpendableUtxosFromDatabase()
+      // Use selected UTXOs if provided (from coin control), otherwise get from database
+      const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase()
 
       // Convert to ExtendedUTXO format with WIF
       // Note: database UTXOs use 'lockingScript', ExtendedUTXO uses 'script'
@@ -839,56 +675,17 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [wallet, fetchData, activeAccountId])
 
+  // Lock BSV - delegates to LocksContext
   const handleLock = useCallback(async (amountSats: number, blocks: number): Promise<{ success: boolean; txid?: string; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet loaded' }
+    return locksHandleLock(wallet, amountSats, blocks, activeAccountId, fetchData)
+  }, [wallet, activeAccountId, locksHandleLock, fetchData])
 
-    const currentHeight = networkInfo?.blockHeight
-    if (!currentHeight) return { success: false, error: 'Could not get block height' }
-
-    try {
-      const unlockBlock = currentHeight + blocks
-      const walletUtxos = await getUTXOs(wallet.walletAddress)
-
-      const result = await lockBSV(wallet.walletWif, amountSats, unlockBlock, walletUtxos)
-
-      // Add the locked UTXO to our list
-      const newLocks = [...locks, result.lockedUtxo]
-      setLocks(newLocks)
-
-      await fetchData()
-      // Audit log lock creation
-      audit.lockCreated(result.txid, amountSats, unlockBlock, activeAccountId ?? undefined)
-      return { success: true, txid: result.txid }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Lock failed' }
-    }
-  }, [wallet, networkInfo, locks, fetchData, activeAccountId])
-
+  // Unlock BSV - delegates to LocksContext
   const handleUnlock = useCallback(async (lock: LockedUTXO): Promise<{ success: boolean; txid?: string; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet loaded' }
-
-    const currentHeight = networkInfo?.blockHeight
-    if (!currentHeight) return { success: false, error: 'Could not get block height' }
-
-    try {
-      const txid = await unlockBSV(wallet.walletWif, lock, currentHeight)
-
-      // Add to known-unlocked set BEFORE removing from state and fetching data
-      // This prevents the race condition where detectLockedUtxos re-adds the lock
-      const lockKey = `${lock.txid}:${lock.vout}`
-      setKnownUnlockedLocks(prev => new Set([...prev, lockKey]))
-
-      const newLocks = locks.filter(l => l.txid !== lock.txid || l.vout !== lock.vout)
-      setLocks(newLocks)
-
-      await fetchData()
-      // Audit log lock release
-      audit.lockReleased(txid, lock.satoshis, activeAccountId ?? undefined)
-      return { success: true, txid }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Unlock failed' }
-    }
-  }, [wallet, networkInfo, locks, fetchData, activeAccountId])
+    return locksHandleUnlock(wallet, lock, activeAccountId, fetchData)
+  }, [wallet, activeAccountId, locksHandleUnlock, fetchData])
 
   const handleTransferOrdinal = useCallback(async (
     ordinal: Ordinal,

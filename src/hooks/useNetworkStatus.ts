@@ -65,9 +65,10 @@ export function useNetworkStatus(): UseNetworkStatusResult {
 
   // Initial fetch and interval setup
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial data fetch on mount
+    // Initial data fetch on mount is valid - these functions fetch external data and update state
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchNetworkStatus()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial data fetch on mount
+     
     fetchPrice()
 
     const networkInterval = setInterval(fetchNetworkStatus, REFRESH_INTERVAL)

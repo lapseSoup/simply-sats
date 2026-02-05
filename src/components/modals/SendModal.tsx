@@ -122,7 +122,8 @@ export function SendModal({ onClose }: SendModalProps) {
     setSending(true)
     setSendError('')
 
-    const result = await handleSend(sendAddress, sendSats)
+    // Pass selected UTXOs to handleSend if coin control was used
+    const result = await handleSend(sendAddress, sendSats, selectedUtxos ?? undefined)
 
     if (result.success) {
       showToast(`Sent ${sendSats.toLocaleString()} sats!`)

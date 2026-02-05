@@ -266,11 +266,15 @@ export function getUserMessage(error: unknown): string {
 /**
  * Wrap an async function with error handling
  */
-export function withErrorHandling<T extends (...args: any[]) => Promise<any>>(
+export function withErrorHandling<
+  TArgs extends unknown[],
+  TReturn,
+  T extends (...args: TArgs) => Promise<TReturn>
+>(
   fn: T,
   defaultErrorCode: ErrorCode = ErrorCodes.GENERIC_ERROR
 ): T {
-  return (async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+  return (async (...args: TArgs): Promise<TReturn> => {
     try {
       return await fn(...args)
     } catch (error) {

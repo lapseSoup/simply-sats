@@ -108,7 +108,6 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   const { address, basket, accountId } = addressInfo
   const syncId = ++syncCounter
 
-  console.log(`[SYNC DEBUG #${syncId}] START: ${address.slice(0,12)}... (basket: ${basket}, accountId: ${accountId})`)
   syncLogger.debug(`[SYNC #${syncId}] START: ${address.slice(0,12)}... (basket: ${basket})`)
 
   // Generate locking script for this specific address
@@ -116,7 +115,6 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
   // Fetch current UTXOs from WhatsOnChain
   const wocUtxos = await fetchUtxosFromWoc(address)
-  console.log(`[SYNC DEBUG] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`, wocUtxos)
   syncLogger.debug(`[SYNC] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`)
 
   // Get existing spendable UTXOs from database FOR THIS SPECIFIC ADDRESS AND ACCOUNT
@@ -146,7 +144,6 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
     if (!existingMap.has(key)) {
       // New UTXO - add to database with address and account ID
-      console.log(`[SYNC DEBUG] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats (account=${accountId || 1})`)
       syncLogger.debug(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats (account=${accountId || 1})`)
       try {
         await addUTXO({
@@ -160,13 +157,10 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
           createdAt: Date.now(),
           tags: basket === BASKETS.ORDINALS && wocUtxo.satoshis === 1 ? ['ordinal'] : []
         }, accountId)
-        console.log(`[SYNC DEBUG] UTXO added successfully`)
       } catch (e) {
-        console.error(`[SYNC DEBUG] Failed to add UTXO:`, e)
+        syncLogger.error(`[SYNC] Failed to add UTXO:`, { error: e })
       }
       newUtxos++
-    } else {
-      console.log(`[SYNC DEBUG] UTXO already exists: ${key}`)
     }
   }
 

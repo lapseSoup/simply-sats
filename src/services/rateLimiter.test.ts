@@ -2,9 +2,11 @@
  * Rate Limiter Tests
  *
  * Tests for security-critical rate limiting logic.
+ * These tests mock the Tauri invoke calls since the actual
+ * rate limiting logic is now in the Rust backend.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   checkUnlockRateLimit,
   recordFailedUnlockAttempt,
@@ -13,115 +15,123 @@ import {
   formatLockoutTime
 } from './rateLimiter'
 
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {}
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => { store[key] = value },
-    removeItem: (key: string) => { delete store[key] },
-    clear: () => { store = {} }
-  }
-})()
+// Mock Tauri invoke
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn()
+}))
 
-Object.defineProperty(global, 'localStorage', { value: localStorageMock })
+import { invoke } from '@tauri-apps/api/core'
+const mockInvoke = vi.mocked(invoke)
 
 describe('Rate Limiter', () => {
   beforeEach(() => {
-    localStorageMock.clear()
-    vi.useFakeTimers()
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
+    vi.clearAllMocks()
   })
 
   describe('checkUnlockRateLimit', () => {
-    it('allows attempts when no previous failures', () => {
-      const result = checkUnlockRateLimit()
+    it('returns not limited when backend says not limited', async () => {
+      mockInvoke.mockResolvedValueOnce({ is_limited: false, remaining_ms: 0 })
+
+      const result = await checkUnlockRateLimit()
+
       expect(result.isLimited).toBe(false)
       expect(result.remainingMs).toBe(0)
+      expect(mockInvoke).toHaveBeenCalledWith('check_unlock_rate_limit')
     })
 
-    it('allows attempts after rate limit expires', () => {
-      // Record failures to trigger lockout
-      for (let i = 0; i < 5; i++) {
-        recordFailedUnlockAttempt()
-      }
+    it('returns limited when backend says limited', async () => {
+      mockInvoke.mockResolvedValueOnce({ is_limited: true, remaining_ms: 5000 })
 
-      // Advance time past lockout
-      vi.advanceTimersByTime(60000) // 1 minute
+      const result = await checkUnlockRateLimit()
 
-      const result = checkUnlockRateLimit()
+      expect(result.isLimited).toBe(true)
+      expect(result.remainingMs).toBe(5000)
+    })
+
+    it('fails open on backend error', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'))
+
+      const result = await checkUnlockRateLimit()
+
       expect(result.isLimited).toBe(false)
-    })
-
-    it('resets after 15 minutes of inactivity', () => {
-      // Record some failures
-      recordFailedUnlockAttempt()
-      recordFailedUnlockAttempt()
-
-      // Advance time past reset window
-      vi.advanceTimersByTime(16 * 60 * 1000) // 16 minutes
-
-      const remaining = getRemainingAttempts()
-      expect(remaining).toBe(5) // Reset to max
+      expect(result.remainingMs).toBe(0)
     })
   })
 
   describe('recordFailedUnlockAttempt', () => {
-    it('decrements remaining attempts', () => {
-      expect(getRemainingAttempts()).toBe(5)
+    it('returns lockout info from backend', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        is_locked: true,
+        lockout_ms: 2000,
+        attempts_remaining: 0
+      })
 
-      recordFailedUnlockAttempt()
-      expect(getRemainingAttempts()).toBe(4)
+      const result = await recordFailedUnlockAttempt()
 
-      recordFailedUnlockAttempt()
-      expect(getRemainingAttempts()).toBe(3)
-    })
-
-    it('triggers lockout after max attempts', () => {
-      for (let i = 0; i < 4; i++) {
-        const result = recordFailedUnlockAttempt()
-        expect(result.isLocked).toBe(false)
-      }
-
-      const result = recordFailedUnlockAttempt()
       expect(result.isLocked).toBe(true)
-      expect(result.lockoutMs).toBeGreaterThan(0)
+      expect(result.lockoutMs).toBe(2000)
       expect(result.attemptsRemaining).toBe(0)
+      expect(mockInvoke).toHaveBeenCalledWith('record_failed_unlock')
     })
 
-    it('increases lockout duration with more failures (exponential backoff)', () => {
-      // First lockout
-      for (let i = 0; i < 5; i++) {
-        recordFailedUnlockAttempt()
-      }
-      const firstLockout = checkUnlockRateLimit()
+    it('returns remaining attempts when not locked', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        is_locked: false,
+        lockout_ms: 0,
+        attempts_remaining: 3
+      })
 
-      // Wait for lockout to expire
-      vi.advanceTimersByTime(firstLockout.remainingMs + 1000)
+      const result = await recordFailedUnlockAttempt()
 
-      // Trigger second lockout
-      const result = recordFailedUnlockAttempt()
-      expect(result.isLocked).toBe(true)
-      expect(result.lockoutMs).toBeGreaterThan(firstLockout.remainingMs)
+      expect(result.isLocked).toBe(false)
+      expect(result.lockoutMs).toBe(0)
+      expect(result.attemptsRemaining).toBe(3)
+    })
+
+    it('returns safe defaults on backend error', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'))
+
+      const result = await recordFailedUnlockAttempt()
+
+      expect(result.isLocked).toBe(false)
+      expect(result.lockoutMs).toBe(0)
+      expect(result.attemptsRemaining).toBe(5)
     })
   })
 
   describe('recordSuccessfulUnlock', () => {
-    it('resets all counters on success', () => {
-      // Record some failures
-      recordFailedUnlockAttempt()
-      recordFailedUnlockAttempt()
-      recordFailedUnlockAttempt()
+    it('calls backend to reset rate limit', async () => {
+      mockInvoke.mockResolvedValueOnce(undefined)
 
-      expect(getRemainingAttempts()).toBe(2)
+      await recordSuccessfulUnlock()
 
-      recordSuccessfulUnlock()
+      expect(mockInvoke).toHaveBeenCalledWith('record_successful_unlock')
+    })
 
-      expect(getRemainingAttempts()).toBe(5)
-      expect(checkUnlockRateLimit().isLimited).toBe(false)
+    it('handles backend errors gracefully', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'))
+
+      // Should not throw
+      await expect(recordSuccessfulUnlock()).resolves.toBeUndefined()
+    })
+  })
+
+  describe('getRemainingAttempts', () => {
+    it('returns remaining attempts from backend', async () => {
+      mockInvoke.mockResolvedValueOnce(3)
+
+      const result = await getRemainingAttempts()
+
+      expect(result).toBe(3)
+      expect(mockInvoke).toHaveBeenCalledWith('get_remaining_unlock_attempts')
+    })
+
+    it('returns max attempts on backend error', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'))
+
+      const result = await getRemainingAttempts()
+
+      expect(result).toBe(5)
     })
   })
 

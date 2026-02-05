@@ -27,6 +27,14 @@ const RATE_LIMIT_PER_MINUTE: u32 = 60;
 // Type alias for the rate limiter
 type SharedRateLimiter = Arc<RateLimiter<governor::state::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>;
 
+// Allowed hosts for DNS rebinding protection
+const ALLOWED_HOSTS: &[&str] = &[
+    "127.0.0.1",
+    "localhost",
+    "127.0.0.1:3322",
+    "localhost:3322",
+];
+
 // Allowed origins for CORS - localhost, Tauri webview, and integrated apps
 const ALLOWED_ORIGINS: &[&str] = &[
     "http://localhost",
@@ -80,6 +88,26 @@ struct AuthResponse {
 #[derive(Serialize)]
 struct HeightResponse {
     height: u32,
+}
+
+/// Middleware to validate Host header for DNS rebinding protection
+async fn validate_host_header(
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let host = request.headers()
+        .get("Host")
+        .and_then(|v| v.to_str().ok());
+
+    match host {
+        Some(h) if ALLOWED_HOSTS.iter().any(|allowed| h == *allowed) => {
+            Ok(next.run(request).await)
+        }
+        _ => {
+            eprintln!("[Security] Rejected request: invalid Host header: {:?}", host);
+            Err(StatusCode::FORBIDDEN)
+        }
+    }
 }
 
 /// Middleware to validate session token and apply rate limiting
@@ -181,6 +209,7 @@ pub async fn start_server(
         .route("/unlockBSV", post(handle_unlock_bsv))
         .route("/listLocks", post(handle_list_locks))
         .layer(middleware::from_fn_with_state(state.clone(), validate_session_token))
+        .layer(middleware::from_fn(validate_host_header))
         .layer(cors)
         .with_state(state);
 
