@@ -665,7 +665,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         return true
       })
 
-      const txid = await sendBSVMultiKey(wallet.walletWif, address, amountSats, deduplicatedUtxos)
+      const txid = await sendBSVMultiKey(wallet.walletWif, address, amountSats, deduplicatedUtxos, activeAccountId ?? undefined)
       await fetchData()
       // Audit log successful send
       audit.transactionSent(txid, amountSats, activeAccountId ?? undefined)

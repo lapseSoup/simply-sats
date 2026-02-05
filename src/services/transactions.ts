@@ -246,7 +246,8 @@ export async function sendBSV(
   wif: string,
   toAddress: string,
   satoshis: number,
-  utxos: UTXO[]
+  utxos: UTXO[],
+  accountId?: number
 ): Promise<string> {
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
@@ -354,7 +355,9 @@ export async function sendBSV(
       txid,
       tx.toHex(),
       `Sent ${satoshis} sats to ${toAddress}`,
-      ['send']
+      ['send'],
+      -(satoshis + fee),  // Negative = money out, includes fee
+      accountId
     )
     // Confirm UTXOs as spent (updates from pending -> spent)
     await confirmUtxosSpent(utxosToSpend, txid)
@@ -419,7 +422,8 @@ export async function sendBSVMultiKey(
   changeWif: string,
   toAddress: string,
   satoshis: number,
-  utxos: ExtendedUTXO[]
+  utxos: ExtendedUTXO[],
+  accountId?: number
 ): Promise<string> {
   const changePrivKey = PrivateKey.fromWif(changeWif)
   const changeAddress = changePrivKey.toPublicKey().toAddress()
@@ -526,7 +530,9 @@ export async function sendBSVMultiKey(
       txid,
       tx.toHex(),
       `Sent ${satoshis} sats to ${toAddress}`,
-      ['send']
+      ['send'],
+      -(satoshis + fee),  // Negative = money out, includes fee
+      accountId
     )
     // Confirm UTXOs as spent (updates from pending -> spent)
     await confirmUtxosSpent(utxosToSpend, txid)
