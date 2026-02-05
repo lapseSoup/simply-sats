@@ -83,7 +83,7 @@ expect.extend({
 // Extend Vitest's expect types
 declare module 'vitest' {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface Assertion<T = unknown> {
+  interface Assertion<T = any> {
     toBeValidBSVAddress(): void
     toBeValidHex(): void
   }
