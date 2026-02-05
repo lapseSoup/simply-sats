@@ -232,42 +232,42 @@ describe('Database Service Types', () => {
     })
   })
 
-  describe('toggleUtxoLocked Function', () => {
+  describe('toggleUtxoFrozen Function', () => {
     it('should have the correct function signature', () => {
       // Import check - verify the function exists and has correct type
       // This validates the interface before we can run integration tests
-      const toggleUtxoLocked = async (
+      const toggleUtxoFrozen = async (
         txid: string,
         vout: number,
-        locked: boolean
+        frozen: boolean
       ): Promise<void> => {
         // Mock implementation for type checking
         void txid
         void vout
-        void locked
+        void frozen
       }
 
       // Verify the function signature accepts correct parameters
-      expect(typeof toggleUtxoLocked).toBe('function')
+      expect(typeof toggleUtxoFrozen).toBe('function')
 
       // The function should accept string, number, boolean and return Promise<void>
-      const promise = toggleUtxoLocked('abc123', 0, true)
+      const promise = toggleUtxoFrozen('abc123', 0, true)
       expect(promise).toBeInstanceOf(Promise)
     })
 
-    it('should define locked=true means spendable=false', () => {
-      // When locked=true, the UTXO should become unspendable
-      // When locked=false, the UTXO should become spendable
+    it('should define frozen=true means spendable=false', () => {
+      // When frozen=true, the UTXO should become unspendable
+      // When frozen=false, the UTXO should become spendable
       // This is a semantic test documenting the expected behavior
-      const locked = true
-      const expectedSpendable = !locked
+      const frozen = true
+      const expectedSpendable = !frozen
 
       expect(expectedSpendable).toBe(false)
     })
 
-    it('should define locked=false means spendable=true', () => {
-      const locked = false
-      const expectedSpendable = !locked
+    it('should define frozen=false means spendable=true', () => {
+      const frozen = false
+      const expectedSpendable = !frozen
 
       expect(expectedSpendable).toBe(true)
     })

@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, memo, useEffect } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { toggleUtxoLocked, getAllUTXOs } from '../../services/database'
+import { toggleUtxoFrozen, getAllUTXOs } from '../../services/database'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
 import { ConsolidateModal } from '../modals/ConsolidateModal'
 import { uiLogger } from '../../services/logger'
@@ -16,20 +16,20 @@ const UTXORow = memo(function UTXORow({
   utxo,
   isSelected,
   onSelect,
-  onToggleLock,
+  onToggleFreeze,
   formatUSD
 }: {
   utxo: DatabaseUTXO
   isSelected: boolean
   onSelect: (utxo: DatabaseUTXO) => void
-  onToggleLock: (utxo: DatabaseUTXO) => void
+  onToggleFreeze: (utxo: DatabaseUTXO) => void
   formatUSD: (sats: number) => string
 }) {
-  const isLocked = !utxo.spendable
+  const isFrozen = !utxo.spendable
 
   return (
     <div
-      className={`utxo-row ${isLocked ? 'locked' : ''} ${isSelected ? 'selected' : ''}`}
+      className={`utxo-row ${isFrozen ? 'frozen' : ''} ${isSelected ? 'selected' : ''}`}
       role="listitem"
     >
       <div className="utxo-select">
@@ -37,7 +37,7 @@ const UTXORow = memo(function UTXORow({
           type="checkbox"
           checked={isSelected}
           onChange={() => onSelect(utxo)}
-          disabled={isLocked}
+          disabled={isFrozen}
           aria-label={`Select UTXO ${utxo.txid.slice(0, 8)}`}
         />
       </div>
@@ -59,12 +59,12 @@ const UTXORow = memo(function UTXORow({
 
       <div className="utxo-actions">
         <button
-          className={`utxo-lock-btn ${isLocked ? 'unlocking' : 'locking'}`}
-          onClick={() => onToggleLock(utxo)}
-          title={isLocked ? 'Unlock UTXO' : 'Lock UTXO'}
-          aria-label={isLocked ? 'Unlock this UTXO' : 'Lock this UTXO'}
+          className={`utxo-freeze-btn ${isFrozen ? 'unfreezing' : 'freezing'}`}
+          onClick={() => onToggleFreeze(utxo)}
+          title={isFrozen ? 'Unfreeze UTXO' : 'Freeze UTXO'}
+          aria-label={isFrozen ? 'Unfreeze this UTXO' : 'Freeze this UTXO'}
         >
-          {isLocked ? '🔓' : '🔒'}
+          {isFrozen ? '🔥' : '❄️'}
         </button>
       </div>
     </div>
@@ -79,7 +79,7 @@ export function UTXOsTab() {
   const [sortField, setSortField] = useState<SortField>('amount')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [filterBasket, setFilterBasket] = useState<string>('all')
-  const [showLocked, setShowLocked] = useState(true)
+  const [showFrozen, setShowFrozen] = useState(true)
   const [allUtxos, setAllUtxos] = useState<DatabaseUTXO[]>([])
   const [loadingAll, setLoadingAll] = useState(true) // Start as loading
   const [consolidateUtxos, setConsolidateUtxos] = useState<DatabaseUTXO[] | null>(null)
@@ -120,8 +120,8 @@ export function UTXOsTab() {
       filtered = filtered.filter(u => u.basket === filterBasket)
     }
 
-    // Filter locked/unlocked
-    if (!showLocked) {
+    // Filter frozen/unfrozen
+    if (!showFrozen) {
       filtered = filtered.filter(u => u.spendable)
     }
 
@@ -143,26 +143,26 @@ export function UTXOsTab() {
     })
 
     return filtered
-  }, [displayUtxos, filterBasket, showLocked, sortField, sortDirection])
+  }, [displayUtxos, filterBasket, showFrozen, sortField, sortDirection])
 
   // Summary stats
   const stats = useMemo(() => {
     const total = displayUtxos.reduce((sum, u) => sum + u.satoshis, 0)
-    const locked = displayUtxos.filter(u => !u.spendable)
-    const lockedAmount = locked.reduce((sum, u) => sum + u.satoshis, 0)
+    const frozen = displayUtxos.filter(u => !u.spendable)
+    const frozenAmount = frozen.reduce((sum, u) => sum + u.satoshis, 0)
     const spendable = displayUtxos.filter(u => u.spendable)
     const spendableAmount = spendable.reduce((sum, u) => sum + u.satoshis, 0)
-    const dust = displayUtxos.filter(u => u.satoshis < 1000 && u.spendable)
+    const small = displayUtxos.filter(u => u.satoshis < 1000 && u.spendable)
 
     return {
       total,
       count: displayUtxos.length,
-      locked: locked.length,
-      lockedAmount,
+      frozen: frozen.length,
+      frozenAmount,
       spendable: spendable.length,
       spendableAmount,
-      dustCount: dust.length,
-      dustAmount: dust.reduce((sum, u) => sum + u.satoshis, 0)
+      smallCount: small.length,
+      smallAmount: small.reduce((sum, u) => sum + u.satoshis, 0)
     }
   }, [displayUtxos])
 
@@ -189,15 +189,15 @@ export function UTXOsTab() {
     }
   }, [filteredUtxos, selectedUtxos.size])
 
-  // Toggle lock handler
-  const handleToggleLock = useCallback(async (utxo: DatabaseUTXO) => {
+  // Toggle freeze handler
+  const handleToggleFreeze = useCallback(async (utxo: DatabaseUTXO) => {
     try {
-      await toggleUtxoLocked(utxo.txid, utxo.vout, utxo.spendable) // Toggle: if spendable, lock it
+      await toggleUtxoFrozen(utxo.txid, utxo.vout, utxo.spendable) // Toggle: if spendable, freeze it
       await loadAllUtxos() // Refresh
       await fetchData() // Also refresh wallet context
-      uiLogger.info(`UTXO ${utxo.spendable ? 'locked' : 'unlocked'}: ${utxo.txid.slice(0, 8)}`)
+      uiLogger.info(`UTXO ${utxo.spendable ? 'frozen' : 'unfrozen'}: ${utxo.txid.slice(0, 8)}`)
     } catch (e) {
-      uiLogger.error('Failed to toggle UTXO lock', e)
+      uiLogger.error('Failed to toggle UTXO freeze', e)
     }
   }, [fetchData, loadAllUtxos])
 
@@ -284,14 +284,14 @@ export function UTXOsTab() {
             <span className="utxos-summary-value positive">{stats.spendable} ({stats.spendableAmount.toLocaleString()} sats)</span>
           </div>
           <div className="utxos-summary-item">
-            <span className="utxos-summary-label">Locked</span>
-            <span className="utxos-summary-value">{stats.locked} ({stats.lockedAmount.toLocaleString()} sats)</span>
+            <span className="utxos-summary-label">Frozen</span>
+            <span className="utxos-summary-value">{stats.frozen} ({stats.frozenAmount.toLocaleString()} sats)</span>
           </div>
         </div>
-        {stats.dustCount > 0 && (
-          <div className="utxos-dust-warning">
-            <span className="warning-icon">⚠️</span>
-            <span>You have {stats.dustCount} dust UTXOs (&lt;1000 sats). Consider consolidating.</span>
+        {stats.smallCount > 0 && (
+          <div className="utxos-consolidate-tip">
+            <span className="tip-icon">💡</span>
+            <span>You have {stats.smallCount} small UTXOs (&lt;1000 sats). Consolidating can reduce future fees.</span>
           </div>
         )}
       </div>
@@ -315,10 +315,10 @@ export function UTXOsTab() {
           <label className="utxos-filter-checkbox">
             <input
               type="checkbox"
-              checked={showLocked}
-              onChange={e => setShowLocked(e.target.checked)}
+              checked={showFrozen}
+              onChange={e => setShowFrozen(e.target.checked)}
             />
-            Show Locked
+            Show Frozen
           </label>
         </div>
 
@@ -377,7 +377,7 @@ export function UTXOsTab() {
           <span>Amount / Details</span>
         </div>
         <div className="utxo-actions">
-          <span>Lock</span>
+          <span>Freeze</span>
         </div>
       </div>
 
@@ -388,7 +388,7 @@ export function UTXOsTab() {
             utxo={utxo}
             isSelected={selectedUtxos.has(`${utxo.txid}:${utxo.vout}`)}
             onSelect={handleSelect}
-            onToggleLock={handleToggleLock}
+            onToggleFreeze={handleToggleFreeze}
             formatUSD={formatUSD}
           />
         ))}

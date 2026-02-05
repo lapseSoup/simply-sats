@@ -418,19 +418,19 @@ export async function getAllUTXOs(): Promise<UTXO[]> {
 }
 
 /**
- * Toggle a UTXO's locked status
- * When locked=true, the UTXO becomes unspendable (frozen)
- * When locked=false, the UTXO becomes spendable again
+ * Toggle a UTXO's frozen status
+ * When frozen=true, the UTXO becomes unspendable
+ * When frozen=false, the UTXO becomes spendable again
  */
-export async function toggleUtxoLocked(
+export async function toggleUtxoFrozen(
   txid: string,
   vout: number,
-  locked: boolean
+  frozen: boolean
 ): Promise<void> {
   const database = getDatabase()
-  const spendable = locked ? 0 : 1
+  const spendable = frozen ? 0 : 1
 
-  dbLogger.debug(`[DB] Setting UTXO ${txid.slice(0, 8)}:${vout} locked=${locked} (spendable=${spendable})`)
+  dbLogger.debug(`[DB] Setting UTXO ${txid.slice(0, 8)}:${vout} frozen=${frozen} (spendable=${spendable})`)
 
   await database.execute(
     'UPDATE utxos SET spendable = $1 WHERE txid = $2 AND vout = $3',
