@@ -6,7 +6,8 @@ import { logger } from './services/logger'
 import { Toast, PaymentAlert, SkipLink } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
 import { Header, BalanceDisplay, BasketChips, QuickActions } from './components/wallet'
-import { RestoreModal, MnemonicModal, LockScreenModal } from './components/modals'
+import { RestoreModal, MnemonicModal, LockScreenModal, BackupVerificationModal } from './components/modals'
+import { FEATURES } from './config'
 import { OnboardingFlow } from './components/onboarding'
 import { AppProviders } from './AppProviders'
 import { AppModals, type Modal, type AccountModalMode } from './AppModals'
@@ -271,7 +272,18 @@ function WalletApp() {
         )}
 
         {modal === 'mnemonic' && newMnemonic && (
-          <MnemonicModal mnemonic={newMnemonic} onConfirm={handleMnemonicConfirm} />
+          FEATURES.BACKUP_VERIFICATION ? (
+            <BackupVerificationModal
+              mnemonic={newMnemonic}
+              onConfirm={handleMnemonicConfirm}
+              onCancel={() => {
+                setNewMnemonic(null)
+                setModal(null)
+              }}
+            />
+          ) : (
+            <MnemonicModal mnemonic={newMnemonic} onConfirm={handleMnemonicConfirm} />
+          )
         )}
 
         <Toast message={copyFeedback} />

@@ -55,7 +55,20 @@ import {
   minutesToMs
 } from '../services/autoLock'
 import { isValidOrigin, normalizeOrigin } from '../utils/validation'
+import { validatePassword, MIN_PASSWORD_LENGTH } from '../utils/passwordValidation'
 import { walletLogger, syncLogger, uiLogger } from '../services/logger'
+import {
+  checkUnlockRateLimit,
+  recordFailedUnlockAttempt,
+  recordSuccessfulUnlock,
+  formatLockoutTime
+} from '../services/rateLimiter'
+import {
+  secureGetJSON,
+  secureSetJSON,
+  migrateToSecureStorage
+} from '../services/secureStorage'
+import { audit } from '../services/auditLog'
 
 interface TxHistoryItem {
   tx_hash: string
@@ -219,12 +232,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Settings
   const [feeRateKB, setFeeRateKBState] = useState<number>(() => getFeeRatePerKB())
 
-  // Connected apps
+  // Connected apps (loaded asynchronously from secure storage)
   const [connectedApps, setConnectedApps] = useState<string[]>([])
-  const [trustedOrigins, setTrustedOrigins] = useState<string[]>(() => {
-    const saved = localStorage.getItem('simply_sats_trusted_origins')
-    return saved ? JSON.parse(saved) : []
-  })
+  const [trustedOrigins, setTrustedOrigins] = useState<string[]>([])
 
 
   // Set wallet and update BRC-100 service
@@ -240,10 +250,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
     // Clear sensitive data from memory
     setWalletState(null)
     setWalletKeys(null)
-  }, [])
+    // Audit log wallet lock
+    audit.walletLocked(activeAccountId ?? undefined)
+  }, [activeAccountId])
 
-  // Unlock wallet with password
+  // Unlock wallet with password (with rate limiting)
   const unlockWallet = useCallback(async (password: string): Promise<boolean> => {
+    // Check rate limit before attempting unlock
+    const rateLimit = checkUnlockRateLimit()
+    if (rateLimit.isLimited) {
+      const timeStr = formatLockoutTime(rateLimit.remainingMs)
+      walletLogger.warn('Unlock blocked by rate limit', { remainingMs: rateLimit.remainingMs })
+      throw new Error(`Too many failed attempts. Please wait ${timeStr} before trying again.`)
+    }
+
     try {
       // Try to get active account from state, or fetch from database
       let account = activeAccount
@@ -266,6 +286,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       const keys = await getKeysForAccount(account, password)
       if (keys) {
+        recordSuccessfulUnlock()
         setWalletState(keys)
         setWalletKeys(keys)
         setIsLocked(false)
@@ -273,11 +294,29 @@ export function WalletProvider({ children }: WalletProviderProps) {
         // Refresh accounts to ensure state is in sync
         await refreshAccounts()
         walletLogger.info('Wallet unlocked successfully')
+        // Audit log successful unlock
+        audit.walletUnlocked(account.id)
         return true
       }
+
+      // Record failed attempt and check for lockout
+      const result = recordFailedUnlockAttempt()
+      // Audit log failed unlock
+      audit.unlockFailed(account.id, 'incorrect_password')
+      if (result.isLocked) {
+        const timeStr = formatLockoutTime(result.lockoutMs)
+        throw new Error(`Too many failed attempts. Please wait ${timeStr} before trying again.`)
+      } else if (result.attemptsRemaining <= 2) {
+        walletLogger.warn('Few unlock attempts remaining', { remaining: result.attemptsRemaining })
+      }
+
       walletLogger.warn('Failed to decrypt keys - incorrect password')
       return false
     } catch (e) {
+      // Re-throw rate limit errors
+      if (e instanceof Error && e.message.includes('Too many failed attempts')) {
+        throw e
+      }
       walletLogger.error('Failed to unlock', e)
       return false
     }
@@ -347,6 +386,22 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     const init = async () => {
       try {
+        // Migrate any existing unencrypted sensitive data
+        await migrateToSecureStorage()
+        if (!mounted) return
+
+        // Load trusted origins from secure storage
+        const savedOrigins = await secureGetJSON<string[]>('trusted_origins')
+        if (savedOrigins && mounted) {
+          setTrustedOrigins(savedOrigins)
+        }
+
+        // Load connected apps from secure storage
+        const savedApps = await secureGetJSON<string[]>('connected_apps')
+        if (savedApps && mounted) {
+          setConnectedApps(savedApps)
+        }
+
         await initDatabase()
         if (!mounted) return
         uiLogger.info('Database initialized successfully')
@@ -630,8 +685,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Wallet actions
   const handleCreateWallet = useCallback(async (password: string): Promise<string | null> => {
-    if (!password || password.length < 12) {
-      throw new Error('Password must be at least 12 characters')
+    const validation = validatePassword(password)
+    if (!validation.isValid) {
+      throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
     }
     try {
       const keys = createWallet()
@@ -641,6 +697,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
       await migrateToMultiAccount(keys, password)
       await refreshAccounts()
       setWallet({ ...keys })
+      // Audit log wallet creation
+      audit.walletCreated()
       return keys.mnemonic || null
     } catch (err) {
       walletLogger.error('Failed to create wallet', err)
@@ -649,8 +707,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [setWallet, refreshAccounts])
 
   const handleRestoreWallet = useCallback(async (mnemonic: string, password: string): Promise<boolean> => {
-    if (!password || password.length < 12) {
-      throw new Error('Password must be at least 12 characters')
+    const validation = validatePassword(password)
+    if (!validation.isValid) {
+      throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
     }
     try {
       const keys = restoreWallet(mnemonic.trim())
@@ -659,6 +718,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
       await migrateToMultiAccount({ ...keys, mnemonic: mnemonic.trim() }, password)
       await refreshAccounts()
       setWallet({ ...keys, mnemonic: mnemonic.trim() })
+      // Audit log wallet restoration
+      audit.walletRestored()
       return true
     } catch (err) {
       walletLogger.error('Failed to restore wallet', err)
@@ -667,8 +728,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [setWallet, refreshAccounts])
 
   const handleImportJSON = useCallback(async (json: string, password: string): Promise<boolean> => {
-    if (!password || password.length < 12) {
-      throw new Error('Password must be at least 12 characters')
+    const validation = validatePassword(password)
+    if (!validation.isValid) {
+      throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
     }
     try {
       const keys = await importFromJSON(json)
@@ -744,11 +806,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       const txid = await sendBSVMultiKey(wallet.walletWif, address, amountSats, deduplicatedUtxos)
       await fetchData()
+      // Audit log successful send
+      audit.transactionSent(txid, amountSats, activeAccountId ?? undefined)
       return { success: true, txid }
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Send failed' }
     }
-  }, [wallet, fetchData])
+  }, [wallet, fetchData, activeAccountId])
 
   const handleLock = useCallback(async (amountSats: number, blocks: number): Promise<{ success: boolean; txid?: string; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet loaded' }
@@ -767,11 +831,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
       setLocks(newLocks)
 
       await fetchData()
+      // Audit log lock creation
+      audit.lockCreated(result.txid, amountSats, unlockBlock, activeAccountId ?? undefined)
       return { success: true, txid: result.txid }
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Lock failed' }
     }
-  }, [wallet, networkInfo, locks, fetchData])
+  }, [wallet, networkInfo, locks, fetchData, activeAccountId])
 
   const handleUnlock = useCallback(async (lock: LockedUTXO): Promise<{ success: boolean; txid?: string; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet loaded' }
@@ -791,11 +857,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
       setLocks(newLocks)
 
       await fetchData()
+      // Audit log lock release
+      audit.lockReleased(txid, lock.satoshis, activeAccountId ?? undefined)
       return { success: true, txid }
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Unlock failed' }
     }
-  }, [wallet, networkInfo, locks, fetchData])
+  }, [wallet, networkInfo, locks, fetchData, activeAccountId])
 
   const handleTransferOrdinal = useCallback(async (
     ordinal: Ordinal,
@@ -862,7 +930,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setFeeRateFromKB(rate)
   }, [])
 
-  // Trusted origins
+  // Trusted origins (using secure storage)
   const addTrustedOrigin = useCallback((origin: string) => {
     if (!isValidOrigin(origin)) {
       walletLogger.warn('Invalid origin format', { origin })
@@ -871,23 +939,36 @@ export function WalletProvider({ children }: WalletProviderProps) {
     const normalized = normalizeOrigin(origin)
     if (!trustedOrigins.includes(normalized)) {
       const newOrigins = [...trustedOrigins, normalized]
-      localStorage.setItem('simply_sats_trusted_origins', JSON.stringify(newOrigins))
+      // Save to secure storage (async, fire-and-forget)
+      secureSetJSON('trusted_origins', newOrigins).catch(e => {
+        walletLogger.error('Failed to save trusted origins', e)
+      })
       setTrustedOrigins(newOrigins)
+      // Audit log origin trusted
+      audit.originTrusted(normalized, activeAccountId ?? undefined)
     }
     return true
-  }, [trustedOrigins])
+  }, [trustedOrigins, activeAccountId])
 
   const removeTrustedOrigin = useCallback((origin: string) => {
     const newOrigins = trustedOrigins.filter(o => o !== origin)
-    localStorage.setItem('simply_sats_trusted_origins', JSON.stringify(newOrigins))
+    secureSetJSON('trusted_origins', newOrigins).catch(e => {
+      walletLogger.error('Failed to save trusted origins', e)
+    })
     setTrustedOrigins(newOrigins)
-  }, [trustedOrigins])
+    // Audit log origin removed
+    audit.originRemoved(origin, activeAccountId ?? undefined)
+  }, [trustedOrigins, activeAccountId])
 
   const disconnectApp = useCallback((origin: string) => {
     const newConnectedApps = connectedApps.filter(app => app !== origin)
     setConnectedApps(newConnectedApps)
-    localStorage.setItem('simply_sats_connected_apps', JSON.stringify(newConnectedApps))
-  }, [connectedApps])
+    secureSetJSON('connected_apps', newConnectedApps).catch(e => {
+      walletLogger.error('Failed to save connected apps', e)
+    })
+    // Audit log app disconnected
+    audit.appDisconnected(origin, activeAccountId ?? undefined)
+  }, [connectedApps, activeAccountId])
 
   const value: WalletContextType = {
     // Wallet state

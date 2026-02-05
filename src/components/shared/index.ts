@@ -5,3 +5,4 @@ export { ScreenReaderAnnounceProvider, useAnnounce } from './ScreenReaderAnnounc
 export { SkipLink } from './SkipLink'
 export { Modal } from './Modal'
 export { ErrorBoundary, WalletErrorBoundary, withErrorBoundary } from './ErrorBoundary'
+export { FeeEstimation } from './FeeEstimation'

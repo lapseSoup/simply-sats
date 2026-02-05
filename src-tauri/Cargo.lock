@@ -4053,6 +4053,7 @@ dependencies = [
  "reqwest 0.11.27",
  "serde",
  "serde_json",
+ "subtle",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
@@ -4062,6 +4063,7 @@ dependencies = [
  "tauri-plugin-sql",
  "tokio",
  "tower-http 0.5.2",
+ "url",
 ]
 
 [[package]]

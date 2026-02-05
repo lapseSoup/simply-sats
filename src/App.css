@@ -1693,6 +1693,152 @@ textarea.form-input {
   color: #000;
 }
 
+/* ==================== BACKUP VERIFICATION ==================== */
+
+.backup-verification-modal {
+  max-width: 420px;
+}
+
+.mnemonic-word-number {
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 18px;
+  flex-shrink: 0;
+}
+
+.mnemonic-word-text {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.backup-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+}
+
+.backup-instruction {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.backup-instruction-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.verification-progress {
+  margin-bottom: 20px;
+}
+
+.verification-progress-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.verification-progress-step {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+.verification-progress-step.complete {
+  background: var(--success);
+}
+
+.verification-progress-step.active {
+  background: var(--accent);
+}
+
+.verification-progress-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.verification-challenge {
+  margin-bottom: 20px;
+}
+
+.verification-question {
+  font-size: 16px;
+  color: var(--text-primary);
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.verification-question strong {
+  color: var(--accent);
+}
+
+.verification-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.verification-option {
+  padding: 12px 16px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 13px;
+  text-align: center;
+}
+
+.verification-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.verification-success {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.verification-success-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 32px;
+}
+
+.verification-success-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--success);
+  margin-bottom: 8px;
+}
+
+.verification-success-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.warning.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.warning.error .warning-text {
+  color: var(--error);
+}
+
 /* ==================== WARNING ==================== */
 
 .warning {
@@ -3059,4 +3205,226 @@ select:focus-visible {
 /* Wallet-specific error boundary */
 .error-boundary.wallet-error .error-icon {
   color: var(--error);
+}
+
+/* ==================== FEE ESTIMATION ==================== */
+
+.fee-estimation {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.fee-estimation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.fee-estimation-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fee-estimation-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.fee-tiers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fee-tier {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.fee-tier:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-light);
+}
+
+.fee-tier.active {
+  background: rgba(255, 176, 0, 0.1);
+  border-color: var(--accent);
+}
+
+.fee-tier-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.fee-tier-rate {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.fee-tier-desc {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.fee-summary {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.fee-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.fee-summary-row span:first-child {
+  color: var(--text-secondary);
+}
+
+.fee-summary-row.detail {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.fee-amount {
+  color: var(--text-primary);
+}
+
+.fee-usd {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  margin-left: 4px;
+}
+
+.fee-custom {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.fee-custom-toggle {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fee-custom-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.fee-custom-input {
+  margin-top: 8px;
+}
+
+.fee-slider {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  outline: none;
+}
+
+.fee-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.fee-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.fee-custom-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 9px;
+  color: var(--text-tertiary);
+}
+
+.fee-custom-current {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Compact fee estimation */
+.fee-estimation-compact {
+  padding: 8px 0;
+}
+
+.fee-estimation-compact .fee-estimation-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.fee-estimation-compact .fee-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.fee-estimation-compact .fee-value {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.fee-tiers-inline {
+  display: flex;
+  gap: 4px;
+}
+
+.fee-tier-btn {
+  padding: 4px 8px;
+  font-size: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.fee-tier-btn:hover {
+  background: var(--bg-tertiary);
+}
+
+.fee-tier-btn.active {
+  background: rgba(255, 176, 0, 0.1);
+  border-color: var(--accent);
+  color: var(--accent);
 }

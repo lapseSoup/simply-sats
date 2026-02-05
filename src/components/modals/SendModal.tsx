@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
+import { FeeEstimation } from '../shared/FeeEstimation'
 import { CoinControlModal } from './CoinControlModal'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
 
@@ -26,6 +27,12 @@ export function SendModal({ onClose }: SendModalProps) {
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showCoinControl, setShowCoinControl] = useState(false)
   const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
+  const [feeRate, setFeeRate] = useState(DEFAULT_FEE_RATE)
+
+  // Handle fee rate changes
+  const handleFeeRateChange = useCallback((rate: number) => {
+    setFeeRate(rate)
+  }, [])
 
   if (!wallet) return null
 
@@ -39,25 +46,30 @@ export function SendModal({ onClose }: SendModalProps) {
   const numInputs = utxos.length > 0 ? utxos.length : Math.max(1, Math.ceil(balance / 10000))
   const totalUtxoValue = utxos.length > 0 ? utxos.reduce((sum, u) => sum + u.satoshis, 0) : balance
 
-  // Calculate fee using domain layer functions
+  // Calculate fee using domain layer functions with adjustable rate
   let fee = 0
+  let inputCount = 0
+  let outputCount = 0
   if (sendSats > 0) {
     if (utxos.length > 0) {
-      // Use domain layer calculateExactFee with explicit fee rate
-      const feeInfo = calculateExactFee(sendSats, utxos, DEFAULT_FEE_RATE)
+      // Use domain layer calculateExactFee with adjustable fee rate
+      const feeInfo = calculateExactFee(sendSats, utxos, feeRate)
       fee = feeInfo.fee
+      inputCount = feeInfo.inputCount
+      outputCount = feeInfo.outputCount
     } else {
       // Fallback when UTXOs not loaded - estimate based on input count
       const isMaxSend = sendSats >= totalUtxoValue - 50
-      const numOutputs = isMaxSend ? 1 : 2
-      fee = calculateTxFee(numInputs, numOutputs, DEFAULT_FEE_RATE)
+      outputCount = isMaxSend ? 1 : 2
+      inputCount = numInputs
+      fee = calculateTxFee(numInputs, outputCount, feeRate)
     }
   }
 
-  // Calculate max sendable using domain layer function
+  // Calculate max sendable using domain layer function with current fee rate
   const maxSendResult = utxos.length > 0
-    ? calculateMaxSend(utxos, DEFAULT_FEE_RATE)
-    : { maxSats: Math.max(0, totalUtxoValue - calculateTxFee(numInputs, 1, DEFAULT_FEE_RATE)), fee: 0, numInputs }
+    ? calculateMaxSend(utxos, feeRate)
+    : { maxSats: Math.max(0, totalUtxoValue - calculateTxFee(numInputs, 1, feeRate)), fee: 0, numInputs }
   const maxSendSats = maxSendResult.maxSats
 
   // Check if confirmation is required based on amount
@@ -178,10 +190,6 @@ export function SendModal({ onClose }: SendModalProps) {
                   <span>Send</span>
                   <span>{sendSats.toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats)})</span></span>
                 </div>
-                <div className="send-summary-row">
-                  <span>Fee</span>
-                  <span>{fee} sats</span>
-                </div>
                 <div className="send-summary-row total">
                   <span>Total</span>
                   <span>{(sendSats + fee).toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats + fee)})</span></span>
@@ -189,6 +197,18 @@ export function SendModal({ onClose }: SendModalProps) {
               </>
             )}
           </div>
+
+          {/* Fee Estimation with adjustable rate */}
+          {sendSats > 0 && (
+            <FeeEstimation
+              inputCount={inputCount}
+              outputCount={outputCount}
+              currentFee={fee}
+              onFeeRateChange={handleFeeRateChange}
+              showDetails={false}
+              compact={false}
+            />
+          )}
 
           {/* Coin Control Section */}
           <div style={{

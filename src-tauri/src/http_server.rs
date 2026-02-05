@@ -13,9 +13,11 @@ use tauri::{AppHandle, Emitter};
 use governor::{Quota, RateLimiter};
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
 use crate::{SharedBRC100State, SharedSessionState};
 
 const SESSION_TOKEN_HEADER: &str = "X-Simply-Sats-Token";
+const CSRF_NONCE_HEADER: &str = "X-Simply-Sats-Nonce";
 
 const PORT: u16 = 3322; // Simply Sats uses 3322 (Metanet Desktop uses 3321)
 
@@ -99,20 +101,31 @@ async fn validate_session_token(
     let session = state.session_state.lock().await;
 
     match token_header {
-        Some(token) if token == session.token => {
+        Some(token) => {
+            // Use constant-time comparison to prevent timing attacks
+            let token_bytes = token.as_bytes();
+            let session_bytes = session.token.as_bytes();
+            let is_valid = token_bytes.len() == session_bytes.len()
+                && token_bytes.ct_eq(session_bytes).into();
+
             drop(session);
 
-            // Apply rate limiting after authentication
-            match state.rate_limiter.check() {
-                Ok(_) => Ok(next.run(request).await),
-                Err(_) => {
-                    eprintln!("[Rate Limit] Request to {} exceeded rate limit", request.uri().path());
-                    Err(StatusCode::TOO_MANY_REQUESTS)
+            if is_valid {
+                // Apply rate limiting after authentication
+                match state.rate_limiter.check() {
+                    Ok(_) => Ok(next.run(request).await),
+                    Err(_) => {
+                        eprintln!("[Rate Limit] Request to {} exceeded rate limit", request.uri().path());
+                        Err(StatusCode::TOO_MANY_REQUESTS)
+                    }
                 }
+            } else {
+                eprintln!("Rejected request to {}: invalid session token", request.uri().path());
+                Err(StatusCode::UNAUTHORIZED)
             }
         }
-        _ => {
-            eprintln!("Rejected request to {}: invalid or missing session token", request.uri().path());
+        None => {
+            eprintln!("Rejected request to {}: missing session token", request.uri().path());
             Err(StatusCode::UNAUTHORIZED)
         }
     }
@@ -148,6 +161,7 @@ pub async fn start_server(
             axum::http::header::CONTENT_TYPE,
             axum::http::header::ACCEPT,
             axum::http::HeaderName::from_static("x-simply-sats-token"),
+            axum::http::HeaderName::from_static("x-simply-sats-nonce"),
         ]);
 
     // REST-style routes matching HTTPWalletJSON substrate format from @bsv/sdk
@@ -157,6 +171,7 @@ pub async fn start_server(
         .route("/isAuthenticated", post(handle_is_authenticated))
         .route("/waitForAuthentication", post(handle_wait_for_authentication))
         .route("/getHeight", post(handle_get_height))
+        .route("/getNonce", post(handle_get_nonce))  // CSRF nonce generation
         .route("/getPublicKey", post(handle_get_public_key))
         .route("/createSignature", post(handle_create_signature))
         .route("/createAction", post(handle_create_action))
@@ -183,6 +198,24 @@ async fn handle_get_version(Json(_args): Json<EmptyArgs>) -> Json<VersionRespons
     println!("getVersion request");
     Json(VersionResponse {
         version: "0.1.0".to_string(),
+    })
+}
+
+#[derive(Serialize)]
+struct NonceResponse {
+    nonce: String,
+}
+
+/// Generate a CSRF nonce for state-changing operations
+async fn handle_get_nonce(
+    State(state): State<AppState>,
+    Json(_args): Json<EmptyArgs>,
+) -> Json<NonceResponse> {
+    #[cfg(debug_assertions)]
+    println!("getNonce request");
+    let session = state.session_state.lock().await;
+    Json(NonceResponse {
+        nonce: session.generate_nonce(),
     })
 }
 
@@ -256,73 +289,287 @@ async fn fetch_block_height() -> Result<u32, Box<dyn std::error::Error + Send + 
 
 async fn handle_get_public_key(
     State(state): State<AppState>,
-    Json(args): Json<GetPublicKeyArgs>,
+    request: Request<Body>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let origin = extract_origin(&request);
+
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid request body"
+        }))),
+    };
+
+    let args: GetPublicKeyArgs = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(_) => GetPublicKeyArgs::default(),
+    };
+
     #[cfg(debug_assertions)]
     println!("getPublicKey request: {:?}", args);
     forward_to_frontend(state, "getPublicKey", serde_json::json!({
         "identityKey": args.identity_key.unwrap_or(false),
-    })).await
+    }), origin).await
+}
+
+/// Extract origin from request headers
+fn extract_origin(request: &Request<Body>) -> Option<String> {
+    request.headers()
+        .get("Origin")
+        .or_else(|| request.headers().get("Referer"))
+        .and_then(|v| v.to_str().ok())
+        .map(|s| {
+            // For Referer, extract just the origin part
+            if let Ok(url) = url::Url::parse(s) {
+                format!("{}://{}", url.scheme(), url.host_str().unwrap_or("unknown"))
+            } else {
+                s.to_string()
+            }
+        })
+}
+
+/// Extract CSRF nonce from request headers
+fn extract_nonce(request: &Request<Body>) -> Option<String> {
+    request.headers()
+        .get(CSRF_NONCE_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+}
+
+/// Validate a nonce string against the session state
+async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    match nonce {
+        Some(nonce_str) => {
+            let mut session = state.session_state.lock().await;
+            if session.validate_nonce(&nonce_str) {
+                Ok(())
+            } else {
+                eprintln!("Invalid or expired CSRF nonce");
+                Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32001,
+                    "message": "Invalid or expired CSRF nonce"
+                }))))
+            }
+        }
+        None => {
+            eprintln!("Missing CSRF nonce header");
+            Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
+                "isError": true,
+                "code": -32001,
+                "message": "Missing CSRF nonce"
+            }))))
+        }
+    }
 }
 
 async fn handle_create_signature(
     State(state): State<AppState>,
-    Json(args): Json<serde_json::Value>,
+    request: Request<Body>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    // Extract origin and nonce before consuming the request body
+    let origin = extract_origin(&request);
+    let nonce = extract_nonce(&request);
+
+    // Validate CSRF nonce for this state-changing operation
+    if let Err(err) = validate_nonce(&state, nonce).await {
+        return err;
+    }
+
+    // Parse the body manually since we already borrowed the request
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid request body"
+        }))),
+    };
+
+    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid JSON"
+        }))),
+    };
+
     #[cfg(debug_assertions)]
     println!("createSignature request: {:?}", args);
-    forward_to_frontend(state, "createSignature", args).await
+    forward_to_frontend(state, "createSignature", args, origin).await
 }
 
 async fn handle_create_action(
     State(state): State<AppState>,
-    Json(args): Json<serde_json::Value>,
+    request: Request<Body>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let origin = extract_origin(&request);
+    let nonce = extract_nonce(&request);
+
+    // Validate CSRF nonce for this state-changing operation
+    if let Err(err) = validate_nonce(&state, nonce).await {
+        return err;
+    }
+
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid request body"
+        }))),
+    };
+
+    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid JSON"
+        }))),
+    };
+
     #[cfg(debug_assertions)]
     println!("createAction request: {:?}", args);
-    forward_to_frontend(state, "createAction", args).await
+    forward_to_frontend(state, "createAction", args, origin).await
 }
 
 async fn handle_list_outputs(
     State(state): State<AppState>,
-    Json(args): Json<serde_json::Value>,
+    request: Request<Body>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let origin = extract_origin(&request);
+
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid request body"
+        }))),
+    };
+
+    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid JSON"
+        }))),
+    };
+
     #[cfg(debug_assertions)]
     println!("listOutputs request: {:?}", args);
-    forward_to_frontend(state, "listOutputs", args).await
+    forward_to_frontend(state, "listOutputs", args, origin).await
 }
 
 async fn handle_lock_bsv(
     State(state): State<AppState>,
-    Json(args): Json<serde_json::Value>,
+    request: Request<Body>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let origin = extract_origin(&request);
+    let nonce = extract_nonce(&request);
+
+    // Validate CSRF nonce for this state-changing operation
+    if let Err(err) = validate_nonce(&state, nonce).await {
+        return err;
+    }
+
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid request body"
+        }))),
+    };
+
+    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid JSON"
+        }))),
+    };
+
     #[cfg(debug_assertions)]
     println!("lockBSV request: {:?}", args);
-    forward_to_frontend(state, "lockBSV", args).await
+    forward_to_frontend(state, "lockBSV", args, origin).await
 }
 
 async fn handle_unlock_bsv(
     State(state): State<AppState>,
-    Json(args): Json<serde_json::Value>,
+    request: Request<Body>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let origin = extract_origin(&request);
+    let nonce = extract_nonce(&request);
+
+    // Validate CSRF nonce for this state-changing operation
+    if let Err(err) = validate_nonce(&state, nonce).await {
+        return err;
+    }
+
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid request body"
+        }))),
+    };
+
+    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid JSON"
+        }))),
+    };
+
     #[cfg(debug_assertions)]
     println!("unlockBSV request: {:?}", args);
-    forward_to_frontend(state, "unlockBSV", args).await
+    forward_to_frontend(state, "unlockBSV", args, origin).await
 }
 
 async fn handle_list_locks(
     State(state): State<AppState>,
-    Json(args): Json<serde_json::Value>,
+    request: Request<Body>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let origin = extract_origin(&request);
+
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid request body"
+        }))),
+    };
+
+    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid JSON"
+        }))),
+    };
+
     #[cfg(debug_assertions)]
     println!("listLocks request: {:?}", args);
-    forward_to_frontend(state, "listLocks", args).await
+    forward_to_frontend(state, "listLocks", args, origin).await
 }
 
 async fn forward_to_frontend(
     state: AppState,
     method: &str,
     args: serde_json::Value,
+    origin: Option<String>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let internal_id = format!("req_{}", uuid_simple());
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -332,11 +579,14 @@ async fn forward_to_frontend(
         brc100_state.pending_responses.insert(internal_id.clone(), tx);
     }
 
+    // Use actual origin from request, default to "unknown" if not provided
+    let request_origin = origin.unwrap_or_else(|| "unknown".to_string());
+
     let frontend_request = serde_json::json!({
         "id": internal_id,
         "method": method,
         "params": args,
-        "origin": "wrootz"
+        "origin": request_origin
     });
 
     if let Err(e) = state.app_handle.emit("brc100-request", frontend_request) {
