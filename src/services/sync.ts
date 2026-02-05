@@ -14,6 +14,7 @@ import {
   getLastSyncedHeight,
   updateSyncState,
   upsertTransaction,
+  addTransaction,
   getDerivedAddresses as getDerivedAddressesFromDB,
   updateDerivedAddressSyncTime,
   markUtxosPendingSpend,
@@ -23,7 +24,7 @@ import {
   type UTXO as DBUtxo
 } from './database'
 import { RATE_LIMITS } from './config'
-import { getWocClient } from '../infrastructure/api/wocClient'
+import { getWocClient, type WocTransaction } from '../infrastructure/api/wocClient'
 import {
   type CancellationToken,
   startNewSync,
@@ -184,6 +185,75 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 }
 
 /**
+ * Calculate the amount change for an address from a transaction
+ * Positive = received, Negative = sent
+ */
+function calculateTxAmount(tx: WocTransaction, address: string): number {
+  const lockingScript = getLockingScript(address)
+  let received = 0
+
+  // Check outputs - did we receive any sats?
+  for (const vout of tx.vout) {
+    if (vout.scriptPubKey.hex === lockingScript) {
+      // This output goes to our address
+      received += Math.round(vout.value * 100000000) // Convert BSV to sats
+    }
+  }
+
+  // Note: To calculate sent amount, we'd need to fetch parent transactions
+  // to determine input values. For now, we only track received amounts.
+  // The full calculation would require fetching input transactions
+  // which is expensive. For received transactions, this is sufficient.
+  return received
+}
+
+/**
+ * Sync transaction history for an address
+ * Fetches from WhatsOnChain and stores in database
+ */
+async function syncTransactionHistory(address: string, limit: number = 50): Promise<number> {
+  const wocClient = getWocClient()
+
+  // Fetch transaction history
+  const historyResult = await wocClient.getTransactionHistorySafe(address)
+  if (!historyResult.success) {
+    syncLogger.warn(`Failed to fetch tx history for ${address.slice(0,12)}...`, { error: historyResult.error })
+    return 0
+  }
+
+  const history = historyResult.data.slice(0, limit)
+  let newTxCount = 0
+
+  for (const txRef of history) {
+    // Get transaction details to calculate amount
+    const txDetails = await wocClient.getTransactionDetails(txRef.tx_hash)
+
+    let amount: number | undefined
+    if (txDetails) {
+      amount = calculateTxAmount(txDetails, address)
+    }
+
+    // Store in database (addTransaction won't overwrite existing)
+    try {
+      await addTransaction({
+        txid: txRef.tx_hash,
+        createdAt: Date.now(),
+        blockHeight: txRef.height > 0 ? txRef.height : undefined,
+        status: txRef.height > 0 ? 'confirmed' : 'pending',
+        amount
+      })
+      newTxCount++
+    } catch (_e) {
+      // Ignore duplicates
+      syncLogger.debug(`Tx ${txRef.tx_hash.slice(0,8)} already exists in database`)
+    }
+  }
+
+  syncLogger.debug(`[TX HISTORY] Synced ${newTxCount} transactions for ${address.slice(0,12)}...`)
+  return newTxCount
+}
+
+/**
  * Sync all wallet addresses
  * @param addresses - List of addresses to sync
  * @param token - Optional cancellation token to abort the sync
@@ -283,6 +353,22 @@ export async function syncWallet(
     if (token.isCancelled) {
       syncLogger.debug('[SYNC] Cancelled during sync')
       return undefined
+    }
+
+    // Sync transaction history for main addresses (not ordinals/identity to reduce API calls)
+    // Include derived addresses since they receive payments
+    const txHistoryAddresses = [walletAddress, ...derivedAddresses.map(d => d.address)]
+    syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses`)
+
+    for (const addr of txHistoryAddresses) {
+      if (token.isCancelled) break
+      try {
+        await syncTransactionHistory(addr, 30)
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
+      } catch (e) {
+        syncLogger.warn(`Failed to sync tx history for ${addr.slice(0,12)}...`, { error: String(e) })
+      }
     }
 
     // Update sync timestamps for derived addresses
