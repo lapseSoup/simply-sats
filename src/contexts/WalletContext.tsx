@@ -103,7 +103,7 @@ interface WalletContextType {
   accounts: Account[]
   activeAccount: Account | null
   activeAccountId: number | null
-  switchAccount: (accountId: number, password: string) => Promise<boolean>
+  switchAccount: (accountId: number) => Promise<boolean>
   createNewAccount: (name: string) => Promise<boolean>
   deleteAccount: (accountId: number) => Promise<boolean>
   renameAccount: (accountId: number, name: string) => Promise<void>
@@ -340,16 +340,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [])
 
 
-  // Switch to a different account - wraps AccountsContext to also set wallet state
-  const switchAccount = useCallback(async (accountId: number, password: string): Promise<boolean> => {
-    const keys = await accountsSwitchAccount(accountId, password)
+  // Switch to a different account using session password
+  const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
+    if (!sessionPassword) {
+      walletLogger.error('Cannot switch account - no session password available')
+      return false
+    }
+    const keys = await accountsSwitchAccount(accountId, sessionPassword)
     if (keys) {
       setWallet(keys)
       setIsLocked(false)
       return true
     }
     return false
-  }, [accountsSwitchAccount, setWallet])
+  }, [accountsSwitchAccount, setWallet, sessionPassword])
 
   // Create a new account - wraps AccountsContext to also set wallet state
   // Create a new account using session password

@@ -1,9 +1,7 @@
-import { useState } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { SimplySatsLogo } from '../shared/SimplySatsLogo'
 import { AccountSwitcher } from './AccountSwitcher'
-import { PasswordPromptModal } from '../modals/PasswordPromptModal'
 
 interface HeaderProps {
   onSettingsClick: () => void
@@ -24,34 +22,15 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
   } = useWallet()
   const { formatBSVShort } = useUI()
 
-  // Password prompt state for account switching
-  const [passwordPrompt, setPasswordPrompt] = useState<{
-    accountId: number
-    accountName: string
-  } | null>(null)
-
   const handleSync = async () => {
     await performSync(false)
     await fetchData()
   }
 
-  const handleSwitchAccount = (accountId: number) => {
-    const account = accounts.find(a => a.id === accountId)
-    if (account && accountId !== activeAccountId) {
-      setPasswordPrompt({
-        accountId,
-        accountName: account.name
-      })
+  const handleSwitchAccount = async (accountId: number) => {
+    if (accountId !== activeAccountId) {
+      await switchAccount(accountId)
     }
-  }
-
-  const handlePasswordSubmit = async (password: string): Promise<boolean> => {
-    if (!passwordPrompt) return false
-    const success = await switchAccount(passwordPrompt.accountId, password)
-    if (success) {
-      setPasswordPrompt(null)
-    }
-    return success
   }
 
   // Format balance for account preview
@@ -147,16 +126,6 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
           </button>
         </div>
       </header>
-
-      {/* Password prompt for account switching */}
-      <PasswordPromptModal
-        isOpen={passwordPrompt !== null}
-        title={`Switch to ${passwordPrompt?.accountName || 'Account'}`}
-        message="Enter the password to unlock this account."
-        submitLabel="Switch Account"
-        onSubmit={handlePasswordSubmit}
-        onCancel={() => setPasswordPrompt(null)}
-      />
 
       <style>{`
         .header-left {
