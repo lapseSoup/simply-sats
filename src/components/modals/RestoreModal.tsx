@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
+import { Modal } from '../shared/Modal'
 import { MnemonicInput } from '../forms/MnemonicInput'
 import { restoreWallet, importFromJSON } from '../../services/wallet'
 import { importDatabase, type DatabaseBackup } from '../../services/database'
@@ -18,6 +20,7 @@ type RestoreMode = 'mnemonic' | 'json' | 'fullbackup'
 
 export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   const { setWallet, performSync, handleRestoreWallet, handleImportJSON } = useWallet()
+  const { showToast } = useUI()
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('mnemonic')
   const [restoreMnemonic, setRestoreMnemonic] = useState('')
   const [restoreJSON, setRestoreJSON] = useState('')
@@ -43,17 +46,17 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
     try {
       const words = restoreMnemonic.trim().split(/\s+/)
       if (words.length !== 12) {
-        alert('Please enter exactly 12 words')
+        showToast('Please enter exactly 12 words')
         return
       }
       const success = await handleRestoreWallet(restoreMnemonic.trim(), password)
       if (success) {
         onSuccess()
       } else {
-        alert('Failed to restore wallet')
+        showToast('Failed to restore wallet')
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Invalid mnemonic. Please check your words.')
+      showToast(err instanceof Error ? err.message : 'Invalid mnemonic. Please check your words.')
     }
   }
 
@@ -64,10 +67,10 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       if (success) {
         onSuccess()
       } else {
-        alert('Failed to import wallet')
+        showToast('Failed to import wallet')
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Invalid JSON backup. Please check the format.')
+      showToast(err instanceof Error ? err.message : 'Invalid JSON backup. Please check the format.')
     }
   }
 
@@ -85,7 +88,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       const backup = JSON.parse(json)
 
       if (backup.format !== 'simply-sats-full' || !backup.wallet) {
-        alert('Invalid backup format. This should be a Simply Sats full backup file.')
+        showToast('Invalid backup format. This should be a Simply Sats full backup file.')
         return
       }
 
@@ -105,7 +108,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         setWallet(keys)
         setWalletKeys(keys)
       } else {
-        alert('Backup does not contain wallet keys.')
+        showToast('Backup does not contain wallet keys.')
         return
       }
 
@@ -114,54 +117,54 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         await importDatabase(backup.database as DatabaseBackup)
       }
 
-      alert(`Wallet restored from backup!\n\n${backup.database?.utxos?.length || 0} UTXOs\n${backup.database?.transactions?.length || 0} transactions`)
+      showToast(`Wallet restored! ${backup.database?.utxos?.length || 0} UTXOs, ${backup.database?.transactions?.length || 0} transactions`)
 
       // Trigger sync to update balances
       performSync(false)
       onSuccess()
     } catch (err) {
-      alert('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
+      showToast('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
     }
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-handle" />
-        <div className="modal-header">
-          <h2 className="modal-title">Restore Wallet</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="modal-content">
-          <div className="pill-tabs" role="tablist">
+    <Modal onClose={onClose} title="Restore Wallet">
+      <div className="modal-content">
+        <div className="pill-tabs" role="tablist" aria-label="Restore method">
             <button
+              id="restore-tab-mnemonic"
               className={`pill-tab ${restoreMode === 'mnemonic' ? 'active' : ''}`}
               onClick={() => setRestoreMode('mnemonic')}
               role="tab"
               aria-selected={restoreMode === 'mnemonic'}
+              aria-controls="restore-panel-mnemonic"
             >
               Seed Phrase
             </button>
             <button
+              id="restore-tab-json"
               className={`pill-tab ${restoreMode === 'json' ? 'active' : ''}`}
               onClick={() => setRestoreMode('json')}
               role="tab"
               aria-selected={restoreMode === 'json'}
+              aria-controls="restore-panel-json"
             >
               JSON Backup
             </button>
             <button
+              id="restore-tab-fullbackup"
               className={`pill-tab ${restoreMode === 'fullbackup' ? 'active' : ''}`}
               onClick={() => setRestoreMode('fullbackup')}
               role="tab"
               aria-selected={restoreMode === 'fullbackup'}
+              aria-controls="restore-panel-fullbackup"
             >
               Full Backup
             </button>
           </div>
 
           {restoreMode === 'mnemonic' && (
-            <>
+            <div id="restore-panel-mnemonic" role="tabpanel" aria-labelledby="restore-tab-mnemonic">
               <div className="form-group">
                 <label className="form-label" htmlFor="restore-mnemonic">12-Word Recovery Phrase</label>
                 <MnemonicInput
@@ -179,7 +182,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   id="restore-password"
                   type="password"
                   className="form-input"
-                  placeholder="At least 8 characters"
+                  placeholder="At least 12 characters"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   autoComplete="new-password"
@@ -207,11 +210,11 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
               >
                 Restore Wallet
               </button>
-            </>
+            </div>
           )}
 
           {restoreMode === 'json' && (
-            <>
+            <div id="restore-panel-json" role="tabpanel" aria-labelledby="restore-tab-json">
               <div className="form-group">
                 <label className="form-label" htmlFor="restore-json">Wallet Backup JSON</label>
                 <textarea
@@ -232,7 +235,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   id="json-password"
                   type="password"
                   className="form-input"
-                  placeholder="At least 8 characters"
+                  placeholder="At least 12 characters"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   autoComplete="new-password"
@@ -260,11 +263,11 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
               >
                 Import Wallet
               </button>
-            </>
+            </div>
           )}
 
           {restoreMode === 'fullbackup' && (
-            <>
+            <div id="restore-panel-fullbackup" role="tabpanel" aria-labelledby="restore-tab-fullbackup">
               <div className="form-group">
                 <label className="form-label">Full Backup File</label>
                 <div className="form-hint" style={{ marginBottom: 12 }}>
@@ -277,7 +280,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   id="fullbackup-password"
                   type="password"
                   className="form-input"
-                  placeholder="At least 8 characters"
+                  placeholder="At least 12 characters"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   autoComplete="new-password"
@@ -305,10 +308,9 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
               >
                 Select Backup File
               </button>
-            </>
+            </div>
           )}
         </div>
-      </div>
-    </div>
+      </Modal>
   )
 }

@@ -3,8 +3,11 @@ import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateLockFee, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
 import { getTimelockScriptSize } from '../../services/wallet'
+import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 
+// Short lock warning threshold: less than 6 blocks (~1 hour)
+const SHORT_LOCK_WARNING_BLOCKS = 6
 // Long lock warning threshold: 1 week = ~1008 blocks (10 min per block)
 const LONG_LOCK_WARNING_BLOCKS = 1008
 
@@ -32,6 +35,7 @@ export function LockModal({ onClose }: LockModalProps) {
   const [locking, setLocking] = useState(false)
   const [lockError, setLockError] = useState('')
   const [showLongLockWarning, setShowLongLockWarning] = useState(false)
+  const [showShortLockWarning, setShowShortLockWarning] = useState(false)
 
   if (!wallet) return null
 
@@ -42,6 +46,8 @@ export function LockModal({ onClose }: LockModalProps) {
   const currentHeight = networkInfo?.blockHeight || 0
   const unlockBlock = currentHeight + blocks
 
+  // Check if this is a short lock (< 1 hour)
+  const isShortLock = blocks > 0 && blocks < SHORT_LOCK_WARNING_BLOCKS
   // Check if this is a long lock (> 1 week)
   const isLongLock = blocks > LONG_LOCK_WARNING_BLOCKS
 
@@ -88,6 +94,7 @@ export function LockModal({ onClose }: LockModalProps) {
 
   const executeLock = async () => {
     setShowLongLockWarning(false)
+    setShowShortLockWarning(false)
     setLocking(true)
     setLockError('')
 
@@ -106,6 +113,12 @@ export function LockModal({ onClose }: LockModalProps) {
   const handleSubmit = async () => {
     if (!lockAmount || !lockBlocks || lockSats <= 0 || blocks <= 0) return
 
+    // Show warning for short locks
+    if (isShortLock) {
+      setShowShortLockWarning(true)
+      return
+    }
+
     // Show warning for long locks
     if (isLongLock) {
       setShowLongLockWarning(true)
@@ -113,6 +126,22 @@ export function LockModal({ onClose }: LockModalProps) {
     }
 
     await executeLock()
+  }
+
+  // Short lock warning modal
+  if (showShortLockWarning && blocks > 0) {
+    return (
+      <ConfirmationModal
+        title="Short Lock Duration"
+        message={`You're locking sats for only ${blocks} block${blocks > 1 ? 's' : ''} (~${blocks * 10} minutes). This is a very short duration.`}
+        details={`Lock Amount: ${lockSats.toLocaleString()} sats\nDuration: ${blocks} block${blocks > 1 ? 's' : ''}\n\nAre you sure this is intentional? Locks are irreversible once created.`}
+        type="info"
+        confirmText="Yes, Lock Anyway"
+        cancelText="Change Duration"
+        onConfirm={executeLock}
+        onCancel={() => setShowShortLockWarning(false)}
+      />
+    )
   }
 
   // Long lock warning modal
@@ -134,13 +163,8 @@ export function LockModal({ onClose }: LockModalProps) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal send-modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title">Lock BSV</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="modal-content compact">
+    <Modal onClose={onClose} title="Lock BSV" className="send-modal">
+      <div className="modal-content compact">
           <div className="form-group">
             <label className="form-label" htmlFor="lock-amount" style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Amount ({displayInSats ? 'sats' : 'BSV'})</span>
@@ -247,7 +271,6 @@ export function LockModal({ onClose }: LockModalProps) {
             {locking ? 'Locking...' : `Lock ${lockSats > 0 ? lockSats.toLocaleString() + ' sats' : 'BSV'}`}
           </button>
         </div>
-      </div>
 
       <style>{`
         .lock-warning {
@@ -284,6 +307,6 @@ export function LockModal({ onClose }: LockModalProps) {
           line-height: 1.4;
         }
       `}</style>
-    </div>
+      </Modal>
   )
 }

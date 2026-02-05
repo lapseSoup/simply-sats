@@ -9,6 +9,8 @@ import type { TokenBalance } from '../../services/tokens'
 import { formatTokenAmount } from '../../services/tokens'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
+import { Modal } from '../shared/Modal'
+import { NoTokensEmpty } from '../shared/EmptyState'
 
 // Memoized token card to prevent unnecessary re-renders
 const TokenCard = memo(function TokenCard({
@@ -168,17 +170,7 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
   if (tokenBalances.length === 0) {
     return (
       <div className="tokens-tab">
-        <div className="tokens-empty">
-          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="24" cy="24" r="20" />
-            <path d="M24 14V24L30 30" />
-          </svg>
-          <h3>No Tokens Found</h3>
-          <p>You don't have any BSV20 or BSV21 tokens yet.</p>
-          <button className="refresh-button" onClick={handleRefresh} disabled={loading}>
-            {loading ? 'Checking...' : 'Check Again'}
-          </button>
-        </div>
+        <NoTokensEmpty onRefresh={handleRefresh} loading={loading} />
         <style>{tokensStyles}</style>
       </div>
     )
@@ -233,71 +225,64 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
 
       {/* Send Modal */}
       {sendModalOpen && selectedToken && (
-        <div className="modal-overlay" onClick={closeSendModal}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Send {selectedToken.token.ticker}</h3>
-              <button className="close-button" onClick={closeSendModal}>
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M5 5L15 15M15 5L5 15" />
-                </svg>
-              </button>
+        <Modal onClose={closeSendModal} title={`Send ${selectedToken.token.ticker}`}>
+          <div className="modal-body">
+            <div className="available-balance">
+              <span>Available:</span>
+              <span>{formatTokenAmount(selectedToken.confirmed, selectedToken.token.decimals)} {selectedToken.token.ticker}</span>
             </div>
 
-            <div className="modal-body">
-              <div className="available-balance">
-                <span>Available:</span>
-                <span>{formatTokenAmount(selectedToken.confirmed, selectedToken.token.decimals)} {selectedToken.token.ticker}</span>
-              </div>
-
-              <div className="form-group">
-                <label>Amount</label>
-                <div className="amount-input-wrapper">
-                  <input
-                    type="text"
-                    value={sendAmount}
-                    onChange={e => setSendAmount(e.target.value)}
-                    placeholder="0"
-                    disabled={sending}
-                  />
-                  <button
-                    className="max-button"
-                    onClick={() => setSendAmount(formatTokenAmount(selectedToken.confirmed, selectedToken.token.decimals))}
-                    disabled={sending}
-                  >
-                    MAX
-                  </button>
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Recipient Address</label>
+            <div className="form-group">
+              <label htmlFor="token-send-amount">Amount</label>
+              <div className="amount-input-wrapper">
                 <input
+                  id="token-send-amount"
                   type="text"
-                  value={sendAddress}
-                  onChange={e => setSendAddress(e.target.value)}
-                  placeholder="Enter BSV address"
+                  value={sendAmount}
+                  onChange={e => setSendAmount(e.target.value)}
+                  placeholder="0"
                   disabled={sending}
                 />
+                <button
+                  className="max-button"
+                  onClick={() => setSendAmount(formatTokenAmount(selectedToken.confirmed, selectedToken.token.decimals))}
+                  disabled={sending}
+                  type="button"
+                >
+                  MAX
+                </button>
               </div>
-
-              {error && <p className="error-message">{error}</p>}
             </div>
 
-            <div className="modal-footer">
-              <button className="cancel-button" onClick={closeSendModal} disabled={sending}>
-                Cancel
-              </button>
-              <button
-                className="send-confirm-button"
-                onClick={handleSend}
-                disabled={sending || !sendAmount || !sendAddress}
-              >
-                {sending ? 'Sending...' : 'Send'}
-              </button>
+            <div className="form-group">
+              <label htmlFor="token-send-address">Recipient Address</label>
+              <input
+                id="token-send-address"
+                type="text"
+                value={sendAddress}
+                onChange={e => setSendAddress(e.target.value)}
+                placeholder="Enter BSV address"
+                disabled={sending}
+              />
             </div>
+
+            {error && <p className="error-message" role="alert">{error}</p>}
           </div>
-        </div>
+
+          <div className="modal-footer">
+            <button className="cancel-button" onClick={closeSendModal} disabled={sending} type="button">
+              Cancel
+            </button>
+            <button
+              className="send-confirm-button"
+              onClick={handleSend}
+              disabled={sending || !sendAmount || !sendAddress}
+              type="button"
+            >
+              {sending ? 'Sending...' : 'Send'}
+            </button>
+          </div>
+        </Modal>
       )}
 
       <style>{tokensStyles}</style>

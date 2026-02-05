@@ -106,11 +106,11 @@ export function MnemonicInput({
 
     // Remove common copy/paste artifacts:
     // - Numbered words like "1. word" or "1) word" or "1 word"
-    normalized = normalized.replace(/^\d+[\.\)\s]+/gm, '')
+    normalized = normalized.replace(/^\d+[.)\s]+/gm, '')
     // - Commas between words
     normalized = normalized.replace(/,/g, ' ')
     // - Bullet points
-    normalized = normalized.replace(/[•\-\*]/g, ' ')
+    normalized = normalized.replace(/[•\-*]/g, ' ')
     // - Newlines to spaces
     normalized = normalized.replace(/[\r\n]+/g, ' ')
     // - Multiple spaces to single space
@@ -201,6 +201,7 @@ export function MnemonicInput({
           aria-label="Recovery phrase input"
           aria-describedby="mnemonic-status"
           aria-invalid={invalidWords.length > 0 || (isValidCount && !isChecksumValid)}
+          aria-activedescendant={showSuggestions && selectedIndex >= 0 ? `mnemonic-suggestion-${selectedIndex}` : undefined}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -263,6 +264,7 @@ export function MnemonicInput({
           {suggestions.map((suggestion, index) => (
             <div
               key={suggestion}
+              id={`mnemonic-suggestion-${index}`}
               className={`mnemonic-suggestion ${index === selectedIndex ? 'selected' : ''}`}
               onClick={() => selectSuggestion(suggestion)}
               onMouseEnter={() => setSelectedIndex(index)}

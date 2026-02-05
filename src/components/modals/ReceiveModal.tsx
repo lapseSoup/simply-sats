@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { PrivateKey, PublicKey } from '@bsv/sdk'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
+import { Modal } from '../shared/Modal'
 import {
   addDerivedAddress,
   addContact,
@@ -130,33 +131,33 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal send-modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title">Receive</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="modal-content compact">
-          <div className="pill-tabs compact" role="tablist">
+    <Modal onClose={onClose} title="Receive" className="send-modal">
+      <div className="modal-content compact">
+          <div className="pill-tabs compact" role="tablist" aria-label="Receive type">
             <button
+              id="receive-tab-wallet"
               className={`pill-tab ${receiveType === 'wallet' ? 'active' : ''}`}
               onClick={() => setReceiveType('wallet')}
               role="tab"
               aria-selected={receiveType === 'wallet'}
+              aria-controls="receive-panel-wallet"
               title="Standard payment address"
             >
               Payment
             </button>
             <button
+              id="receive-tab-ordinals"
               className={`pill-tab ${receiveType === 'ordinals' ? 'active' : ''}`}
               onClick={() => setReceiveType('ordinals')}
               role="tab"
               aria-selected={receiveType === 'ordinals'}
+              aria-controls="receive-panel-ordinals"
               title="Address for receiving NFTs and inscriptions"
             >
               Ordinals
             </button>
             <button
+              id="receive-tab-brc100"
               className={`pill-tab ${receiveType === 'brc100' ? 'active' : ''}`}
               onClick={() => {
                 setReceiveType('brc100')
@@ -171,6 +172,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
               }}
               role="tab"
               aria-selected={receiveType === 'brc100'}
+              aria-controls="receive-panel-brc100"
               title="Generate unique address per sender for enhanced privacy"
             >
               Private
@@ -178,7 +180,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
           </div>
 
           {receiveType === 'brc100' ? (
-            <div className="qr-container compact">
+            <div id="receive-panel-brc100" role="tabpanel" aria-labelledby="receive-tab-brc100" className="qr-container compact">
               {!showDeriveMode ? (
                 <>
                   <div className="private-intro" style={{ textAlign: 'center', marginBottom: 8 }}>
@@ -365,7 +367,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
               )}
             </div>
           ) : (
-            <div className="qr-container compact">
+            <div id={`receive-panel-${receiveType}`} role="tabpanel" aria-labelledby={`receive-tab-${receiveType}`} className="qr-container compact">
               <div className="qr-wrapper compact" style={{ padding: 10 }}>
                 <QRCodeSVG
                   value={receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress}
@@ -400,7 +402,6 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </Modal>
   )
 }

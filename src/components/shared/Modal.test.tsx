@@ -55,7 +55,8 @@ describe('Modal', () => {
 
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveAttribute('aria-modal', 'true')
-    expect(dialog).toHaveAttribute('aria-labelledby', 'modal-title')
+    // useId() generates unique IDs like ":r_0:" so we just check it's set
+    expect(dialog.getAttribute('aria-labelledby')).toBeTruthy()
   })
 
   it('calls onClose when close button is clicked', () => {
@@ -160,7 +161,8 @@ describe('Modal', () => {
 
     const heading = screen.getByRole('heading', { level: 2 })
     expect(heading).toHaveTextContent('Test Modal')
-    expect(heading).toHaveAttribute('id', 'modal-title')
+    // useId() generates unique IDs, just verify one is set
+    expect(heading.getAttribute('id')).toBeTruthy()
   })
 
   it('close button is of type button', () => {

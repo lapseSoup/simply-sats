@@ -1,12 +1,21 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { PrivateKey } from '@bsv/sdk'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
+
+// Helper for keyboard accessibility on clickable divs
+const handleKeyDown = (handler: () => void) => (e: KeyboardEvent) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    handler()
+  }
+}
 import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../services/keyDerivation'
 import { checkForPayments, getPaymentNotifications } from '../../services/messageBox'
 import { exportDatabase, importDatabase, type DatabaseBackup } from '../../services/database'
+import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { TestRecoveryModal } from './TestRecoveryModal'
 
@@ -70,6 +79,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [showTestRecovery, setShowTestRecovery] = useState(false)
+  const [showImportConfirm, setShowImportConfirm] = useState<{ utxos: number; transactions: number } | null>(null)
+  const [showKeysWarning, setShowKeysWarning] = useState(false)
+  const [showMnemonicWarning, setShowMnemonicWarning] = useState(false)
+  const [showResyncConfirm, setShowResyncConfirm] = useState(false)
+  const [mnemonicToShow, setMnemonicToShow] = useState<string | null>(null)
+  const [pendingImportBackup, setPendingImportBackup] = useState<DatabaseBackup | null>(null)
 
   if (!wallet) return null
 
@@ -184,45 +199,65 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         showToast('Invalid backup format')
         return
       }
-      if (confirm(`Import ${backup.database.utxos.length} UTXOs and ${backup.database.transactions.length} transactions?`)) {
-        await importDatabase(backup.database as DatabaseBackup)
-        showToast('Backup imported!')
-        performSync(false)
-      }
+      setPendingImportBackup(backup.database as DatabaseBackup)
+      setShowImportConfirm({ utxos: backup.database.utxos.length, transactions: backup.database.transactions.length })
     } catch (_err) {
       showToast('Import failed')
     }
   }
 
-  const handleExportKeys = () => {
-    if (confirm('WARNING: Never share your private keys!')) {
-      const backup = JSON.stringify({
-        format: 'simply-sats',
-        version: 1,
-        mnemonic: wallet.mnemonic || null,
-        keys: {
-          identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
-          payment: { wif: wallet.walletWif, address: wallet.walletAddress },
-          ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
-        }
-      }, null, 2)
-      navigator.clipboard.writeText(backup)
-      showToast('Keys copied to clipboard!')
+  const executeImportBackup = async () => {
+    if (pendingImportBackup) {
+      await importDatabase(pendingImportBackup)
+      showToast('Backup imported!')
+      performSync(false)
+      setPendingImportBackup(null)
     }
+    setShowImportConfirm(null)
+  }
+
+  const handleExportKeys = () => {
+    setShowKeysWarning(true)
+  }
+
+  const executeExportKeys = () => {
+    const backup = JSON.stringify({
+      format: 'simply-sats',
+      version: 1,
+      mnemonic: wallet.mnemonic || null,
+      keys: {
+        identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
+        payment: { wif: wallet.walletWif, address: wallet.walletAddress },
+        ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
+      }
+    }, null, 2)
+    navigator.clipboard.writeText(backup)
+    showToast('Keys copied to clipboard!')
+    setShowKeysWarning(false)
   }
 
   const handleShowMnemonic = () => {
-    if (wallet.mnemonic && confirm('Make sure no one can see your screen!')) {
-      alert(wallet.mnemonic)
+    if (wallet.mnemonic) {
+      setShowMnemonicWarning(true)
     }
   }
 
-  const handleResetAndResync = async () => {
-    if (confirm('Reset UTXO database and resync from blockchain? This fixes balance issues but may take a moment.')) {
-      showToast('Resetting...')
-      await performSync(false, true)
-      showToast('Reset complete!')
+  const executeShowMnemonic = () => {
+    setShowMnemonicWarning(false)
+    if (wallet.mnemonic) {
+      setMnemonicToShow(wallet.mnemonic)
     }
+  }
+
+  const handleResetAndResync = () => {
+    setShowResyncConfirm(true)
+  }
+
+  const executeResetAndResync = async () => {
+    setShowResyncConfirm(false)
+    showToast('Resetting...')
+    await performSync(false, true)
+    showToast('Reset complete!')
   }
 
   const handleDeleteClick = () => {
@@ -236,18 +271,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title">Settings</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="modal-content">
+    <>
+    <Modal onClose={onClose} title="Settings">
+      <div className="modal-content">
           {/* WALLET SECTION */}
           <div className="settings-section">
             <div className="settings-section-title">Wallet</div>
             <div className="settings-card">
-              <div className="settings-row" onClick={() => wallet?.walletAddress && copyToClipboard(wallet.walletAddress, 'Payment address copied!')}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={() => wallet?.walletAddress && copyToClipboard(wallet.walletAddress, 'Payment address copied!')} onKeyDown={handleKeyDown(() => wallet?.walletAddress && copyToClipboard(wallet.walletAddress, 'Payment address copied!'))} aria-label="Copy payment address">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><WalletIcon /></div>
                   <div className="settings-row-content">
@@ -257,7 +288,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><CopyIcon /></span>
               </div>
-              <div className="settings-row" onClick={() => wallet?.ordAddress && copyToClipboard(wallet.ordAddress, 'Ordinals address copied!')}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={() => wallet?.ordAddress && copyToClipboard(wallet.ordAddress, 'Ordinals address copied!')} onKeyDown={handleKeyDown(() => wallet?.ordAddress && copyToClipboard(wallet.ordAddress, 'Ordinals address copied!'))} aria-label="Copy ordinals address">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><PaletteIcon /></div>
                   <div className="settings-row-content">
@@ -267,7 +298,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><CopyIcon /></span>
               </div>
-              <div className="settings-row" onClick={() => wallet?.identityPubKey && copyToClipboard(wallet.identityPubKey, 'Identity key copied!')}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={() => wallet?.identityPubKey && copyToClipboard(wallet.identityPubKey, 'Identity key copied!')} onKeyDown={handleKeyDown(() => wallet?.identityPubKey && copyToClipboard(wallet.identityPubKey, 'Identity key copied!'))} aria-label="Copy identity key">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><KeyIcon /></div>
                   <div className="settings-row-content">
@@ -362,7 +393,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               </div>
 
               {/* Lock Now Button */}
-              <div className="settings-row" onClick={() => { lockWallet(); onClose(); }}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={() => { lockWallet(); onClose(); }} onKeyDown={handleKeyDown(() => { lockWallet(); onClose(); })} aria-label="Lock wallet now">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -380,7 +411,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
               {wallet.mnemonic && (
                 <>
-                  <div className="settings-row" onClick={handleShowMnemonic}>
+                  <div className="settings-row" role="button" tabIndex={0} onClick={handleShowMnemonic} onKeyDown={handleKeyDown(handleShowMnemonic)} aria-label="View recovery phrase">
                     <div className="settings-row-left">
                       <div className="settings-row-icon" aria-hidden="true"><LogsIcon /></div>
                       <div className="settings-row-content">
@@ -390,7 +421,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     </div>
                     <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
                   </div>
-                  <div className="settings-row" onClick={() => setShowTestRecovery(true)}>
+                  <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowTestRecovery(true)} onKeyDown={handleKeyDown(() => setShowTestRecovery(true))} aria-label="Test recovery phrase">
                     <div className="settings-row-left">
                       <div className="settings-row-icon" aria-hidden="true">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -407,7 +438,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   </div>
                 </>
               )}
-              <div className="settings-row" onClick={handleExportKeys}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={handleExportKeys} onKeyDown={handleKeyDown(handleExportKeys)} aria-label="Export private keys">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><LockIcon /></div>
                   <div className="settings-row-content">
@@ -424,7 +455,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <div className="settings-section">
             <div className="settings-section-title">Backup</div>
             <div className="settings-card">
-              <div className="settings-row" onClick={handleExportFullBackup}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={handleExportFullBackup} onKeyDown={handleKeyDown(handleExportFullBackup)} aria-label="Export full backup">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><SaveIcon /></div>
                   <div className="settings-row-content">
@@ -434,7 +465,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
               </div>
-              <div className="settings-row" onClick={handleImportBackup}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={handleImportBackup} onKeyDown={handleKeyDown(handleImportBackup)} aria-label="Import backup">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><DownloadIcon /></div>
                   <div className="settings-row-content">
@@ -451,7 +482,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <div className="settings-section">
             <div className="settings-section-title">Advanced</div>
             <div className="settings-card">
-              <div className="settings-row" onClick={handleResetAndResync}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={handleResetAndResync} onKeyDown={handleKeyDown(handleResetAndResync)} aria-label="Reset and resync wallet">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><RefreshIcon /></div>
                   <div className="settings-row-content">
@@ -461,7 +492,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
               </div>
-              <div className="settings-row" onClick={handleCheckMessageBox}>
+              <div className="settings-row" role="button" tabIndex={0} onClick={handleCheckMessageBox} onKeyDown={handleKeyDown(handleCheckMessageBox)} aria-label="Check message box">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true">
                     <RefreshIcon />
@@ -478,7 +509,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
               {/* Known Senders */}
               {!showSenderInput ? (
-                <div className="settings-row" onClick={() => setShowSenderInput(true)}>
+                <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowSenderInput(true)} onKeyDown={handleKeyDown(() => setShowSenderInput(true))} aria-label="Add known sender">
                   <div className="settings-row-left">
                     <div className="settings-row-icon" aria-hidden="true"><UsersIcon /></div>
                     <div className="settings-row-content">
@@ -511,7 +542,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
               {/* Debug Invoice Finder */}
               {getKnownSenders().length > 0 && !showDebugInput && (
-                <div className="settings-row" onClick={() => setShowDebugInput(true)}>
+                <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowDebugInput(true)} onKeyDown={handleKeyDown(() => setShowDebugInput(true))} aria-label="Debug invoice finder">
                   <div className="settings-row-left">
                     <div className="settings-row-icon" aria-hidden="true"><SearchIcon /></div>
                     <div className="settings-row-content">
@@ -572,7 +603,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
               ))}
               {!showTrustedOriginInput ? (
-                <div className="settings-row" onClick={() => setShowTrustedOriginInput(true)}>
+                <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowTrustedOriginInput(true)} onKeyDown={handleKeyDown(() => setShowTrustedOriginInput(true))} aria-label="Add trusted origin">
                   <div className="settings-row-left">
                     <div className="settings-row-icon" aria-hidden="true"><PlusIcon /></div>
                     <div className="settings-row-content">
@@ -635,7 +666,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             </button>
           </div>
         </div>
-      </div>
+      </Modal>
 
       {/* Delete Wallet Confirmation Modal */}
       {showDeleteConfirmation && (
@@ -660,6 +691,72 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           onClose={() => setShowTestRecovery(false)}
         />
       )}
-    </div>
+
+      {/* Import Backup Confirmation */}
+      {showImportConfirm && (
+        <ConfirmationModal
+          title="Import Backup"
+          message={`Import ${showImportConfirm.utxos} UTXOs and ${showImportConfirm.transactions} transactions?`}
+          type="info"
+          confirmText="Import"
+          cancelText="Cancel"
+          onConfirm={executeImportBackup}
+          onCancel={() => { setShowImportConfirm(null); setPendingImportBackup(null) }}
+        />
+      )}
+
+      {/* Export Keys Warning */}
+      {showKeysWarning && (
+        <ConfirmationModal
+          title="Export Private Keys"
+          message="Your private keys will be copied to the clipboard. Never share them with anyone!"
+          type="danger"
+          confirmText="Copy Keys"
+          cancelText="Cancel"
+          onConfirm={executeExportKeys}
+          onCancel={() => setShowKeysWarning(false)}
+        />
+      )}
+
+      {/* Show Mnemonic Warning */}
+      {showMnemonicWarning && (
+        <ConfirmationModal
+          title="View Recovery Phrase"
+          message="Make sure no one can see your screen! Your recovery phrase gives full access to your wallet."
+          type="warning"
+          confirmText="Show Phrase"
+          cancelText="Cancel"
+          onConfirm={executeShowMnemonic}
+          onCancel={() => setShowMnemonicWarning(false)}
+        />
+      )}
+
+      {/* Mnemonic Display Modal */}
+      {mnemonicToShow && (
+        <ConfirmationModal
+          title="Recovery Phrase"
+          message="Write these 12 words down and store them safely. Never share them!"
+          details={mnemonicToShow}
+          type="warning"
+          confirmText="Done"
+          cancelText=""
+          onConfirm={() => setMnemonicToShow(null)}
+          onCancel={() => setMnemonicToShow(null)}
+        />
+      )}
+
+      {/* Resync Confirmation */}
+      {showResyncConfirm && (
+        <ConfirmationModal
+          title="Reset & Resync"
+          message="Reset UTXO database and resync from blockchain? This fixes balance issues but may take a moment."
+          type="warning"
+          confirmText="Reset & Resync"
+          cancelText="Cancel"
+          onConfirm={executeResetAndResync}
+          onCancel={() => setShowResyncConfirm(false)}
+        />
+      )}
+    </>
   )
 }

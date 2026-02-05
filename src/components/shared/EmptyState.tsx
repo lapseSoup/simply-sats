@@ -219,12 +219,13 @@ export function NoOrdinalsEmpty({ onReceive }: { onReceive?: () => void }) {
   )
 }
 
-export function NoTokensEmpty() {
+export function NoTokensEmpty({ onRefresh, loading }: { onRefresh?: () => void, loading?: boolean }) {
   return (
     <EmptyState
       icon={<CoinIcon />}
-      title="No Tokens Yet"
-      description="BSV-20 and BSV-21 tokens you own will appear here."
+      title="No Tokens Found"
+      description="You don't have any BSV20 or BSV21 tokens yet."
+      action={onRefresh ? { label: loading ? 'Checking...' : 'Check Again', onClick: onRefresh } : undefined}
     />
   )
 }

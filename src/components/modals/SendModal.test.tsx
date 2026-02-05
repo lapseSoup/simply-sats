@@ -100,7 +100,7 @@ describe('SendModal', () => {
   it('calls onClose when close button is clicked', () => {
     render(<SendModal onClose={mockOnClose} />)
 
-    const closeButton = screen.getByLabelText('Close')
+    const closeButton = screen.getByLabelText('Close modal')
     fireEvent.click(closeButton)
 
     expect(mockOnClose).toHaveBeenCalled()

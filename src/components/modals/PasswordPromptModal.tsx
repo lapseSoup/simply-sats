@@ -92,7 +92,6 @@ export function PasswordPromptModal({
             type="button"
             className="password-toggle"
             onClick={() => setShowPassword(!showPassword)}
-            tabIndex={-1}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
           >
             {showPassword ? (

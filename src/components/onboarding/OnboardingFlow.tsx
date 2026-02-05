@@ -177,7 +177,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                   id="create-password"
                   type="password"
                   className="form-input"
-                  placeholder="At least 8 characters"
+                  placeholder="At least 12 characters"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   autoComplete="new-password"

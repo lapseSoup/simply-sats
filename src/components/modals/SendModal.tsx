@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
+import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 import { FeeEstimation } from '../shared/FeeEstimation'
 import { CoinControlModal } from './CoinControlModal'
@@ -24,6 +25,22 @@ export function SendModal({ onClose }: SendModalProps) {
   const [sendAmount, setSendAmount] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [addressError, setAddressError] = useState('')
+
+  // Validate BSV address format
+  const validateAddress = useCallback((addr: string) => {
+    if (!addr) {
+      setAddressError('')
+      return
+    }
+    // BSV addresses start with 1, 3, or q (for bech32) and are 25-34 chars
+    // Legacy P2PKH starts with 1, P2SH starts with 3
+    if (!/^[13][a-km-zA-HJ-NP-Z1-9]{24,33}$/.test(addr)) {
+      setAddressError('Invalid BSV address format')
+    } else {
+      setAddressError('')
+    }
+  }, [])
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showCoinControl, setShowCoinControl] = useState(false)
   const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
@@ -131,24 +148,27 @@ export function SendModal({ onClose }: SendModalProps) {
           confirmDelaySeconds={isHighValue ? 3 : 0}
         />
       )}
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal send-modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title">Send BSV</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="modal-content compact">
+    <Modal onClose={onClose} title="Send BSV" className="send-modal">
+      <div className="modal-content compact">
           <div className="form-group">
             <label className="form-label" htmlFor="send-address">To</label>
             <input
               id="send-address"
               type="text"
-              className="form-input mono"
+              className={`form-input mono ${addressError ? 'input-error' : ''}`}
               placeholder="Enter BSV address"
               value={sendAddress}
-              onChange={e => setSendAddress(e.target.value)}
+              onChange={e => {
+                setSendAddress(e.target.value)
+                validateAddress(e.target.value)
+              }}
               autoComplete="off"
+              aria-invalid={!!addressError}
+              aria-describedby={addressError ? 'address-error' : undefined}
             />
+            {addressError && (
+              <div id="address-error" className="form-error" role="alert">{addressError}</div>
+            )}
           </div>
           <div className="form-group">
             <label className="form-label" htmlFor="send-amount">
@@ -254,13 +274,12 @@ export function SendModal({ onClose }: SendModalProps) {
           <button
             className="btn btn-primary"
             onClick={handleSubmitClick}
-            disabled={sending || !sendAddress || !sendAmount || sendSats + fee > availableSats}
+            disabled={sending || !sendAddress || !sendAmount || !!addressError || sendSats + fee > availableSats}
           >
             {sending ? 'Sending...' : `Send ${sendSats > 0 ? sendSats.toLocaleString() + ' sats' : 'BSV'}`}
           </button>
         </div>
-      </div>
-    </div>
+      </Modal>
 
     {/* Coin Control Modal */}
     {showCoinControl && (

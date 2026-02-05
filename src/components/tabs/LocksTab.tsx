@@ -2,6 +2,7 @@ import { useState, useEffect, memo, useCallback, useMemo } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import type { LockedUTXO } from '../../services/wallet'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { NoLocksEmpty } from '../shared/EmptyState'
 
 interface LocksTabProps {
   onLock: () => void
@@ -162,27 +163,7 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
     <div className="locks-tab">
       {/* Locks List */}
       {locks.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon" aria-hidden="true">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-          </div>
-          <div className="empty-title">No Locks Yet</div>
-          <div className="empty-text">
-            Lock your BSV until a specific block height.
-            Great for savings goals and commitments.
-          </div>
-          <button
-            className="btn btn-secondary"
-            onClick={onLock}
-            aria-label="Create a new lock"
-            style={{ marginTop: 16, width: 'auto', padding: '10px 20px' }}
-          >
-            Lock BSV
-          </button>
-        </div>
+        <NoLocksEmpty onLock={onLock} />
       ) : (
         <div className="locks-list" role="list" aria-label="Locked UTXOs">
           {/* Unlockable locks first */}

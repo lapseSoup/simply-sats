@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useId, type ReactNode } from 'react'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useKeyboardNav } from '../../hooks/useKeyboardNav'
 
@@ -17,6 +17,7 @@ export function Modal({
   className = '',
   closeOnOverlayClick = true
 }: ModalProps) {
+  const titleId = useId()
   const focusTrapRef = useFocusTrap({ enabled: true })
 
   // Escape key closes modal
@@ -46,14 +47,14 @@ export function Modal({
       onClick={handleOverlayClick}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="modal-title"
+      aria-labelledby={titleId}
     >
       <div
         ref={focusTrapRef}
         className={`modal ${className}`}
       >
         <div className="modal-header">
-          <h2 id="modal-title" className="modal-title">{title}</h2>
+          <h2 id={titleId} className="modal-title">{title}</h2>
           <button
             className="modal-close"
             onClick={onClose}
