@@ -1,28 +1,35 @@
 import { useState, useEffect, memo, useCallback } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
-import { openUrl } from '@tauri-apps/plugin-opener'
+import { useUI } from '../../contexts/UIContext'
 import { getTransactionsByLabel } from '../../services/database'
 import { uiLogger } from '../../services/logger'
+import { TransactionDetailModal } from '../modals/TransactionDetailModal'
+
+// Transaction type for the component
+type TxHistoryItem = { tx_hash: string; amount?: number; height: number }
 
 // Memoized transaction item to prevent unnecessary re-renders
 const TransactionItem = memo(function TransactionItem({
   tx,
   txType,
   txIcon,
-  onOpenWoC
+  onClick,
+  formatUSD
 }: {
-  tx: { tx_hash: string; amount?: number; height: number }
+  tx: TxHistoryItem
   txType: string
   txIcon: string
-  onOpenWoC: (txid: string) => void
+  onClick: () => void
+  formatUSD: (sats: number) => string
 }) {
   return (
     <div
       className="tx-item"
-      onClick={() => onOpenWoC(tx.tx_hash)}
+      onClick={onClick}
       role="listitem"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onOpenWoC(tx.tx_hash)}
+      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      style={{ cursor: 'pointer' }}
     >
       <div className="tx-icon" aria-hidden="true">{txIcon}</div>
       <div className="tx-info">
@@ -34,9 +41,14 @@ const TransactionItem = memo(function TransactionItem({
       </div>
       <div className="tx-amount">
         {tx.amount ? (
-          <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
-            {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats
-          </div>
+          <>
+            <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
+              {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats
+            </div>
+            <div className="tx-amount-usd" style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+              ${formatUSD(Math.abs(tx.amount))}
+            </div>
+          </>
         ) : (
           <div className="tx-amount-value">View →</div>
         )}
@@ -47,7 +59,9 @@ const TransactionItem = memo(function TransactionItem({
 
 export function ActivityTab() {
   const { txHistory, locks } = useWallet()
+  const { formatUSD } = useUI()
   const [unlockTxids, setUnlockTxids] = useState<Set<string>>(new Set())
+  const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
 
   // Fetch unlock transaction IDs from database
   useEffect(() => {
@@ -62,8 +76,12 @@ export function ActivityTab() {
     fetchUnlockTxids()
   }, [txHistory]) // Refresh when tx history changes
 
-  const openOnWoC = useCallback((txid: string) => {
-    openUrl(`https://whatsonchain.com/tx/${txid}`)
+  const handleTxClick = useCallback((tx: TxHistoryItem) => {
+    setSelectedTx(tx)
+  }, [])
+
+  const handleCloseModal = useCallback(() => {
+    setSelectedTx(null)
   }, [])
 
   if (txHistory.length === 0) {
@@ -83,7 +101,7 @@ export function ActivityTab() {
     )
   }
 
-  // Determine transaction type and icon (SVG icons as JSX strings for inline rendering)
+  // Determine transaction type and icon
   const getTxTypeAndIcon = (tx: { tx_hash: string; amount?: number }) => {
     const isLockTx = locks.some(l => l.txid === tx.tx_hash)
     const isUnlockTx = unlockTxids.has(tx.tx_hash)
@@ -104,20 +122,31 @@ export function ActivityTab() {
   }
 
   return (
-    <div className="tx-list" role="list" aria-label="Transaction history">
-      {txHistory.map((tx) => {
-        const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
+    <>
+      <div className="tx-list" role="list" aria-label="Transaction history">
+        {txHistory.map((tx) => {
+          const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
 
-        return (
-          <TransactionItem
-            key={tx.tx_hash}
-            tx={tx}
-            txType={txType}
-            txIcon={txIcon}
-            onOpenWoC={openOnWoC}
-          />
-        )
-      })}
-    </div>
+          return (
+            <TransactionItem
+              key={tx.tx_hash}
+              tx={tx}
+              txType={txType}
+              txIcon={txIcon}
+              onClick={() => handleTxClick(tx)}
+              formatUSD={formatUSD}
+            />
+          )
+        })}
+      </div>
+
+      {/* Transaction Detail Modal */}
+      {selectedTx && (
+        <TransactionDetailModal
+          transaction={selectedTx}
+          onClose={handleCloseModal}
+        />
+      )}
+    </>
   )
 }

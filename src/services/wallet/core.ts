@@ -163,3 +163,26 @@ export function importFromJSON(jsonString: string): WalletKeys {
     throw e
   }
 }
+
+/**
+ * Verify that a mnemonic produces the expected wallet address.
+ * This is a read-only operation that does NOT modify any wallet state.
+ *
+ * @param mnemonic - The seed phrase to verify
+ * @param expectedAddress - The wallet address to compare against
+ * @returns Object with valid flag and the derived address
+ */
+export async function verifyMnemonicMatchesWallet(
+  mnemonic: string,
+  expectedAddress: string
+): Promise<{ valid: boolean; derivedAddress: string }> {
+  // Use the same restore logic but don't save anything
+  const walletKeys = restoreWallet(mnemonic)
+
+  const derivedAddress = walletKeys.walletAddress
+
+  return {
+    valid: derivedAddress === expectedAddress,
+    derivedAddress
+  }
+}

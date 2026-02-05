@@ -546,4 +546,56 @@ describe('Wallet Service', () => {
       })
     })
   })
+
+  describe('verifyMnemonicMatchesWallet', () => {
+    it('should return valid: true when mnemonic matches wallet address', async () => {
+      // Create wallet from known mnemonic
+      const wallet = restoreWallet(TEST_MNEMONIC)
+
+      // Import the verification function
+      const { verifyMnemonicMatchesWallet } = await import('./wallet/core')
+
+      // Verify with correct mnemonic
+      const result = await verifyMnemonicMatchesWallet(TEST_MNEMONIC, wallet.walletAddress)
+
+      expect(result.valid).toBe(true)
+      expect(result.derivedAddress).toBe(wallet.walletAddress)
+    })
+
+    it('should return valid: false when mnemonic does not match wallet address', async () => {
+      // Create wallet from known mnemonic
+      const wallet = restoreWallet(TEST_MNEMONIC)
+
+      // Import the verification function
+      const { verifyMnemonicMatchesWallet } = await import('./wallet/core')
+
+      // Use a different mnemonic
+      const differentMnemonic = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong'
+
+      const result = await verifyMnemonicMatchesWallet(differentMnemonic, wallet.walletAddress)
+
+      expect(result.valid).toBe(false)
+      expect(result.derivedAddress).not.toBe(wallet.walletAddress)
+    })
+
+    it('should throw error for invalid mnemonic', async () => {
+      const { verifyMnemonicMatchesWallet } = await import('./wallet/core')
+
+      await expect(
+        verifyMnemonicMatchesWallet('invalid mnemonic phrase', '1someaddress')
+      ).rejects.toThrow()
+    })
+
+    it('should normalize mnemonic before verification', async () => {
+      const wallet = restoreWallet(TEST_MNEMONIC)
+      const { verifyMnemonicMatchesWallet } = await import('./wallet/core')
+
+      // Test with uppercase and extra spaces
+      const messyMnemonic = '  ABANDON ABANDON  ABANDON ABANDON ABANDON ABANDON ABANDON ABANDON ABANDON ABANDON ABANDON ABOUT  '
+
+      const result = await verifyMnemonicMatchesWallet(messyMnemonic, wallet.walletAddress)
+
+      expect(result.valid).toBe(true)
+    })
+  })
 })

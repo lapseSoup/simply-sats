@@ -179,3 +179,43 @@ export async function updateTransactionStatus(
     [status, status === 'confirmed' ? Date.now() : null, blockHeight || null, txid]
   )
 }
+
+/**
+ * Update labels for a transaction (replaces existing labels)
+ */
+export async function updateTransactionLabels(
+  txid: string,
+  labels: string[]
+): Promise<void> {
+  const database = getDatabase()
+
+  // Delete existing labels for this txid
+  await database.execute(
+    'DELETE FROM transaction_labels WHERE txid = $1',
+    [txid]
+  )
+
+  // Insert new labels
+  for (const label of labels) {
+    if (label.trim()) {
+      await database.execute(
+        'INSERT INTO transaction_labels (txid, label) VALUES ($1, $2)',
+        [txid, label.trim()]
+      )
+    }
+  }
+}
+
+/**
+ * Get labels for a specific transaction
+ */
+export async function getTransactionLabels(txid: string): Promise<string[]> {
+  const database = getDatabase()
+
+  const rows = await database.select<{ label: string }[]>(
+    'SELECT label FROM transaction_labels WHERE txid = $1',
+    [txid]
+  )
+
+  return rows.map(row => row.label)
+}

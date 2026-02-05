@@ -29,6 +29,7 @@ export {
   importFromShaullet,
   importFrom1SatOrdinals,
   importFromJSON,
+  verifyMnemonicMatchesWallet,
   WALLET_PATHS
 } from './core'
 

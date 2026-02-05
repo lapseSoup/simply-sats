@@ -15,7 +15,7 @@ export function SendModal({ onClose }: SendModalProps) {
     utxos,
     handleSend
   } = useWallet()
-  const { displayInSats, showToast } = useUI()
+  const { displayInSats, showToast, formatUSD } = useUI()
 
   const [sendAddress, setSendAddress] = useState('')
   const [sendAmount, setSendAmount] = useState('')
@@ -156,18 +156,23 @@ export function SendModal({ onClose }: SendModalProps) {
                 MAX
               </button>
             </div>
+            {sendSats > 0 && (
+              <div className="form-hint" style={{ marginTop: '4px', color: 'var(--text-secondary)' }}>
+                ≈ ${formatUSD(sendSats)} USD
+              </div>
+            )}
           </div>
 
           <div className="send-summary compact">
             <div className="send-summary-row">
               <span>Balance</span>
-              <span>{availableSats.toLocaleString()} sats</span>
+              <span>{availableSats.toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(availableSats)})</span></span>
             </div>
             {sendSats > 0 && (
               <>
                 <div className="send-summary-row">
                   <span>Send</span>
-                  <span>{sendSats.toLocaleString()} sats</span>
+                  <span>{sendSats.toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats)})</span></span>
                 </div>
                 <div className="send-summary-row">
                   <span>Fee</span>
@@ -175,7 +180,7 @@ export function SendModal({ onClose }: SendModalProps) {
                 </div>
                 <div className="send-summary-row total">
                   <span>Total</span>
-                  <span>{(sendSats + fee).toLocaleString()} sats</span>
+                  <span>{(sendSats + fee).toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats + fee)})</span></span>
                 </div>
               </>
             )}

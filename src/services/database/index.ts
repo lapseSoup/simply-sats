@@ -43,7 +43,9 @@ export {
   getAllTransactions,
   updateTransactionAmount,
   getTransactionsByLabel,
-  updateTransactionStatus
+  updateTransactionStatus,
+  updateTransactionLabels,
+  getTransactionLabels
 } from './txRepository'
 
 // Lock operations

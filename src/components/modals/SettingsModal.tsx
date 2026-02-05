@@ -8,6 +8,7 @@ import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../s
 import { checkForPayments, getPaymentNotifications } from '../../services/messageBox'
 import { exportDatabase, importDatabase, type DatabaseBackup } from '../../services/database'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
+import { TestRecoveryModal } from './TestRecoveryModal'
 
 // SVG Icons for Settings
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -68,6 +69,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [paymentNotifications, setPaymentNotifications] = useState(getPaymentNotifications())
 
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
+  const [showTestRecovery, setShowTestRecovery] = useState(false)
 
   if (!wallet) return null
 
@@ -377,16 +379,33 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               </div>
 
               {wallet.mnemonic && (
-                <div className="settings-row" onClick={handleShowMnemonic}>
-                  <div className="settings-row-left">
-                    <div className="settings-row-icon" aria-hidden="true"><LogsIcon /></div>
-                    <div className="settings-row-content">
-                      <div className="settings-row-label">Recovery Phrase</div>
-                      <div className="settings-row-value">12 words</div>
+                <>
+                  <div className="settings-row" onClick={handleShowMnemonic}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon" aria-hidden="true"><LogsIcon /></div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Recovery Phrase</div>
+                        <div className="settings-row-value">12 words</div>
+                      </div>
                     </div>
+                    <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
                   </div>
-                  <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
-                </div>
+                  <div className="settings-row" onClick={() => setShowTestRecovery(true)}>
+                    <div className="settings-row-left">
+                      <div className="settings-row-icon" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9 11l3 3L22 4" />
+                          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                        </svg>
+                      </div>
+                      <div className="settings-row-content">
+                        <div className="settings-row-label">Test Recovery</div>
+                        <div className="settings-row-value">Verify backup works</div>
+                      </div>
+                    </div>
+                    <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
+                  </div>
+                </>
               )}
               <div className="settings-row" onClick={handleExportKeys}>
                 <div className="settings-row-left">
@@ -631,6 +650,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           onCancel={() => setShowDeleteConfirmation(false)}
           requireTypedConfirmation="DELETE"
           confirmDelaySeconds={3}
+        />
+      )}
+
+      {/* Test Recovery Modal */}
+      {showTestRecovery && (
+        <TestRecoveryModal
+          expectedAddress={wallet.walletAddress}
+          onClose={() => setShowTestRecovery(false)}
         />
       )}
     </div>
