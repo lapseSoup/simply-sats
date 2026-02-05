@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { calculateExactFee, calculateTxFee, calculateMaxSend, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
+import { calculateExactFee, calculateTxFee, calculateMaxSend } from '../../adapters/walletAdapter'
+import { P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../domain/transaction/fees'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
-import { FeeEstimation } from '../shared/FeeEstimation'
 import { CoinControlModal } from './CoinControlModal'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
 
@@ -17,6 +17,7 @@ export function SendModal({ onClose }: SendModalProps) {
     wallet,
     balance,
     utxos,
+    feeRateKB,
     handleSend
   } = useWallet()
   const { displayInSats, showToast, formatUSD } = useUI()
@@ -44,14 +45,9 @@ export function SendModal({ onClose }: SendModalProps) {
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showCoinControl, setShowCoinControl] = useState(false)
   const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
-  const [feeRate, setFeeRate] = useState(DEFAULT_FEE_RATE)
 
-  // Handle fee rate changes
-  const handleFeeRateChange = useCallback((rate: number) => {
-    setFeeRate(rate)
-  }, [])
-
-  if (!wallet) return null
+  // Use fee rate from settings (convert from sats/KB to sats/byte)
+  const feeRate = feeRateKB / 1000
 
   // Parse amount based on display mode (sats or BSV)
   const sendSats = displayInSats
@@ -63,31 +59,48 @@ export function SendModal({ onClose }: SendModalProps) {
   const numInputs = utxos.length > 0 ? utxos.length : Math.max(1, Math.ceil(balance / 10000))
   const totalUtxoValue = utxos.length > 0 ? utxos.reduce((sum, u) => sum + u.satoshis, 0) : balance
 
-  // Calculate fee using domain layer functions with adjustable rate
-  let fee = 0
-  let inputCount = 0
-  let outputCount = 0
-  if (sendSats > 0) {
-    if (utxos.length > 0) {
-      // Use domain layer calculateExactFee with adjustable fee rate
-      const feeInfo = calculateExactFee(sendSats, utxos, feeRate)
-      fee = feeInfo.fee
-      inputCount = feeInfo.inputCount
-      outputCount = feeInfo.outputCount
-    } else {
-      // Fallback when UTXOs not loaded - estimate based on input count
-      const isMaxSend = sendSats >= totalUtxoValue - 50
-      outputCount = isMaxSend ? 1 : 2
-      inputCount = numInputs
-      fee = calculateTxFee(numInputs, outputCount, feeRate)
+  // Calculate fee using domain layer functions with fee rate from settings
+  const feeCalc = useMemo(() => {
+    if (sendSats <= 0) {
+      return { fee: 0, inputCount: 0, outputCount: 0, txSize: 0 }
     }
-  }
+
+    let calcFee = 0
+    let calcInputCount = 0
+    let calcOutputCount = 0
+
+    if (utxos.length > 0) {
+      const feeInfo = calculateExactFee(sendSats, utxos, feeRate)
+      calcFee = feeInfo.fee
+      calcInputCount = feeInfo.inputCount
+      calcOutputCount = feeInfo.outputCount
+    } else {
+      // Fallback when UTXOs not loaded
+      const isMaxSend = sendSats >= totalUtxoValue - 50
+      calcOutputCount = isMaxSend ? 1 : 2
+      calcInputCount = numInputs
+      calcFee = calculateTxFee(numInputs, calcOutputCount, feeRate)
+    }
+
+    // Calculate estimated transaction size
+    const calcTxSize = TX_OVERHEAD + (calcInputCount * P2PKH_INPUT_SIZE) + (calcOutputCount * P2PKH_OUTPUT_SIZE)
+
+    return { fee: calcFee, inputCount: calcInputCount, outputCount: calcOutputCount, txSize: calcTxSize }
+  }, [sendSats, utxos, feeRate, totalUtxoValue, numInputs])
+
+  const { fee, inputCount, outputCount, txSize } = feeCalc
 
   // Calculate max sendable using domain layer function with current fee rate
-  const maxSendResult = utxos.length > 0
-    ? calculateMaxSend(utxos, feeRate)
-    : { maxSats: Math.max(0, totalUtxoValue - calculateTxFee(numInputs, 1, feeRate)), fee: 0, numInputs }
+  const maxSendResult = useMemo(() => {
+    if (utxos.length > 0) {
+      return calculateMaxSend(utxos, feeRate)
+    }
+    return { maxSats: Math.max(0, totalUtxoValue - calculateTxFee(numInputs, 1, feeRate)), fee: 0, numInputs }
+  }, [utxos, feeRate, totalUtxoValue, numInputs])
+
   const maxSendSats = maxSendResult.maxSats
+
+  if (!wallet) return null
 
   // Check if confirmation is required based on amount
   const requiresConfirmation = sendSats >= SEND_CONFIRMATION_THRESHOLD
@@ -210,6 +223,10 @@ export function SendModal({ onClose }: SendModalProps) {
                   <span>Send</span>
                   <span>{sendSats.toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats)})</span></span>
                 </div>
+                <div className="send-summary-row">
+                  <span>Fee <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>({feeRateKB} sats/KB)</span></span>
+                  <span>{fee} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(fee)})</span></span>
+                </div>
                 <div className="send-summary-row total">
                   <span>Total</span>
                   <span>{(sendSats + fee).toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats + fee)})</span></span>
@@ -218,52 +235,58 @@ export function SendModal({ onClose }: SendModalProps) {
             )}
           </div>
 
-          {/* Fee Estimation with adjustable rate */}
-          {sendSats > 0 && (
-            <FeeEstimation
-              inputCount={inputCount}
-              outputCount={outputCount}
-              currentFee={fee}
-              onFeeRateChange={handleFeeRateChange}
-              showDetails={false}
-              compact={false}
-            />
-          )}
+          {/* Advanced options */}
+          <details className="send-advanced">
+            <summary className="send-advanced-toggle">Advanced Options</summary>
+            <div className="send-advanced-content">
+              {/* Transaction details */}
+              {sendSats > 0 && (
+                <div className="send-tx-details">
+                  <div className="send-tx-row">
+                    <span>Est. Size</span>
+                    <span>{txSize} bytes</span>
+                  </div>
+                  <div className="send-tx-row">
+                    <span>Inputs</span>
+                    <span>{inputCount}</span>
+                  </div>
+                  <div className="send-tx-row">
+                    <span>Outputs</span>
+                    <span>{outputCount}</span>
+                  </div>
+                </div>
+              )}
 
-          {/* Coin Control Section */}
-          <div style={{
-            borderTop: '1px solid var(--border)',
-            paddingTop: 12,
-            marginTop: 12
-          }}>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setShowCoinControl(true)}
-              style={{ width: '100%', fontSize: 12, padding: '8px 12px' }}
-            >
-              {selectedUtxos
-                ? `🎯 Using ${selectedUtxos.length} selected UTXOs`
-                : '⚙️ Coin Control (Advanced)'}
-            </button>
-            {selectedUtxos && (
+              {/* Coin Control */}
               <button
                 type="button"
-                onClick={() => setSelectedUtxos(null)}
-                style={{
-                  width: '100%',
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-tertiary)',
-                  fontSize: 11,
-                  cursor: 'pointer',
-                  marginTop: 4
-                }}
+                className="btn btn-ghost"
+                onClick={() => setShowCoinControl(true)}
+                style={{ width: '100%', fontSize: 12, padding: '8px 12px', marginTop: 8 }}
               >
-                Clear selection (use automatic)
+                {selectedUtxos
+                  ? `🎯 Using ${selectedUtxos.length} selected UTXOs`
+                  : '⚙️ Coin Control'}
               </button>
-            )}
-          </div>
+              {selectedUtxos && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedUtxos(null)}
+                  style={{
+                    width: '100%',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-tertiary)',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    marginTop: 4
+                  }}
+                >
+                  Clear selection (use automatic)
+                </button>
+              )}
+            </div>
+          </details>
 
           {sendError && (
             <div className="warning compact" role="alert">

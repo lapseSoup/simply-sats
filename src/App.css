@@ -1014,6 +1014,60 @@ textarea.form-input {
   font-weight: 600;
 }
 
+/* Send Advanced Section */
+.send-advanced {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.send-advanced-toggle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 0;
+  list-style: none;
+  user-select: none;
+}
+
+.send-advanced-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.send-advanced-toggle::before {
+  content: '▶ ';
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+.send-advanced[open] .send-advanced-toggle::before {
+  content: '▼ ';
+}
+
+.send-advanced-content {
+  padding-top: 12px;
+}
+
+.send-tx-details {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.send-tx-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding: 2px 0;
+}
+
+.send-tx-row span:last-child {
+  font-family: 'SF Mono', Monaco, monospace;
+  color: var(--text-secondary);
+}
+
 /* Buttons */
 .btn {
   width: 100%;
