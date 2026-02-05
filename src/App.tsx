@@ -38,6 +38,7 @@ function WalletApp() {
     tokenBalances,
     refreshTokens,
     accounts,
+    activeAccount,
     activeAccountId,
     createNewAccount,
     deleteAccount,
@@ -238,7 +239,10 @@ function WalletApp() {
   if (isLocked && wallet === null) {
     return (
       <>
-        <LockScreenModal onUnlock={unlockWallet} />
+        <LockScreenModal
+          onUnlock={unlockWallet}
+          accountName={activeAccount?.name || 'Wallet'}
+        />
         <Toast message={copyFeedback} />
       </>
     )

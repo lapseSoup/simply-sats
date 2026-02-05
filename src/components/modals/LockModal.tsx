@@ -3,6 +3,16 @@ import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateLockFee, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
 import { getTimelockScriptSize } from '../../services/wallet'
+import { ConfirmationModal } from '../shared/ConfirmationModal'
+
+// Long lock warning threshold: 1 week = ~1008 blocks (10 min per block)
+const LONG_LOCK_WARNING_BLOCKS = 1008
+
+// Helper to calculate estimated unlock date - defined outside component to avoid render purity issues
+function calculateEstimatedUnlockDate(blocks: number): Date | null {
+  if (blocks <= 0) return null
+  return new Date(Date.now() + blocks * 10 * 60 * 1000)
+}
 
 interface LockModalProps {
   onClose: () => void
@@ -21,6 +31,7 @@ export function LockModal({ onClose }: LockModalProps) {
   const [lockBlocks, setLockBlocks] = useState('')
   const [locking, setLocking] = useState(false)
   const [lockError, setLockError] = useState('')
+  const [showLongLockWarning, setShowLongLockWarning] = useState(false)
 
   if (!wallet) return null
 
@@ -31,18 +42,39 @@ export function LockModal({ onClose }: LockModalProps) {
   const currentHeight = networkInfo?.blockHeight || 0
   const unlockBlock = currentHeight + blocks
 
+  // Check if this is a long lock (> 1 week)
+  const isLongLock = blocks > LONG_LOCK_WARNING_BLOCKS
+
   // Estimate unlock time (average 10 min per block)
   const estimatedMinutes = blocks * 10
   const estimatedHours = Math.floor(estimatedMinutes / 60)
   const estimatedDays = Math.floor(estimatedHours / 24)
+  const estimatedWeeks = Math.floor(estimatedDays / 7)
+  const estimatedMonths = Math.floor(estimatedDays / 30)
 
   let timeEstimate = ''
-  if (estimatedDays > 0) {
+  if (estimatedMonths > 0) {
+    timeEstimate = `~${estimatedMonths} month${estimatedMonths > 1 ? 's' : ''}`
+  } else if (estimatedWeeks > 0) {
+    timeEstimate = `~${estimatedWeeks} week${estimatedWeeks > 1 ? 's' : ''}`
+  } else if (estimatedDays > 0) {
     timeEstimate = `~${estimatedDays} day${estimatedDays > 1 ? 's' : ''}`
   } else if (estimatedHours > 0) {
     timeEstimate = `~${estimatedHours} hour${estimatedHours > 1 ? 's' : ''}`
   } else if (estimatedMinutes > 0) {
     timeEstimate = `~${estimatedMinutes} min`
+  }
+
+  // Format date for display
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
   // Calculate exact fee using actual script size
@@ -54,9 +86,8 @@ export function LockModal({ onClose }: LockModalProps) {
     fee = calculateLockFee(1, DEFAULT_FEE_RATE)
   }
 
-  const handleSubmit = async () => {
-    if (!lockAmount || !lockBlocks || lockSats <= 0 || blocks <= 0) return
-
+  const executeLock = async () => {
+    setShowLongLockWarning(false)
     setLocking(true)
     setLockError('')
 
@@ -70,6 +101,36 @@ export function LockModal({ onClose }: LockModalProps) {
     }
 
     setLocking(false)
+  }
+
+  const handleSubmit = async () => {
+    if (!lockAmount || !lockBlocks || lockSats <= 0 || blocks <= 0) return
+
+    // Show warning for long locks
+    if (isLongLock) {
+      setShowLongLockWarning(true)
+      return
+    }
+
+    await executeLock()
+  }
+
+  // Long lock warning modal
+  if (showLongLockWarning && blocks > 0) {
+    const unlockDate = calculateEstimatedUnlockDate(blocks)
+    return (
+      <ConfirmationModal
+        title="⚠️ Long Lock Duration"
+        message={`You are about to lock ${lockSats.toLocaleString()} sats for ${timeEstimate}. Your funds will be completely inaccessible until the lock expires.`}
+        details={`Lock Amount: ${lockSats.toLocaleString()} sats\nDuration: ${blocks.toLocaleString()} blocks (${timeEstimate})\nEstimated Unlock: ${unlockDate ? formatDate(unlockDate) : 'Unknown'}\n\nThis action CANNOT be undone or reversed. Make sure you don't need these funds before the unlock date.`}
+        type="danger"
+        confirmText={`Lock for ${timeEstimate}`}
+        cancelText="Go Back"
+        onConfirm={executeLock}
+        onCancel={() => setShowLongLockWarning(false)}
+        confirmDelaySeconds={3}
+      />
+    )
   }
 
   return (
@@ -117,6 +178,22 @@ export function LockModal({ onClose }: LockModalProps) {
             </div>
           </div>
 
+          {/* Long lock warning inline */}
+          {isLongLock && blocks > 0 && (() => {
+            const unlockDate = calculateEstimatedUnlockDate(blocks)
+            return (
+              <div className="lock-warning" role="alert">
+                <span className="lock-warning-icon">⚠️</span>
+                <div className="lock-warning-content">
+                  <strong>Long lock duration</strong>
+                  <p>
+                    Locking for more than 1 week. Estimated unlock: {unlockDate && formatDate(unlockDate)}
+                  </p>
+                </div>
+              </div>
+            )
+          })()}
+
           <div className="send-summary compact">
             <div className="send-summary-row">
               <span>Current Block</span>
@@ -132,6 +209,15 @@ export function LockModal({ onClose }: LockModalProps) {
                   <span>Unlock Block</span>
                   <span>{unlockBlock.toLocaleString()}</span>
                 </div>
+                {blocks > 0 && (() => {
+                  const unlockDate = calculateEstimatedUnlockDate(blocks)
+                  return unlockDate ? (
+                    <div className="send-summary-row">
+                      <span>Est. Unlock Date</span>
+                      <span style={{ fontSize: '0.8rem' }}>{formatDate(unlockDate)}</span>
+                    </div>
+                  ) : null
+                })()}
                 <div className="send-summary-row">
                   <span>Fee</span>
                   <span>{fee} sats</span>
@@ -155,6 +241,42 @@ export function LockModal({ onClose }: LockModalProps) {
           </button>
         </div>
       </div>
+
+      <style>{`
+        .lock-warning {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          padding: 0.75rem;
+          background: rgba(234, 179, 8, 0.1);
+          border: 1px solid rgba(234, 179, 8, 0.3);
+          border-radius: 0.5rem;
+          margin-bottom: 0.75rem;
+        }
+
+        .lock-warning-icon {
+          font-size: 1.25rem;
+          flex-shrink: 0;
+        }
+
+        .lock-warning-content {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .lock-warning-content strong {
+          color: #eab308;
+          font-size: 0.875rem;
+        }
+
+        .lock-warning-content p {
+          margin: 0;
+          color: rgba(234, 179, 8, 0.8);
+          font-size: 0.8125rem;
+          line-height: 1.4;
+        }
+      `}</style>
     </div>
   )
 }

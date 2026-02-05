@@ -33,7 +33,7 @@ export interface AccountSettings {
 // Default settings for new accounts
 export const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
   displayInSats: false,
-  feeRateKB: 50,
+  feeRateKB: 100,
   autoLockMinutes: 10,
   trustedOrigins: []
 }

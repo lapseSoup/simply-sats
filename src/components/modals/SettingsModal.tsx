@@ -274,7 +274,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         min="1"
                         max="1000"
                         value={feeRateKB}
-                        onChange={(e) => setFeeRate(parseInt(e.target.value) || 71)}
+                        onChange={(e) => setFeeRate(parseInt(e.target.value) || 100)}
                         onClick={(e) => e.stopPropagation()}
                         aria-label="Fee rate in sats per KB"
                         style={{
@@ -293,7 +293,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
               </div>
               <div style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                Default: 71 sats/KB. Most miners accept 50-100. Lower = cheaper, higher = faster confirmation.
+                Default: 100 sats/KB. Most miners accept 50-100. Lower = cheaper, higher = faster confirmation.
               </div>
             </div>
           </div>

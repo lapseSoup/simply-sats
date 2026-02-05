@@ -10,6 +10,7 @@ import { ConfirmationModal } from '../shared/ConfirmationModal'
 import type { Ordinal } from '../../services/wallet'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
+import { calculateTxFee } from '../../services/transactions'
 
 interface OrdinalTransferModalProps {
   ordinal: Ordinal
@@ -20,8 +21,13 @@ export function OrdinalTransferModal({
   ordinal,
   onClose
 }: OrdinalTransferModalProps) {
-  const { handleTransferOrdinal } = useWallet()
+  const { handleTransferOrdinal, feeRateKB } = useWallet()
   const { showToast } = useUI()
+
+  // Calculate estimated fee dynamically based on current fee rate
+  // Ordinal transfer: 1 ordinal input + 1-2 funding inputs, 2 outputs (ordinal + change)
+  // Typical: 2 inputs (ordinal + 1 funding), 2 outputs
+  const estimatedFee = calculateTxFee(2, 2)
   const [toAddress, setToAddress] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -180,7 +186,8 @@ export function OrdinalTransferModal({
         {/* Fee Info */}
         <div className="fee-info">
           <span className="fee-label">Network Fee:</span>
-          <span className="fee-value">~200 sats</span>
+          <span className="fee-value">~{estimatedFee} sats</span>
+          <span className="fee-rate">({feeRateKB} sat/KB)</span>
         </div>
 
         {error && <p className="error-message">{error}</p>}
@@ -383,7 +390,8 @@ const transferStyles = `
 
   .fee-info {
     display: flex;
-    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
     padding: 0.5rem 0;
   }
 
@@ -395,6 +403,13 @@ const transferStyles = `
   .fee-value {
     font-size: 0.8125rem;
     color: var(--color-text, #fff);
+    font-weight: 500;
+  }
+
+  .fee-rate {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary, rgba(255, 255, 255, 0.4));
+    margin-left: auto;
   }
 
   .error-message {

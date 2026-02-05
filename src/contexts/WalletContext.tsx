@@ -242,27 +242,44 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Unlock wallet with password
   const unlockWallet = useCallback(async (password: string): Promise<boolean> => {
-    if (!activeAccount) {
-      console.error('[Wallet] No active account to unlock')
-      return false
-    }
-
     try {
-      const keys = await getKeysForAccount(activeAccount, password)
+      // Try to get active account from state, or fetch from database
+      let account = activeAccount
+      if (!account) {
+        console.log('[Wallet] No active account in state, fetching from database...')
+        account = await getActiveAccount()
+        if (!account) {
+          // No accounts at all - try to get first available account
+          const allAccounts = await getAllAccounts()
+          if (allAccounts.length > 0) {
+            account = allAccounts[0]
+          }
+        }
+      }
+
+      if (!account) {
+        console.error('[Wallet] No account found to unlock')
+        return false
+      }
+
+      const keys = await getKeysForAccount(account, password)
       if (keys) {
         setWalletState(keys)
         setWalletKeys(keys)
         setIsLocked(false)
         resetInactivityTimer()
-        console.log('[Wallet] Wallet unlocked')
+        // Refresh accounts to ensure state is in sync
+        await refreshAccounts()
+        console.log('[Wallet] Wallet unlocked successfully')
         return true
       }
+      console.log('[Wallet] Failed to decrypt keys - incorrect password')
       return false
     } catch (e) {
       console.error('[Wallet] Failed to unlock:', e)
       return false
     }
-  }, [activeAccount, getKeysForAccount])
+  }, [activeAccount, getKeysForAccount, refreshAccounts])
 
   // Set auto-lock timeout
   const setAutoLockMinutes = useCallback((minutes: number) => {
@@ -365,21 +382,30 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
       // Try to load wallet (legacy support + new account system)
       if (hasWallet()) {
-        try {
-          const keys = await loadWallet('')
-          if (keys) {
-            setWallet(keys)
+        // Check if we have accounts in the database
+        const allAccounts = await getAllAccounts()
 
-            // Migrate to multi-account if needed
-            const allAccounts = await getAllAccounts()
-            if (allAccounts.length === 0) {
+        if (allAccounts.length > 0) {
+          // We have accounts - wallet is encrypted, show lock screen
+          console.log('[Wallet] Found encrypted wallet with accounts, showing lock screen')
+          setIsLocked(true)
+          // Don't try to load wallet - it requires password
+        } else {
+          // No accounts yet - try loading with empty password (legacy unencrypted support)
+          try {
+            const keys = await loadWallet('')
+            if (keys) {
+              setWallet(keys)
+              // Migrate to multi-account system
               console.log('[Wallet] Migrating to multi-account system')
               await migrateToMultiAccount(keys, '')
               await refreshAccounts()
             }
+          } catch (_err) {
+            // Wallet exists but couldn't load - it's encrypted, show lock screen
+            console.log('[Wallet] Wallet is encrypted, showing lock screen')
+            setIsLocked(true)
           }
-        } catch (err) {
-          console.error('Failed to load wallet:', err)
         }
       }
       setLoading(false)

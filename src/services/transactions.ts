@@ -19,8 +19,8 @@ import { getDerivedAddresses } from './database'
 import { TIMEOUTS } from './config'
 import { BroadcastError, AppError, ErrorCodes } from './errors'
 
-// Default fee rate: 0.071 sat/byte (71 sat/KB) - most miners accept this
-const DEFAULT_FEE_RATE = 0.071
+// Default fee rate: 0.1 sat/byte (100 sat/KB) - reliable confirmation
+const DEFAULT_FEE_RATE = 0.1
 
 // Standard P2PKH sizes
 const P2PKH_INPUT_SIZE = 148  // outpoint 36 + scriptlen 1 + scriptsig ~107 + sequence 4

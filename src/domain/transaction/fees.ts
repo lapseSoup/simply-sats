@@ -32,9 +32,9 @@ export const TX_OVERHEAD = 10
 
 /**
  * Default fee rate in satoshis per byte.
- * BSV miners typically accept very low fees (50 sat/KB = 0.05 sat/byte)
+ * 100 sat/KB (0.1 sat/byte) provides reliable confirmation
  */
-export const DEFAULT_FEE_RATE = 0.05
+export const DEFAULT_FEE_RATE = 0.1
 
 /**
  * Minimum allowed fee rate in satoshis per byte.
