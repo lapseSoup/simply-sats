@@ -17,7 +17,7 @@ interface AccountModalProps {
   mode: ModalMode
   accounts?: Account[]
   activeAccountId?: number | null
-  onCreateAccount: (name: string, password: string) => Promise<string | null> // Returns mnemonic
+  onCreateAccount: (name: string) => Promise<string | null> // Returns mnemonic
   onImportAccount: (name: string, mnemonic: string) => Promise<boolean>
   onDeleteAccount?: (accountId: number) => Promise<boolean>
   onRenameAccount?: (accountId: number, name: string) => Promise<void>
@@ -38,8 +38,6 @@ export function AccountModal({
 }: AccountModalProps) {
   const [mode, setMode] = useState<ModalMode>(initialMode)
   const [accountName, setAccountName] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [mnemonic, setMnemonic] = useState('')
   const [generatedMnemonic, setGeneratedMnemonic] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -51,8 +49,6 @@ export function AccountModal({
 
   const resetState = () => {
     setAccountName('')
-    setPassword('')
-    setConfirmPassword('')
     setMnemonic('')
     setGeneratedMnemonic(null)
     setError('')
@@ -74,26 +70,11 @@ export function AccountModal({
       return
     }
 
-    if (!password) {
-      setError('Please enter a password')
-      return
-    }
-
-    if (password.length < 14) {
-      setError('Password must be at least 14 characters')
-      return
-    }
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
-
     setLoading(true)
     setError('')
 
     try {
-      const newMnemonic = await onCreateAccount(accountName.trim(), password)
+      const newMnemonic = await onCreateAccount(accountName.trim())
       if (newMnemonic) {
         setGeneratedMnemonic(newMnemonic)
       } else {
@@ -231,34 +212,6 @@ export function AccountModal({
           />
         </div>
 
-        <div className="form-group">
-          <label htmlFor="account-password">Password</label>
-          <input
-            id="account-password"
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            placeholder="At least 14 characters"
-            disabled={loading}
-          />
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="account-confirm-password">Confirm Password</label>
-          <input
-            id="account-confirm-password"
-            type="password"
-            value={confirmPassword}
-            onChange={e => setConfirmPassword(e.target.value)}
-            placeholder="Confirm your password"
-            disabled={loading}
-          />
-        </div>
-
-        <p className="password-hint">
-          This password encrypts your new account on this device.
-        </p>
-
         {error && <p className="error-message">{error}</p>}
 
         <div className="button-row">
@@ -269,7 +222,7 @@ export function AccountModal({
             type="button"
             className="primary-button"
             onClick={handleCreateAccount}
-            disabled={loading || !accountName.trim() || !password || !confirmPassword}
+            disabled={loading || !accountName.trim()}
           >
             {loading ? 'Creating...' : 'Create Account'}
           </button>
@@ -541,13 +494,6 @@ export function AccountModal({
           color: var(--error);
           font-size: 0.875rem;
           margin: 0;
-        }
-
-        .password-hint {
-          font-size: 0.8125rem;
-          color: var(--text-tertiary);
-          margin: -0.5rem 0 0;
-          line-height: 1.4;
         }
 
         .button-row {

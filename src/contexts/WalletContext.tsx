@@ -104,7 +104,7 @@ interface WalletContextType {
   activeAccount: Account | null
   activeAccountId: number | null
   switchAccount: (accountId: number, password: string) => Promise<boolean>
-  createNewAccount: (name: string, password: string) => Promise<boolean>
+  createNewAccount: (name: string) => Promise<boolean>
   deleteAccount: (accountId: number) => Promise<boolean>
   renameAccount: (accountId: number, name: string) => Promise<void>
   refreshAccounts: () => Promise<void>
@@ -213,6 +213,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
     return saved ? parseInt(saved, 10) : 10
   })
 
+  // Session password - stored in memory only while wallet is unlocked
+  // Used for creating new accounts without re-prompting
+  const [sessionPassword, setSessionPassword] = useState<string | null>(null)
+
   // Track recently unlocked locks to prevent re-detection race condition
   // Keys are "txid:vout" strings
   const [knownUnlockedLocks, setKnownUnlockedLocks] = useState<Set<string>>(new Set())
@@ -250,6 +254,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     // Clear sensitive data from memory
     setWalletState(null)
     setWalletKeys(null)
+    setSessionPassword(null) // Clear session password on lock
     // Audit log wallet lock
     audit.walletLocked(activeAccountId ?? undefined)
   }, [activeAccountId])
@@ -290,6 +295,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setWalletState(keys)
         setWalletKeys(keys)
         setIsLocked(false)
+        setSessionPassword(password) // Store password for session operations
         resetInactivityTimer()
         // Refresh accounts to ensure state is in sync
         await refreshAccounts()
@@ -346,15 +352,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [accountsSwitchAccount, setWallet])
 
   // Create a new account - wraps AccountsContext to also set wallet state
-  const createNewAccount = useCallback(async (name: string, password: string): Promise<boolean> => {
-    const keys = await accountsCreateNewAccount(name, password)
+  // Create a new account using session password
+  const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
+    if (!sessionPassword) {
+      walletLogger.error('Cannot create account - no session password available')
+      return false
+    }
+    const keys = await accountsCreateNewAccount(name, sessionPassword)
     if (keys) {
       setWallet(keys)
       setIsLocked(false)
       return true
     }
     return false
-  }, [accountsCreateNewAccount, setWallet])
+  }, [accountsCreateNewAccount, setWallet, sessionPassword])
 
   // Delete an account - wraps AccountsContext, may need to load new active account
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
