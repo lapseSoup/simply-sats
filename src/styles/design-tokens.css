@@ -10,7 +10,11 @@
    - background: var(--bg-primary);
 */
 
-/* Global CSS Variables - used throughout the app */
+/*
+ * Global CSS Variables - source of truth for the app.
+ * Used directly by App.css and component inline styles.
+ * The @theme block below mirrors these for Tailwind utility classes.
+ */
 :root {
   /* Core colors - deeper, more sophisticated */
   --bg-primary: #0a0a0b;
@@ -51,7 +55,7 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-glow: 0 0 40px rgba(247, 147, 26, 0.15);
 
-  /* Spacing & Radius - values from App.css */
+  /* Spacing & Radius */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -59,37 +63,41 @@
   --radius-full: 9999px;
 }
 
-/* Tailwind 4 Theme Integration */
+/*
+ * Tailwind 4 Theme Integration
+ * Values MUST match :root above — @theme enables Tailwind utility generation.
+ * The --color-* prefix is for Tailwind's namespacing convention.
+ */
 @theme {
-  /* Core colors - deeper, more sophisticated */
+  /* Core colors — mirrors :root */
   --color-bg-primary: #0a0a0b;
   --color-bg-secondary: #141416;
   --color-bg-tertiary: #1a1a1e;
   --color-bg-elevated: #1e1e22;
   --color-bg-card: #18181c;
 
-  /* Accent - Bitcoin Orange refined */
+  /* Accent — mirrors :root */
   --color-accent: #f7931a;
   --color-accent-light: #ffa940;
   --color-accent-dark: #d97706;
 
-  /* Text - better contrast hierarchy */
+  /* Text — mirrors :root */
   --color-text-primary: #ffffff;
   --color-text-secondary: #9ca3af;
   --color-text-tertiary: #6b7280;
   --color-text-muted: #4b5563;
 
-  /* Status colors */
+  /* Status — mirrors :root */
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
 
-  /* Borders */
+  /* Borders — mirrors :root */
   --color-border: rgba(255, 255, 255, 0.08);
   --color-border-light: rgba(255, 255, 255, 0.12);
   --color-border-focus: rgba(247, 147, 26, 0.5);
 
-  /* Spacing scale (matches existing CSS) */
+  /* Spacing scale */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
@@ -97,11 +105,11 @@
   --spacing-xl: 32px;
   --spacing-2xl: 48px;
 
-  /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  /* Border radius — matches :root values */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-full: 9999px;
 
   /* Font sizes */
@@ -114,7 +122,7 @@
   --font-size-3xl: 32px;
   --font-size-4xl: 48px;
 
-  /* Shadows */
+  /* Shadows — mirrors :root */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);

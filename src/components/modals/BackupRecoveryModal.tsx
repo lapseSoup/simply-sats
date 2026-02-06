@@ -233,7 +233,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
       <div className="file-select-buttons">
         <button
           type="button"
-          className="primary-button"
+          className="btn btn-primary"
           onClick={handleSelectFile}
         >
           Select Database File (.db)
@@ -241,7 +241,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
 
         <button
           type="button"
-          className="secondary-button"
+          className="btn btn-secondary"
           onClick={handleSelectFolder}
         >
           Select .wallet Folder
@@ -281,7 +281,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
       <div className="button-row">
         <button
           type="button"
-          className="secondary-button"
+          className="btn btn-secondary"
           onClick={() => {
             setSelectedPath(null)
             setBackupPassword('')
@@ -293,7 +293,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
         </button>
         <button
           type="button"
-          className="primary-button"
+          className="btn btn-primary"
           onClick={handleDecrypt}
           disabled={loading || !backupPassword}
         >
@@ -342,7 +342,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
       <div className="button-row">
         <button
           type="button"
-          className="secondary-button"
+          className="btn btn-secondary"
           onClick={() => {
             setAccounts([])
             setBackupPassword('')
@@ -353,7 +353,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
         </button>
         <button
           type="button"
-          className="primary-button"
+          className="btn btn-primary"
           onClick={() => setStep('action_select')}
           disabled={accounts.length === 0}
         >
@@ -373,7 +373,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
       </div>
 
       <div className="action-options">
-        <div className="action-card" onClick={handleRequestAddAccount} role="button" tabIndex={0}>
+        <div className="action-card" onClick={handleRequestAddAccount} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleRequestAddAccount() } }}>
           <div className="action-icon">+</div>
           <div className="action-content">
             <div className="action-title">Add as Account</div>
@@ -386,6 +386,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
         <div
           className={`action-card ${sweepEstimate?.isDust ? 'disabled' : ''}`}
           onClick={sweepEstimate?.isDust ? undefined : handleSweep}
+          onKeyDown={e => { if (!sweepEstimate?.isDust && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleSweep() } }}
           role="button"
           tabIndex={sweepEstimate?.isDust ? -1 : 0}
         >
@@ -414,7 +415,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
       <div className="button-row">
         <button
           type="button"
-          className="secondary-button"
+          className="btn btn-secondary"
           onClick={() => setStep('account_list')}
           disabled={loading}
         >
@@ -448,7 +449,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
       <div className="button-row">
         <button
           type="button"
-          className="secondary-button"
+          className="btn btn-secondary"
           onClick={() => {
             setCurrentPassword('')
             setError('')
@@ -460,7 +461,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
         </button>
         <button
           type="button"
-          className="primary-button"
+          className="btn btn-primary"
           onClick={handleAddAccount}
           disabled={loading || !currentPassword}
         >
@@ -491,7 +492,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
 
       <button
         type="button"
-        className="primary-button"
+        className="btn btn-primary"
         onClick={onClose}
       >
         Done
@@ -586,30 +587,9 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
           flex: 1;
         }
 
-        .primary-button, .secondary-button {
-          padding: 0.75rem 1rem;
-          border-radius: 8px;
-          font-size: 0.875rem;
-          font-weight: 500;
-          cursor: pointer;
-          transition: opacity 0.15s;
-        }
-
-        .primary-button {
-          background: var(--primary);
-          color: white;
-          border: none;
-        }
-
-        .primary-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .secondary-button {
-          background: transparent;
-          color: var(--text-primary);
-          border: 1px solid var(--border);
+        /* Override .btn width:100% when inside button-row */
+        .button-row .btn {
+          width: auto;
         }
 
         .account-list {

@@ -350,6 +350,11 @@ body {
   gap: 6px;
 }
 
+.tx-list-virtual-container {
+  flex: 1;
+  min-height: 0;
+}
+
 .tx-item {
   display: flex;
   align-items: center;
@@ -673,6 +678,11 @@ body {
   gap: 8px;
 }
 
+.ordinals-list-virtual-container {
+  flex: 1;
+  min-height: 0;
+}
+
 .ordinal-list-item {
   display: flex;
   align-items: center;
@@ -971,6 +981,34 @@ textarea.form-input {
   font-size: 12px;
   color: var(--text-tertiary);
   margin-top: 8px;
+}
+
+/* Password Strength Meter */
+.password-strength {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.password-strength-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.password-strength-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.password-strength-label {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* Send Summary */
@@ -2554,6 +2592,29 @@ textarea.form-input {
   border: 1px solid var(--border);
 }
 
+/* Toast queue stack container */
+.toast-stack {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast-stack .copy-toast {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  animation: toastStackIn 0.2s ease;
+  pointer-events: auto;
+}
+
 @keyframes toastIn {
   from {
     opacity: 0;
@@ -2562,6 +2623,17 @@ textarea.form-input {
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes toastStackIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

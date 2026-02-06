@@ -31,6 +31,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-window": "^2.2.6",
     "sql.js": "^1.13.0",
     "vite-plugin-node-polyfills": "^0.25.0"
   },

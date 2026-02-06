@@ -3,7 +3,9 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
+import { SECURITY } from '../../config'
 import { Modal } from '../shared/Modal'
+import { PasswordInput } from '../shared/PasswordInput'
 import { MnemonicInput } from '../forms/MnemonicInput'
 import { restoreWallet, importFromJSON } from '../../services/wallet'
 import { importDatabase, type DatabaseBackup } from '../../services/database'
@@ -29,8 +31,8 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   const [passwordError, setPasswordError] = useState('')
 
   const validatePassword = (): boolean => {
-    if (password.length < 12) {
-      setPasswordError('Password must be at least 12 characters')
+    if (password.length < SECURITY.MIN_PASSWORD_LENGTH) {
+      setPasswordError(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
       return false
     }
     if (password !== confirmPassword) {
@@ -178,26 +180,20 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="restore-password">Create Password</label>
-                <input
+                <PasswordInput
                   id="restore-password"
-                  type="password"
-                  className="form-input"
-                  placeholder="At least 12 characters"
+                  placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  autoComplete="new-password"
+                  onChange={setPassword}
                 />
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="restore-confirm-password">Confirm Password</label>
-                <input
+                <PasswordInput
                   id="restore-confirm-password"
-                  type="password"
-                  className="form-input"
                   placeholder="Confirm your password"
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
+                  onChange={setConfirmPassword}
                 />
               </div>
               {passwordError && (
@@ -231,26 +227,20 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="json-password">Create Password</label>
-                <input
+                <PasswordInput
                   id="json-password"
-                  type="password"
-                  className="form-input"
-                  placeholder="At least 12 characters"
+                  placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  autoComplete="new-password"
+                  onChange={setPassword}
                 />
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="json-confirm-password">Confirm Password</label>
-                <input
+                <PasswordInput
                   id="json-confirm-password"
-                  type="password"
-                  className="form-input"
                   placeholder="Confirm your password"
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
+                  onChange={setConfirmPassword}
                 />
               </div>
               {passwordError && (
@@ -276,26 +266,20 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="fullbackup-password">Create Password</label>
-                <input
+                <PasswordInput
                   id="fullbackup-password"
-                  type="password"
-                  className="form-input"
-                  placeholder="At least 12 characters"
+                  placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  autoComplete="new-password"
+                  onChange={setPassword}
                 />
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="fullbackup-confirm-password">Confirm Password</label>
-                <input
+                <PasswordInput
                   id="fullbackup-confirm-password"
-                  type="password"
-                  className="form-input"
                   placeholder="Confirm your password"
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
+                  onChange={setConfirmPassword}
                 />
               </div>
               {passwordError && (

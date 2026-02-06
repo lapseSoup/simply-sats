@@ -38,6 +38,7 @@ vi.mock('../../contexts/UIContext', () => ({
     displayInSats: true,
     showToast: mockShowToast,
     copyFeedback: null,
+    toasts: [],
     copyToClipboard: vi.fn(),
     toggleDisplayUnit: vi.fn(),
     formatBSVShort: vi.fn((sats: number) => (sats / 100000000).toFixed(8)),

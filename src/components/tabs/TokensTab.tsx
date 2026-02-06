@@ -10,6 +10,7 @@ import { formatTokenAmount } from '../../services/tokens'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { Modal } from '../shared/Modal'
+import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { NoTokensEmpty } from '../shared/EmptyState'
 
 // Memoized token card to prevent unnecessary re-renders
@@ -78,6 +79,7 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('')
+  const [showConfirmation, setShowConfirmation] = useState(false)
 
   // Filter tokens - memoized to prevent recalculation
   const filteredBalances = useMemo(() =>
@@ -88,29 +90,35 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
     [tokenBalances, filter]
   )
 
-  const handleSend = async () => {
+  const handleSendClick = () => {
     if (!selectedToken || !sendAmount || !sendAddress) return
 
+    // Validate before showing confirmation
+    if (!/^[13][a-km-zA-HJ-NP-Z1-9]{24,33}$/.test(sendAddress.trim())) {
+      setError('Invalid BSV address format')
+      return
+    }
+
+    const amountParsed = parseFloat(sendAmount)
+    if (isNaN(amountParsed) || amountParsed <= 0) {
+      setError('Invalid amount')
+      return
+    }
+
+    setError('')
+    setShowConfirmation(true)
+  }
+
+  const executeSend = async () => {
+    if (!selectedToken || !sendAmount || !sendAddress) return
+
+    setShowConfirmation(false)
     setSending(true)
     setError('')
 
     try {
-      // Validate address
-      if (!/^[13][a-km-zA-HJ-NP-Z1-9]{24,33}$/.test(sendAddress.trim())) {
-        setError('Invalid BSV address format')
-        setSending(false)
-        return
-      }
-
-      // Parse amount - convert to smallest unit (integer string)
-      const amountParsed = parseFloat(sendAmount)
-      if (isNaN(amountParsed) || amountParsed <= 0) {
-        setError('Invalid amount')
-        setSending(false)
-        return
-      }
-
       // Convert to smallest unit based on decimals
+      const amountParsed = parseFloat(sendAmount)
       const multiplier = Math.pow(10, selectedToken.token.decimals)
       const amountInSmallestUnit = Math.floor(amountParsed * multiplier).toString()
 
@@ -275,7 +283,7 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
             </button>
             <button
               className="send-confirm-button"
-              onClick={handleSend}
+              onClick={handleSendClick}
               disabled={sending || !sendAmount || !sendAddress}
               type="button"
             >
@@ -283,6 +291,21 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
             </button>
           </div>
         </Modal>
+      )}
+
+      {/* Confirmation modal for token sends */}
+      {showConfirmation && selectedToken && (
+        <ConfirmationModal
+          title="Confirm Token Send"
+          message={`You are about to send ${sendAmount} ${selectedToken.token.ticker}. Please verify the details.`}
+          details={`Amount: ${sendAmount} ${selectedToken.token.ticker}\nTo: ${sendAddress}`}
+          type="warning"
+          confirmText="Send"
+          cancelText="Cancel"
+          onConfirm={executeSend}
+          onCancel={() => setShowConfirmation(false)}
+          confirmDelaySeconds={0}
+        />
       )}
 
       <style>{tokensStyles}</style>

@@ -1,7 +1,12 @@
-import { useState, useMemo, memo } from 'react'
+import { useState, useEffect, useRef, useMemo, memo } from 'react'
+import { List } from 'react-window'
 import { useWallet } from '../../contexts/WalletContext'
 import type { Ordinal } from '../../services/wallet'
 import { NoOrdinalsEmpty } from '../shared/EmptyState'
+import { OrdinalsGridSkeleton } from '../shared/Skeleton'
+
+const VIRTUALIZATION_THRESHOLD = 50
+const ORDINAL_LIST_ITEM_HEIGHT = 68 // ~60px item + 8px gap
 
 interface OrdinalsTabProps {
   onSelectOrdinal: (ordinal: Ordinal) => void
@@ -46,7 +51,7 @@ function getContentIcon(contentType: string | undefined): string {
 
 export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
   // Note: _onTransferOrdinal is available for future use
-  const { ordinals } = useWallet()
+  const { ordinals, loading } = useWallet()
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [filterCategory, setFilterCategory] = useState<ContentCategory>('all')
@@ -74,19 +79,15 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
     }
 
     // Apply sorting
-    result.sort((a, b) => {
-      switch (sortBy) {
-        case 'oldest':
-          // Origin format includes txid, so we can use it as a proxy for age
-          return a.origin.localeCompare(b.origin)
-        case 'newest':
-          return b.origin.localeCompare(a.origin)
-        case 'content':
-          return (a.contentType || '').localeCompare(b.contentType || '')
-        default:
-          return 0
-      }
-    })
+    // Note: ordinals are stored in the order received from the API (newest first).
+    // We use the original array index for time-based ordering since txid strings
+    // are hashes and don't represent chronological order.
+    if (sortBy === 'oldest') {
+      result.reverse()
+    } else if (sortBy === 'content') {
+      result.sort((a, b) => (a.contentType || '').localeCompare(b.contentType || ''))
+    }
+    // 'newest' keeps the default API order (newest first)
 
     return result
   }, [ordinals, searchQuery, sortBy, filterCategory])
@@ -108,6 +109,15 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
 
     return counts
   }, [ordinals])
+
+  // Show skeleton during initial load (loading with no data yet)
+  if (loading && ordinals.length === 0) {
+    return (
+      <div className="ordinals-tab">
+        <OrdinalsGridSkeleton />
+      </div>
+    )
+  }
 
   if (ordinals.length === 0) {
     return (
@@ -225,6 +235,11 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
             />
           ))}
         </div>
+      ) : filteredOrdinals.length >= VIRTUALIZATION_THRESHOLD ? (
+        <VirtualizedOrdinalList
+          ordinals={filteredOrdinals}
+          onSelect={onSelectOrdinal}
+        />
       ) : (
         <div className="ordinals-list" role="list" aria-label="Ordinals collection">
           {filteredOrdinals.map((ord) => (
@@ -236,6 +251,48 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+interface VirtualizedOrdinalListProps {
+  ordinals: Ordinal[]
+  onSelect: (ordinal: Ordinal) => void
+}
+
+function VirtualizedOrdinalList({ ordinals, onSelect }: VirtualizedOrdinalListProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerHeight, setContainerHeight] = useState(400)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const el = containerRef.current
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerHeight(entry.contentRect.height)
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <div ref={containerRef} className="ordinals-list-virtual-container" role="list" aria-label="Ordinals collection">
+      <List
+        rowCount={ordinals.length}
+        rowHeight={ORDINAL_LIST_ITEM_HEIGHT}
+        rowProps={{}}
+        overscanCount={5}
+        style={{ height: containerHeight }}
+        rowComponent={({ index, style }) => (
+          <div style={{ ...style, paddingBottom: 8 }}>
+            <OrdinalListItem
+              ordinal={ordinals[index]}
+              onSelect={onSelect}
+            />
+          </div>
+        )}
+      />
     </div>
   )
 }

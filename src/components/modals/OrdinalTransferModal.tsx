@@ -128,7 +128,7 @@ export function OrdinalTransferModal({
               {txid.slice(0, 16)}...{txid.slice(-8)}
             </a>
           </div>
-          <button type="button" className="primary-button" onClick={handleClose}>
+          <button type="button" className="btn btn-primary" onClick={handleClose}>
             Close
           </button>
         </div>
@@ -196,7 +196,7 @@ export function OrdinalTransferModal({
         <div className="button-row">
           <button
             type="button"
-            className="secondary-button"
+            className="btn btn-secondary"
             onClick={handleClose}
             disabled={loading}
           >
@@ -204,7 +204,7 @@ export function OrdinalTransferModal({
           </button>
           <button
             type="button"
-            className="primary-button danger"
+            className="btn btn-primary btn-danger"
             onClick={handleTransferClick}
             disabled={loading || !toAddress.trim()}
           >
@@ -424,53 +424,17 @@ const transferStyles = `
     margin-top: 0.5rem;
   }
 
-  .primary-button,
-  .secondary-button {
+  /* Override .btn width:100% when inside button-row */
+  .button-row .btn {
     flex: 1;
-    padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
+    width: auto;
   }
 
-  .primary-button {
-    background: linear-gradient(135deg, var(--color-primary, #f7931a), var(--color-secondary, #ff6b00));
-    border: none;
-    color: white;
+  .btn-danger {
+    background: linear-gradient(135deg, #ef4444, #dc2626) !important;
   }
 
-  .primary-button.danger {
-    background: linear-gradient(135deg, #ef4444, #dc2626);
-  }
-
-  .primary-button:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(247, 147, 26, 0.3);
-  }
-
-  .primary-button.danger:hover:not(:disabled) {
+  .btn-danger:hover:not(:disabled) {
     box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-  }
-
-  .primary-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .secondary-button {
-    background: transparent;
-    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-    color: var(--color-text, #fff);
-  }
-
-  .secondary-button:hover:not(:disabled) {
-    background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
-  }
-
-  .secondary-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 `

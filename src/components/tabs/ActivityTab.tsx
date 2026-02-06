@@ -1,10 +1,15 @@
-import { useState, useEffect, memo, useCallback } from 'react'
+import { useState, useEffect, useRef, memo, useCallback } from 'react'
+import { List } from 'react-window'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { getTransactionsByLabel } from '../../services/database'
 import { uiLogger } from '../../services/logger'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 import { NoTransactionsEmpty } from '../shared/EmptyState'
+import { ActivityListSkeleton } from '../shared/Skeleton'
+
+const VIRTUALIZATION_THRESHOLD = 50
+const TX_ITEM_HEIGHT = 70 // ~64px item + 6px gap
 
 // Transaction type for the component
 type TxHistoryItem = { tx_hash: string; amount?: number; height: number }
@@ -59,10 +64,15 @@ const TransactionItem = memo(function TransactionItem({
 })
 
 export function ActivityTab() {
-  const { txHistory, locks } = useWallet()
+  const { txHistory, locks, loading } = useWallet()
   const { formatUSD } = useUI()
   const [unlockTxids, setUnlockTxids] = useState<Set<string>>(new Set())
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
+
+  // Virtualization state (hooks must be called unconditionally)
+  const shouldVirtualize = txHistory.length >= VIRTUALIZATION_THRESHOLD
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerHeight, setContainerHeight] = useState(400)
 
   // Fetch unlock transaction IDs from database
   useEffect(() => {
@@ -77,6 +87,19 @@ export function ActivityTab() {
     fetchUnlockTxids()
   }, [txHistory]) // Refresh when tx history changes
 
+  // Measure container height for virtualized list
+  useEffect(() => {
+    if (!shouldVirtualize || !containerRef.current) return
+    const el = containerRef.current
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerHeight(entry.contentRect.height)
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [shouldVirtualize])
+
   const handleTxClick = useCallback((tx: TxHistoryItem) => {
     setSelectedTx(tx)
   }, [])
@@ -85,16 +108,8 @@ export function ActivityTab() {
     setSelectedTx(null)
   }, [])
 
-  if (txHistory.length === 0) {
-    return (
-      <div className="tx-list">
-        <NoTransactionsEmpty />
-      </div>
-    )
-  }
-
   // Determine transaction type and icon
-  const getTxTypeAndIcon = (tx: { tx_hash: string; amount?: number }) => {
+  const getTxTypeAndIcon = useCallback((tx: { tx_hash: string; amount?: number }) => {
     const isLockTx = locks.some(l => l.txid === tx.tx_hash)
     const isUnlockTx = unlockTxids.has(tx.tx_hash)
 
@@ -111,6 +126,61 @@ export function ActivityTab() {
       return { type: 'Sent', icon: '↑' }
     }
     return { type: 'Transaction', icon: '•' }
+  }, [locks, unlockTxids])
+
+  // Show skeleton during initial load (loading with no data yet)
+  if (loading && txHistory.length === 0) {
+    return (
+      <div className="tx-list">
+        <ActivityListSkeleton />
+      </div>
+    )
+  }
+
+  if (txHistory.length === 0) {
+    return (
+      <div className="tx-list">
+        <NoTransactionsEmpty />
+      </div>
+    )
+  }
+
+  if (shouldVirtualize) {
+    return (
+      <>
+        <div ref={containerRef} className="tx-list-virtual-container" role="list" aria-label="Transaction history">
+          <List
+            rowCount={txHistory.length}
+            rowHeight={TX_ITEM_HEIGHT}
+            rowProps={{}}
+            overscanCount={5}
+            style={{ height: containerHeight }}
+            rowComponent={({ index, style }) => {
+              const tx = txHistory[index]
+              const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
+              return (
+                <div style={{ ...style, paddingBottom: 6 }}>
+                  <TransactionItem
+                    tx={tx}
+                    txType={txType}
+                    txIcon={txIcon}
+                    onClick={() => handleTxClick(tx)}
+                    formatUSD={formatUSD}
+                  />
+                </div>
+              )
+            }}
+          />
+        </div>
+
+        {selectedTx && (
+          <TransactionDetailModal
+            transaction={selectedTx}
+            onClose={handleCloseModal}
+          />
+        )}
+      </>
+    )
   }
 
   return (

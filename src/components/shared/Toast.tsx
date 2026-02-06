@@ -1,8 +1,28 @@
-interface ToastProps {
-  message: string | null
+interface ToastItem {
+  id: string
+  message: string
 }
 
-export function Toast({ message }: ToastProps) {
+interface ToastProps {
+  message: string | null
+  toasts?: ToastItem[]
+}
+
+export function Toast({ message, toasts }: ToastProps) {
+  // Queue mode: render stacked toasts
+  if (toasts && toasts.length > 0) {
+    return (
+      <div className="toast-stack">
+        {toasts.map((toast) => (
+          <div key={toast.id} className="copy-toast">
+            ✓ {toast.message}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // Legacy fallback: single message
   if (!message) return null
 
   return (

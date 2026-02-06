@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { SimplySatsLogo } from '../shared'
+import { PasswordInput } from '../shared/PasswordInput'
 import { useUI } from '../../contexts/UIContext'
+import { SECURITY } from '../../config'
+import { validatePassword, getPasswordStrengthLabel, getPasswordStrengthColor } from '../../utils/passwordValidation'
 
 interface OnboardingFlowProps {
   onCreateWallet: (password: string) => Promise<string | null>
@@ -43,6 +46,17 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
   const [passwordError, setPasswordError] = useState('')
   const { showToast } = useUI()
 
+  // Password strength meter
+  const passwordStrength = useMemo(() => {
+    if (!password) return null
+    const result = validatePassword(password)
+    return {
+      score: result.score,
+      label: getPasswordStrengthLabel(result.score),
+      color: getPasswordStrengthColor(result.score)
+    }
+  }, [password])
+
   const handleNext = () => {
     setIsAnimating(true)
     setTimeout(() => {
@@ -83,8 +97,8 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
 
   const handleCreate = async () => {
     // Validate password
-    if (password.length < 12) {
-      setPasswordError('Password must be at least 12 characters')
+    if (password.length < SECURITY.MIN_PASSWORD_LENGTH) {
+      setPasswordError(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
       return
     }
     if (password !== confirmPassword) {
@@ -173,26 +187,36 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
             <div className="onboarding-password-section">
               <div className="form-group">
                 <label className="form-label" htmlFor="create-password">Create Password</label>
-                <input
+                <PasswordInput
                   id="create-password"
-                  type="password"
-                  className="form-input"
-                  placeholder="At least 12 characters"
+                  placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  autoComplete="new-password"
+                  onChange={setPassword}
                 />
+                {passwordStrength && (
+                  <div className="password-strength">
+                    <div className="password-strength-bar">
+                      <div
+                        className="password-strength-fill"
+                        style={{
+                          width: `${(passwordStrength.score / 4) * 100}%`,
+                          backgroundColor: passwordStrength.color
+                        }}
+                      />
+                    </div>
+                    <span className="password-strength-label" style={{ color: passwordStrength.color }}>
+                      {passwordStrength.label}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label" htmlFor="confirm-password">Confirm Password</label>
-                <input
+                <PasswordInput
                   id="confirm-password"
-                  type="password"
-                  className="form-input"
                   placeholder="Confirm your password"
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
+                  onChange={setConfirmPassword}
                 />
               </div>
               {passwordError && (

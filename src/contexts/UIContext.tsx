@@ -1,6 +1,12 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import { useNetwork } from './NetworkContext'
 import { uiLogger } from '../services/logger'
+import { UI } from '../config'
+
+interface ToastItem {
+  id: string
+  message: string
+}
 
 interface UIContextType {
   // Display settings
@@ -8,7 +14,8 @@ interface UIContextType {
   toggleDisplayUnit: () => void
 
   // Toast/feedback
-  copyFeedback: string | null
+  toasts: ToastItem[]
+  copyFeedback: string | null // backward compat — returns latest toast message
   copyToClipboard: (text: string, feedback?: string) => Promise<void>
   showToast: (message: string) => void
 
@@ -40,7 +47,10 @@ export function UIProvider({ children }: UIProviderProps) {
     return saved === 'true'
   })
 
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+
+  // Backward compat: expose latest toast message as copyFeedback
+  const copyFeedback = toasts.length > 0 ? toasts[toasts.length - 1].message : null
 
   const toggleDisplayUnit = useCallback(() => {
     const newValue = !displayInSats
@@ -48,20 +58,22 @@ export function UIProvider({ children }: UIProviderProps) {
     localStorage.setItem('simply_sats_display_sats', String(newValue))
   }, [displayInSats])
 
+  const showToast = useCallback((message: string) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    setToasts(prev => [...prev, { id, message }])
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id))
+    }, UI.TOAST_DURATION_MS)
+  }, [])
+
   const copyToClipboard = useCallback(async (text: string, feedback = 'Copied!') => {
     try {
       await navigator.clipboard.writeText(text)
-      setCopyFeedback(feedback)
-      setTimeout(() => setCopyFeedback(null), 2000)
+      showToast(feedback)
     } catch (err) {
       uiLogger.error('Failed to copy', err)
     }
-  }, [])
-
-  const showToast = useCallback((message: string) => {
-    setCopyFeedback(message)
-    setTimeout(() => setCopyFeedback(null), 2000)
-  }, [])
+  }, [showToast])
 
   const formatBSVShort = useCallback((sats: number) => {
     const bsv = sats / 100000000
@@ -77,6 +89,7 @@ export function UIProvider({ children }: UIProviderProps) {
   const value: UIContextType = {
     displayInSats,
     toggleDisplayUnit,
+    toasts,
     copyFeedback,
     copyToClipboard,
     showToast,

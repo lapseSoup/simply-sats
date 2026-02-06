@@ -7,7 +7,7 @@ import { Toast, PaymentAlert, SkipLink } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
 import { Header, BalanceDisplay, BasketChips, QuickActions } from './components/wallet'
 import { RestoreModal, MnemonicModal, LockScreenModal, BackupVerificationModal } from './components/modals'
-import { FEATURES } from './config'
+import { FEATURES, SECURITY } from './config'
 import { OnboardingFlow } from './components/onboarding'
 import { AppProviders } from './AppProviders'
 import { AppModals, type Modal, type AccountModalMode } from './AppModals'
@@ -50,7 +50,7 @@ function WalletApp() {
     renameAccount
   } = useWallet()
 
-  const { copyFeedback, showToast } = useUI()
+  const { copyFeedback, toasts, showToast } = useUI()
 
   // UI State
   const [activeTab, setActiveTab] = useState<Tab>('activity')
@@ -158,6 +158,16 @@ function WalletApp() {
     }
   }, [wallet, fetchData, activeAccountId])
 
+  // Auto-clear mnemonic from memory after timeout (security)
+  useEffect(() => {
+    if (!newMnemonic) return
+    const timer = setTimeout(() => {
+      setNewMnemonic(null)
+      logger.info('Mnemonic auto-cleared from memory after timeout')
+    }, SECURITY.MNEMONIC_AUTO_CLEAR_MS)
+    return () => clearTimeout(timer)
+  }, [newMnemonic])
+
   // Check for backup reminder after wallet loads
   useEffect(() => {
     if (wallet && !isLocked) {
@@ -257,7 +267,7 @@ function WalletApp() {
           onUnlock={unlockWallet}
           accountName={activeAccount?.name || 'Wallet'}
         />
-        <Toast message={copyFeedback} />
+        <Toast message={copyFeedback} toasts={toasts} />
       </>
     )
   }
@@ -297,7 +307,7 @@ function WalletApp() {
           )
         )}
 
-        <Toast message={copyFeedback} />
+        <Toast message={copyFeedback} toasts={toasts} />
       </>
     )
   }
@@ -399,7 +409,7 @@ function WalletApp() {
         isUnlocking={!!unlocking}
       />
 
-      <Toast message={copyFeedback} />
+      <Toast message={copyFeedback} toasts={toasts} />
 
       <PaymentAlert
         payment={newPaymentAlert}

@@ -36,6 +36,9 @@ export const SECURITY = {
   /** Rate limiting: maximum lockout duration in milliseconds */
   MAX_LOCKOUT_MS: 300000, // 5 minutes
 
+  /** Duration in ms before mnemonic is auto-cleared from memory */
+  MNEMONIC_AUTO_CLEAR_MS: 300000, // 5 minutes
+
   /** CSRF nonce expiry in seconds */
   NONCE_EXPIRY_SECS: 300, // 5 minutes
 

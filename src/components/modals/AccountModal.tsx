@@ -159,7 +159,7 @@ export function AccountModal({
           </p>
           <button
             type="button"
-            className="primary-button"
+            className="btn btn-primary"
             onClick={handleClose}
           >
             Done
@@ -192,12 +192,12 @@ export function AccountModal({
         {error && <p className="error-message">{error}</p>}
 
         <div className="button-row">
-          <button type="button" className="secondary-button" onClick={handleClose}>
+          <button type="button" className="btn btn-secondary" onClick={handleClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="primary-button"
+            className="btn btn-primary"
             onClick={handleCreateAccount}
             disabled={loading || !accountName.trim()}
           >
@@ -242,12 +242,12 @@ export function AccountModal({
       {error && <p className="error-message">{error}</p>}
 
       <div className="button-row">
-        <button type="button" className="secondary-button" onClick={handleClose}>
+        <button type="button" className="btn btn-secondary" onClick={handleClose}>
           Cancel
         </button>
         <button
           type="button"
-          className="primary-button"
+          className="btn btn-primary"
           onClick={handleImportAccount}
           disabled={loading || !accountName.trim() || !mnemonic.trim()}
         >
@@ -376,21 +376,21 @@ export function AccountModal({
       <div className="button-row">
         <button
           type="button"
-          className="secondary-button"
+          className="btn btn-secondary"
           onClick={() => setMode('create')}
         >
           + New Account
         </button>
         <button
           type="button"
-          className="secondary-button"
+          className="btn btn-secondary"
           onClick={() => setMode('import')}
         >
           Import Account
         </button>
       </div>
 
-      <button type="button" className="close-button" onClick={handleClose}>
+      <button type="button" className="btn btn-secondary" onClick={handleClose}>
         Close
       </button>
     </div>
@@ -479,55 +479,14 @@ export function AccountModal({
           margin-top: 0.5rem;
         }
 
-        .primary-button,
-        .secondary-button,
-        .close-button {
+        /* Override .btn width:100% when inside button-row (flex context) */
+        .button-row .btn {
           flex: 1;
-          padding: 0.875rem 1.25rem;
-          border-radius: var(--radius-md);
-          font-size: 0.9375rem;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s ease;
+          width: auto;
         }
 
-        .primary-button {
-          background: var(--accent);
-          border: none;
-          color: white;
-        }
-
-        .primary-button:hover:not(:disabled) {
-          background: var(--accent-light);
-          transform: translateY(-1px);
-        }
-
-        .primary-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .secondary-button {
-          background: var(--bg-tertiary);
-          border: 1px solid var(--border);
-          color: var(--text-primary);
-        }
-
-        .secondary-button:hover {
-          background: var(--bg-elevated);
-          border-color: var(--border-light);
-        }
-
-        .close-button {
-          background: var(--bg-tertiary);
-          border: none;
-          color: var(--text-secondary);
+        .account-modal-content > .btn {
           margin-top: 0.5rem;
-        }
-
-        .close-button:hover {
-          background: var(--bg-elevated);
-          color: var(--text-primary);
         }
 
         .success-icon {
