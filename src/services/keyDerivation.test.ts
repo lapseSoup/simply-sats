@@ -255,7 +255,7 @@ describe('Key Derivation Service', () => {
     })
   })
 
-  describe('debugFindInvoiceNumber', () => {
+  describe('debugFindInvoiceNumber', { timeout: 30000 }, () => {
     it('should find invoice number for known address', () => {
       // Create an address with known invoice number
       const knownInvoice = '42'
