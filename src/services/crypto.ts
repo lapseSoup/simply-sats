@@ -91,9 +91,11 @@ function base64ToBuffer(base64: string): ArrayBuffer {
  */
 async function deriveKey(password: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
   // Import password as raw key material
+  // Use .buffer to get ArrayBuffer for Node.js webcrypto compatibility
+  const encoded = new TextEncoder().encode(password)
   const passwordKey = await getCrypto().subtle.importKey(
     'raw',
-    new TextEncoder().encode(password),
+    encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer,
     'PBKDF2',
     false,
     ['deriveBits', 'deriveKey']
