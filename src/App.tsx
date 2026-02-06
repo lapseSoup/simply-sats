@@ -129,6 +129,7 @@ function WalletApp() {
   }, [wallet?.identityWif, showToast, fetchData])
 
   // Auto-sync on wallet load (only when account is set)
+  // Single effect handles both sync + data fetch to avoid race conditions
   useEffect(() => {
     if (!wallet || activeAccountId === null) return
 
@@ -141,26 +142,19 @@ function WalletApp() {
       if (needsSync) {
         logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
         await performSync(true)
-        await fetchData()
       } else {
         const derivedAddrs = await getDerivedAddresses()
         if (derivedAddrs.length > 0) {
           logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
           await performSync(false)
-          await fetchData()
         }
       }
+      // Always fetch data after sync (or directly from DB if already synced)
+      await fetchData()
     }
 
     checkSync()
   }, [wallet, performSync, fetchData, activeAccountId])
-
-  // Fetch data on wallet load and when account changes
-  useEffect(() => {
-    if (wallet && activeAccountId !== null) {
-      fetchData()
-    }
-  }, [wallet, fetchData, activeAccountId])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {

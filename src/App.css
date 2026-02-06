@@ -150,6 +150,176 @@ body {
   background: var(--error);
 }
 
+/* ==================== ACCOUNT SWITCHER ==================== */
+
+.account-switcher {
+  position: relative;
+}
+
+.account-switcher-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  font-weight: 500;
+  transition: background var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+
+.account-switcher-button:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border);
+}
+
+.account-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-gradient);
+  color: var(--bg-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--type-caption-size);
+  font-weight: 700;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.account-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.dropdown-arrow {
+  color: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.dropdown-arrow.open {
+  transform: rotate(180deg);
+}
+
+.account-dropdown {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  min-width: 220px;
+  max-width: 280px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  padding: var(--space-2);
+  animation: modalIn var(--duration-fast) var(--ease-out);
+}
+
+.account-dropdown .account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.account-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  text-align: left;
+  transition: background var(--duration-fast) ease;
+}
+
+.account-item:hover {
+  background: var(--bg-surface-3);
+}
+
+.account-item.active {
+  background: var(--accent-subtle);
+}
+
+.account-item .account-avatar {
+  width: 24px;
+  height: 24px;
+  font-size: var(--type-micro-size);
+}
+
+.account-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.account-item-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-item-balance {
+  font-size: var(--type-micro-size);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.account-item .check-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.account-actions {
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.account-action-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--type-caption-size);
+  font-weight: 500;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.account-action-button:hover {
+  background: var(--bg-surface-3);
+  color: var(--text-primary);
+}
+
 /* ==================== BALANCE SECTION ==================== */
 
 .balance-row {
@@ -1672,7 +1842,7 @@ textarea.form-input {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 60px var(--space-6);
+  padding: 32px var(--space-6);
   transition: opacity var(--duration-normal) var(--ease-out),
               transform var(--duration-normal) var(--ease-out);
 }
@@ -1750,6 +1920,7 @@ textarea.form-input {
   border-radius: var(--radius-xl);
   padding: 40px var(--space-7);
   margin-bottom: var(--space-6);
+  text-align: center;
 }
 
 .feature-icon {
@@ -4869,9 +5040,9 @@ select:focus-visible {
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 16px;
-  font-family: monospace;
+  font-family: var(--font-sans);
   font-size: 13px;
-  word-break: break-all;
+  overflow-wrap: break-word;
   color: var(--text-secondary);
 }
 

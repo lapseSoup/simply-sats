@@ -15,10 +15,10 @@
       {
         "title": "Simply Sats",
         "width": 420,
-        "height": 640,
+        "height": 720,
         "resizable": true,
         "minWidth": 380,
-        "minHeight": 640
+        "minHeight": 720
       }
     ],
     "security": {

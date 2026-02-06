@@ -639,28 +639,38 @@ export function WalletProvider({ children }: WalletProviderProps) {
     // 1. Stop auto-lock timer
     stopAutoLock()
 
-    // 2. Clear wallet from Tauri secure storage + localStorage wallet key
-    await clearWallet()
-
-    // 3. Clear all database tables
-    await clearDatabase()
-
-    // 4. Clear ALL simply_sats_* keys from localStorage + sessionStorage
-    clearAllSimplySatsStorage()
-
-    // 5. Reset ALL React state across every context
+    // 2. Reset ALL React state FIRST so UI immediately redirects to setup screen
     setWallet(null)
+    setIsLocked(false)
+    setSessionPassword(null)
     resetSync()
     setLocks([])
     setConnectedApps([])
     setTrustedOrigins([])
     setContacts([])
-    setIsLocked(false)
-    setSessionPassword(null)
     setAutoLockMinutesState(10)
     setFeeRateKBState(50)
     resetTokens()
     resetAccounts()
+
+    // 3. Clean up persistent storage (errors must not block UI reset)
+    try {
+      await clearWallet()
+    } catch (err) {
+      walletLogger.error('Failed to clear wallet storage during delete', err)
+    }
+
+    try {
+      await clearDatabase()
+    } catch (err) {
+      walletLogger.error('Failed to clear database during delete', err)
+    }
+
+    try {
+      clearAllSimplySatsStorage()
+    } catch (err) {
+      walletLogger.error('Failed to clear localStorage during delete', err)
+    }
 
     walletLogger.info('Wallet deleted and all data cleared')
   }, [setWallet, resetSync, setLocks, resetTokens, resetAccounts])

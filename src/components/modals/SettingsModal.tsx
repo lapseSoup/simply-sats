@@ -323,7 +323,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   const executeDelete = async () => {
     setShowDeleteConfirmation(false)
-    await handleDeleteWallet()
+    try {
+      await handleDeleteWallet()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Error deleting wallet')
+    }
     onClose()
   }
 
