@@ -26,3 +26,6 @@ dist-ssr
 # Tauri build artifacts
 src-tauri/target/
 src-tauri/gen/
+
+# Git worktrees
+.worktrees/
