@@ -33,15 +33,10 @@ const AccountItem = memo(function AccountItem({
         {account.name.charAt(0).toUpperCase()}
       </div>
       <div className="account-item-info">
-        <div className="account-item-row">
-          <span className="account-item-name">{account.name}</span>
-          {balance !== undefined && (
-            <span className="account-item-balance">{formatBalance(balance)}</span>
-          )}
-        </div>
-        <span className="account-item-address">
-          {account.identityAddress.slice(0, 8)}...{account.identityAddress.slice(-6)}
-        </span>
+        <span className="account-item-name">{account.name}</span>
+        {balance !== undefined && (
+          <span className="account-item-balance">{formatBalance(balance)}</span>
+        )}
       </div>
       {isActive && (
         <svg
@@ -65,6 +60,7 @@ interface AccountSwitcherProps {
   activeAccountId: number | null
   onSwitchAccount: (accountId: number) => void
   onCreateAccount: () => void
+  onImportAccount: () => void
   onManageAccounts: () => void
   formatBalance: (sats: number) => string
   accountBalances?: Record<number, number>
@@ -75,6 +71,7 @@ export function AccountSwitcher({
   activeAccountId,
   onSwitchAccount,
   onCreateAccount,
+  onImportAccount,
   onManageAccounts,
   formatBalance,
   accountBalances = {}
@@ -130,6 +127,11 @@ export function AccountSwitcher({
     setIsOpen(false)
   }, [onCreateAccount])
 
+  const handleImportClick = useCallback(() => {
+    onImportAccount()
+    setIsOpen(false)
+  }, [onImportAccount])
+
   const handleManageClick = useCallback(() => {
     onManageAccounts()
     setIsOpen(false)
@@ -151,14 +153,7 @@ export function AccountSwitcher({
         <div className="account-avatar">
           {activeAccount?.name.charAt(0).toUpperCase() || '?'}
         </div>
-        <div className="account-info">
-          <span className="account-name">{activeAccount?.name || 'No Account'}</span>
-          {activeAccountId && accountBalances[activeAccountId] !== undefined && (
-            <span className="account-balance-preview">
-              {formatBalance(accountBalances[activeAccountId])}
-            </span>
-          )}
-        </div>
+        <span className="account-name">{activeAccount?.name || 'No Account'}</span>
         <svg
           className={`dropdown-arrow ${isOpen ? 'open' : ''}`}
           width="12"
@@ -201,6 +196,15 @@ export function AccountSwitcher({
             </button>
             <button
               className="account-action-button"
+              onClick={handleImportClick}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 8L8 13L13 8M8 2V13" />
+              </svg>
+              Import Account
+            </button>
+            <button
+              className="account-action-button"
               onClick={handleManageClick}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
@@ -221,14 +225,13 @@ export function AccountSwitcher({
         .account-switcher-button {
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 4px 10px 4px 4px;
+          gap: 6px;
+          padding: 4px 8px 4px 4px;
           background: var(--bg-secondary);
           border: 1px solid var(--border);
           border-radius: var(--radius-sm);
           cursor: pointer;
           transition: all 0.2s ease;
-          min-width: 130px;
           height: 30px;
         }
 
@@ -238,26 +241,17 @@ export function AccountSwitcher({
         }
 
         .account-avatar {
-          width: 22px;
-          height: 22px;
+          width: 20px;
+          height: 20px;
           border-radius: 50%;
           background: var(--accent);
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 600;
           color: white;
           flex-shrink: 0;
-        }
-
-        .account-info {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          flex: 1;
-          min-width: 0;
-          line-height: 1.2;
         }
 
         .account-name {
@@ -267,17 +261,13 @@ export function AccountSwitcher({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-        }
-
-        .account-balance-preview {
-          font-size: 10px;
-          color: var(--text-tertiary);
+          max-width: 120px;
         }
 
         .dropdown-arrow {
           transition: transform 0.15s ease;
           color: var(--text-tertiary);
-          margin-left: auto;
+          flex-shrink: 0;
         }
 
         .dropdown-arrow.open {
@@ -327,16 +317,9 @@ export function AccountSwitcher({
 
         .account-item-info {
           display: flex;
-          flex-direction: column;
+          align-items: baseline;
           flex: 1;
           min-width: 0;
-          gap: 2px;
-        }
-
-        .account-item-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
           gap: 8px;
         }
 
@@ -347,7 +330,6 @@ export function AccountSwitcher({
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          max-width: 100px;
         }
 
         .account-item-balance {
@@ -355,12 +337,7 @@ export function AccountSwitcher({
           color: var(--text-secondary);
           white-space: nowrap;
           font-weight: 500;
-        }
-
-        .account-item-address {
-          font-size: 11px;
-          color: var(--text-tertiary);
-          font-family: var(--font-mono);
+          margin-left: auto;
         }
 
         .check-icon {

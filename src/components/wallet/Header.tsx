@@ -66,12 +66,11 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
   const handleSwitchAccount = async (accountId: number) => {
     if (accountId !== activeAccountId) {
       const success = await switchAccount(accountId)
-      if (success) {
-        // Refresh data for the new account
-        await fetchData()
-      } else {
+      if (!success) {
         walletLogger.error('Failed to switch account - session password may be missing')
       }
+      // fetchData is triggered automatically by App.tsx useEffect
+      // when wallet + activeAccountId state updates after re-render
     }
   }
 
@@ -99,6 +98,7 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
               activeAccountId={activeAccountId}
               onSwitchAccount={handleSwitchAccount}
               onCreateAccount={() => onAccountModalOpen('create')}
+              onImportAccount={() => onAccountModalOpen('import')}
               onManageAccounts={() => onAccountModalOpen('manage')}
               formatBalance={formatBalance}
               accountBalances={accountBalances}

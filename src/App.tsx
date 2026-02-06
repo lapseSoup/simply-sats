@@ -19,7 +19,7 @@ import { loadNotifications, startPaymentListener } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
 import { getDerivedAddresses } from './services/database'
 import { needsInitialSync } from './services/sync'
-import { needsBackupReminder } from './services/backupReminder'
+// import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive
 
 // Tab order for keyboard navigation
 const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'utxos']
@@ -168,16 +168,16 @@ function WalletApp() {
     return () => clearTimeout(timer)
   }, [newMnemonic])
 
-  // Check for backup reminder after wallet loads
-  useEffect(() => {
-    if (wallet && !isLocked) {
-      const shouldShow = needsBackupReminder()
-      if (shouldShow) {
-        // Use setTimeout to avoid setState during render
-        setTimeout(() => setShowBackupReminder(true), 0)
-      }
-    }
-  }, [wallet, isLocked])
+  // Backup reminder disabled — too aggressive for current UX
+  // Users verify their recovery phrase once during onboarding; periodic re-verification is overkill
+  // useEffect(() => {
+  //   if (wallet && !isLocked) {
+  //     const shouldShow = needsBackupReminder()
+  //     if (shouldShow) {
+  //       setTimeout(() => setShowBackupReminder(true), 0)
+  //     }
+  //   }
+  // }, [wallet, isLocked])
 
   // Handlers
   const handleAccountModalOpen = (mode: AccountModalMode) => {

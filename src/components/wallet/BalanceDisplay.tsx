@@ -71,20 +71,18 @@ export function BalanceDisplay() {
         .balance-unit.clickable {
           display: inline-flex;
           align-items: center;
-          gap: 0.25rem;
+          gap: 3px;
           cursor: pointer;
-          border-bottom: 1px dashed var(--color-text-secondary, rgba(255, 255, 255, 0.3));
-          padding-bottom: 1px;
+          vertical-align: baseline;
         }
 
         .toggle-hint {
-          opacity: 0.5;
-          transition: opacity 0.15s ease, transform 0.15s ease;
+          opacity: 0.35;
+          transition: opacity 0.15s ease;
         }
 
         .balance-main:hover .toggle-hint {
-          opacity: 1;
-          transform: rotate(180deg);
+          opacity: 0.7;
         }
       `}</style>
     </div>

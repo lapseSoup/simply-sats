@@ -211,6 +211,30 @@ fn include_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/008_audit_log.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "Per-account transaction uniqueness",
+            sql: include_str!("../migrations/009_tx_per_account.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 10,
+            description: "Reset transaction amounts for recalculation",
+            sql: include_str!("../migrations/010_reset_tx_amounts.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 11,
+            description: "Reset transaction amounts v2 (API fallback)",
+            sql: include_str!("../migrations/011_reset_tx_amounts_v2.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 12,
+            description: "Clean up cross-account data contamination",
+            sql: include_str!("../migrations/012_cleanup_cross_account.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

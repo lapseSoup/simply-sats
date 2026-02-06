@@ -25,10 +25,11 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: nu
   )
 
   // If amount was provided and row already existed, update the amount
+  // Scope by account_id to avoid updating other accounts' rows for the same txid
   if (tx.amount !== undefined) {
     await database.execute(
-      'UPDATE transactions SET amount = COALESCE(amount, $1) WHERE txid = $2 AND amount IS NULL',
-      [tx.amount, tx.txid]
+      'UPDATE transactions SET amount = COALESCE(amount, $1) WHERE txid = $2 AND account_id = $3 AND amount IS NULL',
+      [tx.amount, tx.txid, accId]
     )
   }
 
@@ -89,8 +90,10 @@ export async function upsertTransaction(tx: Omit<Transaction, 'id'>, accountId?:
 
   if (updates.length > 0) {
     params.push(tx.txid)
+    paramIndex++
+    params.push(accId)
     await database.execute(
-      `UPDATE transactions SET ${updates.join(', ')} WHERE txid = $${paramIndex}`,
+      `UPDATE transactions SET ${updates.join(', ')} WHERE txid = $${paramIndex - 1} AND account_id = $${paramIndex}`,
       params
     )
   }
@@ -152,13 +155,17 @@ export async function getAllTransactions(limit = 30, accountId?: number): Promis
 
 /**
  * Update transaction amount
+ * @param txid - Transaction ID
+ * @param amount - Amount in satoshis
+ * @param accountId - Account ID to scope update (defaults to 1)
  */
-export async function updateTransactionAmount(txid: string, amount: number): Promise<void> {
+export async function updateTransactionAmount(txid: string, amount: number, accountId?: number): Promise<void> {
   const database = getDatabase()
+  const accId = accountId || 1
 
   await database.execute(
-    'UPDATE transactions SET amount = $1 WHERE txid = $2',
-    [amount, txid]
+    'UPDATE transactions SET amount = $1 WHERE txid = $2 AND account_id = $3',
+    [amount, txid, accId]
   )
 }
 
@@ -190,17 +197,23 @@ export async function getTransactionsByLabel(label: string): Promise<Transaction
 
 /**
  * Update transaction status
+ * @param txid - Transaction ID
+ * @param status - New status
+ * @param blockHeight - Block height (for confirmed)
+ * @param accountId - Account ID to scope update (defaults to 1)
  */
 export async function updateTransactionStatus(
   txid: string,
   status: 'pending' | 'confirmed' | 'failed',
-  blockHeight?: number
+  blockHeight?: number,
+  accountId?: number
 ): Promise<void> {
   const database = getDatabase()
+  const accId = accountId || 1
 
   await database.execute(
-    'UPDATE transactions SET status = $1, confirmed_at = $2, block_height = $3 WHERE txid = $4',
-    [status, status === 'confirmed' ? Date.now() : null, blockHeight || null, txid]
+    'UPDATE transactions SET status = $1, confirmed_at = $2, block_height = $3 WHERE txid = $4 AND account_id = $5',
+    [status, status === 'confirmed' ? Date.now() : null, blockHeight || null, txid, accId]
   )
 }
 

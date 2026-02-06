@@ -14,7 +14,6 @@ interface ManageAccountsListProps {
   onRenameAccount?: (accountId: number, name: string) => Promise<void>
   onSwitchAccount?: (accountId: number) => void
   onCreateNew: () => void
-  onImport: () => void
   onClose: () => void
 }
 
@@ -185,7 +184,6 @@ export const ManageAccountsList = memo(function ManageAccountsList({
   onRenameAccount,
   onSwitchAccount,
   onCreateNew,
-  onImport,
   onClose
 }: ManageAccountsListProps) {
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -260,13 +258,6 @@ export const ManageAccountsList = memo(function ManageAccountsList({
           onClick={onCreateNew}
         >
           + New Account
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={onImport}
-        >
-          Import Account
         </button>
       </div>
 

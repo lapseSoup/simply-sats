@@ -183,17 +183,14 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
             <div id="receive-panel-brc100" role="tabpanel" aria-labelledby="receive-tab-brc100" className="qr-container compact">
               {!showDeriveMode ? (
                 <>
-                  <div className="private-intro" style={{ textAlign: 'center', marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      Private addresses let you receive payments without reusing the same address.
-                      Each sender gets a unique address derived from your identity key.
-                    </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4, textAlign: 'center' }}>
+                    Each sender gets a unique address derived from your identity key
                   </div>
-                  <div className="brc100-qr-label" style={{ marginBottom: 6, fontSize: 12 }}>Your Identity Public Key</div>
-                  <div className="qr-wrapper compact" style={{ padding: 10 }}>
-                    <QRCodeSVG value={wallet.identityPubKey} size={80} level="L" bgColor="#fff" fgColor="#000" />
+                  <div className="brc100-qr-label" style={{ fontSize: 12 }}>Your Identity Public Key</div>
+                  <div className="qr-wrapper compact" style={{ padding: 8 }}>
+                    <QRCodeSVG value={wallet.identityPubKey} size={64} level="L" bgColor="#fff" fgColor="#000" />
                   </div>
-                  <div className="address-display compact" style={{ marginTop: 8 }}>
+                  <div className="address-display compact">
                     {wallet.identityPubKey}
                   </div>
                   <button
@@ -205,7 +202,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                   </button>
                   <button
                     className="btn btn-primary"
-                    style={{ marginTop: 8, width: '100%', padding: '10px 16px' }}
+                    style={{ width: '100%', padding: '10px 16px' }}
                     onClick={() => {
                       setShowDeriveMode(true)
                       setSenderPubKeyInput('')
@@ -218,9 +215,6 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                   >
                     Generate Private Address
                   </button>
-                  <div className="address-type-hint" style={{ marginTop: 4, fontSize: 11, minHeight: 'auto' }}>
-                    Share your identity key with the sender, then generate a unique address for them
-                  </div>
                 </>
               ) : (
                 <>

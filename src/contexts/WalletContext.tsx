@@ -651,7 +651,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     try {
       // Use selected UTXOs if provided (from coin control), otherwise get from database
-      const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase()
+      const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
 
       // Convert to ExtendedUTXO format with WIF
       // Note: database UTXOs use 'lockingScript', ExtendedUTXO uses 'script'

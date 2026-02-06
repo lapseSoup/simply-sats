@@ -34,7 +34,8 @@ export {
   getBalanceFromDB,
   getAllUTXOs,
   repairUTXOs,
-  toggleUtxoFrozen
+  toggleUtxoFrozen,
+  getUtxoByOutpoint
 } from './utxoRepository'
 
 // Transaction operations

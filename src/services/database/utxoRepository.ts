@@ -382,6 +382,25 @@ export async function getPendingUtxos(timeoutMs: number = 300000): Promise<Array
   }))
 }
 
+/**
+ * Look up a UTXO by its outpoint (txid + vout)
+ * Used by sync to compute net transaction amounts via local UTXO data
+ * @param txid - Transaction ID of the outpoint
+ * @param vout - Output index
+ * @param accountId - Optional account ID to scope the lookup
+ */
+export async function getUtxoByOutpoint(txid: string, vout: number, accountId?: number): Promise<{ satoshis: number } | null> {
+  const database = getDatabase()
+  let query = 'SELECT satoshis FROM utxos WHERE txid = $1 AND vout = $2'
+  const params: SqlParams = [txid, vout]
+  if (accountId !== undefined) {
+    query += ' AND account_id = $3'
+    params.push(accountId)
+  }
+  const rows = await database.select<{ satoshis: number }[]>(query, params)
+  return rows[0] ?? null
+}
+
 // ============================================
 // Balance Operations
 // ============================================

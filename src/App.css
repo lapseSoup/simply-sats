@@ -84,6 +84,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .header-status {
@@ -182,9 +183,7 @@ body {
 
 .balance-unit.clickable {
   color: var(--accent);
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 3px;
+  text-decoration: none;
 }
 
 .balance-sub {
@@ -825,9 +824,14 @@ body {
   max-width: 420px;
   max-height: calc(100vh - 40px);
   overflow-y: auto;
+  scrollbar-width: none;
   animation: modalIn 0.25s ease;
   margin: auto 0;
   flex-shrink: 0;
+}
+
+.modal::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes modalIn {
@@ -1194,12 +1198,12 @@ textarea.form-input {
 }
 
 .pill-tabs.compact {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .pill-tab {
   flex: 1;
-  padding: 10px 12px;
+  padding: 8px 12px;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
@@ -4054,13 +4058,7 @@ select:focus-visible {
   }
 }
 
-/* Account switcher overflow protection */
-.account-name {
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Account switcher overflow protection is in AccountSwitcher.tsx inline styles */
 
 /* ==================== BACKUP REMINDER BANNER ==================== */
 

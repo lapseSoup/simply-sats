@@ -21,6 +21,7 @@ import {
   confirmUtxosSpent,
   rollbackPendingSpend,
   getPendingUtxos,
+  getUtxoByOutpoint,
   type UTXO as DBUtxo
 } from './database'
 import { RATE_LIMITS } from './config'
@@ -190,26 +191,52 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 }
 
 /**
- * Calculate the amount change for an address from a transaction
- * Positive = received, Negative = sent
+ * Calculate the net amount change for an address from a transaction
+ * Positive = received, Negative = sent (including fee)
+ *
+ * Strategy: First try local UTXO DB (cheap), then fetch parent tx from API (reliable).
+ * Spent UTXOs may not exist in the local DB after a fresh sync (only current UTXOs
+ * are fetched from blockchain), so the API fallback is essential for accuracy.
  */
-function calculateTxAmount(tx: WocTransaction, address: string): number {
+async function calculateTxAmount(tx: WocTransaction, address: string, accountId?: number): Promise<number> {
   const lockingScript = getLockingScript(address)
+  const wocClient = getWocClient()
   let received = 0
 
-  // Check outputs - did we receive any sats?
+  // Sum outputs going TO our address
   for (const vout of tx.vout) {
     if (vout.scriptPubKey.hex === lockingScript) {
-      // This output goes to our address
       received += Math.round(vout.value * 100000000) // Convert BSV to sats
     }
   }
 
-  // Note: To calculate sent amount, we'd need to fetch parent transactions
-  // to determine input values. For now, we only track received amounts.
-  // The full calculation would require fetching input transactions
-  // which is expensive. For received transactions, this is sufficient.
-  return received
+  // Check if we spent any of our UTXOs in this transaction's inputs
+  let spent = 0
+  for (const vin of tx.vin) {
+    if (vin.txid && vin.vout !== undefined) {
+      // Try 1: Local UTXO DB lookup (fast, works for UTXOs we've seen before)
+      const utxo = await getUtxoByOutpoint(vin.txid, vin.vout, accountId)
+      if (utxo) {
+        spent += utxo.satoshis
+        continue
+      }
+
+      // Try 2: Fetch parent transaction from API (reliable, works after fresh sync)
+      try {
+        const prevTx = await wocClient.getTransactionDetails(vin.txid)
+        if (prevTx?.vout?.[vin.vout]) {
+          const prevOutput = prevTx.vout[vin.vout]
+          if (prevOutput.scriptPubKey.hex === lockingScript) {
+            spent += Math.round(prevOutput.value * 100000000)
+          }
+        }
+      } catch {
+        // If we can't fetch, skip this input
+      }
+    }
+  }
+
+  return received - spent
 }
 
 /**
@@ -238,7 +265,7 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
 
     let amount: number | undefined
     if (txDetails) {
-      amount = calculateTxAmount(txDetails, address)
+      amount = await calculateTxAmount(txDetails, address, accountId)
     }
 
     // Store in database (addTransaction won't overwrite existing)

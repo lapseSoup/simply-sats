@@ -381,13 +381,6 @@ export function AccountModal({
         >
           + New Account
         </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => setMode('import')}
-        >
-          Import Account
-        </button>
       </div>
 
       <button type="button" className="btn btn-secondary" onClick={handleClose}>
