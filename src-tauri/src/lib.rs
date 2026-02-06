@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
@@ -159,6 +160,79 @@ impl SessionState {
 }
 
 pub type SharedSessionState = Arc<Mutex<SessionState>>;
+
+/// Pre-initialize the database for fresh installs.
+///
+/// tauri_plugin_sql hangs when migrations contain DML (INSERT/UPDATE/DELETE).
+/// For existing databases, migrations are already applied so this is a no-op.
+/// For fresh installs, we create the database with the final consolidated schema
+/// and mark all migrations as applied, so the plugin skips them entirely.
+fn pre_init_database(app_data_dir: &std::path::Path) {
+    let db_path = app_data_dir.join("simplysats.db");
+
+    // Only needed for fresh installs — existing DBs already have migrations applied
+    if db_path.exists() {
+        return;
+    }
+
+    // Ensure the directory exists
+    if let Err(e) = std::fs::create_dir_all(app_data_dir) {
+        eprintln!("Failed to create app data dir: {}", e);
+        return;
+    }
+
+    let conn = match rusqlite::Connection::open(&db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to create database: {}", e);
+            return;
+        }
+    };
+
+    // Execute the consolidated schema
+    let schema = include_str!("../migrations/fresh_install_schema.sql");
+    if let Err(e) = conn.execute_batch(schema) {
+        eprintln!("Failed to execute schema: {}", e);
+        // Clean up the broken DB file
+        let _ = std::fs::remove_file(&db_path);
+        return;
+    }
+
+    // Mark all 12 migrations as applied with their correct checksums
+    // Checksums must match the SQL content exactly or tauri_plugin_sql will re-run them
+    let migrations: Vec<(i64, &str, &str)> = vec![
+        (1, "Initial database schema", "C00D163C545940AF1CB0E2DC1AABE4A8D66902CFDA8BAAE50DD8D091E4A4D22BD36389CC70B5F95308BB8C29A79C7211"),
+        (2, "Derived addresses, address column, and transaction amount", "B74217698A1EA4F9FC2BEBA142D3ACDCFE288917C9BA51A1BEDD173C30A2B904585DF0ECE48EEA4DA6F0F849708F54D7"),
+        (3, "Multi-account system", "3E5E2B8934DDE97181F53FCA6EA9AB41BDF2061CFE32370675F142BA76CE03786016AA932319E332521078D96A12B92E"),
+        (4, "BSV20 token support", "22204B67014BB2AC66B6BE9CF4CA1E689373FFD6046E63E33E7BB07265148FE8D7211BBF3ED0D997D640F387F2B152B0"),
+        (5, "Tagged key derivation and messaging", "E7B9D14B94C622E98E078742ED0E7A3C105D5060EB3D6ACE8026121E7EDDCDDF42D41212020FEC5EC49BA4C1835729DB"),
+        (6, "UTXO pending/spent status tracking", "6871DBF8F89509446959E4D1CAE7EFB5F0F01395FACF3991207550AC97AA5A67E2D8F8FD744A5FDEAABF77EA4249AE3E"),
+        (7, "Add timestamps to existing tables", "6365EB3E2A63A1270E7A458973E88D5FC6CC127565FFC0337D4C911B475CB7CE7B0384B8D145750683C577D35FEE7345"),
+        (8, "Audit log for security monitoring", "0DF94DB4EE8188A37DC15B4859FCA8AF1D6E9AB78ECA503489FAC776F3435F42B4035C2F340B43EF73C02D5D09E66111"),
+        (9, "Per-account transaction uniqueness", "C31E62D5BD11868743A22787E75AF75B7FC22D81DCEC20044BEA2657B341F2865E7F56060F0572DBF066191874E26884"),
+        (10, "Reset transaction amounts for recalculation", "FC857C579014ED6348868FBCD45CD61B7EE6381FE4DFA0E75DB42BF737DEFF6BAEA906C0AFFB4F1026135F408F2C59B7"),
+        (11, "Reset transaction amounts v2 (API fallback)", "091FFB058C9D7CC3C3017E12E680785572255990136F597C67ED018D49260864D13CA09301A2DE1C458F9A887BB0009E"),
+        (12, "Clean up cross-account data contamination", "2E64BE0485EE42B15E900B7DF79FF2A2873E525402C903311E6D2AD35F92DB9EE293248131A67B93D053E53C8C75DA56"),
+    ];
+
+    for (version, description, checksum_hex) in migrations {
+        let checksum = hex_to_bytes(checksum_hex);
+        if let Err(e) = conn.execute(
+            "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (?1, ?2, 1, ?3, 0)",
+            rusqlite::params![version, description, checksum],
+        ) {
+            eprintln!("Failed to insert migration {}: {}", version, e);
+        }
+    }
+}
+
+/// Convert hex string to bytes for migration checksums
+fn hex_to_bytes(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0))
+        .collect()
+}
 
 // Database migrations
 fn include_migrations() -> Vec<Migration> {
@@ -339,6 +413,12 @@ pub fn run() {
             secure_storage_migrate
         ])
         .setup(move |app| {
+            // Pre-initialize database for fresh installs before frontend triggers migrations
+            // This avoids tauri_plugin_sql hanging on DML in migration files
+            if let Some(app_data_dir) = app.path().app_data_dir().ok() {
+                pre_init_database(&app_data_dir);
+            }
+
             let app_handle = app.handle().clone();
             let brc100_state = brc100_state_for_server;
             let session_state = session_state_for_server;

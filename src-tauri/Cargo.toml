@@ -30,6 +30,7 @@ rand = "0.8"
 governor = "0.6"
 subtle = "2.5"  # Constant-time comparison for security-sensitive operations
 url = "2"       # URL parsing for origin extraction
+rusqlite = { version = "0.31", features = ["bundled"] }  # Pre-init database for fresh installs
 
 [features]
 default = []

@@ -13,3 +13,17 @@
 **Problem:** `tauri_plugin_sql` (v2.3.1) hangs indefinitely when a migration contains DML statements like DELETE, UPDATE, or INSERT. Only DDL (CREATE, ALTER, DROP) works reliably in migrations. The migration runner's transaction handling appears incompatible with DML.
 **Rule:** NEVER use DELETE, UPDATE, or INSERT in Tauri SQL migrations. For data cleanup, either: (1) do it in application code after DB init, or (2) use `SELECT 1` as a no-op migration and handle cleanup in the app startup logic.
 **Fix:** Changed migration 012 to `SELECT 1;` (no-op) and performed data cleanup manually/via application code.
+
+## Fresh Installs Need Pre-initialized Database
+**Date:** 2025-02-06
+**Context:** Windows user got stuck on loading spinner on first launch. The app's migrations contain DML (INSERT INTO...SELECT, UPDATE) that hang tauri_plugin_sql.
+**Problem:** On a fresh install, ALL migrations run from scratch. Migration 009 (INSERT INTO...SELECT + DROP TABLE), 010/011 (UPDATE), and 001 (INSERT OR IGNORE) all contain DML that can hang the migration runner. Existing installs are unaffected because migrations are already applied.
+**Rule:** For fresh installs, pre-create the database with the final consolidated schema and mark all migrations as applied in `_sqlx_migrations`. Use `rusqlite` in a Rust `setup` hook to check if the DB file exists and create it if not.
+**Fix:** Added `pre_init_database()` in lib.rs that creates the DB with `fresh_install_schema.sql` and inserts migration records with correct checksums. The tauri_plugin_sql migration runner then sees all migrations as applied and skips them.
+
+## jsdom Realm Mismatch Breaks WebCrypto in Tests
+**Date:** 2025-02-06
+**Context:** Crypto tests passed locally (macOS) but failed on Ubuntu CI with "2nd argument is not instance of ArrayBuffer".
+**Problem:** Vitest's jsdom environment creates a separate JavaScript realm. `ArrayBuffer` from Node.js isn't recognized by jsdom's `SubtleCrypto` as a valid `ArrayBuffer` instance (cross-realm type check). Even copying to a fresh `ArrayBuffer` doesn't help because the constructor itself is from the wrong realm.
+**Rule:** Use `// @vitest-environment node` for test files that use Node.js native APIs (crypto, fs, etc.) and don't need DOM access.
+**Fix:** Added `// @vitest-environment node` to crypto.test.ts.
