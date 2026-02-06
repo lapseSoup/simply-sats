@@ -1,6 +1,7 @@
 import { ActivityTab, OrdinalsTab, LocksTab, TokensTab, UTXOsTab } from './components/tabs'
 import type { Ordinal, LockedUTXO } from './services/wallet'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
+import { FEATURES } from './config'
 
 /**
  * Fallback UI for tab errors - shows a compact error message that fits the tab area
@@ -103,13 +104,15 @@ export function AppTabNav({ activeTab, onTabChange, counts }: AppTabsProps) {
         activeTab={activeTab}
         onSelect={onTabChange}
       />
-      <TabButton
-        id="locks"
-        label="Locks"
-        count={counts.locks}
-        activeTab={activeTab}
-        onSelect={onTabChange}
-      />
+      {FEATURES.LOCKS && (
+        <TabButton
+          id="locks"
+          label="Locks"
+          count={counts.locks}
+          activeTab={activeTab}
+          onSelect={onTabChange}
+        />
+      )}
       <TabButton
         id="utxos"
         label="UTXOs"
@@ -186,7 +189,7 @@ export function AppTabContent({
           <TokensTab onRefresh={onRefreshTokens} />
         </ErrorBoundary>
       )}
-      {activeTab === 'locks' && (
+      {FEATURES.LOCKS && activeTab === 'locks' && (
         <ErrorBoundary
           context="LocksTab"
           fallback={(error, reset) => (

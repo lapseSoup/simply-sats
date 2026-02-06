@@ -86,6 +86,7 @@ interface WalletContextType {
   activeAccountId: number | null
   switchAccount: (accountId: number) => Promise<boolean>
   createNewAccount: (name: string) => Promise<boolean>
+  importAccount: (name: string, mnemonic: string) => Promise<boolean>
   deleteAccount: (accountId: number) => Promise<boolean>
   renameAccount: (accountId: number, name: string) => Promise<void>
   refreshAccounts: () => Promise<void>
@@ -187,6 +188,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     activeAccountId,
     switchAccount: accountsSwitchAccount,
     createNewAccount: accountsCreateNewAccount,
+    importAccount: accountsImportAccount,
     deleteAccount: accountsDeleteAccount,
     renameAccount,
     refreshAccounts,
@@ -372,6 +374,21 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
     return false
   }, [accountsCreateNewAccount, setWallet, sessionPassword])
+
+  // Import account from external mnemonic using session password
+  const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
+    if (!sessionPassword) {
+      walletLogger.error('Cannot import account - no session password available')
+      return false
+    }
+    const keys = await accountsImportAccount(name, mnemonic, sessionPassword)
+    if (keys) {
+      setWallet(keys)
+      setIsLocked(false)
+      return true
+    }
+    return false
+  }, [accountsImportAccount, setWallet, sessionPassword])
 
   // Delete an account - wraps AccountsContext, may need to load new active account
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
@@ -812,6 +829,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     activeAccountId,
     switchAccount,
     createNewAccount,
+    importAccount,
     deleteAccount,
     renameAccount,
     refreshAccounts,

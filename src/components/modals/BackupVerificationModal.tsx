@@ -14,6 +14,7 @@
  */
 
 import { useState, useMemo, useCallback } from 'react'
+import { recordBackupVerification } from '../../services/backupReminder'
 
 interface BackupVerificationModalProps {
   mnemonic: string
@@ -268,7 +269,10 @@ export function BackupVerificationModal({
 
               <button
                 className="btn btn-primary"
-                onClick={onConfirm}
+                onClick={() => {
+                  recordBackupVerification()
+                  onConfirm()
+                }}
               >
                 Complete Setup
               </button>

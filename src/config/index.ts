@@ -119,6 +119,9 @@ export const WALLET = {
 
   /** Maximum derived addresses */
   MAX_DERIVED_ADDRESSES: 100,
+
+  /** UTXO count threshold for suggesting consolidation */
+  CONSOLIDATION_THRESHOLD: 50,
 } as const
 
 // ============================================
@@ -196,7 +199,7 @@ export const FEATURES = {
   ORDINALS: true,
 
   /** Enable time-locked UTXOs */
-  LOCKS: true,
+  LOCKS: false,
 
   /** Enable multi-account support */
   MULTI_ACCOUNT: true,
@@ -206,6 +209,9 @@ export const FEATURES = {
 
   /** Enable backup verification flow */
   BACKUP_VERIFICATION: true,
+
+  /** Enable auto UTXO consolidation prompting */
+  AUTO_CONSOLIDATION: true,
 } as const
 
 // Type exports for use in other modules

@@ -5,6 +5,7 @@ import { toggleUtxoFrozen, getAllUTXOs } from '../../services/database'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
 import { ConsolidateModal } from '../modals/ConsolidateModal'
 import { uiLogger } from '../../services/logger'
+import { FEATURES, WALLET } from '../../config'
 
 type SortField = 'amount' | 'basket' | 'status'
 type SortDirection = 'asc' | 'desc'
@@ -292,6 +293,12 @@ export function UTXOsTab() {
           <div className="utxos-consolidate-tip">
             <span className="tip-icon">💡</span>
             <span>You have {stats.smallCount} small UTXOs (&lt;1000 sats). Consolidating can reduce future fees.</span>
+          </div>
+        )}
+        {FEATURES.AUTO_CONSOLIDATION && stats.spendable > WALLET.CONSOLIDATION_THRESHOLD && (
+          <div className="utxos-consolidate-tip">
+            <span className="tip-icon">💡</span>
+            <span>You have {stats.spendable} spendable UTXOs. Consider consolidating to reduce future transaction fees.</span>
           </div>
         )}
       </div>

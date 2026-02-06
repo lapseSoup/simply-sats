@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { WalletKeys } from '../services/wallet'
-import { createWallet } from '../services/wallet'
+import { createWallet, restoreWallet } from '../services/wallet'
 import {
   type Account,
   getAllAccounts,
@@ -22,6 +22,7 @@ interface AccountsContextType {
   // Account actions
   switchAccount: (accountId: number, password: string) => Promise<WalletKeys | null>
   createNewAccount: (name: string, password: string) => Promise<WalletKeys | null>
+  importAccount: (name: string, mnemonic: string, password: string) => Promise<WalletKeys | null>
   deleteAccount: (accountId: number) => Promise<boolean>
   renameAccount: (accountId: number, name: string) => Promise<void>
   refreshAccounts: () => Promise<void>
@@ -128,6 +129,22 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     }
   }, [refreshAccounts])
 
+  // Import account from external mnemonic
+  const importAccount = useCallback(async (name: string, mnemonic: string, password: string): Promise<WalletKeys | null> => {
+    try {
+      const keys = restoreWallet(mnemonic)
+      const accountId = await createAccount(name, keys, password)
+      if (!accountId) return null
+
+      await refreshAccounts()
+      accountLogger.info(`Imported account: ${name}`)
+      return keys
+    } catch (e) {
+      accountLogger.error('Failed to import account', e)
+      return null
+    }
+  }, [refreshAccounts])
+
   // Delete account
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
     try {
@@ -154,6 +171,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     activeAccountId,
     switchAccount,
     createNewAccount,
+    importAccount,
     deleteAccount,
     renameAccount,
     refreshAccounts,

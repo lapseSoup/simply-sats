@@ -163,12 +163,11 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
       return keys
     }
 
-    // If it's a plain object with wallet keys (shouldn't happen, but handle it)
+    // If it's a plain object with wallet keys — this is a security violation
     if (parsed.mnemonic && parsed.walletWif) {
-      walletLogger.warn('Found unencrypted wallet data - this should not happen')
-      // Re-save with encryption
-      await saveWallet(parsed, password)
-      return parsed
+      walletLogger.error('SECURITY: Unencrypted wallet data found in localStorage. Removing.')
+      localStorage.removeItem(STORAGE_KEY)
+      throw new Error('Wallet data was stored without encryption. Please restore using your mnemonic.')
     }
   } catch (_e) {
     // Not valid JSON - might be legacy format
@@ -182,13 +181,18 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
       const decoded = atob(stored)
       const keys = JSON.parse(decoded) as WalletKeys
 
+      // SECURITY: Remove plaintext base64 from localStorage immediately,
+      // before attempting re-encryption. Even if re-encryption fails,
+      // the plaintext must not remain on disk.
+      localStorage.removeItem(STORAGE_KEY)
+      walletLogger.warn('Removed legacy base64 wallet data from localStorage')
+
       // Migrate to new encrypted format
       const encryptedData = await migrateLegacyData(stored, password)
 
       // Try to save to secure storage
       const savedSecurely = await saveToSecureStorage(encryptedData)
       if (savedSecurely) {
-        localStorage.removeItem(STORAGE_KEY)
         walletLogger.info('Wallet migrated to secure storage')
       } else {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
@@ -218,35 +222,12 @@ export async function hasWallet(): Promise<boolean> {
 }
 
 /**
- * Synchronous version for backward compatibility
- * Note: This only checks localStorage, not secure storage
- * @deprecated Use hasWallet() async version instead
- */
-export function hasWalletSync(): boolean {
-  // This can only check localStorage - secure storage requires async
-  return localStorage.getItem(STORAGE_KEY) !== null
-}
-
-/**
  * Clear wallet from storage
  */
 export async function clearWallet(): Promise<void> {
   // Clear from both storages
   await clearSecureStorage()
   localStorage.removeItem(STORAGE_KEY)
-}
-
-/**
- * Synchronous version for backward compatibility
- * @deprecated Use clearWallet() async version instead
- */
-export function clearWalletSync(): void {
-  // This can only clear localStorage - secure storage requires async
-  localStorage.removeItem(STORAGE_KEY)
-  // Also try to clear secure storage in background
-  clearSecureStorage().catch(() => {
-    // Ignore errors - best effort
-  })
 }
 
 /**

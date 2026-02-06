@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use tauri_plugin_store::StoreExt;
 
 /// Rate limit configuration constants
 const MAX_ATTEMPTS: u32 = 5;
@@ -17,8 +18,8 @@ const BASE_LOCKOUT_MS: u64 = 1000; // 1 second
 const MAX_LOCKOUT_MS: u64 = 300000; // 5 minutes
 const RESET_AFTER_MS: u64 = 900000; // 15 minutes - reset if no attempts
 
-/// Rate limit state stored in memory
-#[derive(Debug, Clone, Default)]
+/// Rate limit state stored in memory and persisted to disk
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RateLimitState {
     pub attempts: u32,
     pub last_attempt: u64,
@@ -118,6 +119,29 @@ impl RateLimitState {
     }
 }
 
+const STORE_FILENAME: &str = "rate_limit.json";
+const STORE_KEY: &str = "rate_limit_state";
+
+/// Save rate limit state to persistent store
+fn persist_state(app: &tauri::AppHandle, state: &RateLimitState) {
+    if let Ok(store) = app.store(STORE_FILENAME) {
+        let value = serde_json::to_value(state).unwrap_or_default();
+        let _ = store.set(STORE_KEY, value);
+    }
+}
+
+/// Load rate limit state from persistent store
+pub fn load_persisted_state(app: &tauri::AppHandle) -> RateLimitState {
+    if let Ok(store) = app.store(STORE_FILENAME) {
+        if let Some(value) = store.get(STORE_KEY) {
+            if let Ok(state) = serde_json::from_value::<RateLimitState>(value.clone()) {
+                return state;
+            }
+        }
+    }
+    RateLimitState::new()
+}
+
 pub type SharedRateLimitState = Arc<Mutex<RateLimitState>>;
 
 /// Response types for Tauri commands
@@ -150,6 +174,7 @@ pub async fn check_unlock_rate_limit(
 /// Tauri command: Record a failed unlock attempt
 #[tauri::command]
 pub async fn record_failed_unlock(
+    app: tauri::AppHandle,
     state: tauri::State<'_, SharedRateLimitState>,
 ) -> Result<RecordFailedResponse, String> {
     let mut rate_limit = state.lock().await;
@@ -163,6 +188,8 @@ pub async fn record_failed_unlock(
                   rate_limit.attempts, MAX_ATTEMPTS);
     }
 
+    persist_state(&app, &rate_limit);
+
     Ok(RecordFailedResponse {
         is_locked,
         lockout_ms,
@@ -173,10 +200,12 @@ pub async fn record_failed_unlock(
 /// Tauri command: Record a successful unlock
 #[tauri::command]
 pub async fn record_successful_unlock(
+    app: tauri::AppHandle,
     state: tauri::State<'_, SharedRateLimitState>,
 ) -> Result<(), String> {
     let mut rate_limit = state.lock().await;
     rate_limit.record_success();
+    persist_state(&app, &rate_limit);
     Ok(())
 }
 

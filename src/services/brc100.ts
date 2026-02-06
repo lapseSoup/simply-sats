@@ -56,7 +56,7 @@ import {
 } from './brc100/types'
 import { getRequestManager } from './brc100/RequestManager'
 import { setWalletKeys, getWalletKeys } from './brc100/state'
-import { signMessage, signData, verifySignature } from './brc100/signing'
+import { signMessage, signData, verifySignature, verifyDataSignature } from './brc100/signing'
 // Note: encryptECIES/decryptECIES available in './brc100/cryptography' for future use
 import {
   createCLTVLockingScript,
@@ -81,6 +81,7 @@ export {
   signMessage,
   signData,
   verifySignature,
+  verifyDataSignature,
   getBlockHeight,
   generateRequestId,
   formatIdentityKey,
@@ -699,6 +700,12 @@ export async function handleBRC100Request(
 
         // Sign with identity key by default
         const signature = signData(keys, sigRequest.data, 'identity')
+
+        // Defense-in-depth: verify our own signature before returning it
+        if (!verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
+          throw new Error('Self-verification of signature failed')
+        }
+
         response.result = { signature: Array.from(Buffer.from(signature, 'hex')) }
         break
       }
@@ -783,6 +790,12 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
       case 'createSignature': {
         const sigRequest = request.params as unknown as SignatureRequest
         const signature = signData(keys, sigRequest.data, 'identity')
+
+        // Defense-in-depth: verify our own signature before returning it
+        if (!verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
+          throw new Error('Self-verification of signature failed')
+        }
+
         response.result = { signature: Array.from(Buffer.from(signature, 'hex')) }
         break
       }

@@ -162,3 +162,18 @@
 - Fixed 8+ production `any` types with proper TypeScript interfaces
 - Added 38 new tests for RequestManager (21) and script utilities (17)
 - Total test count: 657 passing tests (up from 619)
+
+## Phase 10: Error Handling Migration (Future)
+
+Track files using ad-hoc `{ success: boolean; error?: string }` pattern that should migrate to a consistent Result type:
+
+- [ ] `src/services/overlay.ts`
+- [ ] `src/services/tokens.ts`
+- [ ] `src/services/backupRecovery.ts`
+- [ ] `src/contexts/LocksContext.tsx`
+- [ ] `src/contexts/WalletContext.tsx`
+- [ ] `src/contexts/TokensContext.tsx`
+- [ ] `src/contexts/ConnectedAppsContext.tsx`
+- [ ] `src/domain/types.ts` (SendResult type)
+
+Note: The unused comprehensive `src/domain/result.ts` was removed in the code review remediation. When migrating, design a simpler Result type that fits the actual patterns used.

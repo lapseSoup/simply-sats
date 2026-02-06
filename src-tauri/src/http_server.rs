@@ -3,7 +3,7 @@ use axum::{
     http::{StatusCode, Method, HeaderValue, Request},
     body::Body,
     middleware::{self, Next},
-    response::Response,
+    response::{Response, IntoResponse},
     Json, Router,
     extract::State,
 };
@@ -319,7 +319,7 @@ async fn fetch_block_height() -> Result<u32, Box<dyn std::error::Error + Send + 
 async fn handle_get_public_key(
     State(state): State<AppState>,
     request: Request<Body>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
     let origin = extract_origin(&request);
 
     let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
@@ -328,7 +328,7 @@ async fn handle_get_public_key(
             "isError": true,
             "code": -32700,
             "message": "Invalid request body"
-        }))),
+        }))).into_response(),
     };
 
     let args: GetPublicKeyArgs = match serde_json::from_slice(&body_bytes) {
@@ -368,7 +368,7 @@ fn extract_nonce(request: &Request<Body>) -> Option<String> {
 }
 
 /// Validate a nonce string against the session state
-async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), Response> {
     match nonce {
         Some(nonce_str) => {
             let mut session = state.session_state.lock().await;
@@ -380,7 +380,7 @@ async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), (
                     "isError": true,
                     "code": -32001,
                     "message": "Invalid or expired CSRF nonce"
-                }))))
+                }))).into_response())
             }
         }
         None => {
@@ -389,7 +389,7 @@ async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), (
                 "isError": true,
                 "code": -32001,
                 "message": "Missing CSRF nonce"
-            }))))
+            }))).into_response())
         }
     }
 }
@@ -397,7 +397,7 @@ async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), (
 async fn handle_create_signature(
     State(state): State<AppState>,
     request: Request<Body>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
     // Extract origin and nonce before consuming the request body
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
@@ -414,7 +414,7 @@ async fn handle_create_signature(
             "isError": true,
             "code": -32700,
             "message": "Invalid request body"
-        }))),
+        }))).into_response(),
     };
 
     let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
@@ -423,18 +423,18 @@ async fn handle_create_signature(
             "isError": true,
             "code": -32700,
             "message": "Invalid JSON"
-        }))),
+        }))).into_response(),
     };
 
     #[cfg(debug_assertions)]
     println!("createSignature request: {:?}", args);
-    forward_to_frontend(state, "createSignature", args, origin).await
+    forward_to_frontend_with_rotation(state, "createSignature", args, origin).await
 }
 
 async fn handle_create_action(
     State(state): State<AppState>,
     request: Request<Body>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
 
@@ -449,7 +449,7 @@ async fn handle_create_action(
             "isError": true,
             "code": -32700,
             "message": "Invalid request body"
-        }))),
+        }))).into_response(),
     };
 
     let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
@@ -458,18 +458,18 @@ async fn handle_create_action(
             "isError": true,
             "code": -32700,
             "message": "Invalid JSON"
-        }))),
+        }))).into_response(),
     };
 
     #[cfg(debug_assertions)]
     println!("createAction request: {:?}", args);
-    forward_to_frontend(state, "createAction", args, origin).await
+    forward_to_frontend_with_rotation(state, "createAction", args, origin).await
 }
 
 async fn handle_list_outputs(
     State(state): State<AppState>,
     request: Request<Body>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
     let origin = extract_origin(&request);
 
     let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
@@ -478,7 +478,7 @@ async fn handle_list_outputs(
             "isError": true,
             "code": -32700,
             "message": "Invalid request body"
-        }))),
+        }))).into_response(),
     };
 
     let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
@@ -487,7 +487,7 @@ async fn handle_list_outputs(
             "isError": true,
             "code": -32700,
             "message": "Invalid JSON"
-        }))),
+        }))).into_response(),
     };
 
     #[cfg(debug_assertions)]
@@ -498,7 +498,7 @@ async fn handle_list_outputs(
 async fn handle_lock_bsv(
     State(state): State<AppState>,
     request: Request<Body>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
 
@@ -513,7 +513,7 @@ async fn handle_lock_bsv(
             "isError": true,
             "code": -32700,
             "message": "Invalid request body"
-        }))),
+        }))).into_response(),
     };
 
     let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
@@ -522,18 +522,18 @@ async fn handle_lock_bsv(
             "isError": true,
             "code": -32700,
             "message": "Invalid JSON"
-        }))),
+        }))).into_response(),
     };
 
     #[cfg(debug_assertions)]
     println!("lockBSV request: {:?}", args);
-    forward_to_frontend(state, "lockBSV", args, origin).await
+    forward_to_frontend_with_rotation(state, "lockBSV", args, origin).await
 }
 
 async fn handle_unlock_bsv(
     State(state): State<AppState>,
     request: Request<Body>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
 
@@ -548,7 +548,7 @@ async fn handle_unlock_bsv(
             "isError": true,
             "code": -32700,
             "message": "Invalid request body"
-        }))),
+        }))).into_response(),
     };
 
     let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
@@ -557,18 +557,18 @@ async fn handle_unlock_bsv(
             "isError": true,
             "code": -32700,
             "message": "Invalid JSON"
-        }))),
+        }))).into_response(),
     };
 
     #[cfg(debug_assertions)]
     println!("unlockBSV request: {:?}", args);
-    forward_to_frontend(state, "unlockBSV", args, origin).await
+    forward_to_frontend_with_rotation(state, "unlockBSV", args, origin).await
 }
 
 async fn handle_list_locks(
     State(state): State<AppState>,
     request: Request<Body>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
     let origin = extract_origin(&request);
 
     let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
@@ -577,7 +577,7 @@ async fn handle_list_locks(
             "isError": true,
             "code": -32700,
             "message": "Invalid request body"
-        }))),
+        }))).into_response(),
     };
 
     let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
@@ -586,7 +586,7 @@ async fn handle_list_locks(
             "isError": true,
             "code": -32700,
             "message": "Invalid JSON"
-        }))),
+        }))).into_response(),
     };
 
     #[cfg(debug_assertions)]
@@ -599,7 +599,26 @@ async fn forward_to_frontend(
     method: &str,
     args: serde_json::Value,
     origin: Option<String>,
-) -> (StatusCode, Json<serde_json::Value>) {
+) -> Response {
+    forward_to_frontend_impl(state, method, args, origin, false).await
+}
+
+async fn forward_to_frontend_with_rotation(
+    state: AppState,
+    method: &str,
+    args: serde_json::Value,
+    origin: Option<String>,
+) -> Response {
+    forward_to_frontend_impl(state, method, args, origin, true).await
+}
+
+async fn forward_to_frontend_impl(
+    state: AppState,
+    method: &str,
+    args: serde_json::Value,
+    origin: Option<String>,
+    rotate_token: bool,
+) -> Response {
     let internal_id = format!("req_{}", uuid_simple());
     let (tx, rx) = tokio::sync::oneshot::channel();
 
@@ -624,7 +643,7 @@ async fn forward_to_frontend(
             "isError": true,
             "code": -32000,
             "message": "Internal error"
-        })));
+        }))).into_response();
     }
 
     match tokio::time::timeout(std::time::Duration::from_secs(120), rx).await {
@@ -634,13 +653,26 @@ async fn forward_to_frontend(
                     "isError": true,
                     "code": error.get("code").and_then(|c| c.as_i64()).unwrap_or(-32000),
                     "message": error.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown error")
-                })));
+                }))).into_response();
             }
 
-            if let Some(result) = response.get("result") {
-                (StatusCode::OK, Json(result.clone()))
+            let json_body = if let Some(result) = response.get("result") {
+                Json(result.clone())
             } else {
-                (StatusCode::OK, Json(response))
+                Json(response)
+            };
+
+            // Rotate session token after successful state-changing operations
+            if rotate_token {
+                let mut session = state.session_state.lock().await;
+                let new_token = session.rotate_token();
+                let mut resp = (StatusCode::OK, json_body).into_response();
+                if let Ok(hv) = HeaderValue::from_str(&new_token) {
+                    resp.headers_mut().insert("X-Simply-Sats-New-Token", hv);
+                }
+                resp
+            } else {
+                (StatusCode::OK, json_body).into_response()
             }
         }
         Ok(Err(_)) => {
@@ -648,7 +680,7 @@ async fn forward_to_frontend(
                 "isError": true,
                 "code": -32003,
                 "message": "Request cancelled"
-            })))
+            }))).into_response()
         }
         Err(_) => {
             let mut brc100_state = state.brc100_state.lock().await;
@@ -658,7 +690,7 @@ async fn forward_to_frontend(
                 "isError": true,
                 "code": -32000,
                 "message": "Request timeout"
-            })))
+            }))).into_response()
         }
     }
 }

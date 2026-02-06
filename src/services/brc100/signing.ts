@@ -47,6 +47,28 @@ export function signData(
 }
 
 /**
+ * Verify a signature over raw byte data (matching signData format)
+ */
+export function verifyDataSignature(
+  publicKeyHex: string,
+  data: number[],
+  signatureHex: string
+): boolean {
+  try {
+    if (!signatureHex || signatureHex.length === 0) return false
+    if (!/^[0-9a-fA-F]+$/.test(signatureHex)) return false
+
+    const publicKey = PublicKey.fromString(publicKeyHex)
+    const sigBytes = Buffer.from(signatureHex, 'hex')
+    const signature = Signature.fromDER(Array.from(sigBytes))
+
+    return publicKey.verify(data, signature)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Verify a signature
  */
 export function verifySignature(

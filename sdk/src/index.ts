@@ -179,6 +179,12 @@ export class SimplySats {
 
       const data = await response.json()
 
+      // Handle session token rotation
+      const newToken = response.headers.get('X-Simply-Sats-New-Token')
+      if (newToken) {
+        this.sessionToken = newToken
+      }
+
       // Check for BRC-100 error format
       if (data.isError) {
         throw new SimplySatsError(data.message, data.code)

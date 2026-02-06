@@ -19,6 +19,7 @@ import { loadNotifications, startPaymentListener } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
 import { getDerivedAddresses } from './services/database'
 import { needsInitialSync } from './services/sync'
+import { needsBackupReminder } from './services/backupReminder'
 
 // Tab order for keyboard navigation
 const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'utxos']
@@ -44,6 +45,7 @@ function WalletApp() {
     activeAccount,
     activeAccountId,
     createNewAccount,
+    importAccount,
     deleteAccount,
     renameAccount
   } = useWallet()
@@ -68,6 +70,9 @@ function WalletApp() {
 
   // Payment alert state
   const [newPaymentAlert, setNewPaymentAlert] = useState<PaymentNotification | null>(null)
+
+  // Backup reminder state
+  const [showBackupReminder, setShowBackupReminder] = useState(false)
 
   // BRC-100 handler
   const {
@@ -153,6 +158,17 @@ function WalletApp() {
     }
   }, [wallet, fetchData, activeAccountId])
 
+  // Check for backup reminder after wallet loads
+  useEffect(() => {
+    if (wallet && !isLocked) {
+      const shouldShow = needsBackupReminder()
+      if (shouldShow) {
+        // Use setTimeout to avoid setState during render
+        setTimeout(() => setShowBackupReminder(true), 0)
+      }
+    }
+  }, [wallet, isLocked])
+
   // Handlers
   const handleAccountModalOpen = (mode: AccountModalMode) => {
     setAccountModalMode(mode)
@@ -167,8 +183,8 @@ function WalletApp() {
     return null
   }
 
-  const handleAccountImport = async (_name: string, _mnemonic: string): Promise<boolean> => {
-    return false
+  const handleAccountImport = async (name: string, mnemonic: string): Promise<boolean> => {
+    return importAccount(name, mnemonic)
   }
 
   const handleMnemonicConfirm = () => {
@@ -308,6 +324,29 @@ function WalletApp() {
       />
 
       <BasketChips />
+
+      {showBackupReminder && (
+        <div className="backup-reminder-banner" role="alert">
+          <span>🔒 It's been a while since you verified your recovery phrase.</span>
+          <button
+            className="backup-reminder-btn"
+            onClick={() => {
+              setNewMnemonic(wallet?.mnemonic || null)
+              setModal('mnemonic')
+              setShowBackupReminder(false)
+            }}
+          >
+            Verify Now
+          </button>
+          <button
+            className="backup-reminder-dismiss"
+            onClick={() => setShowBackupReminder(false)}
+            aria-label="Dismiss reminder"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <AppTabNav
         activeTab={activeTab}

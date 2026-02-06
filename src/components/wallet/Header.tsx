@@ -4,6 +4,7 @@ import { useUI } from '../../contexts/UIContext'
 import { SimplySatsLogo } from '../shared/SimplySatsLogo'
 import { AccountSwitcher } from './AccountSwitcher'
 import { getBalanceFromDB } from '../../services/database'
+import { walletLogger } from '../../services/logger'
 
 interface HeaderProps {
   onSettingsClick: () => void
@@ -69,7 +70,7 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
         // Refresh data for the new account
         await fetchData()
       } else {
-        console.error('Failed to switch account - session password may be missing')
+        walletLogger.error('Failed to switch account - session password may be missing')
       }
     }
   }
@@ -81,6 +82,12 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
     }
     return sats.toLocaleString() + ' sats'
   }
+
+  // Derive network status for indicator
+  const networkStatus = !networkInfo ? 'offline' : networkInfo.overlayHealthy ? 'online' : 'degraded'
+  const statusTooltip = !networkInfo
+    ? 'Network: Disconnected'
+    : `Block ${networkInfo.blockHeight?.toLocaleString() || '...'} | Overlay: ${networkInfo.overlayHealthy ? 'Healthy' : 'Degraded'}`
 
   return (
     <>
@@ -110,9 +117,9 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
         <div className="header-actions">
           <div
             className="header-status"
-            title={`Block ${networkInfo?.blockHeight?.toLocaleString() || '...'}`}
+            title={statusTooltip}
           >
-            <span className="status-dot online" aria-hidden="true"></span>
+            <span className={`status-dot ${networkStatus}`} aria-hidden="true"></span>
             <span className="sr-only">Current block height:</span>
             {networkInfo?.blockHeight?.toLocaleString() || '...'}
           </div>

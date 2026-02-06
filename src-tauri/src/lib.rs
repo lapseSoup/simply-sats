@@ -14,7 +14,8 @@ mod secure_storage;
 use rate_limiter::{
     SharedRateLimitState, RateLimitState,
     check_unlock_rate_limit, record_failed_unlock,
-    record_successful_unlock, get_remaining_unlock_attempts
+    record_successful_unlock, get_remaining_unlock_attempts,
+    load_persisted_state
 };
 
 use secure_storage::{
@@ -59,6 +60,16 @@ impl SessionState {
             used_nonces: HashSet::new(),
             nonce_timestamps: Vec::new(),
         }
+    }
+
+    /// Rotate the session token (call after state-changing operations)
+    pub fn rotate_token(&mut self) -> String {
+        self.token = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(48)
+            .map(char::from)
+            .collect();
+        self.token.clone()
     }
 
     /// Generate a new CSRF nonce
@@ -261,8 +272,9 @@ pub fn run() {
     let session_state: SharedSessionState = Arc::new(Mutex::new(SessionState::new()));
     let session_state_for_server = session_state.clone();
 
-    // Rate limiter state for unlock attempts (stored in memory, not localStorage)
+    // Rate limiter state — initialized empty, loaded from disk in setup()
     let rate_limit_state: SharedRateLimitState = Arc::new(Mutex::new(RateLimitState::new()));
+    let rate_limit_state_for_setup = rate_limit_state.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -294,6 +306,14 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let brc100_state = brc100_state_for_server;
             let session_state = session_state_for_server;
+
+            // Load persisted rate limit state from disk
+            let persisted = load_persisted_state(&app_handle);
+            let rate_limit_for_load = rate_limit_state_for_setup.clone();
+            tauri::async_runtime::block_on(async move {
+                let mut state = rate_limit_for_load.lock().await;
+                *state = persisted;
+            });
 
             // Start HTTP server in background
             std::thread::spawn(move || {

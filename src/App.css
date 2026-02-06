@@ -140,6 +140,10 @@ body {
   box-shadow: 0 0 8px var(--success);
 }
 
+.status-dot.degraded {
+  background-color: #f59e0b;
+}
+
 .status-dot.offline {
   background: var(--error);
 }
@@ -3984,4 +3988,43 @@ select:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ==================== BACKUP REMINDER BANNER ==================== */
+
+.backup-reminder-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--warning-bg, #fef3cd);
+  color: var(--warning-text, #856404);
+  border-bottom: 1px solid var(--warning-border, #ffc107);
+  font-size: 13px;
+}
+
+.backup-reminder-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: var(--warning-btn-bg, #ffc107);
+  color: var(--warning-btn-text, #000);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.backup-reminder-btn:hover {
+  opacity: 0.9;
+}
+
+.backup-reminder-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  color: inherit;
+  margin-left: auto;
+  font-size: 14px;
 }
