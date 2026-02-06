@@ -207,7 +207,6 @@ export function OrdinalTransferModal({
         </div>
       </div>
 
-      <style>{transferStyles}</style>
     </Modal>
   )
 }
