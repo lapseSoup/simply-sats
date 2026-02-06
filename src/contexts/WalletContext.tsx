@@ -120,6 +120,10 @@ interface WalletContextType {
   removeTrustedOrigin: (origin: string) => void
   disconnectApp: (origin: string) => void
 
+  // Session
+  sessionPassword: string | null
+  refreshContacts: () => Promise<void>
+
   // Actions
   performSync: (isRestore?: boolean, forceReset?: boolean) => Promise<void>
   fetchData: () => Promise<void>
@@ -627,6 +631,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [setWallet, refreshAccounts])
 
+  const refreshContacts = useCallback(async () => {
+    const loaded = await getContacts()
+    setContacts(loaded)
+  }, [])
+
   const handleDeleteWallet = useCallback(async () => {
     // Clear wallet from secure storage
     await clearWallet()
@@ -643,8 +652,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setLocks([])
     setTxHistory([])
     setConnectedApps([])
+    setContacts([])
+    setIsLocked(false)
+    setSessionPassword(null)
+    await refreshAccounts()
     walletLogger.info('Wallet deleted and all data cleared')
-  }, [setWallet, setBalance, setOrdBalance, setOrdinals, setLocks, setTxHistory])
+  }, [setWallet, setBalance, setOrdBalance, setOrdinals, setLocks, setTxHistory, refreshAccounts])
 
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<{ success: boolean; txid?: string; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet loaded' }
@@ -872,6 +885,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
     addTrustedOrigin,
     removeTrustedOrigin,
     disconnectApp,
+
+    // Session
+    sessionPassword,
+    refreshContacts,
 
     // Actions
     performSync,

@@ -134,9 +134,9 @@ export async function getAllAccounts(): Promise<Account[]> {
       createdAt: row.created_at,
       lastAccessedAt: row.last_accessed_at ?? undefined
     }))
-  } catch (_e) {
-    // Table may not exist yet
-    accountLogger.info('No accounts table yet')
+  } catch (e) {
+    // Table may not exist yet, or database query failed
+    accountLogger.error('Failed to load accounts', e)
     return []
   }
 }

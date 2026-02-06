@@ -20,7 +20,7 @@ interface ReceiveModalProps {
 type ReceiveType = 'wallet' | 'ordinals' | 'brc100'
 
 export function ReceiveModal({ onClose }: ReceiveModalProps) {
-  const { wallet, contacts } = useWallet()
+  const { wallet, contacts, refreshContacts } = useWallet()
   const { copyToClipboard, showToast } = useUI()
 
   const [receiveType, setReceiveType] = useState<ReceiveType>('wallet')
@@ -115,6 +115,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       })
       const updated = await getContacts()
       setLocalContacts(updated)
+      await refreshContacts()
       setShowAddContact(false)
       setNewContactLabel('')
       showToast('Contact saved!')

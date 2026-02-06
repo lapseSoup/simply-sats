@@ -15,6 +15,7 @@ const handleKeyDown = (handler: () => void) => (e: KeyboardEvent) => {
 import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../services/keyDerivation'
 import { checkForPayments, getPaymentNotifications } from '../../services/messageBox'
 import { exportDatabase, importDatabase, type DatabaseBackup } from '../../services/database'
+import { encrypt, decrypt, type EncryptedData } from '../../services/crypto'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { TestRecoveryModal } from './TestRecoveryModal'
@@ -56,6 +57,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     handleDeleteWallet,
     performSync,
     fetchData,
+    sessionPassword,
     // Auto-lock settings
     autoLockMinutes,
     setAutoLockMinutes,
@@ -160,6 +162,10 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   }
 
   const handleExportFullBackup = async () => {
+    if (!sessionPassword) {
+      showToast('Session password not available — try locking and unlocking first')
+      return
+    }
     try {
       const dbBackup = await exportDatabase()
       const fullBackup = {
@@ -174,17 +180,24 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         },
         database: dbBackup
       }
-      const backupJson = JSON.stringify(fullBackup, null, 2)
+      const encrypted = await encrypt(JSON.stringify(fullBackup), sessionPassword)
+      const encryptedBackup = {
+        format: 'simply-sats-backup-encrypted',
+        version: 1,
+        encrypted
+      }
+      const backupJson = JSON.stringify(encryptedBackup, null, 2)
       const filePath = await save({
         defaultPath: `simply-sats-backup-${new Date().toISOString().split('T')[0]}.json`,
         filters: [{ name: 'JSON', extensions: ['json'] }]
       })
       if (filePath) {
         await writeTextFile(filePath, backupJson)
-        showToast('Backup saved!')
+        showToast('Encrypted backup saved!')
       }
-    } catch (_err) {
-      showToast('Backup failed')
+    } catch (err) {
+      console.error('Backup failed:', err)
+      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
@@ -196,15 +209,35 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       })
       if (!filePath || Array.isArray(filePath)) return
       const json = await readTextFile(filePath)
-      const backup = JSON.parse(json)
+      const raw = JSON.parse(json)
+
+      let backup
+      if (raw.format === 'simply-sats-backup-encrypted' && raw.encrypted) {
+        // Encrypted backup — decrypt with session password
+        if (!sessionPassword) {
+          showToast('Session password not available — try locking and unlocking first')
+          return
+        }
+        try {
+          const decrypted = await decrypt(raw.encrypted as EncryptedData, sessionPassword)
+          backup = JSON.parse(decrypted)
+        } catch {
+          showToast('Failed to decrypt backup — wrong password?')
+          return
+        }
+      } else {
+        backup = raw
+      }
+
       if (backup.format !== 'simply-sats-full' || !backup.database) {
         showToast('Invalid backup format')
         return
       }
       setPendingImportBackup(backup.database as DatabaseBackup)
       setShowImportConfirm({ utxos: backup.database.utxos.length, transactions: backup.database.transactions.length })
-    } catch (_err) {
-      showToast('Import failed')
+    } catch (err) {
+      console.error('Import failed:', err)
+      showToast(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
@@ -222,19 +255,41 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setShowKeysWarning(true)
   }
 
-  const executeExportKeys = () => {
-    const backup = JSON.stringify({
-      format: 'simply-sats',
-      version: 1,
-      mnemonic: wallet.mnemonic || null,
-      keys: {
-        identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
-        payment: { wif: wallet.walletWif, address: wallet.walletAddress },
-        ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
+  const executeExportKeys = async () => {
+    if (!sessionPassword) {
+      showToast('Session password not available — try locking and unlocking first')
+      setShowKeysWarning(false)
+      return
+    }
+    try {
+      const keyData = {
+        format: 'simply-sats',
+        version: 1,
+        mnemonic: wallet.mnemonic || null,
+        keys: {
+          identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
+          payment: { wif: wallet.walletWif, address: wallet.walletAddress },
+          ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
+        }
       }
-    }, null, 2)
-    navigator.clipboard.writeText(backup)
-    showToast('Keys copied to clipboard!')
+      const encrypted = await encrypt(JSON.stringify(keyData), sessionPassword)
+      const encryptedExport = {
+        format: 'simply-sats-keys-encrypted',
+        version: 1,
+        encrypted
+      }
+      const filePath = await save({
+        defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      })
+      if (filePath) {
+        await writeTextFile(filePath, JSON.stringify(encryptedExport, null, 2))
+        showToast('Encrypted keys saved to file!')
+      }
+    } catch (err) {
+      console.error('Key export failed:', err)
+      showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
     setShowKeysWarning(false)
   }
 
@@ -445,7 +500,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   <div className="settings-row-icon" aria-hidden="true"><LockIcon /></div>
                   <div className="settings-row-content">
                     <div className="settings-row-label">Export Private Keys</div>
-                    <div className="settings-row-value">Copy JSON to clipboard</div>
+                    <div className="settings-row-value">Save encrypted file</div>
                   </div>
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
@@ -728,9 +783,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       {showKeysWarning && (
         <ConfirmationModal
           title="Export Private Keys"
-          message="Your private keys will be copied to the clipboard. Never share them with anyone!"
+          message="Your private keys will be saved to an encrypted file. The file is encrypted with your wallet password."
           type="danger"
-          confirmText="Copy Keys"
+          confirmText="Export Keys"
           cancelText="Cancel"
           onConfirm={executeExportKeys}
           onCancel={() => setShowKeysWarning(false)}

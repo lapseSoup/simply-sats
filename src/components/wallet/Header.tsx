@@ -13,6 +13,7 @@ interface HeaderProps {
 
 export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
   const {
+    wallet,
     networkInfo,
     performSync,
     fetchData,
@@ -92,7 +93,7 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
     <>
       <header className="header">
         <div className="header-left">
-          {accounts.length > 0 ? (
+          {wallet ? (
             <AccountSwitcher
               accounts={accounts}
               activeAccountId={activeAccountId}

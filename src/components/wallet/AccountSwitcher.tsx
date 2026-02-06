@@ -137,23 +137,19 @@ export function AccountSwitcher({
     setIsOpen(false)
   }, [onManageAccounts])
 
-  if (accounts.length === 0) {
-    return null
-  }
-
   return (
     <div className="account-switcher" ref={dropdownRef}>
       <button
         className="account-switcher-button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => accounts.length > 0 && setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        aria-label={`Current account: ${activeAccount?.name || 'Select account'}`}
+        aria-label={`Current account: ${activeAccount?.name || 'Account 1'}`}
       >
         <div className="account-avatar">
-          {activeAccount?.name.charAt(0).toUpperCase() || '?'}
+          {activeAccount?.name.charAt(0).toUpperCase() || 'A'}
         </div>
-        <span className="account-name">{activeAccount?.name || 'No Account'}</span>
+        <span className="account-name">{activeAccount?.name || 'Account 1'}</span>
         <svg
           className={`dropdown-arrow ${isOpen ? 'open' : ''}`}
           width="12"

@@ -9,6 +9,7 @@ import { PasswordInput } from '../shared/PasswordInput'
 import { MnemonicInput } from '../forms/MnemonicInput'
 import { restoreWallet, importFromJSON } from '../../services/wallet'
 import { importDatabase, type DatabaseBackup } from '../../services/database'
+import { decrypt, type EncryptedData } from '../../services/crypto'
 import { setWalletKeys } from '../../services/brc100'
 import { saveWallet } from '../../services/wallet'
 import { migrateToMultiAccount } from '../../services/accounts'
@@ -65,7 +66,18 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   const handleRestoreFromJSON = async () => {
     if (!validatePassword()) return
     try {
-      const success = await handleImportJSON(restoreJSON, password)
+      let jsonToImport = restoreJSON
+      // Check if the pasted JSON is an encrypted key export
+      try {
+        const parsed = JSON.parse(restoreJSON)
+        if (parsed.format === 'simply-sats-keys-encrypted' && parsed.encrypted) {
+          const decrypted = await decrypt(parsed.encrypted as EncryptedData, password)
+          jsonToImport = decrypted
+        }
+      } catch {
+        // Not valid JSON or decryption failed — let handleImportJSON handle the error
+      }
+      const success = await handleImportJSON(jsonToImport, password)
       if (success) {
         onSuccess()
       } else {
@@ -87,7 +99,21 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       if (!filePath || Array.isArray(filePath)) return
 
       const json = await readTextFile(filePath)
-      const backup = JSON.parse(json)
+      const raw = JSON.parse(json)
+
+      let backup
+      if (raw.format === 'simply-sats-backup-encrypted' && raw.encrypted) {
+        // Encrypted backup — decrypt with the password the user entered
+        try {
+          const decrypted = await decrypt(raw.encrypted as EncryptedData, password)
+          backup = JSON.parse(decrypted)
+        } catch {
+          showToast('Failed to decrypt backup — wrong password?')
+          return
+        }
+      } else {
+        backup = raw
+      }
 
       if (backup.format !== 'simply-sats-full' || !backup.wallet) {
         showToast('Invalid backup format. This should be a Simply Sats full backup file.')
