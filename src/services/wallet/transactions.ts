@@ -241,6 +241,9 @@ export async function sendBSV(
   // Compute txid before broadcast for pending marking
   const pendingTxid = tx.id('hex')
 
+  // Reset inactivity timer before send to prevent auto-lock during operation
+  resetInactivityTimer()
+
   // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
   // If we crash after broadcast but before marking as spent, these UTXOs won't be double-spent
   try {
@@ -268,9 +271,10 @@ export async function sendBSV(
   }
 
   // Broadcast succeeded - confirm the spend and record the transaction
+  // CRITICAL: recordSentTransaction + confirmUtxosSpent must be atomic
+  // addUTXO for change is best-effort and must NOT cause rollback of critical operations
   try {
     await withTransaction(async () => {
-      // Record with negative amount (sent) including fee for accurate net change
       await recordSentTransaction(
         txid,
         tx.toHex(),
@@ -279,34 +283,33 @@ export async function sendBSV(
         -(satoshis + fee),  // Negative = money out, includes fee
         accountId
       )
-
-      // Confirm UTXOs as spent (updates from pending -> spent)
       await confirmUtxosSpent(utxosToSpend, txid)
-
-      // Track change UTXO immediately so balance stays correct
-      // Without this, balance drops by the full UTXO amount until next sync
-      if (change > 0) {
-        await addUTXO({
-          txid: pendingTxid,
-          vout: tx.outputs.length - 1,  // Change is always last output
-          satoshis: change,
-          lockingScript: new P2PKH().lock(fromAddress).toHex(),
-          address: fromAddress,
-          basket: 'default',
-          spendable: true,
-          createdAt: Date.now()
-        }, accountId)
-      }
     })
-
     walletLogger.info('Transaction tracked locally', { txid, change })
-    resetInactivityTimer()
   } catch (error) {
-    // Log error but don't fail - tx is already broadcast
-    // UTXOs are still marked as pending, which is safe (they won't be double-spent)
     walletLogger.error('CRITICAL: Failed to confirm transaction locally', error, { txid })
   }
 
+  // Best-effort: track change UTXO so balance stays correct until next sync
+  if (change > 0) {
+    try {
+      await addUTXO({
+        txid: pendingTxid,
+        vout: tx.outputs.length - 1,  // Change is always last output
+        satoshis: change,
+        lockingScript: new P2PKH().lock(fromAddress).toHex(),
+        address: fromAddress,
+        basket: 'default',
+        spendable: true,
+        createdAt: Date.now()
+      }, accountId)
+      walletLogger.debug('Change UTXO tracked', { txid: pendingTxid, change })
+    } catch (error) {
+      walletLogger.warn('Failed to track change UTXO (will recover on next sync)', { error: String(error) })
+    }
+  }
+
+  resetInactivityTimer()
   return txid
 }
 
@@ -447,6 +450,9 @@ export async function sendBSVMultiKey(
   // Compute txid before broadcast for pending marking
   const pendingTxid = tx.id('hex')
 
+  // Reset inactivity timer before send to prevent auto-lock during operation
+  resetInactivityTimer()
+
   // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
   try {
     await markUtxosPendingSpend(utxosToSpend, pendingTxid)
@@ -473,9 +479,10 @@ export async function sendBSVMultiKey(
   }
 
   // Broadcast succeeded - confirm the spend and record the transaction
+  // CRITICAL: recordSentTransaction + confirmUtxosSpent must be atomic
+  // addUTXO for change is best-effort and must NOT cause rollback of critical operations
   try {
     await withTransaction(async () => {
-      // Record with negative amount (sent) including fee for accurate net change
       await recordSentTransaction(
         txid,
         tx.toHex(),
@@ -484,31 +491,33 @@ export async function sendBSVMultiKey(
         -(satoshis + fee),  // Negative = money out, includes fee
         accountId
       )
-
-      // Confirm UTXOs as spent (updates from pending -> spent)
       await confirmUtxosSpent(utxosToSpend, txid)
-
-      // Track change UTXO immediately so balance stays correct
-      if (change > 0) {
-        await addUTXO({
-          txid: pendingTxid,
-          vout: tx.outputs.length - 1,
-          satoshis: change,
-          lockingScript: new P2PKH().lock(changeAddress).toHex(),
-          address: changeAddress,
-          basket: 'default',
-          spendable: true,
-          createdAt: Date.now()
-        }, accountId)
-      }
     })
-
     walletLogger.info('Transaction tracked locally', { txid, change })
-    resetInactivityTimer()
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to confirm transaction locally', error, { txid })
   }
 
+  // Best-effort: track change UTXO so balance stays correct until next sync
+  if (change > 0) {
+    try {
+      await addUTXO({
+        txid: pendingTxid,
+        vout: tx.outputs.length - 1,
+        satoshis: change,
+        lockingScript: new P2PKH().lock(changeAddress).toHex(),
+        address: changeAddress,
+        basket: 'default',
+        spendable: true,
+        createdAt: Date.now()
+      }, accountId)
+      walletLogger.debug('Change UTXO tracked', { txid: pendingTxid, change })
+    } catch (error) {
+      walletLogger.warn('Failed to track change UTXO (will recover on next sync)', { error: String(error) })
+    }
+  }
+
+  resetInactivityTimer()
   return txid
 }
 
@@ -575,6 +584,9 @@ export async function consolidateUtxos(
   // Compute txid before broadcast
   const pendingTxid = tx.id('hex')
 
+  // Reset inactivity timer before consolidation to prevent auto-lock during operation
+  resetInactivityTimer()
+
   // Mark UTXOs as pending
   try {
     await markUtxosPendingSpend(utxosToSpend, pendingTxid)
@@ -598,7 +610,7 @@ export async function consolidateUtxos(
     throw broadcastError
   }
 
-  // Record transaction
+  // Record transaction — critical ops must be atomic, addUTXO is best-effort
   try {
     await withTransaction(async () => {
       await recordSentTransaction(
@@ -608,22 +620,27 @@ export async function consolidateUtxos(
         ['consolidate']
       )
       await confirmUtxosSpent(utxosToSpend, txid)
-
-      // Track consolidated UTXO immediately
-      await addUTXO({
-        txid: pendingTxid,
-        vout: 0,
-        satoshis: outputSats,
-        lockingScript: new P2PKH().lock(address).toHex(),
-        address,
-        basket: 'default',
-        spendable: true,
-        createdAt: Date.now()
-      })
     })
-    walletLogger.info('Consolidation complete', { txid, inputCount: utxoIds.length, outputSats })
+    walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
+  }
+
+  // Best-effort: track consolidated UTXO so balance stays correct until next sync
+  try {
+    await addUTXO({
+      txid: pendingTxid,
+      vout: 0,
+      satoshis: outputSats,
+      lockingScript: new P2PKH().lock(address).toHex(),
+      address,
+      basket: 'default',
+      spendable: true,
+      createdAt: Date.now()
+    })
+    walletLogger.debug('Consolidated UTXO tracked', { txid: pendingTxid, outputSats })
+  } catch (error) {
+    walletLogger.warn('Failed to track consolidated UTXO (will recover on next sync)', { error: String(error) })
   }
 
   return { txid, outputSats, fee }
