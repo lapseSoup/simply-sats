@@ -13,6 +13,7 @@ import { decrypt, type EncryptedData } from '../../services/crypto'
 import { setWalletKeys } from '../../services/brc100'
 import { saveWallet } from '../../services/wallet'
 import { migrateToMultiAccount } from '../../services/accounts'
+import { discoverAccounts } from '../../services/accountDiscovery'
 
 interface RestoreModalProps {
   onClose: () => void
@@ -22,7 +23,7 @@ interface RestoreModalProps {
 type RestoreMode = 'mnemonic' | 'json' | 'fullbackup'
 
 export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
-  const { setWallet, performSync, handleRestoreWallet, handleImportJSON } = useWallet()
+  const { setWallet, performSync, handleRestoreWallet, handleImportJSON, refreshAccounts } = useWallet()
   const { showToast } = useUI()
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('mnemonic')
   const [restoreMnemonic, setRestoreMnemonic] = useState('')
@@ -55,6 +56,15 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       const success = await handleRestoreWallet(restoreMnemonic.trim(), password)
       if (success) {
         onSuccess()
+        // Discover additional accounts with on-chain activity (non-blocking)
+        discoverAccounts(restoreMnemonic.trim(), password)
+          .then(async (found) => {
+            if (found > 0) {
+              await refreshAccounts()
+              showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
+            }
+          })
+          .catch(() => {}) // Silent failure — primary restore already succeeded
       } else {
         showToast('Failed to restore wallet')
       }
@@ -150,6 +160,18 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       // Trigger sync to update balances
       performSync(false)
       onSuccess()
+
+      // Discover additional accounts if mnemonic is available (non-blocking)
+      if (backup.wallet.mnemonic) {
+        discoverAccounts(backup.wallet.mnemonic, password)
+          .then(async (found) => {
+            if (found > 0) {
+              await refreshAccounts()
+              showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
+            }
+          })
+          .catch(() => {}) // Silent failure — primary restore already succeeded
+      }
     } catch (err) {
       showToast('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
     }
@@ -245,7 +267,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   placeholder='{"mnemonic": "...", ...}'
                   value={restoreJSON}
                   onChange={e => setRestoreJSON(e.target.value)}
-                  style={{ minHeight: 120 }}
+                  style={{ minHeight: 80 }}
                 />
                 <div className="form-hint">
                   Supports Shaullet, 1Sat Ordinals, and Simply Sats backups
