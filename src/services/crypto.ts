@@ -83,7 +83,18 @@ function base64ToBuffer(base64: string): ArrayBuffer {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i)
   }
-  return bytes.buffer
+  return toArrayBuffer(bytes)
+}
+
+/**
+ * Convert a Uint8Array to a pure ArrayBuffer.
+ * Node.js webcrypto (used in CI/tests) requires genuine ArrayBuffer instances,
+ * not Buffer or TypedArray views. This creates a fresh ArrayBuffer copy.
+ */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(buf).set(bytes)
+  return buf
 }
 
 /**
@@ -91,22 +102,20 @@ function base64ToBuffer(base64: string): ArrayBuffer {
  */
 async function deriveKey(password: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
   // Import password as raw key material
-  // Use .buffer to get ArrayBuffer for Node.js webcrypto compatibility
-  const encoded = new TextEncoder().encode(password)
+  // Use toArrayBuffer for Node.js webcrypto compatibility (requires genuine ArrayBuffer)
   const passwordKey = await getCrypto().subtle.importKey(
     'raw',
-    encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer,
+    toArrayBuffer(new TextEncoder().encode(password)),
     'PBKDF2',
     false,
     ['deriveBits', 'deriveKey']
   )
 
   // Derive AES key using PBKDF2
-  // Use .buffer to get the underlying ArrayBuffer for type compatibility
   return getCrypto().subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt.buffer as ArrayBuffer,
+      salt: toArrayBuffer(salt),
       iterations,
       hash: 'SHA-256'
     },
@@ -140,16 +149,16 @@ export async function encrypt(plaintext: string | object, password: string): Pro
 
   // Encrypt with AES-GCM
   const ciphertext = await getCrypto().subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
     key,
-    new TextEncoder().encode(data)
+    toArrayBuffer(new TextEncoder().encode(data))
   )
 
   return {
     version: CURRENT_VERSION,
     ciphertext: bufferToBase64(ciphertext),
-    iv: bufferToBase64(iv.buffer),
-    salt: bufferToBase64(salt.buffer),
+    iv: bufferToBase64(toArrayBuffer(iv)),
+    salt: bufferToBase64(toArrayBuffer(salt)),
     iterations: PBKDF2_ITERATIONS
   }
 }
@@ -179,7 +188,7 @@ export async function decrypt(encryptedData: EncryptedData, password: string): P
   try {
     // Decrypt with AES-GCM
     const plaintext = await getCrypto().subtle.decrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv: toArrayBuffer(iv) },
       key,
       ciphertext
     )
@@ -268,20 +277,15 @@ export async function encryptWithSharedSecret(
   sharedSecret: string
 ): Promise<string> {
   // Convert shared secret to key material
-  const secretBytes = hexToBytes(sharedSecret)
-
-  // Import as raw key - ensure we pass an ArrayBuffer
-  const arrayBuffer = secretBytes.buffer.slice(secretBytes.byteOffset, secretBytes.byteOffset + secretBytes.byteLength) as ArrayBuffer
   const keyMaterial = await getCrypto().subtle.importKey(
     'raw',
-    arrayBuffer,
+    toArrayBuffer(hexToBytes(sharedSecret)),
     'HKDF',
     false,
     ['deriveBits', 'deriveKey']
   )
 
   // Generate random salt for HKDF (16 bytes)
-  // Using random salt provides better security than fixed salt
   const salt = getCrypto().getRandomValues(new Uint8Array(16))
 
   // Derive an AES key from the shared secret
@@ -289,8 +293,8 @@ export async function encryptWithSharedSecret(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: salt,
-      info: new TextEncoder().encode('ECIES-AES-KEY')
+      salt: toArrayBuffer(salt),
+      info: toArrayBuffer(new TextEncoder().encode('ECIES-AES-KEY'))
     },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
@@ -303,9 +307,9 @@ export async function encryptWithSharedSecret(
 
   // Encrypt the message
   const ciphertext = await getCrypto().subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
     aesKey,
-    new TextEncoder().encode(message)
+    toArrayBuffer(new TextEncoder().encode(message))
   )
 
   // Combine salt + IV + ciphertext (salt needed for decryption)
@@ -314,7 +318,7 @@ export async function encryptWithSharedSecret(
   combined.set(iv, salt.length)
   combined.set(new Uint8Array(ciphertext), salt.length + iv.length)
 
-  return bufferToBase64(combined.buffer)
+  return bufferToBase64(toArrayBuffer(combined))
 }
 
 /**
@@ -329,13 +333,9 @@ export async function decryptWithSharedSecret(
   sharedSecret: string
 ): Promise<string> {
   // Convert shared secret to key material
-  const secretBytes = hexToBytes(sharedSecret)
-
-  // Import as raw key - ensure we pass an ArrayBuffer
-  const arrayBuffer = secretBytes.buffer.slice(secretBytes.byteOffset, secretBytes.byteOffset + secretBytes.byteLength) as ArrayBuffer
   const keyMaterial = await getCrypto().subtle.importKey(
     'raw',
-    arrayBuffer,
+    toArrayBuffer(hexToBytes(sharedSecret)),
     'HKDF',
     false,
     ['deriveBits', 'deriveKey']
@@ -355,8 +355,8 @@ export async function decryptWithSharedSecret(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: salt,
-      info: new TextEncoder().encode('ECIES-AES-KEY')
+      salt: toArrayBuffer(salt),
+      info: toArrayBuffer(new TextEncoder().encode('ECIES-AES-KEY'))
     },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
@@ -366,9 +366,9 @@ export async function decryptWithSharedSecret(
 
   // Decrypt
   const plaintext = await getCrypto().subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
     aesKey,
-    ciphertext
+    toArrayBuffer(ciphertext)
   )
 
   return new TextDecoder().decode(plaintext)
