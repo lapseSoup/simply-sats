@@ -214,7 +214,7 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         return;
     }
 
-    // Mark all 12 migrations as applied with their correct checksums
+    // Mark all 13 migrations as applied with their correct checksums
     // Checksums must match the SQL content exactly or tauri_plugin_sql will re-run them
     let migrations: Vec<(i64, &str, &str)> = vec![
         (1, "Initial database schema", "C00D163C545940AF1CB0E2DC1AABE4A8D66902CFDA8BAAE50DD8D091E4A4D22BD36389CC70B5F95308BB8C29A79C7211"),
@@ -229,6 +229,7 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         (10, "Reset transaction amounts for recalculation", "FC857C579014ED6348868FBCD45CD61B7EE6381FE4DFA0E75DB42BF737DEFF6BAEA906C0AFFB4F1026135F408F2C59B7"),
         (11, "Reset transaction amounts v2 (API fallback)", "091FFB058C9D7CC3C3017E12E680785572255990136F597C67ED018D49260864D13CA09301A2DE1C458F9A887BB0009E"),
         (12, "Clean up cross-account data contamination", "2E64BE0485EE42B15E900B7DF79FF2A2873E525402C903311E6D2AD35F92DB9EE293248131A67B93D053E53C8C75DA56"),
+        (13, "Fix transaction_labels foreign key constraint", "694B93F5E6AAB0489222653FF1C06CAECC6454FB9F2032FC2C220302C2144D051F6EC71C44F14C9612A8D9EAA19F08DF"),
     ];
 
     for (version, description, checksum_hex) in migrations {
@@ -323,6 +324,12 @@ fn include_migrations() -> Vec<Migration> {
             version: 12,
             description: "Clean up cross-account data contamination",
             sql: include_str!("../migrations/012_cleanup_cross_account.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 13,
+            description: "Fix transaction_labels foreign key constraint",
+            sql: include_str!("../migrations/013_fix_transaction_labels.sql"),
             kind: MigrationKind::Up,
         },
     ]

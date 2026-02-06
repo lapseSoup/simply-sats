@@ -59,13 +59,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     UNIQUE(txid, account_id)
 );
 
--- Transaction labels (001 + 007 created_at)
+-- Transaction labels (001 + 007 created_at + 013 removed broken FK)
 CREATE TABLE IF NOT EXISTS transaction_labels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     txid TEXT NOT NULL,
     label TEXT NOT NULL,
     created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    FOREIGN KEY (txid) REFERENCES transactions(txid) ON DELETE CASCADE,
     UNIQUE(txid, label)
 );
 
