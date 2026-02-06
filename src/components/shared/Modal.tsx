@@ -27,12 +27,15 @@ export function Modal({
     enabled: true
   })
 
-  // Prevent body scroll when modal is open
+  // Prevent body/html scroll when modal is open
   useEffect(() => {
-    const originalOverflow = document.body.style.overflow
+    const originalBodyOverflow = document.body.style.overflow
+    const originalHtmlOverflow = document.documentElement.style.overflow
     document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
     return () => {
-      document.body.style.overflow = originalOverflow
+      document.body.style.overflow = originalBodyOverflow
+      document.documentElement.style.overflow = originalHtmlOverflow
     }
   }, [])
 

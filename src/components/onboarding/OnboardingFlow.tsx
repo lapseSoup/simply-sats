@@ -138,7 +138,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
         {step === 'welcome' && (
           <div className="onboarding-step welcome">
             <div className="onboarding-logo">
-              <SimplySatsLogo size={72} />
+              <SimplySatsLogo size={56} />
             </div>
             <h1 className="onboarding-title">Welcome to Simply Sats</h1>
             <p className="onboarding-subtitle">
@@ -179,7 +179,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
         {step === 'action' && (
           <div className="onboarding-step action">
             <div className="onboarding-logo small">
-              <SimplySatsLogo size={48} />
+              <SimplySatsLogo size={32} />
             </div>
             <h2 className="onboarding-action-title">Let's Set Up Your Wallet</h2>
             <p className="onboarding-action-subtitle">

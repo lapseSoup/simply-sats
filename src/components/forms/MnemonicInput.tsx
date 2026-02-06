@@ -282,7 +282,7 @@ export function MnemonicInput({
           position: relative;
           display: flex;
           flex-direction: column;
-          gap: 0.5rem;
+          gap: 4px;
         }
 
         .mnemonic-textarea-wrapper {
@@ -290,10 +290,11 @@ export function MnemonicInput({
         }
 
         .mnemonic-textarea {
-          min-height: 100px;
-          resize: vertical;
+          min-height: 64px;
+          resize: none;
           font-family: monospace;
-          line-height: 1.6;
+          font-size: 13px;
+          line-height: 1.5;
           transition: border-color 0.2s ease, box-shadow 0.2s ease;
           padding-right: 2.5rem;
         }
@@ -337,13 +338,13 @@ export function MnemonicInput({
         .mnemonic-status {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          font-size: 0.8125rem;
-          padding: 0.25rem 0;
+          gap: 0.375rem;
+          font-size: 0.75rem;
+          padding: 0;
         }
 
         .mnemonic-status-icon {
-          font-size: 1rem;
+          font-size: 0.875rem;
         }
 
         .mnemonic-status-text {
@@ -361,22 +362,22 @@ export function MnemonicInput({
         .mnemonic-words-preview {
           display: flex;
           flex-wrap: wrap;
-          gap: 0.375rem;
-          padding: 0.75rem;
+          gap: 3px;
+          padding: 6px;
           background: var(--color-surface, rgba(255, 255, 255, 0.03));
-          border-radius: 0.5rem;
-          max-height: 150px;
+          border-radius: 0.375rem;
+          max-height: 80px;
           overflow-y: auto;
         }
 
         .mnemonic-word-chip {
           display: inline-flex;
           align-items: center;
-          gap: 0.25rem;
-          padding: 0.25rem 0.5rem;
-          font-size: 0.75rem;
+          gap: 3px;
+          padding: 2px 6px;
+          font-size: 0.6875rem;
           font-family: monospace;
-          border-radius: 0.25rem;
+          border-radius: 3px;
           transition: all 0.15s ease;
         }
 
@@ -393,9 +394,10 @@ export function MnemonicInput({
         }
 
         .mnemonic-word-number {
-          font-size: 0.625rem;
-          opacity: 0.6;
-          min-width: 1rem;
+          font-size: 0.5625rem;
+          opacity: 1;
+          color: var(--text-tertiary, rgba(255, 255, 255, 0.35));
+          min-width: 0.875rem;
         }
 
         .mnemonic-suggestions {
