@@ -2,7 +2,7 @@ import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 
 export function BalanceDisplay() {
-  const { balance, ordBalance } = useWallet()
+  const { balance, ordBalance, syncing } = useWallet()
   const { displayInSats, toggleDisplayUnit, formatBSVShort, formatUSD } = useUI()
 
   const totalBalance = balance + ordBalance
@@ -65,7 +65,10 @@ export function BalanceDisplay() {
           </>
         )}
       </div>
-      <div className="balance-sub">${formatUSD(totalBalance)} USD</div>
+      <div className="balance-sub">
+        ${formatUSD(totalBalance)} USD
+        {syncing && <span className="sync-indicator" aria-label="Syncing"> syncing...</span>}
+      </div>
 
       <style>{`
         .balance-unit.clickable {
@@ -83,6 +86,12 @@ export function BalanceDisplay() {
 
         .balance-main:hover .toggle-hint {
           opacity: 0.7;
+        }
+
+        .sync-indicator {
+          opacity: 0.5;
+          font-size: 11px;
+          font-style: italic;
         }
       `}</style>
     </div>

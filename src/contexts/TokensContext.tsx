@@ -10,6 +10,7 @@ import { tokenLogger } from '../services/logger'
 interface TokensContextType {
   tokenBalances: TokenBalance[]
   tokensSyncing: boolean
+  resetTokens: () => void
   refreshTokens: (wallet: WalletKeys, accountId: number) => Promise<void>
   sendTokenAction: (
     wallet: WalletKeys,
@@ -38,6 +39,11 @@ interface TokensProviderProps {
 export function TokensProvider({ children }: TokensProviderProps) {
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([])
   const [tokensSyncing, setTokensSyncing] = useState(false)
+
+  const resetTokens = useCallback(() => {
+    setTokenBalances([])
+    setTokensSyncing(false)
+  }, [])
 
   const refreshTokens = useCallback(async (wallet: WalletKeys, accountId: number) => {
     if (tokensSyncing) return
@@ -93,6 +99,7 @@ export function TokensProvider({ children }: TokensProviderProps) {
   const value: TokensContextType = {
     tokenBalances,
     tokensSyncing,
+    resetTokens,
     refreshTokens,
     sendTokenAction
   }

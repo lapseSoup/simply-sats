@@ -41,6 +41,7 @@ interface SyncContextType {
   basketBalances: BasketBalances
   balance: number
   ordBalance: number
+  syncError: string | null
 
   // State setters (for WalletContext to update when needed)
   setUtxos: (utxos: UTXO[]) => void
@@ -51,6 +52,7 @@ interface SyncContextType {
   setOrdBalance: (balance: number) => void
 
   // Actions
+  resetSync: () => void
   performSync: (
     wallet: WalletKeys,
     activeAccountId: number | null,
@@ -101,6 +103,17 @@ export function SyncProvider({ children }: SyncProviderProps) {
     const cached = localStorage.getItem('simply_sats_cached_ord_balance')
     return cached ? parseInt(cached, 10) : 0
   })
+  const [syncError, setSyncError] = useState<string | null>(null)
+
+  const resetSync = useCallback(() => {
+    setUtxos([])
+    setOrdinals([])
+    setTxHistory([])
+    setBasketBalances({ default: 0, ordinals: 0, identity: 0, derived: 0, locks: 0 })
+    setBalance(0)
+    setOrdBalance(0)
+    setSyncError(null)
+  }, [])
 
   // Sync wallet with blockchain
   const performSync = useCallback(async (
@@ -129,6 +142,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         )
       }
       syncLogger.info('Sync complete')
+      setSyncError(null)
 
       // Update basket balances from database (scoped to account)
       try {
@@ -155,6 +169,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         syncLogger.error('Failed to get basket balances', e)
       }
     } catch (error) {
+      setSyncError('Sync failed')
       syncLogger.error('Sync failed', error)
     } finally {
       setSyncing(false)
@@ -181,6 +196,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       const totalBalance = defaultBal + derivedBal
       setBalance(totalBalance)
       localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
+      setSyncError(null)
 
       // Get ordinals balance from API
       try {
@@ -189,13 +205,11 @@ export function SyncProvider({ children }: SyncProviderProps) {
           getBalance(wallet.identityAddress)
         ])
         const totalOrdBalance = ordBal + idBal
-        if (totalOrdBalance > 0) {
-          setOrdBalance(totalOrdBalance)
-          localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance))
-        }
+        setOrdBalance(totalOrdBalance)
+        localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance))
       } catch (_e) {
-        const cached = parseInt(localStorage.getItem('simply_sats_cached_ord_balance') || '0', 10)
-        if (cached > 0) setOrdBalance(cached)
+        // On API failure, keep current React state — don't overwrite with stale cache
+        syncLogger.warn('Failed to fetch ord balance from API, keeping current value')
       }
 
       // Get transaction history from DATABASE (scoped to account)
@@ -264,6 +278,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         syncLogger.error('Failed to fetch UTXOs', e)
       }
     } catch (error) {
+      setSyncError('Failed to load wallet data')
       syncLogger.error('Failed to fetch data', error)
     }
   }, [])
@@ -275,12 +290,14 @@ export function SyncProvider({ children }: SyncProviderProps) {
     basketBalances,
     balance,
     ordBalance,
+    syncError,
     setUtxos,
     setOrdinals,
     setTxHistory,
     setBasketBalances,
     setBalance,
     setOrdBalance,
+    resetSync,
     performSync,
     fetchData
   }

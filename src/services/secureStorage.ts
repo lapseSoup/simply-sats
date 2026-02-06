@@ -275,3 +275,25 @@ export function clearSessionKey(): void {
   sessionKey = null
   sessionStorage.removeItem(SESSION_KEY_STORAGE)
 }
+
+/**
+ * Clear ALL simply_sats_ prefixed data from localStorage and sessionStorage.
+ * Used during wallet deletion to ensure a true fresh-install state.
+ */
+export function clearAllSimplySatsStorage(): void {
+  // Collect keys first to avoid mutation during iteration
+  const keysToRemove: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key && key.startsWith(STORAGE_PREFIX)) {
+      keysToRemove.push(key)
+    }
+  }
+  keysToRemove.forEach(key => localStorage.removeItem(key))
+
+  // Clear session key from sessionStorage + memory
+  sessionKey = null
+  sessionStorage.removeItem(SESSION_KEY_STORAGE)
+
+  walletLogger.info('Cleared all simply_sats_ storage', { keysCleared: keysToRemove.length })
+}

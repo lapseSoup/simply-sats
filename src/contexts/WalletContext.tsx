@@ -60,7 +60,8 @@ import {
 import {
   secureGetJSON,
   secureSetJSON,
-  migrateToSecureStorage
+  migrateToSecureStorage,
+  clearAllSimplySatsStorage
 } from '../services/secureStorage'
 import { audit } from '../services/auditLog'
 
@@ -107,6 +108,7 @@ interface WalletContextType {
   // Network state
   networkInfo: NetworkInfo | null
   syncing: boolean
+  syncError: string | null
   loading: boolean
 
   // Settings
@@ -168,10 +170,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     basketBalances,
     balance,
     ordBalance,
-    setBalance,
-    setOrdBalance,
-    setOrdinals,
-    setTxHistory,
+    syncError,
+    resetSync,
     performSync: syncPerformSync,
     fetchData: syncFetchData
   } = useSyncContext()
@@ -197,6 +197,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     deleteAccount: accountsDeleteAccount,
     renameAccount,
     refreshAccounts,
+    resetAccounts,
     getKeysForAccount
   } = useAccounts()
 
@@ -204,6 +205,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const {
     tokenBalances,
     tokensSyncing,
+    resetTokens,
     refreshTokens: tokensRefresh,
     sendTokenAction
   } = useTokens()
@@ -470,6 +472,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
         if (!mounted) return
       } catch (err) {
         uiLogger.error('Failed to initialize database', err)
+        if (mounted) setLoading(false)
+        return // Do not attempt to load wallet from broken DB
       }
 
       if (!mounted) return
@@ -508,11 +512,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }
       if (!mounted) return
       setLoading(false)
-
-      const savedApps = localStorage.getItem('simply_sats_connected_apps')
-      if (savedApps) {
-        setConnectedApps(JSON.parse(savedApps))
-      }
     }
     init()
 
@@ -637,27 +636,34 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [])
 
   const handleDeleteWallet = useCallback(async () => {
-    // Clear wallet from secure storage
+    // 1. Stop auto-lock timer
+    stopAutoLock()
+
+    // 2. Clear wallet from Tauri secure storage + localStorage wallet key
     await clearWallet()
-    // Clear all database tables (UTXOs, transactions, accounts, etc.)
+
+    // 3. Clear all database tables
     await clearDatabase()
-    // Clear cached balances from localStorage
-    localStorage.removeItem('simply_sats_cached_balance')
-    localStorage.removeItem('simply_sats_cached_ord_balance')
-    // Reset all state
+
+    // 4. Clear ALL simply_sats_* keys from localStorage + sessionStorage
+    clearAllSimplySatsStorage()
+
+    // 5. Reset ALL React state across every context
     setWallet(null)
-    setBalance(0)
-    setOrdBalance(0)
-    setOrdinals([])
+    resetSync()
     setLocks([])
-    setTxHistory([])
     setConnectedApps([])
+    setTrustedOrigins([])
     setContacts([])
     setIsLocked(false)
     setSessionPassword(null)
-    await refreshAccounts()
+    setAutoLockMinutesState(10)
+    setFeeRateKBState(50)
+    resetTokens()
+    resetAccounts()
+
     walletLogger.info('Wallet deleted and all data cleared')
-  }, [setWallet, setBalance, setOrdBalance, setOrdinals, setLocks, setTxHistory, refreshAccounts])
+  }, [setWallet, resetSync, setLocks, resetTokens, resetAccounts])
 
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<{ success: boolean; txid?: string; error?: string }> => {
     if (!wallet) return { success: false, error: 'No wallet loaded' }
@@ -873,6 +879,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     // Network state
     networkInfo,
     syncing,
+    syncError,
     loading,
 
     // Settings

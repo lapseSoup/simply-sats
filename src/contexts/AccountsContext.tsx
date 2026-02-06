@@ -28,6 +28,9 @@ interface AccountsContextType {
   renameAccount: (accountId: number, name: string) => Promise<void>
   refreshAccounts: () => Promise<void>
 
+  // Reset all account state (for wallet deletion)
+  resetAccounts: () => void
+
   // For WalletContext to set the active account after switch
   setActiveAccountState: (account: Account | null, accountId: number | null) => void
 
@@ -58,6 +61,12 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   const setActiveAccountState = useCallback((account: Account | null, accountId: number | null) => {
     setActiveAccount(account)
     setActiveAccountId(accountId)
+  }, [])
+
+  const resetAccounts = useCallback(() => {
+    setAccounts([])
+    setActiveAccount(null)
+    setActiveAccountId(null)
   }, [])
 
   const refreshAccounts = useCallback(async () => {
@@ -208,6 +217,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     deleteAccount,
     renameAccount,
     refreshAccounts,
+    resetAccounts,
     setActiveAccountState,
     getKeysForAccount
   }

@@ -4098,3 +4098,16 @@ select:focus-visible {
   margin-left: auto;
   font-size: 14px;
 }
+
+/* ==================== SYNC ERROR BANNER ==================== */
+
+.sync-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--error-bg, #f8d7da);
+  color: var(--error-text, #721c24);
+  border-bottom: 1px solid var(--error-border, #f5c6cb);
+  font-size: 13px;
+}

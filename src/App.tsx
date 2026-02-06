@@ -47,7 +47,8 @@ function WalletApp() {
     createNewAccount,
     importAccount,
     deleteAccount,
-    renameAccount
+    renameAccount,
+    syncError
   } = useWallet()
 
   const { copyFeedback, toasts, showToast } = useUI()
@@ -138,18 +139,20 @@ function WalletApp() {
       ])
       if (needsSync) {
         logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
-        performSync(true)
+        await performSync(true)
+        await fetchData()
       } else {
         const derivedAddrs = await getDerivedAddresses()
         if (derivedAddrs.length > 0) {
           logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
-          performSync(false)
+          await performSync(false)
+          await fetchData()
         }
       }
     }
 
     checkSync()
-  }, [wallet, performSync, activeAccountId])
+  }, [wallet, performSync, fetchData, activeAccountId])
 
   // Fetch data on wallet load and when account changes
   useEffect(() => {
@@ -350,6 +353,18 @@ function WalletApp() {
             aria-label="Dismiss reminder"
           >
             ✕
+          </button>
+        </div>
+      )}
+
+      {syncError && (
+        <div className="sync-error-banner" role="status" aria-live="polite">
+          <span>Unable to sync — data may be stale.</span>
+          <button
+            className="backup-reminder-btn"
+            onClick={() => performSync()}
+          >
+            Retry
           </button>
         </div>
       )}
