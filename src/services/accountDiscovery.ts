@@ -9,6 +9,7 @@
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 import { createWocClient } from '../infrastructure/api/wocClient'
 import { createAccount } from './accounts'
+import { syncWallet } from './sync'
 import { accountLogger } from './logger'
 
 const MAX_ACCOUNT_DISCOVERY = 20
@@ -47,11 +48,12 @@ export async function discoverAccounts(
       break // Gap found — stop discovery
     }
 
-    // This account has activity — create it in the database
+    // This account has activity — create it and sync its transaction history
     try {
-      await createAccount(`Account ${i + 1}`, keys, password, true)
+      const accountId = await createAccount(`Account ${i + 1}`, keys, password, true)
+      await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId)
       found++
-      accountLogger.info('Discovered account with activity', { accountIndex: i, name: `Account ${i + 1}` })
+      accountLogger.info('Discovered and synced account', { accountIndex: i, accountId, name: `Account ${i + 1}` })
     } catch (err) {
       accountLogger.error('Failed to create discovered account', err, { accountIndex: i })
       break // Don't continue if DB write fails

@@ -16,6 +16,7 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
   const {
     wallet,
     networkInfo,
+    syncing,
     performSync,
     fetchData,
     accounts,
@@ -125,13 +126,13 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
             {networkInfo?.blockHeight?.toLocaleString() || '...'}
           </div>
           <button
-            className={`icon-btn ${manualSyncing ? 'active' : ''}`}
+            className={`icon-btn ${syncing || manualSyncing ? 'active' : ''}`}
             onClick={handleSync}
             title="Sync wallet"
-            aria-label={manualSyncing ? 'Syncing...' : 'Sync wallet'}
+            aria-label={syncing || manualSyncing ? 'Syncing...' : 'Sync wallet'}
             disabled={manualSyncing}
           >
-            <RefreshCw size={16} strokeWidth={1.75} className={manualSyncing ? 'spinning' : ''} />
+            <RefreshCw size={16} strokeWidth={1.75} className={syncing || manualSyncing ? 'spinning' : ''} />
           </button>
           <button
             className="icon-btn"

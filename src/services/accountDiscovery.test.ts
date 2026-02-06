@@ -20,6 +20,11 @@ vi.mock('../domain/wallet', () => ({
   deriveWalletKeysForAccount: vi.fn()
 }))
 
+// Mock sync service
+vi.mock('./sync', () => ({
+  syncWallet: vi.fn().mockResolvedValue(undefined)
+}))
+
 // Mock logger
 vi.mock('./logger', () => ({
   accountLogger: {
@@ -33,6 +38,7 @@ vi.mock('./logger', () => ({
 import { discoverAccounts } from './accountDiscovery'
 import { createWocClient } from '../infrastructure/api/wocClient'
 import { createAccount } from './accounts'
+import { syncWallet } from './sync'
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 
 const mockWocClient = createWocClient() as unknown as {
@@ -71,7 +77,7 @@ describe('discoverAccounts', () => {
     expect(deriveWalletKeysForAccount).toHaveBeenCalledWith('test mnemonic', 1)
   })
 
-  it('discovers accounts with wallet address activity', async () => {
+  it('discovers accounts with wallet address activity and syncs them', async () => {
     // Account 1: wallet has activity
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'abc', height: 850000 }] })
@@ -85,6 +91,10 @@ describe('discoverAccounts', () => {
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledTimes(1)
     expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true)
+    // Verify sync was called for the discovered account
+    expect(syncWallet).toHaveBeenCalledTimes(1)
+    const keys = makeMockKeys(1)
+    expect(syncWallet).toHaveBeenCalledWith(keys.walletAddress, keys.ordAddress, keys.identityAddress, 1)
   })
 
   it('discovers accounts with ordinals address activity', async () => {
