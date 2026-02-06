@@ -35,7 +35,7 @@ import { createWocClient } from '../infrastructure/api/wocClient'
 import { createAccount } from './accounts'
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 
-const mockWocClient = createWocClient() as {
+const mockWocClient = createWocClient() as unknown as {
   getTransactionHistorySafe: ReturnType<typeof vi.fn>
 }
 
