@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, memo, useCallback } from 'react'
+import { useState, useEffect, useRef, memo, useCallback, type ReactNode } from 'react'
+import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
@@ -24,7 +25,7 @@ const TransactionItem = memo(function TransactionItem({
 }: {
   tx: TxHistoryItem
   txType: string
-  txIcon: string
+  txIcon: ReactNode
   onClick: () => void
   formatUSD: (sats: number) => string
 }) {
@@ -114,18 +115,18 @@ export function ActivityTab() {
     const isUnlockTx = unlockTxids.has(tx.tx_hash)
 
     if (isLockTx) {
-      return { type: 'Locked', icon: '🔒' }
+      return { type: 'Locked', icon: <Lock size={14} strokeWidth={1.75} /> }
     }
     if (isUnlockTx) {
-      return { type: 'Unlocked', icon: '🔓' }
+      return { type: 'Unlocked', icon: <Unlock size={14} strokeWidth={1.75} /> }
     }
     if (tx.amount && tx.amount > 0) {
-      return { type: 'Received', icon: '↓' }
+      return { type: 'Received', icon: <ArrowDownLeft size={14} strokeWidth={1.75} /> }
     }
     if (tx.amount && tx.amount < 0) {
-      return { type: 'Sent', icon: '↑' }
+      return { type: 'Sent', icon: <ArrowUpRight size={14} strokeWidth={1.75} /> }
     }
-    return { type: 'Transaction', icon: '•' }
+    return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }
   }, [locks, unlockTxids])
 
   // Show skeleton during initial load (loading with no data yet)

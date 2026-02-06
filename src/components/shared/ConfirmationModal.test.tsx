@@ -122,7 +122,8 @@ describe('ConfirmationModal', () => {
     it('renders warning type correctly', () => {
       render(<ConfirmationModal {...defaultProps} type="warning" />)
 
-      expect(screen.getByText('⚠️')).toBeInTheDocument()
+      const icon = document.querySelector('.confirmation-icon svg.lucide-triangle-alert')
+      expect(icon).toBeInTheDocument()
       const modal = document.querySelector('.confirmation-warning')
       expect(modal).toBeInTheDocument()
     })
@@ -130,7 +131,8 @@ describe('ConfirmationModal', () => {
     it('renders danger type correctly', () => {
       render(<ConfirmationModal {...defaultProps} type="danger" />)
 
-      expect(screen.getByText('⛔')).toBeInTheDocument()
+      const icon = document.querySelector('.confirmation-icon svg.lucide-octagon-alert')
+      expect(icon).toBeInTheDocument()
       const modal = document.querySelector('.confirmation-danger')
       expect(modal).toBeInTheDocument()
     })
@@ -138,7 +140,8 @@ describe('ConfirmationModal', () => {
     it('renders info type correctly', () => {
       render(<ConfirmationModal {...defaultProps} type="info" />)
 
-      expect(screen.getByText('ℹ️')).toBeInTheDocument()
+      const icon = document.querySelector('.confirmation-icon svg.lucide-info')
+      expect(icon).toBeInTheDocument()
       const modal = document.querySelector('.confirmation-info')
       expect(modal).toBeInTheDocument()
     })

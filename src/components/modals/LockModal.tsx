@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Lock, AlertTriangle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateLockFee, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
@@ -207,7 +208,7 @@ export function LockModal({ onClose }: LockModalProps) {
             const unlockDate = calculateEstimatedUnlockDate(blocks)
             return (
               <div className="lock-warning" role="alert">
-                <span className="lock-warning-icon">⚠️</span>
+                <span className="lock-warning-icon"><AlertTriangle size={20} strokeWidth={1.75} /></span>
                 <div className="lock-warning-content">
                   <strong>Long lock duration</strong>
                   <p>
@@ -252,7 +253,7 @@ export function LockModal({ onClose }: LockModalProps) {
 
           {lockError && (
             <div className="warning compact" role="alert">
-              <span className="warning-icon">⚠️</span>
+              <span className="warning-icon"><AlertTriangle size={16} strokeWidth={1.75} /></span>
               <span className="warning-text">{lockError}</span>
             </div>
           )}
@@ -263,50 +264,12 @@ export function LockModal({ onClose }: LockModalProps) {
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
           >
             {!locking && (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
+              <Lock size={16} strokeWidth={1.75} />
             )}
             {locking ? 'Locking...' : `Lock ${lockSats > 0 ? lockSats.toLocaleString() + ' sats' : 'BSV'}`}
           </button>
         </div>
 
-      <style>{`
-        .lock-warning {
-          display: flex;
-          align-items: flex-start;
-          gap: 0.75rem;
-          padding: 0.75rem;
-          background: rgba(234, 179, 8, 0.1);
-          border: 1px solid rgba(234, 179, 8, 0.3);
-          border-radius: 0.5rem;
-          margin-bottom: 0.75rem;
-        }
-
-        .lock-warning-icon {
-          font-size: 1.25rem;
-          flex-shrink: 0;
-        }
-
-        .lock-warning-content {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-        }
-
-        .lock-warning-content strong {
-          color: #eab308;
-          font-size: 0.875rem;
-        }
-
-        .lock-warning-content p {
-          margin: 0;
-          color: rgba(234, 179, 8, 0.8);
-          font-size: 0.8125rem;
-          line-height: 1.4;
-        }
-      `}</style>
       </Modal>
   )
 }

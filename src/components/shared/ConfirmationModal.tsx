@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react'
+import { AlertOctagon, AlertTriangle, Info } from 'lucide-react'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useKeyboardNav } from '../../hooks/useKeyboardNav'
 
@@ -99,13 +100,13 @@ export function ConfirmationModal({
   const getTypeIcon = () => {
     switch (type) {
       case 'danger':
-        return '⛔'
+        return <AlertOctagon size={48} strokeWidth={1.5} />
       case 'warning':
-        return '⚠️'
+        return <AlertTriangle size={48} strokeWidth={1.5} />
       case 'info':
-        return 'ℹ️'
+        return <Info size={48} strokeWidth={1.5} />
       default:
-        return '⚠️'
+        return <AlertTriangle size={48} strokeWidth={1.5} />
     }
   }
 
@@ -189,108 +190,6 @@ export function ConfirmationModal({
           </button>
         </div>
       </div>
-
-      <style>{`
-        .confirmation-overlay {
-          z-index: 1001;
-        }
-
-        .confirmation-modal {
-          max-width: 400px;
-          text-align: center;
-          padding: 24px;
-        }
-
-        .confirmation-icon {
-          font-size: 48px;
-          margin-bottom: 16px;
-        }
-
-        .confirmation-title {
-          font-size: 20px;
-          font-weight: 600;
-          margin: 0 0 12px 0;
-          color: var(--text-primary);
-        }
-
-        .confirmation-message {
-          font-size: 14px;
-          color: var(--text-secondary);
-          margin: 0 0 16px 0;
-          line-height: 1.5;
-        }
-
-        .confirmation-details {
-          background: var(--bg-tertiary);
-          border-radius: 8px;
-          padding: 12px;
-          margin-bottom: 16px;
-          font-family: monospace;
-          font-size: 13px;
-          word-break: break-all;
-          color: var(--text-secondary);
-        }
-
-        .confirmation-typed-input {
-          margin-bottom: 16px;
-          text-align: left;
-        }
-
-        .confirmation-typed-input label {
-          display: block;
-          font-size: 13px;
-          color: var(--text-secondary);
-          margin-bottom: 8px;
-        }
-
-        .confirmation-typed-input strong {
-          color: var(--text-primary);
-        }
-
-        .confirmation-actions {
-          display: flex;
-          gap: 12px;
-          justify-content: center;
-        }
-
-        .confirmation-actions .btn {
-          flex: 1;
-          max-width: 150px;
-        }
-
-        /* Type-specific styles */
-        .confirmation-warning .confirmation-icon {
-          color: var(--warning);
-        }
-
-        .confirmation-danger .confirmation-icon {
-          color: var(--error);
-        }
-
-        .confirmation-danger .confirmation-title {
-          color: var(--error);
-        }
-
-        .confirmation-info .confirmation-icon {
-          color: var(--accent);
-        }
-
-        /* Danger button style */
-        .btn-danger {
-          background: var(--error);
-          color: white;
-          border: none;
-        }
-
-        .btn-danger:hover:not(:disabled) {
-          background: #dc2626;
-        }
-
-        .btn-danger:disabled {
-          background: var(--bg-tertiary);
-          color: var(--text-muted);
-        }
-      `}</style>
     </div>
   )
 }

@@ -1,3 +1,5 @@
+import { ArrowUpRight, ArrowDownLeft } from 'lucide-react'
+
 interface QuickActionsProps {
   onSend: () => void
   onReceive: () => void
@@ -11,14 +13,14 @@ export function QuickActions({ onSend, onReceive }: QuickActionsProps) {
         onClick={onSend}
         aria-label="Send BSV"
       >
-        ↑ Send
+        <ArrowUpRight size={16} strokeWidth={1.75} /> Send
       </button>
       <button
         className="action-btn secondary"
         onClick={onReceive}
         aria-label="Receive BSV"
       >
-        ↓ Receive
+        <ArrowDownLeft size={16} strokeWidth={1.75} /> Receive
       </button>
     </div>
   )

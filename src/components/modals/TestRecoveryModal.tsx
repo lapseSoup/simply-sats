@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AlertTriangle, CircleCheck, XCircle } from 'lucide-react'
 import { MnemonicInput } from '../forms/MnemonicInput'
 import { verifyMnemonicMatchesWallet } from '../../services/wallet'
 import { uiLogger } from '../../services/logger'
@@ -75,7 +76,7 @@ export function TestRecoveryModal({ expectedAddress, onClose }: TestRecoveryModa
 
               {error && (
                 <div className="warning compact" role="alert" style={{ marginTop: 12 }}>
-                  <span className="warning-icon">⚠️</span>
+                  <span className="warning-icon"><AlertTriangle size={16} strokeWidth={1.75} /></span>
                   <span className="warning-text">{error}</span>
                 </div>
               )}
@@ -99,10 +100,9 @@ export function TestRecoveryModal({ expectedAddress, onClose }: TestRecoveryModa
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto 16px',
-                fontSize: 32
+                margin: '0 auto 16px'
               }}>
-                ✓
+                <CircleCheck size={32} strokeWidth={1.5} color="#22c55e" />
               </div>
               <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--success)', marginBottom: 8 }}>
                 Recovery Verified!
@@ -140,10 +140,9 @@ export function TestRecoveryModal({ expectedAddress, onClose }: TestRecoveryModa
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto 16px',
-                fontSize: 32
+                margin: '0 auto 16px'
               }}>
-                ✗
+                <XCircle size={32} strokeWidth={1.5} color="#ef4444" />
               </div>
               <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--error)', marginBottom: 8 }}>
                 Recovery Failed

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useMemo, memo } from 'react'
+import { useState, useEffect, useRef, useMemo, memo, type ReactNode } from 'react'
+import { Search, LayoutGrid, List as ListIcon, ChevronRight, Image, FileText, Braces, Diamond } from 'lucide-react'
 import { List } from 'react-window'
 import { useWallet } from '../../contexts/WalletContext'
 import type { Ordinal } from '../../services/wallet'
@@ -35,17 +36,17 @@ function getContentCategory(contentType: string | undefined): ContentCategory {
   return 'other'
 }
 
-function getContentIcon(contentType: string | undefined): string {
+function getContentIcon(contentType: string | undefined): ReactNode {
   const category = getContentCategory(contentType)
   switch (category) {
     case 'image':
-      return '⬜'
+      return <Image size={16} strokeWidth={1.75} />
     case 'text':
-      return '≡'
+      return <FileText size={16} strokeWidth={1.75} />
     case 'json':
-      return '{}'
+      return <Braces size={16} strokeWidth={1.75} />
     default:
-      return '◇'
+      return <Diamond size={16} strokeWidth={1.75} />
   }
 }
 
@@ -132,7 +133,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
       {/* Search and Filter Bar */}
       <div className="ordinals-controls">
         <div className="ordinals-search">
-          <span className="search-icon" aria-hidden="true">🔍</span>
+          <span className="search-icon" aria-hidden="true"><Search size={14} strokeWidth={1.75} /></span>
           <input
             type="text"
             className="search-input"
@@ -159,7 +160,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
             aria-label="Grid view"
             aria-pressed={viewMode === 'grid'}
           >
-            <span aria-hidden="true">⊞</span>
+            <LayoutGrid size={14} strokeWidth={1.75} aria-hidden="true" />
           </button>
           <button
             className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
@@ -167,7 +168,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
             aria-label="List view"
             aria-pressed={viewMode === 'list'}
           >
-            <span aria-hidden="true">☰</span>
+            <ListIcon size={14} strokeWidth={1.75} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -213,7 +214,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
       {/* Ordinals Display */}
       {filteredOrdinals.length === 0 ? (
         <div className="empty-state small">
-          <div className="empty-icon" aria-hidden="true">🔍</div>
+          <div className="empty-icon" aria-hidden="true"><Search size={24} strokeWidth={1.75} /></div>
           <div className="empty-title">No Results</div>
           <div className="empty-text">
             No ordinals match your search criteria.
@@ -354,7 +355,7 @@ const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect }: Ord
           )}
         </div>
       </div>
-      <div className="ordinal-list-arrow" aria-hidden="true">→</div>
+      <div className="ordinal-list-arrow" aria-hidden="true"><ChevronRight size={14} strokeWidth={1.75} /></div>
     </div>
   )
 })

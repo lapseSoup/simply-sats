@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { AlertCircle } from 'lucide-react'
 import './App.css'
 
 import { useWallet, useUI } from './contexts'
@@ -359,6 +360,7 @@ function WalletApp() {
 
       {syncError && (
         <div className="sync-error-banner" role="status" aria-live="polite">
+          <AlertCircle size={14} strokeWidth={2} />
           <span>Unable to sync — data may be stale.</span>
           <button
             className="backup-reminder-btn"

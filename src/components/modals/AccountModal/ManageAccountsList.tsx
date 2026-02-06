@@ -5,6 +5,7 @@
  */
 
 import { useState, useCallback, memo } from 'react'
+import { Check, X, ArrowRight, Pencil, Trash2 } from 'lucide-react'
 import type { Account } from '../../../services/accounts'
 
 interface ManageAccountsListProps {
@@ -72,9 +73,7 @@ const AccountItem = memo(function AccountItem({
             onClick={onSave}
             aria-label="Save name"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 8L6 11L13 4" />
-            </svg>
+            <Check size={16} strokeWidth={2} />
           </button>
           <button
             type="button"
@@ -82,9 +81,7 @@ const AccountItem = memo(function AccountItem({
             onClick={onCancelEdit}
             aria-label="Cancel edit"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 4L12 12M12 4L4 12" />
-            </svg>
+            <X size={16} strokeWidth={2} />
           </button>
         </div>
       </div>
@@ -141,9 +138,7 @@ const AccountItem = memo(function AccountItem({
             title="Switch to this account"
             aria-label="Switch to this account"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M2 8H14M10 4L14 8L10 12" />
-            </svg>
+            <ArrowRight size={16} strokeWidth={2} />
           </button>
         )}
         {canRename && (
@@ -154,9 +149,7 @@ const AccountItem = memo(function AccountItem({
             title="Rename account"
             aria-label="Rename account"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M11 2L14 5L5 14H2V11L11 2Z" />
-            </svg>
+            <Pencil size={16} strokeWidth={2} />
           </button>
         )}
         {canDelete && (
@@ -167,9 +160,7 @@ const AccountItem = memo(function AccountItem({
             title="Delete account"
             aria-label="Delete account"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 4H13M6 4V2H10V4M5 4V14H11V4" />
-            </svg>
+            <Trash2 size={16} strokeWidth={2} />
           </button>
         )}
       </div>

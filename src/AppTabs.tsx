@@ -1,3 +1,4 @@
+import { AlertCircle } from 'lucide-react'
 import { ActivityTab, OrdinalsTab, LocksTab, TokensTab, UTXOsTab } from './components/tabs'
 import type { Ordinal, LockedUTXO } from './services/wallet'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
@@ -10,20 +11,7 @@ function TabErrorFallback({ tabName, error, reset }: { tabName: string; error: E
   return (
     <div className="tab-error-fallback" role="alert">
       <div className="tab-error-content">
-        <svg
-          width="32"
-          height="32"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="8" x2="12" y2="12" />
-          <line x1="12" y1="16" x2="12.01" y2="16" />
-        </svg>
+        <AlertCircle size={32} strokeWidth={2} />
         <h3>Error loading {tabName}</h3>
         <p className="tab-error-message">{error.message}</p>
         <button type="button" className="tab-error-retry" onClick={reset}>

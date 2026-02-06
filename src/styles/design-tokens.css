@@ -1,180 +1,295 @@
-/* Design Tokens - CSS Custom Properties for Tailwind Integration
-   These tokens can be used with Tailwind's theme() function or directly in CSS
+/* ============================================================
+   Design Tokens — Simply Sats Design System
+   Source of truth for all visual properties.
+   ============================================================ */
 
-   Usage in Tailwind classes:
-   - text-[color:var(--text-primary)]
-   - bg-[color:var(--bg-primary)]
-
-   Usage in CSS:
-   - color: var(--text-primary);
-   - background: var(--bg-primary);
-*/
-
-/*
- * Global CSS Variables - source of truth for the app.
- * Used directly by App.css and component inline styles.
- * The @theme block below mirrors these for Tailwind utility classes.
- */
 :root {
-  /* Core colors - deeper, more sophisticated */
-  --bg-primary: #0a0a0b;
-  --bg-secondary: #141416;
-  --bg-tertiary: #1a1a1e;
-  --bg-elevated: #1e1e22;
-  --bg-card: #18181c;
+  /* ── Fonts ── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
 
-  /* Accent - Bitcoin Orange refined */
-  --accent: #f7931a;
-  --accent-light: #ffa940;
-  --accent-dark: #d97706;
-  --accent-glow: rgba(247, 147, 26, 0.12);
-  --accent-subtle: rgba(247, 147, 26, 0.08);
+  /* ── Background Surfaces ── warm dark with blue-violet undertone */
+  --bg-base:      #0c0c0f;
+  --bg-surface-1: #13131a;
+  --bg-surface-2: #1a1a24;
+  --bg-surface-3: #22222e;
+  --bg-surface-4: #2a2a38;
 
-  /* Text - better contrast hierarchy */
-  --text-primary: #ffffff;
-  --text-secondary: #9ca3af;
-  --text-tertiary: #6b7280;
-  --text-muted: #4b5563;
+  /* Legacy aliases (used throughout App.css — will migrate gradually) */
+  --bg-primary:   var(--bg-base);
+  --bg-secondary: var(--bg-surface-1);
+  --bg-tertiary:  var(--bg-surface-2);
+  --bg-elevated:  var(--bg-surface-3);
+  --bg-card:      var(--bg-surface-2);
 
-  /* Status */
-  --success: #10b981;
-  --success-bg: rgba(16, 185, 129, 0.1);
-  --warning: #f59e0b;
-  --warning-bg: rgba(245, 158, 11, 0.1);
-  --error: #ef4444;
-  --error-bg: rgba(239, 68, 68, 0.1);
+  /* ── Accent — refined amber-orange ── */
+  --accent:         #f59e0b;
+  --accent-light:   #fbbf24;
+  --accent-dark:    #d97706;
+  --accent-glow:    rgba(245, 158, 11, 0.15);
+  --accent-subtle:  rgba(245, 158, 11, 0.08);
+  --accent-gradient: linear-gradient(135deg, #fbbf24 0%, #f59e0b 40%, #d97706 100%);
 
-  /* Borders */
-  --border: rgba(255, 255, 255, 0.08);
-  --border-light: rgba(255, 255, 255, 0.12);
-  --border-focus: rgba(247, 147, 26, 0.5);
+  /* ── Secondary accent — indigo ── */
+  --secondary:        #6366f1;
+  --secondary-light:  #818cf8;
+  --secondary-dark:   #4f46e5;
+  --secondary-subtle: rgba(99, 102, 241, 0.08);
+  --secondary-glow:   rgba(99, 102, 241, 0.12);
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 40px rgba(247, 147, 26, 0.15);
+  /* ── Text hierarchy ── */
+  --text-primary:   #f0f0f5;
+  --text-secondary: #9898a8;
+  --text-tertiary:  #5c5c6e;
+  --text-muted:     #3d3d4e;
 
-  /* Spacing & Radius */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  /* ── Status colors ── */
+  --success:        #34d399;
+  --success-bg:     rgba(52, 211, 153, 0.10);
+  --success-border: rgba(52, 211, 153, 0.25);
+
+  --warning:        #fbbf24;
+  --warning-bg:     rgba(251, 191, 36, 0.10);
+  --warning-border: rgba(251, 191, 36, 0.25);
+  --warning-text:   #fbbf24;
+
+  --error:          #f87171;
+  --error-bg:       rgba(248, 113, 113, 0.10);
+  --error-border:   rgba(248, 113, 113, 0.25);
+  --error-text:     #f87171;
+
+  --info:           #818cf8;
+  --info-bg:        rgba(129, 140, 248, 0.10);
+  --info-border:    rgba(129, 140, 248, 0.25);
+
+  /* ── Borders ── */
+  --border:       rgba(255, 255, 255, 0.10);
+  --border-light: rgba(255, 255, 255, 0.16);
+  --border-focus: rgba(245, 158, 11, 0.50);
+  --border-error: rgba(248, 113, 113, 0.50);
+
+  /* ── Shadows ── multi-layer for depth */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.20), 0 0 1px rgba(0, 0, 0, 0.15);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.20), 0 0 1px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.24), 0 2px 4px rgba(0, 0, 0, 0.16);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.28), 0 4px 8px rgba(0, 0, 0, 0.20);
+  --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.32), 0 8px 16px rgba(0, 0, 0, 0.24);
+  --shadow-glow: 0 0 24px rgba(245, 158, 11, 0.12), 0 0 48px rgba(245, 158, 11, 0.06);
+
+  /* ── Border Radius ── */
+  --radius-xs:   6px;
+  --radius-sm:   8px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   18px;
+  --radius-2xl:  24px;
   --radius-full: 9999px;
+
+  /* ── Spacing (4px grid) ── */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-7:  32px;
+  --space-8:  40px;
+  --space-10: 48px;
+  --space-12: 64px;
+
+  /* ── Animation ── */
+  --ease-out:    cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-in:     cubic-bezier(0.32, 0, 0.67, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --duration-instant: 75ms;
+  --duration-fast:    150ms;
+  --duration-normal:  200ms;
+  --duration-slow:    300ms;
+  --duration-slower:  450ms;
+
+  /* ── Opacity ── */
+  --opacity-disabled: 0.38;
+  --opacity-overlay:  0.75;
+
+  /* ── Type Scale ── */
+  --type-balance-size: 40px;
+  --type-balance-weight: 700;
+  --type-balance-tracking: -1.5px;
+
+  --type-h1-size: 28px;
+  --type-h1-weight: 700;
+  --type-h1-tracking: -0.8px;
+
+  --type-h2-size: 22px;
+  --type-h2-weight: 600;
+  --type-h2-tracking: -0.5px;
+
+  --type-h3-size: 17px;
+  --type-h3-weight: 600;
+  --type-h3-tracking: -0.3px;
+
+  --type-body-size: 14px;
+  --type-body-weight: 400;
+
+  --type-caption-size: 12px;
+  --type-caption-weight: 500;
+
+  --type-micro-size: 11px;
+  --type-micro-weight: 500;
+
+  /* ── Icon Sizes ── */
+  --icon-xs: 14px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --icon-xl: 32px;
+  --icon-2xl: 48px;
 }
 
-/*
- * Tailwind 4 Theme Integration
- * Values MUST match :root above — @theme enables Tailwind utility generation.
- * The --color-* prefix is for Tailwind's namespacing convention.
- */
+/* ── Tailwind 4 Theme Integration ── */
 @theme {
-  /* Core colors — mirrors :root */
-  --color-bg-primary: #0a0a0b;
-  --color-bg-secondary: #141416;
-  --color-bg-tertiary: #1a1a1e;
-  --color-bg-elevated: #1e1e22;
-  --color-bg-card: #18181c;
+  --color-bg-base:      #0c0c0f;
+  --color-bg-surface-1: #13131a;
+  --color-bg-surface-2: #1a1a24;
+  --color-bg-surface-3: #22222e;
+  --color-bg-surface-4: #2a2a38;
 
-  /* Accent — mirrors :root */
-  --color-accent: #f7931a;
-  --color-accent-light: #ffa940;
-  --color-accent-dark: #d97706;
+  /* Legacy aliases */
+  --color-bg-primary:   #0c0c0f;
+  --color-bg-secondary: #13131a;
+  --color-bg-tertiary:  #1a1a24;
+  --color-bg-elevated:  #22222e;
+  --color-bg-card:      #1a1a24;
 
-  /* Text — mirrors :root */
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #9ca3af;
-  --color-text-tertiary: #6b7280;
-  --color-text-muted: #4b5563;
+  --color-accent:       #f59e0b;
+  --color-accent-light: #fbbf24;
+  --color-accent-dark:  #d97706;
 
-  /* Status — mirrors :root */
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
+  --color-secondary:       #6366f1;
+  --color-secondary-light: #818cf8;
 
-  /* Borders — mirrors :root */
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-border-light: rgba(255, 255, 255, 0.12);
-  --color-border-focus: rgba(247, 147, 26, 0.5);
+  --color-text-primary:   #f0f0f5;
+  --color-text-secondary: #9898a8;
+  --color-text-tertiary:  #5c5c6e;
+  --color-text-muted:     #3d3d4e;
 
-  /* Spacing scale */
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error:   #f87171;
+  --color-info:    #818cf8;
+
+  --color-border:       rgba(255, 255, 255, 0.10);
+  --color-border-light: rgba(255, 255, 255, 0.16);
+  --color-border-focus: rgba(245, 158, 11, 0.50);
+
+  --spacing-xs:  4px;
+  --spacing-sm:  8px;
+  --spacing-md:  16px;
+  --spacing-lg:  24px;
+  --spacing-xl:  32px;
   --spacing-2xl: 48px;
 
-  /* Border radius — matches :root values */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  --radius-xs:   6px;
+  --radius-sm:   8px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   18px;
+  --radius-2xl:  24px;
   --radius-full: 9999px;
 
-  /* Font sizes */
-  --font-size-xs: 11px;
-  --font-size-sm: 13px;
+  --font-size-xs:  11px;
+  --font-size-sm:  13px;
   --font-size-base: 14px;
-  --font-size-lg: 16px;
-  --font-size-xl: 18px;
+  --font-size-lg:  16px;
+  --font-size-xl:  18px;
   --font-size-2xl: 24px;
   --font-size-3xl: 32px;
   --font-size-4xl: 48px;
 
-  /* Shadows — mirrors :root */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 40px rgba(247, 147, 26, 0.15);
+  --shadow-xs:  0 1px 2px rgba(0, 0, 0, 0.20), 0 0 1px rgba(0, 0, 0, 0.15);
+  --shadow-sm:  0 2px 4px rgba(0, 0, 0, 0.20), 0 0 1px rgba(0, 0, 0, 0.12);
+  --shadow-md:  0 4px 8px rgba(0, 0, 0, 0.24), 0 2px 4px rgba(0, 0, 0, 0.16);
+  --shadow-lg:  0 8px 16px rgba(0, 0, 0, 0.28), 0 4px 8px rgba(0, 0, 0, 0.20);
+  --shadow-xl:  0 16px 32px rgba(0, 0, 0, 0.32), 0 8px 16px rgba(0, 0, 0, 0.24);
+  --shadow-glow: 0 0 24px rgba(245, 158, 11, 0.12), 0 0 48px rgba(245, 158, 11, 0.06);
 
-  /* Transitions */
-  --transition-fast: 0.15s ease;
-  --transition-base: 0.2s ease;
-  --transition-slow: 0.3s ease;
+  --transition-fast: 0.15s cubic-bezier(0.33, 1, 0.68, 1);
+  --transition-base: 0.2s cubic-bezier(0.33, 1, 0.68, 1);
+  --transition-slow: 0.3s cubic-bezier(0.65, 0, 0.35, 1);
 }
 
-/* Utility classes for common patterns */
+/* ── Tailwind utility classes ── */
 @utility btn-primary {
-  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-dark) 100%);
-  color: var(--color-bg-primary);
+  background: var(--accent-gradient);
+  color: var(--bg-base);
   font-weight: 600;
   border: none;
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition: transform var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
 }
 
 @utility btn-secondary {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition: background var(--duration-fast) ease,
+              border-color var(--duration-fast) ease;
+}
+
+@utility btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  transition: color var(--duration-fast) ease,
+              background var(--duration-fast) ease;
+}
+
+@utility btn-danger {
+  background: var(--error-bg);
+  color: var(--error);
+  font-weight: 600;
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease,
+              color var(--duration-fast) ease;
 }
 
 @utility card {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
+  padding: var(--space-4);
 }
 
 @utility input-field {
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--color-border);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-base);
-  transition: border-color var(--transition-base);
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  outline: none;
+  transition: border-color var(--duration-normal) ease,
+              box-shadow var(--duration-normal) ease;
 }
 
 @utility text-gradient-accent {
-  background: linear-gradient(135deg, var(--color-accent-light) 0%, var(--color-accent) 100%);
+  background: linear-gradient(135deg, var(--accent-light) 0%, var(--accent) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

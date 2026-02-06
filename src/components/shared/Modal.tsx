@@ -1,4 +1,5 @@
 import { useEffect, useId, type ReactNode } from 'react'
+import { X } from 'lucide-react'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useKeyboardNav } from '../../hooks/useKeyboardNav'
 
@@ -61,7 +62,7 @@ export function Modal({
             aria-label="Close modal"
             type="button"
           >
-            ×
+            <X size={18} strokeWidth={2} />
           </button>
         </div>
         {children}

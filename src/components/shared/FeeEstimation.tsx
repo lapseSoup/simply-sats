@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import {
   DEFAULT_FEE_RATE,
   MIN_FEE_RATE,
@@ -200,7 +201,7 @@ export function FeeEstimation({
             className="fee-custom-toggle"
             onClick={() => setShowCustom(!showCustom)}
           >
-            {showCustom ? '▼' : '▶'} Custom fee rate
+            {showCustom ? <ChevronDown size={14} strokeWidth={2} /> : <ChevronRight size={14} strokeWidth={2} />} Custom fee rate
           </button>
           {showCustom && (
             <div className="fee-custom-input">

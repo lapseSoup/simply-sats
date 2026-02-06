@@ -1,3 +1,4 @@
+import { CircleDollarSign } from 'lucide-react'
 import type { PaymentNotification } from '../../services/messageBox'
 
 interface PaymentAlertProps {
@@ -10,7 +11,7 @@ export function PaymentAlert({ payment, onDismiss }: PaymentAlertProps) {
 
   return (
     <div className="payment-alert" onClick={onDismiss}>
-      <div className="payment-alert-icon">💰</div>
+      <div className="payment-alert-icon"><CircleDollarSign size={24} strokeWidth={2} /></div>
       <div className="payment-alert-content">
         <div className="payment-alert-title">Payment Received!</div>
         <div className="payment-alert-amount">

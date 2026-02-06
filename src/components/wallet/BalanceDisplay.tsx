@@ -1,3 +1,4 @@
+import { ArrowUpDown } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 
@@ -19,48 +20,18 @@ export function BalanceDisplay() {
       >
         {displayInSats ? (
           <>
-            <span className="balance-value">{totalBalance.toLocaleString()}</span>{' '}
+            <span className="balance-value" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalBalance.toLocaleString()}</span>{' '}
             <span className="balance-unit clickable">
               sats
-              <svg
-                className="toggle-hint"
-                width="10"
-                height="10"
-                viewBox="0 0 10 10"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                {/* Simple up/down arrows to indicate toggle */}
-                <path d="M5 1L5 9" />
-                <path d="M2 3.5L5 1L8 3.5" />
-                <path d="M2 6.5L5 9L8 6.5" />
-              </svg>
+              <ArrowUpDown className="toggle-hint" size={10} strokeWidth={1.5} aria-hidden="true" />
             </span>
           </>
         ) : (
           <>
-            <span className="balance-value">{formatBSVShort(totalBalance)}</span>{' '}
+            <span className="balance-value" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBSVShort(totalBalance)}</span>{' '}
             <span className="balance-unit clickable">
               BSV
-              <svg
-                className="toggle-hint"
-                width="10"
-                height="10"
-                viewBox="0 0 10 10"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                {/* Simple up/down arrows to indicate toggle */}
-                <path d="M5 1L5 9" />
-                <path d="M2 3.5L5 1L8 3.5" />
-                <path d="M2 6.5L5 9L8 6.5" />
-              </svg>
+              <ArrowUpDown className="toggle-hint" size={10} strokeWidth={1.5} aria-hidden="true" />
             </span>
           </>
         )}
@@ -70,30 +41,6 @@ export function BalanceDisplay() {
         {syncing && <span className="sync-indicator" aria-label="Syncing"> syncing...</span>}
       </div>
 
-      <style>{`
-        .balance-unit.clickable {
-          display: inline-flex;
-          align-items: center;
-          gap: 3px;
-          cursor: pointer;
-          vertical-align: baseline;
-        }
-
-        .toggle-hint {
-          opacity: 0.35;
-          transition: opacity 0.15s ease;
-        }
-
-        .balance-main:hover .toggle-hint {
-          opacity: 0.7;
-        }
-
-        .sync-indicator {
-          opacity: 0.5;
-          font-size: 11px;
-          font-style: italic;
-        }
-      `}</style>
     </div>
   )
 }

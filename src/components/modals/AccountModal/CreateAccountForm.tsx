@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback, memo } from 'react'
+import { CircleCheck } from 'lucide-react'
 
 interface CreateAccountFormProps {
   onCreateAccount: (name: string) => Promise<boolean>
@@ -48,10 +49,7 @@ export const CreateAccountForm = memo(function CreateAccountForm({
     return (
       <div className="account-modal-content">
         <div className="success-icon">
-          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-            <circle cx="24" cy="24" r="22" stroke="#22c55e" strokeWidth="4" />
-            <path d="M14 24L21 31L34 18" stroke="#22c55e" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <CircleCheck size={48} strokeWidth={1.5} color="#22c55e" />
         </div>
         <h3>Account Created!</h3>
         <p className="modal-description">

@@ -14,6 +14,7 @@
  */
 
 import { useState, useMemo, useCallback } from 'react'
+import { AlertTriangle, XCircle, PenLine, Lock, ShieldOff, CircleCheck } from 'lucide-react'
 import { recordBackupVerification } from '../../services/backupReminder'
 
 interface BackupVerificationModalProps {
@@ -147,7 +148,7 @@ export function BackupVerificationModal({
             </div>
             <div className="modal-content compact">
               <div className="warning compact" role="alert">
-                <span className="warning-icon" aria-hidden="true">⚠️</span>
+                <span className="warning-icon" aria-hidden="true"><AlertTriangle size={16} strokeWidth={1.75} /></span>
                 <span className="warning-text">
                   Write down these 12 words in order. This is the <strong>ONLY</strong> way
                   to recover your wallet. Never share it with anyone!
@@ -168,15 +169,15 @@ export function BackupVerificationModal({
 
               <div className="backup-instructions">
                 <div className="backup-instruction">
-                  <span className="backup-instruction-icon">✏️</span>
+                  <span className="backup-instruction-icon"><PenLine size={16} strokeWidth={1.75} /></span>
                   <span>Write each word on paper, numbered 1-12</span>
                 </div>
                 <div className="backup-instruction">
-                  <span className="backup-instruction-icon">🔒</span>
+                  <span className="backup-instruction-icon"><Lock size={16} strokeWidth={1.75} /></span>
                   <span>Store in a safe, private location</span>
                 </div>
                 <div className="backup-instruction">
-                  <span className="backup-instruction-icon">🚫</span>
+                  <span className="backup-instruction-icon"><ShieldOff size={16} strokeWidth={1.75} /></span>
                   <span>Never store digitally or share online</span>
                 </div>
               </div>
@@ -221,7 +222,7 @@ export function BackupVerificationModal({
 
                 {error && (
                   <div className="warning compact error" role="alert">
-                    <span className="warning-icon" aria-hidden="true">❌</span>
+                    <span className="warning-icon" aria-hidden="true"><XCircle size={16} strokeWidth={1.75} /></span>
                     <span className="warning-text">{error}</span>
                   </div>
                 )}
@@ -257,7 +258,7 @@ export function BackupVerificationModal({
             </div>
             <div className="modal-content compact">
               <div className="verification-success">
-                <div className="verification-success-icon">✓</div>
+                <div className="verification-success-icon"><CircleCheck size={48} strokeWidth={1.5} color="#22c55e" /></div>
                 <div className="verification-success-title">
                   Your backup is confirmed
                 </div>

@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend } from '../../adapters/walletAdapter'
@@ -291,7 +292,7 @@ export function SendModal({ onClose }: SendModalProps) {
 
           {sendError && (
             <div className="warning compact" role="alert">
-              <span className="warning-icon">⚠️</span>
+              <span className="warning-icon"><AlertTriangle size={16} strokeWidth={1.75} /></span>
               <span className="warning-text">{sendError}</span>
             </div>
           )}

@@ -1,3 +1,4 @@
+import { AlertTriangle, Unlock } from 'lucide-react'
 import type { LockedUTXO } from '../../services/wallet'
 import { feeFromBytes } from '../../services/wallet'
 
@@ -31,7 +32,7 @@ export function UnlockConfirmModal({ locks, onConfirm, onCancel, unlocking }: Un
         <div className="modal-content compact">
           {cantUnlock && (
             <div className="warning compact" style={{ marginBottom: 12 }} role="alert">
-              <span className="warning-icon" aria-hidden="true">⚠️</span>
+              <span className="warning-icon" aria-hidden="true"><AlertTriangle size={16} strokeWidth={1.75} /></span>
               <span className="warning-text">
                 Locked amount is less than the unlock fee. Cannot unlock.
               </span>
@@ -72,7 +73,7 @@ export function UnlockConfirmModal({ locks, onConfirm, onCancel, unlocking }: Un
               onClick={onConfirm}
               disabled={unlocking || cantUnlock}
             >
-              {unlocking ? 'Unlocking...' : cantUnlock ? 'Cannot Unlock' : `🔓 Unlock ${totalReceive.toLocaleString()} sats`}
+              {unlocking ? 'Unlocking...' : cantUnlock ? 'Cannot Unlock' : <><Unlock size={16} strokeWidth={1.75} style={{ marginRight: 4, verticalAlign: 'text-bottom' }} /> Unlock {totalReceive.toLocaleString()} sats</>}
             </button>
           </div>
         </div>

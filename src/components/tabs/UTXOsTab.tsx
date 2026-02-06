@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, memo, useEffect } from 'react'
+import { Flame, Snowflake, Clock, Lightbulb, ArrowUp, ArrowDown } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { toggleUtxoFrozen, getAllUTXOs } from '../../services/database'
@@ -65,7 +66,7 @@ const UTXORow = memo(function UTXORow({
           title={isFrozen ? 'Unfreeze UTXO' : 'Freeze UTXO'}
           aria-label={isFrozen ? 'Unfreeze this UTXO' : 'Freeze this UTXO'}
         >
-          {isFrozen ? '🔥' : '❄️'}
+          {isFrozen ? <Flame size={14} strokeWidth={1.75} /> : <Snowflake size={14} strokeWidth={1.75} />}
         </button>
       </div>
     </div>
@@ -250,10 +251,7 @@ export function UTXOsTab() {
       <div className="utxos-tab">
         <div className="empty-state">
           <div className="empty-icon" aria-hidden="true">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-tertiary)' }}>
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 6v6l4 2" />
-            </svg>
+            <Clock size={48} strokeWidth={1.5} style={{ color: 'var(--text-tertiary)' }} />
           </div>
           <div className="empty-title">No UTXOs</div>
           <div className="empty-text">
@@ -291,13 +289,13 @@ export function UTXOsTab() {
         </div>
         {stats.smallCount > 0 && (
           <div className="utxos-consolidate-tip">
-            <span className="tip-icon">💡</span>
+            <span className="tip-icon"><Lightbulb size={14} strokeWidth={1.75} /></span>
             <span>You have {stats.smallCount} small UTXOs (&lt;1000 sats). Consolidating can reduce future fees.</span>
           </div>
         )}
         {FEATURES.AUTO_CONSOLIDATION && stats.spendable > WALLET.CONSOLIDATION_THRESHOLD && (
           <div className="utxos-consolidate-tip">
-            <span className="tip-icon">💡</span>
+            <span className="tip-icon"><Lightbulb size={14} strokeWidth={1.75} /></span>
             <span>You have {stats.spendable} spendable UTXOs. Consider consolidating to reduce future transaction fees.</span>
           </div>
         )}
@@ -334,13 +332,13 @@ export function UTXOsTab() {
             className={`sort-btn ${sortField === 'amount' ? 'active' : ''}`}
             onClick={() => handleSort('amount')}
           >
-            Amount {sortField === 'amount' && (sortDirection === 'desc' ? '↓' : '↑')}
+            Amount {sortField === 'amount' && (sortDirection === 'desc' ? <ArrowDown size={12} strokeWidth={1.75} /> : <ArrowUp size={12} strokeWidth={1.75} />)}
           </button>
           <button
             className={`sort-btn ${sortField === 'basket' ? 'active' : ''}`}
             onClick={() => handleSort('basket')}
           >
-            Basket {sortField === 'basket' && (sortDirection === 'desc' ? '↓' : '↑')}
+            Basket {sortField === 'basket' && (sortDirection === 'desc' ? <ArrowDown size={12} strokeWidth={1.75} /> : <ArrowUp size={12} strokeWidth={1.75} />)}
           </button>
         </div>
       </div>

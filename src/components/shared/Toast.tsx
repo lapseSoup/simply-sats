@@ -1,3 +1,5 @@
+import { Check } from 'lucide-react'
+
 interface ToastItem {
   id: string
   message: string
@@ -15,7 +17,7 @@ export function Toast({ message, toasts }: ToastProps) {
       <div className="toast-stack">
         {toasts.map((toast) => (
           <div key={toast.id} className="copy-toast">
-            ✓ {toast.message}
+            <Check size={14} strokeWidth={2} /> {toast.message}
           </div>
         ))}
       </div>
@@ -26,6 +28,6 @@ export function Toast({ message, toasts }: ToastProps) {
   if (!message) return null
 
   return (
-    <div className="copy-toast">✓ {message}</div>
+    <div className="copy-toast"><Check size={14} strokeWidth={2} /> {message}</div>
   )
 }

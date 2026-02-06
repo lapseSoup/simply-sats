@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Shield, Zap, Gem, Lock, ChevronLeft, ChevronRight, Wallet, KeyRound } from 'lucide-react'
 import { SimplySatsLogo } from '../shared'
 import { PasswordInput } from '../shared/PasswordInput'
 import { useUI } from '../../contexts/UIContext'
@@ -15,22 +16,22 @@ type OnboardingStep = 'welcome' | 'features' | 'action'
 
 const features = [
   {
-    icon: '🔐',
+    icon: <Shield size={32} strokeWidth={1.75} />,
     title: 'Secure by Design',
     description: 'Your keys never leave your device. Industry-standard encryption protects your wallet.'
   },
   {
-    icon: '⚡',
+    icon: <Zap size={32} strokeWidth={1.75} />,
     title: 'BRC-100 Ready',
     description: 'Seamlessly connect with apps using the BRC-100 standard for BSV interactions.'
   },
   {
-    icon: '🎨',
+    icon: <Gem size={32} strokeWidth={1.75} />,
     title: 'Ordinals Support',
     description: 'View, manage, and transfer your 1Sat Ordinals collection with ease.'
   },
   {
-    icon: '🔒',
+    icon: <Lock size={32} strokeWidth={1.75} />,
     title: 'Time Locks',
     description: 'Lock your BSV for a specific block height. Perfect for savings and commitments.'
   }
@@ -239,7 +240,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                   </>
                 ) : (
                   <>
-                    <span aria-hidden="true">+</span>
+                    <Wallet size={16} strokeWidth={1.75} aria-hidden="true" />
                     Create New Wallet
                   </>
                 )}
@@ -249,7 +250,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                 onClick={onRestoreClick}
                 disabled={creating}
               >
-                <span aria-hidden="true">-</span>
+                <KeyRound size={16} strokeWidth={1.75} aria-hidden="true" />
                 Restore Existing Wallet
               </button>
             </div>
@@ -269,7 +270,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
             onClick={handlePrev}
             aria-label="Previous"
           >
-            ← Back
+            <ChevronLeft size={16} strokeWidth={1.75} /> Back
           </button>
         )}
         <div className="nav-spacer" />
@@ -287,7 +288,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
               onClick={handleNext}
               aria-label="Next"
             >
-              Next →
+              Next <ChevronRight size={16} strokeWidth={1.75} />
             </button>
           </>
         )}

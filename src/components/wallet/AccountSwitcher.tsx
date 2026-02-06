@@ -6,6 +6,7 @@
  */
 
 import { useState, useRef, useEffect, memo, useCallback, useMemo } from 'react'
+import { Check, ChevronDown, Plus, Download, Settings } from 'lucide-react'
 import type { Account } from '../../services/accounts'
 
 // Memoized account item to prevent unnecessary re-renders
@@ -39,17 +40,7 @@ const AccountItem = memo(function AccountItem({
         )}
       </div>
       {isActive && (
-        <svg
-          className="check-icon"
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="M3 8L6 11L13 4" />
-        </svg>
+        <Check className="check-icon" size={16} strokeWidth={2} />
       )}
     </button>
   )
@@ -150,19 +141,7 @@ export function AccountSwitcher({
           {activeAccount?.name.charAt(0).toUpperCase() || 'A'}
         </div>
         <span className="account-name">{activeAccount?.name || 'Account 1'}</span>
-        <svg
-          className={`dropdown-arrow ${isOpen ? 'open' : ''}`}
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M3 4.5L6 7.5L9 4.5" />
-        </svg>
+        <ChevronDown className={`dropdown-arrow ${isOpen ? 'open' : ''}`} size={12} strokeWidth={2} />
       </button>
 
       {isOpen && (
@@ -185,194 +164,27 @@ export function AccountSwitcher({
               className="account-action-button"
               onClick={handleCreateClick}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M8 3V13M3 8H13" />
-              </svg>
+              <Plus size={16} strokeWidth={1.75} />
               Add Account
             </button>
             <button
               className="account-action-button"
               onClick={handleImportClick}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 8L8 13L13 8M8 2V13" />
-              </svg>
+              <Download size={16} strokeWidth={1.75} />
               Import Account
             </button>
             <button
               className="account-action-button"
               onClick={handleManageClick}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="8" cy="8" r="2" />
-                <path d="M8 1V3M8 13V15M1 8H3M13 8H15M2.5 2.5L4 4M12 12L13.5 13.5M2.5 13.5L4 12M12 4L13.5 2.5" />
-              </svg>
+              <Settings size={16} strokeWidth={1.75} />
               Manage Accounts
             </button>
           </div>
         </div>
       )}
 
-      <style>{`
-        .account-switcher {
-          position: relative;
-        }
-
-        .account-switcher-button {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 8px 4px 4px;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border);
-          border-radius: var(--radius-sm);
-          cursor: pointer;
-          transition: all 0.2s ease;
-          height: 30px;
-        }
-
-        .account-switcher-button:hover {
-          background: var(--bg-tertiary);
-          border-color: var(--border-light);
-        }
-
-        .account-avatar {
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: var(--accent);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 10px;
-          font-weight: 600;
-          color: white;
-          flex-shrink: 0;
-        }
-
-        .account-name {
-          font-size: 12px;
-          font-weight: 500;
-          color: var(--text-primary);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: 120px;
-        }
-
-        .dropdown-arrow {
-          transition: transform 0.15s ease;
-          color: var(--text-tertiary);
-          flex-shrink: 0;
-        }
-
-        .dropdown-arrow.open {
-          transform: rotate(180deg);
-        }
-
-        .account-dropdown {
-          position: absolute;
-          top: calc(100% + 8px);
-          left: 0;
-          min-width: 240px;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border);
-          border-radius: var(--radius-lg);
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-          z-index: 100;
-          overflow: hidden;
-        }
-
-        .account-list {
-          max-height: 240px;
-          overflow-y: auto;
-          padding: 8px;
-        }
-
-        .account-item {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          width: 100%;
-          padding: 10px 12px;
-          background: transparent;
-          border: none;
-          border-radius: var(--radius-md);
-          cursor: pointer;
-          transition: background 0.15s ease;
-          text-align: left;
-        }
-
-        .account-item:hover {
-          background: var(--bg-tertiary);
-        }
-
-        .account-item.active {
-          background: var(--bg-elevated);
-        }
-
-        .account-item-info {
-          display: flex;
-          align-items: baseline;
-          flex: 1;
-          min-width: 0;
-          gap: 8px;
-        }
-
-        .account-item-name {
-          font-size: 13px;
-          font-weight: 500;
-          color: var(--text-primary);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .account-item-balance {
-          font-size: 11px;
-          color: var(--text-secondary);
-          white-space: nowrap;
-          font-weight: 500;
-          margin-left: auto;
-        }
-
-        .check-icon {
-          color: var(--accent);
-          flex-shrink: 0;
-        }
-
-        .account-actions {
-          padding: 8px;
-          border-top: 1px solid var(--border);
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .account-action-button {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          width: 100%;
-          padding: 8px 12px;
-          background: transparent;
-          border: none;
-          border-radius: var(--radius-sm);
-          cursor: pointer;
-          font-size: 13px;
-          color: var(--text-secondary);
-          transition: all 0.15s ease;
-        }
-
-        .account-action-button:hover {
-          background: var(--bg-tertiary);
-          color: var(--text-primary);
-        }
-
-        .account-action-button svg {
-          flex-shrink: 0;
-        }
-      `}</style>
     </div>
   )
 }

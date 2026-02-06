@@ -1,3 +1,4 @@
+import { AlertTriangle } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 
 interface MnemonicModalProps {
@@ -16,7 +17,7 @@ export function MnemonicModal({ mnemonic, onConfirm }: MnemonicModalProps) {
     >
       <div className="modal-content compact">
         <div className="warning compact" role="alert">
-          <span className="warning-icon" aria-hidden="true">⚠️</span>
+          <span className="warning-icon" aria-hidden="true"><AlertTriangle size={16} strokeWidth={1.75} /></span>
           <span className="warning-text">
             Write down these 12 words and keep them safe. This is the ONLY way to recover your wallet!
           </span>

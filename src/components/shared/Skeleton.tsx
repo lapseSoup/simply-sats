@@ -72,26 +72,6 @@ export function BalanceSkeleton() {
     <div className="balance-skeleton">
       <Skeleton width={180} height={48} variant="rounded" className="balance-main" />
       <Skeleton width={100} height={20} variant="rounded" className="balance-usd" />
-      <style>{`
-        .balance-skeleton {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 8px;
-          padding: 16px 0;
-        }
-        .balance-main {
-          background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 50%, var(--bg-tertiary) 75%);
-          background-size: 200% 100%;
-          animation: skeleton-shimmer 1.5s ease-in-out infinite;
-        }
-        .balance-usd {
-          background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 50%, var(--bg-tertiary) 75%);
-          background-size: 200% 100%;
-          animation: skeleton-shimmer 1.5s ease-in-out infinite;
-          animation-delay: 0.1s;
-        }
-      `}</style>
     </div>
   )
 }
@@ -108,20 +88,6 @@ export function ListItemSkeleton() {
         <Skeleton width="40%" height={12} />
       </div>
       <Skeleton width={60} height={16} />
-      <style>{`
-        .list-item-skeleton {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px 16px;
-        }
-        .list-item-skeleton-content {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-      `}</style>
     </div>
   )
 }
@@ -133,12 +99,6 @@ export function OrdinalGridSkeleton() {
   return (
     <div className="ordinal-grid-skeleton">
       <Skeleton width="100%" height={0} style={{ paddingBottom: '100%' }} variant="rounded" />
-      <style>{`
-        .ordinal-grid-skeleton {
-          border-radius: 8px;
-          overflow: hidden;
-        }
-      `}</style>
     </div>
   )
 }
@@ -152,14 +112,6 @@ export function OrdinalsGridSkeleton({ count = 6 }: { count?: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <OrdinalGridSkeleton key={i} />
       ))}
-      <style>{`
-        .ordinals-grid-skeleton {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-          gap: 12px;
-          padding: 16px;
-        }
-      `}</style>
     </div>
   )
 }
@@ -192,26 +144,6 @@ export function TokenRowSkeleton() {
         <Skeleton width={70} height={14} />
         <Skeleton width={50} height={12} />
       </div>
-      <style>{`
-        .token-row-skeleton {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px 16px;
-        }
-        .token-row-skeleton-content {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        .token-row-skeleton-balance {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          gap: 4px;
-        }
-      `}</style>
     </div>
   )
 }
@@ -244,25 +176,6 @@ export function LockItemSkeleton() {
         <Skeleton width={120} height={12} />
         <Skeleton width={80} height={12} />
       </div>
-      <style>{`
-        .lock-item-skeleton {
-          padding: 16px;
-          border-radius: 12px;
-          background: var(--bg-secondary);
-        }
-        .lock-item-skeleton-header {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 12px;
-        }
-        .lock-progress {
-          margin-bottom: 12px;
-        }
-        .lock-item-skeleton-footer {
-          display: flex;
-          justify-content: space-between;
-        }
-      `}</style>
     </div>
   )
 }
@@ -276,32 +189,6 @@ export function LocksListSkeleton({ count = 2 }: { count?: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <LockItemSkeleton key={i} />
       ))}
-      <style>{`
-        .locks-list-skeleton {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          padding: 16px;
-        }
-      `}</style>
     </div>
   )
 }
-
-// Global skeleton styles - add to index.css or import separately
-export const skeletonStyles = `
-  .skeleton {
-    background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-elevated) 50%, var(--bg-tertiary) 75%);
-    background-size: 200% 100%;
-    animation: skeleton-shimmer 1.5s ease-in-out infinite;
-  }
-
-  @keyframes skeleton-shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
-  }
-`

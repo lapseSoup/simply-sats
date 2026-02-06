@@ -1,4 +1,5 @@
 import { useState, useEffect, memo, useCallback, useMemo } from 'react'
+import { Lock, Unlock, Sparkles } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import type { LockedUTXO } from '../../services/wallet'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -116,19 +117,11 @@ function ProgressRing({ progress, size = 48, strokeWidth = 4, isUnlockable = fal
         />
       </svg>
       <div className="progress-ring-content">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          {isUnlockable ? (
-            <>
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-            </>
-          ) : (
-            <>
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </>
-          )}
-        </svg>
+        {isUnlockable ? (
+          <Unlock size={20} strokeWidth={2} />
+        ) : (
+          <Lock size={20} strokeWidth={2} />
+        )}
       </div>
     </div>
   )
@@ -308,7 +301,7 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
           </div>
           <div className="lock-details">
             {isUnlockable ? (
-              <span className="unlock-ready-badge">✨ Ready to unlock!</span>
+              <span className="unlock-ready-badge"><Sparkles size={12} strokeWidth={1.75} /> Ready to unlock!</span>
             ) : showDetailedCountdown ? (
               <div className="countdown-timer">
                 <div className="countdown-unit">
@@ -356,7 +349,7 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
                   Unlocking...
                 </>
               ) : (
-                <>🔓 Unlock</>
+                <><Unlock size={14} strokeWidth={1.75} /> Unlock</>
               )}
             </button>
           ) : (
