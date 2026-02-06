@@ -17,7 +17,7 @@ interface AccountModalProps {
   mode: ModalMode
   accounts?: Account[]
   activeAccountId?: number | null
-  onCreateAccount: (name: string) => Promise<string | null> // Returns mnemonic
+  onCreateAccount: (name: string) => Promise<boolean> // Returns success (accounts derived from same seed)
   onImportAccount: (name: string, mnemonic: string) => Promise<boolean>
   onDeleteAccount?: (accountId: number) => Promise<boolean>
   onRenameAccount?: (accountId: number, name: string) => Promise<void>
@@ -39,10 +39,9 @@ export function AccountModal({
   const [mode, setMode] = useState<ModalMode>(initialMode)
   const [accountName, setAccountName] = useState('')
   const [mnemonic, setMnemonic] = useState('')
-  const [generatedMnemonic, setGeneratedMnemonic] = useState<string | null>(null)
+  const [accountCreated, setAccountCreated] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editName, setEditName] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
@@ -50,10 +49,9 @@ export function AccountModal({
   const resetState = () => {
     setAccountName('')
     setMnemonic('')
-    setGeneratedMnemonic(null)
+    setAccountCreated(false)
     setError('')
     setLoading(false)
-    setCopied(false)
     setEditingId(null)
     setEditName('')
     setConfirmDelete(null)
@@ -74,9 +72,9 @@ export function AccountModal({
     setError('')
 
     try {
-      const newMnemonic = await onCreateAccount(accountName.trim())
-      if (newMnemonic) {
-        setGeneratedMnemonic(newMnemonic)
+      const success = await onCreateAccount(accountName.trim())
+      if (success) {
+        setAccountCreated(true)
       } else {
         setError('Failed to create account')
       }
@@ -116,14 +114,6 @@ export function AccountModal({
     }
   }
 
-  const handleCopyMnemonic = async () => {
-    if (generatedMnemonic) {
-      await navigator.clipboard.writeText(generatedMnemonic)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
-  }
-
   const handleDeleteAccount = async (accountId: number) => {
     if (!onDeleteAccount) return
 
@@ -153,7 +143,7 @@ export function AccountModal({
   }
 
   const renderCreateMode = () => {
-    if (generatedMnemonic) {
+    if (accountCreated) {
       return (
         <div className="account-modal-content">
           <div className="success-icon">
@@ -163,30 +153,16 @@ export function AccountModal({
             </svg>
           </div>
           <h3>Account Created!</h3>
-          <p className="mnemonic-warning">
-            Write down these 12 words and store them safely. This is the only way to recover your account.
+          <p className="modal-description">
+            Your new account has been created and is ready to use.
+            It shares the same recovery phrase as your other accounts.
           </p>
-          <div className="mnemonic-display">
-            {generatedMnemonic.split(' ').map((word, i) => (
-              <div key={i} className="mnemonic-word">
-                <span className="word-number">{i + 1}</span>
-                <span className="word-text">{word}</span>
-              </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="copy-button"
-            onClick={handleCopyMnemonic}
-          >
-            {copied ? 'Copied!' : 'Copy to Clipboard'}
-          </button>
           <button
             type="button"
             className="primary-button"
             onClick={handleClose}
           >
-            I've Saved My Recovery Phrase
+            Done
           </button>
         </div>
       )
@@ -194,9 +170,10 @@ export function AccountModal({
 
     return (
       <div className="account-modal-content">
-        <h3>Create New Account</h3>
+        <h3>Add Account</h3>
         <p className="modal-description">
-          Create a new account with its own wallet and addresses.
+          Create a new account derived from your wallet.
+          All accounts share the same recovery phrase.
         </p>
 
         <div className="form-group">
@@ -224,7 +201,7 @@ export function AccountModal({
             onClick={handleCreateAccount}
             disabled={loading || !accountName.trim()}
           >
-            {loading ? 'Creating...' : 'Create Account'}
+            {loading ? 'Creating...' : 'Add Account'}
           </button>
         </div>
       </div>
@@ -557,62 +534,6 @@ export function AccountModal({
           display: flex;
           justify-content: center;
           margin-bottom: 0.5rem;
-        }
-
-        .mnemonic-warning {
-          background: rgba(234, 179, 8, 0.1);
-          border: 1px solid rgba(234, 179, 8, 0.3);
-          border-radius: var(--radius-md);
-          padding: 0.875rem;
-          font-size: 0.875rem;
-          color: #eab308;
-          line-height: 1.5;
-        }
-
-        .mnemonic-display {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 0.5rem;
-          background: var(--bg-tertiary);
-          border-radius: var(--radius-lg);
-          padding: 1rem;
-        }
-
-        .mnemonic-word {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.5rem 0.625rem;
-          background: var(--bg-elevated);
-          border-radius: var(--radius-sm);
-        }
-
-        .word-number {
-          font-size: 0.75rem;
-          color: var(--text-tertiary);
-          min-width: 1.25rem;
-        }
-
-        .word-text {
-          font-family: var(--font-mono);
-          font-size: 0.875rem;
-          color: var(--text-primary);
-        }
-
-        .copy-button {
-          padding: 0.625rem 1rem;
-          background: var(--bg-tertiary);
-          border: 1px solid var(--border);
-          border-radius: var(--radius-md);
-          color: var(--text-primary);
-          font-size: 0.875rem;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .copy-button:hover {
-          background: var(--bg-elevated);
-          border-color: var(--border-light);
         }
 
         .account-list-manage {

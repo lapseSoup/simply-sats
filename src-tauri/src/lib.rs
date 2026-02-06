@@ -171,8 +171,8 @@ fn include_migrations() -> Vec<Migration> {
         },
         Migration {
             version: 2,
-            description: "Add amount column to transactions",
-            sql: include_str!("../migrations/002_transaction_amount.sql"),
+            description: "Derived addresses, address column, and transaction amount",
+            sql: include_str!("../migrations/002_consolidated.sql"),
             kind: MigrationKind::Up,
         },
         Migration {
@@ -195,6 +195,18 @@ fn include_migrations() -> Vec<Migration> {
         },
         Migration {
             version: 6,
+            description: "UTXO pending/spent status tracking",
+            sql: include_str!("../migrations/006_utxo_pending_status.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 7,
+            description: "Add timestamps to existing tables",
+            sql: include_str!("../migrations/007_add_timestamps.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 8,
             description: "Audit log for security monitoring",
             sql: include_str!("../migrations/008_audit_log.sql"),
             kind: MigrationKind::Up,

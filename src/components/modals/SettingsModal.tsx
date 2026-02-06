@@ -18,6 +18,7 @@ import { exportDatabase, importDatabase, type DatabaseBackup } from '../../servi
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { TestRecoveryModal } from './TestRecoveryModal'
+import { BackupRecoveryModal } from './BackupRecoveryModal'
 
 // SVG Icons for Settings
 const iconProps = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -79,6 +80,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false)
   const [showTestRecovery, setShowTestRecovery] = useState(false)
+  const [showBackupRecovery, setShowBackupRecovery] = useState(false)
   const [showImportConfirm, setShowImportConfirm] = useState<{ utxos: number; transactions: number } | null>(null)
   const [showKeysWarning, setShowKeysWarning] = useState(false)
   const [showMnemonicWarning, setShowMnemonicWarning] = useState(false)
@@ -475,6 +477,16 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
               </div>
+              <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowBackupRecovery(true)} onKeyDown={handleKeyDown(() => setShowBackupRecovery(true))} aria-label="Recover from backup">
+                <div className="settings-row-left">
+                  <div className="settings-row-icon" aria-hidden="true"><DownloadIcon /></div>
+                  <div className="settings-row-content">
+                    <div className="settings-row-label">Recover from Backup</div>
+                    <div className="settings-row-value">Import old wallet accounts</div>
+                  </div>
+                </div>
+                <span className="settings-row-arrow" aria-hidden="true"><ChevronRightIcon /></span>
+              </div>
             </div>
           </div>
 
@@ -689,6 +701,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <TestRecoveryModal
           expectedAddress={wallet.walletAddress}
           onClose={() => setShowTestRecovery(false)}
+        />
+      )}
+
+      {/* Backup Recovery Modal */}
+      {showBackupRecovery && (
+        <BackupRecoveryModal
+          onClose={() => setShowBackupRecovery(false)}
         />
       )}
 

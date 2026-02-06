@@ -5,6 +5,7 @@
 export {
   deriveKeysFromPath,
   deriveWalletKeys,
+  deriveWalletKeysForAccount,
   keysFromWif,
   WALLET_PATHS
 } from './keyDerivation'

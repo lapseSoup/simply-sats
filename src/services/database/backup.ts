@@ -210,21 +210,67 @@ export async function clearDatabase(): Promise<void> {
   await database.execute('DELETE FROM transactions')
   await database.execute('DELETE FROM baskets')
   await database.execute('DELETE FROM sync_state')
-  // Also clear derived addresses
+
+  // Clear accounts and settings
+  try {
+    await database.execute('DELETE FROM account_settings')
+  } catch (_e) {
+    // Table may not exist yet
+  }
+  try {
+    await database.execute('DELETE FROM accounts')
+  } catch (_e) {
+    // Table may not exist yet
+  }
+
+  // Clear derived addresses
   try {
     await database.execute('DELETE FROM derived_addresses')
   } catch (_e) {
     // Table may not exist yet
   }
 
-  // Also clear contacts
+  // Clear contacts
   try {
     await database.execute('DELETE FROM contacts')
   } catch (_e) {
     // Table may not exist yet
   }
 
-  dbLogger.info('Database cleared')
+  // Clear tokens
+  try {
+    await database.execute('DELETE FROM token_balances')
+  } catch (_e) {
+    // Table may not exist yet
+  }
+  try {
+    await database.execute('DELETE FROM tokens')
+  } catch (_e) {
+    // Table may not exist yet
+  }
+
+  // Clear connected apps
+  try {
+    await database.execute('DELETE FROM connected_apps')
+  } catch (_e) {
+    // Table may not exist yet
+  }
+
+  // Clear certificates
+  try {
+    await database.execute('DELETE FROM certificates')
+  } catch (_e) {
+    // Table may not exist yet
+  }
+
+  // Clear audit log
+  try {
+    await database.execute('DELETE FROM audit_log')
+  } catch (_e) {
+    // Table may not exist yet
+  }
+
+  dbLogger.info('Database cleared completely')
 }
 
 /**

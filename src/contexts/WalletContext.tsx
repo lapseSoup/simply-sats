@@ -26,6 +26,7 @@ import {
   ensureContactsTable,
   getContacts,
   getDerivedAddresses,
+  clearDatabase,
   type Contact,
   type UTXO as DatabaseUTXO
 } from '../services/database'
@@ -575,6 +576,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       await migrateToMultiAccount(keys, password)
       await refreshAccounts()
       setWallet({ ...keys })
+      setSessionPassword(password) // Store password for session operations (account creation)
       // Audit log wallet creation
       audit.walletCreated()
       return keys.mnemonic || null
@@ -596,6 +598,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       await migrateToMultiAccount({ ...keys, mnemonic: mnemonic.trim() }, password)
       await refreshAccounts()
       setWallet({ ...keys, mnemonic: mnemonic.trim() })
+      setSessionPassword(password) // Store password for session operations (account creation)
       // Audit log wallet restoration
       audit.walletRestored()
       return true
@@ -625,7 +628,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [setWallet, refreshAccounts])
 
   const handleDeleteWallet = useCallback(async () => {
+    // Clear wallet from secure storage
     await clearWallet()
+    // Clear all database tables (UTXOs, transactions, accounts, etc.)
+    await clearDatabase()
+    // Clear cached balances from localStorage
+    localStorage.removeItem('simply_sats_cached_balance')
+    localStorage.removeItem('simply_sats_cached_ord_balance')
+    // Reset all state
     setWallet(null)
     setBalance(0)
     setOrdBalance(0)
@@ -633,6 +643,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setLocks([])
     setTxHistory([])
     setConnectedApps([])
+    walletLogger.info('Wallet deleted and all data cleared')
   }, [setWallet, setBalance, setOrdBalance, setOrdinals, setLocks, setTxHistory])
 
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<{ success: boolean; txid?: string; error?: string }> => {

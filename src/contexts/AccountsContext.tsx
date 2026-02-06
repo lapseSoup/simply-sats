@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { WalletKeys } from '../services/wallet'
-import { createWallet, restoreWallet } from '../services/wallet'
+import { restoreWallet } from '../services/wallet'
+import { deriveWalletKeysForAccount } from '../domain/wallet'
 import {
   type Account,
   getAllAccounts,
@@ -113,15 +114,47 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     }
   }, [accounts, refreshAccounts])
 
-  // Create new account - returns keys if successful
+  // Create new account - derives from the same mnemonic with new account index
   const createNewAccount = useCallback(async (name: string, password: string): Promise<WalletKeys | null> => {
     try {
-      const keys = createWallet()
+      // Get all accounts sorted by ID to find the original (first created) account
+      const allAccounts = await getAllAccounts()
+      if (allAccounts.length === 0) {
+        accountLogger.error('No existing account to derive from')
+        return null
+      }
+
+      // Sort by ID to get the first account (lowest ID = first created = index 0)
+      const sortedAccounts = [...allAccounts].sort((a, b) => (a.id || 0) - (b.id || 0))
+      const firstAccount = sortedAccounts[0]
+
+      accountLogger.debug('Getting keys from first account', {
+        accountId: firstAccount.id,
+        name: firstAccount.name,
+        totalAccounts: allAccounts.length
+      })
+
+      const firstAccountKeys = await getAccountKeys(firstAccount, password)
+      if (!firstAccountKeys) {
+        accountLogger.error('Invalid password or failed to get keys from first account')
+        return null
+      }
+
+      // Derive keys for the new account using the next available index
+      // Account indices: 0 (first), 1, 2, 3, etc.
+      const newAccountIndex = allAccounts.length
+      accountLogger.debug('Deriving keys for new account', { newAccountIndex })
+
+      const keys = deriveWalletKeysForAccount(firstAccountKeys.mnemonic, newAccountIndex)
+
       const accountId = await createAccount(name, keys, password)
-      if (!accountId) return null
+      if (!accountId) {
+        accountLogger.error('Failed to create account in database')
+        return null
+      }
 
       await refreshAccounts()
-      accountLogger.info(`Created new account: ${name}`)
+      accountLogger.info(`Created derived account: ${name} at index ${newAccountIndex}`)
       return keys
     } catch (e) {
       accountLogger.error('Failed to create account', e)

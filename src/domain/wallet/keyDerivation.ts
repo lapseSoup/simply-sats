@@ -109,6 +109,60 @@ export function deriveWalletKeys(mnemonic: string): WalletKeys {
 }
 
 /**
+ * Derive wallet keys for a specific account index.
+ *
+ * Uses the account index in the derivation path to create unique addresses
+ * for each account while sharing the same master mnemonic.
+ *
+ * Derivation paths with account index N:
+ * - wallet:   m/44'/236'/N'/1/0
+ * - ordinals: m/44'/236'/(N+1)'/0/0  (offset by 1 to avoid collision)
+ * - identity: m/0'/236'/N'/0/0
+ *
+ * Account 0 matches the standard WALLET_PATHS.yours paths exactly.
+ *
+ * @param mnemonic - A valid BIP-39 mnemonic phrase (12 or 24 words)
+ * @param accountIndex - Account index (0, 1, 2, ...) for derivation path
+ * @returns Complete WalletKeys structure with all derived keys for the account
+ *
+ * @example
+ * ```typescript
+ * // First account (index 0) - same as deriveWalletKeys()
+ * const account0 = deriveWalletKeysForAccount('abandon...about', 0)
+ *
+ * // Second account (index 1) - different addresses, same seed
+ * const account1 = deriveWalletKeysForAccount('abandon...about', 1)
+ * ```
+ */
+export function deriveWalletKeysForAccount(mnemonic: string, accountIndex: number): WalletKeys {
+  // Derive paths with account index
+  // wallet:   m/44'/236'/accountIndex'/1/0
+  // ordinals: m/44'/236'/(accountIndex*2+1)'/0/0  - separate from wallet
+  // identity: m/0'/236'/accountIndex'/0/0
+  const walletPath = `m/44'/236'/${accountIndex}'/1/0`
+  const ordinalsPath = `m/44'/236'/${accountIndex * 2 + 1}'/0/0`
+  const identityPath = `m/0'/236'/${accountIndex}'/0/0`
+
+  const wallet = deriveKeysFromPath(mnemonic, walletPath)
+  const ord = deriveKeysFromPath(mnemonic, ordinalsPath)
+  const identity = deriveKeysFromPath(mnemonic, identityPath)
+
+  return {
+    mnemonic,
+    walletType: 'yours',
+    walletWif: wallet.wif,
+    walletAddress: wallet.address,
+    walletPubKey: wallet.pubKey,
+    ordWif: ord.wif,
+    ordAddress: ord.address,
+    ordPubKey: ord.pubKey,
+    identityWif: identity.wif,
+    identityAddress: identity.address,
+    identityPubKey: identity.pubKey
+  }
+}
+
+/**
  * Generate a key pair from a WIF (Wallet Import Format) string.
  *
  * Use this for importing keys from other wallets that export

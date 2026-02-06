@@ -114,7 +114,7 @@ interface AppModalsProps {
   accountModalMode: AccountModalMode
   accounts: Account[]
   activeAccountId: number | null
-  onCreateAccount: (name: string) => Promise<string | null>
+  onCreateAccount: (name: string) => Promise<boolean>
   onImportAccount: (name: string, mnemonic: string) => Promise<boolean>
   onDeleteAccount: (id: number) => Promise<boolean>
   onRenameAccount: (id: number, name: string) => Promise<void>

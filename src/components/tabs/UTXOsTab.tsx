@@ -73,7 +73,7 @@ const UTXORow = memo(function UTXORow({
 })
 
 export function UTXOsTab() {
-  const { fetchData } = useWallet()
+  const { fetchData, activeAccountId } = useWallet()
   const { formatUSD } = useUI()
 
   const [selectedUtxos, setSelectedUtxos] = useState<Set<string>>(new Set())
@@ -85,18 +85,18 @@ export function UTXOsTab() {
   const [loadingAll, setLoadingAll] = useState(true) // Start as loading
   const [consolidateUtxos, setConsolidateUtxos] = useState<DatabaseUTXO[] | null>(null)
 
-  // Load all UTXOs including locked ones
+  // Load all UTXOs including locked ones for the active account
   const loadAllUtxos = useCallback(async () => {
     setLoadingAll(true)
     try {
-      const all = await getAllUTXOs()
+      const all = await getAllUTXOs(activeAccountId ?? undefined)
       setAllUtxos(all.filter(u => !u.spentAt)) // Only show unspent
     } catch (e) {
       uiLogger.error('Failed to load all UTXOs', e)
     } finally {
       setLoadingAll(false)
     }
-  }, [])
+  }, [activeAccountId])
 
   // Load UTXOs on mount
   useEffect(() => {

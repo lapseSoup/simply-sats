@@ -1,13 +1,14 @@
 /**
  * CreateAccountForm Component
  *
- * Form for creating a new wallet account with mnemonic generation.
+ * Form for creating a new derived wallet account.
+ * Accounts are derived from the same master seed, so no new mnemonic is shown.
  */
 
 import { useState, useCallback, memo } from 'react'
 
 interface CreateAccountFormProps {
-  onCreateAccount: (name: string) => Promise<string | null>
+  onCreateAccount: (name: string) => Promise<boolean>
   onClose: () => void
 }
 
@@ -16,10 +17,9 @@ export const CreateAccountForm = memo(function CreateAccountForm({
   onClose
 }: CreateAccountFormProps) {
   const [accountName, setAccountName] = useState('')
-  const [generatedMnemonic, setGeneratedMnemonic] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   const handleCreate = useCallback(async () => {
     if (!accountName.trim()) {
@@ -31,9 +31,9 @@ export const CreateAccountForm = memo(function CreateAccountForm({
     setError('')
 
     try {
-      const newMnemonic = await onCreateAccount(accountName.trim())
-      if (newMnemonic) {
-        setGeneratedMnemonic(newMnemonic)
+      const created = await onCreateAccount(accountName.trim())
+      if (created) {
+        setSuccess(true)
       } else {
         setError('Failed to create account')
       }
@@ -44,15 +44,7 @@ export const CreateAccountForm = memo(function CreateAccountForm({
     }
   }, [accountName, onCreateAccount])
 
-  const handleCopyMnemonic = useCallback(async () => {
-    if (generatedMnemonic) {
-      await navigator.clipboard.writeText(generatedMnemonic)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
-  }, [generatedMnemonic])
-
-  if (generatedMnemonic) {
+  if (success) {
     return (
       <div className="account-modal-content">
         <div className="success-icon">
@@ -62,30 +54,16 @@ export const CreateAccountForm = memo(function CreateAccountForm({
           </svg>
         </div>
         <h3>Account Created!</h3>
-        <p className="mnemonic-warning">
-          Write down these 12 words and store them safely. This is the only way to recover your account.
+        <p className="modal-description">
+          Your new account has been created and is ready to use.
+          It shares the same recovery phrase as your other accounts.
         </p>
-        <div className="mnemonic-display">
-          {generatedMnemonic.split(' ').map((word, i) => (
-            <div key={i} className="mnemonic-word">
-              <span className="word-number">{i + 1}</span>
-              <span className="word-text">{word}</span>
-            </div>
-          ))}
-        </div>
-        <button
-          type="button"
-          className="copy-button"
-          onClick={handleCopyMnemonic}
-        >
-          {copied ? 'Copied!' : 'Copy to Clipboard'}
-        </button>
         <button
           type="button"
           className="primary-button"
           onClick={onClose}
         >
-          I've Saved My Recovery Phrase
+          Done
         </button>
       </div>
     )
@@ -93,9 +71,10 @@ export const CreateAccountForm = memo(function CreateAccountForm({
 
   return (
     <div className="account-modal-content">
-      <h3>Create New Account</h3>
+      <h3>Add Account</h3>
       <p className="modal-description">
-        Create a new account with its own wallet and addresses.
+        Create a new account derived from your wallet.
+        All accounts share the same recovery phrase.
       </p>
 
       <div className="form-group">
@@ -123,7 +102,7 @@ export const CreateAccountForm = memo(function CreateAccountForm({
           onClick={handleCreate}
           disabled={loading || !accountName.trim()}
         >
-          {loading ? 'Creating...' : 'Create Account'}
+          {loading ? 'Creating...' : 'Add Account'}
         </button>
       </div>
     </div>

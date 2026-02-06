@@ -175,12 +175,8 @@ function WalletApp() {
     setModal('account')
   }
 
-  const handleAccountCreate = async (name: string): Promise<string | null> => {
-    const success = await createNewAccount(name)
-    if (success && wallet?.mnemonic) {
-      return wallet.mnemonic
-    }
-    return null
+  const handleAccountCreate = async (name: string): Promise<boolean> => {
+    return await createNewAccount(name)
   }
 
   const handleAccountImport = async (name: string, mnemonic: string): Promise<boolean> => {
