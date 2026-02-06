@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
@@ -160,6 +159,23 @@ impl SessionState {
 }
 
 pub type SharedSessionState = Arc<Mutex<SessionState>>;
+
+/// Get the platform-specific app data directory before Tauri is initialized.
+/// Matches Tauri's default path resolution for the app identifier.
+fn get_app_data_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        dirs::data_dir().map(|d| d.join("com.simplysats.wallet"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        dirs::data_dir().map(|d| d.join("com.simplysats.wallet"))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        dirs::data_dir().map(|d| d.join("com.simplysats.wallet"))
+    }
+}
 
 /// Pre-initialize the database for fresh installs.
 ///
@@ -375,6 +391,13 @@ async fn generate_csrf_nonce(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Pre-initialize database for fresh installs BEFORE Tauri builder runs.
+    // Must happen before tauri_plugin_sql plugin init, which runs migrations.
+    // Uses platform-specific app data directory since Tauri isn't initialized yet.
+    if let Some(app_data_dir) = get_app_data_dir() {
+        pre_init_database(&app_data_dir);
+    }
+
     let brc100_state: SharedBRC100State = Arc::new(Mutex::new(BRC100State::default()));
     let brc100_state_for_server = brc100_state.clone();
 
@@ -413,12 +436,6 @@ pub fn run() {
             secure_storage_migrate
         ])
         .setup(move |app| {
-            // Pre-initialize database for fresh installs before frontend triggers migrations
-            // This avoids tauri_plugin_sql hanging on DML in migration files
-            if let Some(app_data_dir) = app.path().app_data_dir().ok() {
-                pre_init_database(&app_data_dir);
-            }
-
             let app_handle = app.handle().clone();
             let brc100_state = brc100_state_for_server;
             let session_state = session_state_for_server;
