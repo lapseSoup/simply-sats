@@ -79,12 +79,15 @@ export async function getCurrentBlockHeight(): Promise<number> {
  * Fetch UTXOs for an address using infrastructure layer
  * Returns UTXOs in the format needed by the sync logic
  */
-async function fetchUtxosFromWoc(address: string): Promise<{ txid: string; vout: number; satoshis: number }[]> {
-  // WocClient handles timeout, retry, and error handling internally
-  // It returns empty array on errors for backward compatibility
-  const utxos = await getWocClient().getUtxos(address)
-  // Map to the format needed by sync logic (already compatible)
-  return utxos.map(u => ({
+async function fetchUtxosFromWoc(address: string): Promise<{ txid: string; vout: number; satoshis: number }[] | null> {
+  // Use Safe variant to distinguish "zero UTXOs" from "API error"
+  // Returns null on error so callers can skip destructive operations (marking UTXOs spent)
+  const result = await getWocClient().getUtxosSafe(address)
+  if (!result.success) {
+    syncLogger.error(`[SYNC] WoC UTXO fetch failed for ${address.slice(0,12)}...: ${result.error.message}`)
+    return null
+  }
+  return result.data.map(u => ({
     txid: u.txid,
     vout: u.vout,
     satoshis: u.satoshis
@@ -116,6 +119,19 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
   // Fetch current UTXOs from WhatsOnChain
   const wocUtxos = await fetchUtxosFromWoc(address)
+
+  // If API call failed, skip this address entirely to avoid marking UTXOs as spent
+  if (wocUtxos === null) {
+    syncLogger.warn(`[SYNC #${syncId}] SKIPPED: ${address.slice(0,12)}... (API error — preserving existing UTXOs)`)
+    return {
+      address,
+      basket,
+      newUtxos: 0,
+      spentUtxos: 0,
+      totalBalance: 0
+    }
+  }
+
   syncLogger.debug(`[SYNC] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`)
 
   // Get existing spendable UTXOs from database FOR THIS SPECIFIC ADDRESS AND ACCOUNT
