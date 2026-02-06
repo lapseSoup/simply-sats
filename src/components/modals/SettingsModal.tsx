@@ -20,10 +20,12 @@ import {
   Copy,
   ChevronRight,
   Clock,
-  ClipboardCheck
+  ClipboardCheck,
+  Layers
 } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
+import { UTXOsTab } from '../tabs/UTXOsTab'
 
 // Helper for keyboard accessibility on clickable divs
 const handleKeyDown = (handler: () => void) => (e: KeyboardEvent) => {
@@ -89,6 +91,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [showResyncConfirm, setShowResyncConfirm] = useState(false)
   const [mnemonicToShow, setMnemonicToShow] = useState<string | null>(null)
   const [pendingImportBackup, setPendingImportBackup] = useState<DatabaseBackup | null>(null)
+  const [showUtxoExplorer, setShowUtxoExplorer] = useState(false)
 
   if (!wallet) return null
 
@@ -554,6 +557,21 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><ChevronRight size={16} strokeWidth={1.75} /></span>
               </div>
+              <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowUtxoExplorer(!showUtxoExplorer)} onKeyDown={handleKeyDown(() => setShowUtxoExplorer(!showUtxoExplorer))} aria-label="UTXO Explorer">
+                <div className="settings-row-left">
+                  <div className="settings-row-icon" aria-hidden="true"><Layers size={16} strokeWidth={1.75} /></div>
+                  <div className="settings-row-content">
+                    <div className="settings-row-label">UTXO Explorer</div>
+                    <div className="settings-row-value">View, freeze, and consolidate UTXOs</div>
+                  </div>
+                </div>
+                <span className="settings-row-arrow" aria-hidden="true"><ChevronRight size={16} strokeWidth={1.75} /></span>
+              </div>
+              {showUtxoExplorer && (
+                <div style={{ borderBottom: '1px solid var(--border)' }}>
+                  <UTXOsTab />
+                </div>
+              )}
               <div className="settings-row" role="button" tabIndex={0} onClick={handleCheckMessageBox} onKeyDown={handleKeyDown(handleCheckMessageBox)} aria-label="Check message box">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true">

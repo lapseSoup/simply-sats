@@ -13,7 +13,7 @@ const VIRTUALIZATION_THRESHOLD = 50
 const TX_ITEM_HEIGHT = 70 // ~64px item + 6px gap
 
 // Transaction type for the component
-type TxHistoryItem = { tx_hash: string; amount?: number; height: number }
+type TxHistoryItem = { tx_hash: string; amount?: number; height: number; description?: string }
 
 // Memoized transaction item to prevent unnecessary re-renders
 const TransactionItem = memo(function TransactionItem({

@@ -256,3 +256,37 @@ export async function getTransactionLabels(txid: string): Promise<string[]> {
 
   return rows.map(row => row.label)
 }
+
+/**
+ * Search transactions by txid or label (partial match)
+ */
+export async function searchTransactions(
+  query: string,
+  accountId?: number,
+  limit: number = 50
+): Promise<Transaction[]> {
+  const database = getDatabase()
+  const searchTerm = `%${query}%`
+
+  const rows = await database.select<TransactionRow[]>(
+    `SELECT DISTINCT t.id, t.txid, t.raw_tx, t.description, t.created_at, t.confirmed_at,
+            t.block_height, t.status, t.amount, t.account_id
+     FROM transactions t
+     LEFT JOIN transaction_labels tl ON t.txid = tl.txid
+     WHERE ${accountId ? 't.account_id = $1 AND' : ''} (t.txid LIKE ${accountId ? '$2' : '$1'} OR tl.label LIKE ${accountId ? '$2' : '$1'} OR t.description LIKE ${accountId ? '$2' : '$1'})
+     ORDER BY t.created_at DESC
+     LIMIT ${accountId ? '$3' : '$2'}`,
+    accountId ? [accountId, searchTerm, limit] : [searchTerm, limit]
+  )
+
+  return rows.map(row => ({
+    txid: row.txid,
+    rawTx: row.raw_tx || undefined,
+    description: row.description || undefined,
+    createdAt: row.created_at,
+    confirmedAt: row.confirmed_at || undefined,
+    blockHeight: row.block_height || undefined,
+    status: row.status as 'pending' | 'confirmed' | 'failed',
+    amount: row.amount || undefined
+  }))
+}

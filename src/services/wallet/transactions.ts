@@ -14,8 +14,9 @@ import {
   getSpendableUtxosFromDatabase,
   BASKETS
 } from '../sync'
-import { getDerivedAddresses, withTransaction } from '../database'
+import { getDerivedAddresses, withTransaction, addUTXO } from '../database'
 import { walletLogger } from '../logger'
+import { resetInactivityTimer } from '../autoLock'
 
 /**
  * Broadcast a signed transaction - try multiple endpoints for non-standard scripts
@@ -281,9 +282,25 @@ export async function sendBSV(
 
       // Confirm UTXOs as spent (updates from pending -> spent)
       await confirmUtxosSpent(utxosToSpend, txid)
+
+      // Track change UTXO immediately so balance stays correct
+      // Without this, balance drops by the full UTXO amount until next sync
+      if (change > 0) {
+        await addUTXO({
+          txid: pendingTxid,
+          vout: tx.outputs.length - 1,  // Change is always last output
+          satoshis: change,
+          lockingScript: new P2PKH().lock(fromAddress).toHex(),
+          address: fromAddress,
+          basket: 'default',
+          spendable: true,
+          createdAt: Date.now()
+        }, accountId)
+      }
     })
 
-    walletLogger.info('Transaction tracked locally', { txid })
+    walletLogger.info('Transaction tracked locally', { txid, change })
+    resetInactivityTimer()
   } catch (error) {
     // Log error but don't fail - tx is already broadcast
     // UTXOs are still marked as pending, which is safe (they won't be double-spent)
@@ -470,9 +487,24 @@ export async function sendBSVMultiKey(
 
       // Confirm UTXOs as spent (updates from pending -> spent)
       await confirmUtxosSpent(utxosToSpend, txid)
+
+      // Track change UTXO immediately so balance stays correct
+      if (change > 0) {
+        await addUTXO({
+          txid: pendingTxid,
+          vout: tx.outputs.length - 1,
+          satoshis: change,
+          lockingScript: new P2PKH().lock(changeAddress).toHex(),
+          address: changeAddress,
+          basket: 'default',
+          spendable: true,
+          createdAt: Date.now()
+        }, accountId)
+      }
     })
 
-    walletLogger.info('Transaction tracked locally', { txid })
+    walletLogger.info('Transaction tracked locally', { txid, change })
+    resetInactivityTimer()
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to confirm transaction locally', error, { txid })
   }
@@ -576,6 +608,18 @@ export async function consolidateUtxos(
         ['consolidate']
       )
       await confirmUtxosSpent(utxosToSpend, txid)
+
+      // Track consolidated UTXO immediately
+      await addUTXO({
+        txid: pendingTxid,
+        vout: 0,
+        satoshis: outputSats,
+        lockingScript: new P2PKH().lock(address).toHex(),
+        address,
+        basket: 'default',
+        spendable: true,
+        createdAt: Date.now()
+      })
     })
     walletLogger.info('Consolidation complete', { txid, inputCount: utxoIds.length, outputSats })
   } catch (error) {

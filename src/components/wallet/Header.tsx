@@ -24,7 +24,7 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
     switchAccount,
     balance
   } = useWallet()
-  const { formatBSVShort } = useUI()
+  const { formatBSVShort, showToast } = useUI()
 
   // Track manual sync separately for button animation
   const [manualSyncing, setManualSyncing] = useState(false)
@@ -71,6 +71,7 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
       const success = await switchAccount(accountId)
       if (!success) {
         walletLogger.error('Failed to switch account - session password may be missing')
+        showToast('Please unlock wallet to switch accounts')
       }
       // fetchData is triggered automatically by App.tsx useEffect
       // when wallet + activeAccountId state updates after re-render

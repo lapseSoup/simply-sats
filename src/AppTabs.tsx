@@ -1,5 +1,5 @@
 import { AlertCircle } from 'lucide-react'
-import { ActivityTab, OrdinalsTab, LocksTab, TokensTab, UTXOsTab } from './components/tabs'
+import { ActivityTab, OrdinalsTab, LocksTab, TokensTab, SearchTab } from './components/tabs'
 import type { Ordinal, LockedUTXO } from './services/wallet'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { FEATURES } from './config'
@@ -22,12 +22,12 @@ function TabErrorFallback({ tabName, error, reset }: { tabName: string; error: E
   )
 }
 
-export type Tab = 'activity' | 'ordinals' | 'tokens' | 'locks' | 'utxos'
+export type Tab = 'activity' | 'ordinals' | 'tokens' | 'locks' | 'search'
 
 interface TabButtonProps {
   id: Tab
   label: string
-  count: number
+  count?: number
   activeTab: Tab
   onSelect: (tab: Tab) => void
 }
@@ -46,9 +46,11 @@ function TabButton({ id, label, count, activeTab, onSelect }: TabButtonProps) {
       tabIndex={isActive ? 0 : -1}
     >
       {label}
-      <span className="tab-count" aria-label={`${count} ${label.toLowerCase()}`}>
-        {count}
-      </span>
+      {count !== undefined && (
+        <span className="tab-count" aria-label={`${count} ${label.toLowerCase()}`}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }
@@ -61,7 +63,6 @@ interface AppTabsProps {
     ordinals: number
     tokens: number
     locks: number
-    utxos: number
   }
 }
 
@@ -102,9 +103,8 @@ export function AppTabNav({ activeTab, onTabChange, counts }: AppTabsProps) {
         />
       )}
       <TabButton
-        id="utxos"
-        label="UTXOs"
-        count={counts.utxos}
+        id="search"
+        label="Search"
         activeTab={activeTab}
         onSelect={onTabChange}
       />
@@ -192,14 +192,14 @@ export function AppTabContent({
           />
         </ErrorBoundary>
       )}
-      {activeTab === 'utxos' && (
+      {activeTab === 'search' && (
         <ErrorBoundary
-          context="UTXOsTab"
+          context="SearchTab"
           fallback={(error, reset) => (
-            <TabErrorFallback tabName="UTXOs" error={error} reset={reset} />
+            <TabErrorFallback tabName="Search" error={error} reset={reset} />
           )}
         >
-          <UTXOsTab />
+          <SearchTab />
         </ErrorBoundary>
       )}
     </main>

@@ -17,11 +17,22 @@ const SUGGESTED_LABELS = [
   'savings'
 ]
 
+// Extract fee from sent transaction description + amount
+function parseFee(amount?: number, description?: string): number | null {
+  if (!amount || amount >= 0 || !description) return null
+  const match = description.match(/Sent (\d+) sats/)
+  if (!match) return null
+  const sentAmount = parseInt(match[1], 10)
+  const fee = Math.abs(amount) - sentAmount
+  return fee > 0 ? fee : null
+}
+
 interface TransactionDetailModalProps {
   transaction: {
     tx_hash: string
     amount?: number
     height: number
+    description?: string
   }
   onClose: () => void
   onLabelsUpdated?: () => void
@@ -123,6 +134,21 @@ export function TransactionDetailModal({
               </span>
             </div>
           )}
+
+          {(() => {
+            const fee = parseFee(transaction.amount, transaction.description)
+            return fee !== null ? (
+              <div className="tx-detail-row">
+                <span className="tx-detail-label">Fee Paid</span>
+                <span className="tx-detail-value">
+                  {fee.toLocaleString()} sats
+                  <span className="tx-detail-usd">
+                    (${formatUSD(fee)})
+                  </span>
+                </span>
+              </div>
+            ) : null
+          })()}
 
           {transaction.height > 0 && (
             <div className="tx-detail-row">

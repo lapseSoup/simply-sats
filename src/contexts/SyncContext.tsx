@@ -23,6 +23,7 @@ export interface TxHistoryItem {
   height: number
   amount?: number
   address?: string
+  description?: string
 }
 
 export interface BasketBalances {
@@ -217,7 +218,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
       const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
         tx_hash: tx.txid,
         height: tx.blockHeight || 0,
-        amount: tx.amount
+        amount: tx.amount,
+        description: tx.description
       }))
 
       dbTxHistory.sort((a, b) => {

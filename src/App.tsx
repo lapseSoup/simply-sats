@@ -23,7 +23,7 @@ import { needsInitialSync } from './services/sync'
 // import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive
 
 // Tab order for keyboard navigation
-const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'utxos']
+const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'search']
 
 function WalletApp() {
   const {
@@ -32,7 +32,6 @@ function WalletApp() {
     txHistory,
     ordinals,
     locks,
-    utxos,
     networkInfo,
     handleUnlock,
     handleCreateWallet,
@@ -372,8 +371,7 @@ function WalletApp() {
           activity: txHistory.length,
           ordinals: ordinals.length,
           tokens: tokenBalances.length,
-          locks: locks.length,
-          utxos: utxos.length
+          locks: locks.length
         }}
       />
 
