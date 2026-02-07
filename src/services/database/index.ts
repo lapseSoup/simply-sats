@@ -48,6 +48,7 @@ export {
   updateTransactionStatus,
   updateTransactionLabels,
   getTransactionLabels,
+  getAllLabels,
   searchTransactions
 } from './txRepository'
 

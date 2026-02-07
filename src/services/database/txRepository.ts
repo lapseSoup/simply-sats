@@ -244,6 +244,25 @@ export async function updateTransactionLabels(
 }
 
 /**
+ * Get all distinct labels for an account (for autosuggest)
+ */
+export async function getAllLabels(accountId?: number): Promise<string[]> {
+  const database = getDatabase()
+
+  const rows = await database.select<{ label: string }[]>(
+    accountId
+      ? `SELECT DISTINCT tl.label FROM transaction_labels tl
+         INNER JOIN transactions t ON tl.txid = t.txid
+         WHERE t.account_id = $1
+         ORDER BY tl.label ASC`
+      : `SELECT DISTINCT label FROM transaction_labels ORDER BY label ASC`,
+    accountId ? [accountId] : []
+  )
+
+  return rows.map(row => row.label)
+}
+
+/**
  * Get labels for a specific transaction
  */
 export async function getTransactionLabels(txid: string): Promise<string[]> {

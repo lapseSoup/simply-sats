@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, ArrowDownLeft, ArrowUpRight, Circle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { searchTransactions } from '../../services/database'
+import { searchTransactions, getAllLabels } from '../../services/database'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 
 type SearchResult = {
@@ -19,7 +19,21 @@ export function SearchTab() {
   const [results, setResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [selectedTx, setSelectedTx] = useState<SearchResult | null>(null)
+  const [allLabels, setAllLabels] = useState<string[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Load all labels on mount
+  useEffect(() => {
+    getAllLabels(activeAccountId || undefined)
+      .then(setAllLabels)
+      .catch(() => setAllLabels([]))
+  }, [activeAccountId])
+
+  const filteredLabels = query.trim()
+    ? allLabels.filter(l => l.toLowerCase().includes(query.trim().toLowerCase()))
+    : []
 
   const performSearch = useCallback(async (searchQuery: string) => {
     if (!searchQuery.trim()) {
@@ -66,6 +80,12 @@ export function SearchTab() {
     }
   }, [query, performSearch])
 
+  const selectLabel = (label: string) => {
+    setQuery(label)
+    setShowSuggestions(false)
+    inputRef.current?.focus()
+  }
+
   const getTxIcon = (amount?: number) => {
     if (amount && amount > 0) return <ArrowDownLeft size={14} strokeWidth={1.75} />
     if (amount && amount < 0) return <ArrowUpRight size={14} strokeWidth={1.75} />
@@ -84,13 +104,38 @@ export function SearchTab() {
         <div className="search-input-container">
           <Search size={16} strokeWidth={1.75} className="search-icon" />
           <input
+            ref={inputRef}
             type="text"
             className="search-input"
             placeholder="Search by label, TXID, or address..."
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => {
+              setQuery(e.target.value)
+              setShowSuggestions(true)
+            }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => {
+              // Delay to allow click on suggestion
+              setTimeout(() => setShowSuggestions(false), 200)
+            }}
             autoFocus
           />
+          {showSuggestions && filteredLabels.length > 0 && (
+            <div className="search-suggestions">
+              {filteredLabels.map(label => (
+                <button
+                  key={label}
+                  className="search-suggestion-item"
+                  onMouseDown={e => {
+                    e.preventDefault()
+                    selectLabel(label)
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {searching && (

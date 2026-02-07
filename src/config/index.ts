@@ -202,7 +202,7 @@ export const FEATURES = {
   ORDINALS: true,
 
   /** Enable time-locked UTXOs */
-  LOCKS: false,
+  LOCKS: true,
 
   /** Enable multi-account support */
   MULTI_ACCOUNT: true,

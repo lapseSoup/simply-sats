@@ -1,4 +1,4 @@
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Search } from 'lucide-react'
 import { ActivityTab, OrdinalsTab, LocksTab, TokensTab, SearchTab } from './components/tabs'
 import type { Ordinal, LockedUTXO } from './services/wallet'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
@@ -102,12 +102,18 @@ export function AppTabNav({ activeTab, onTabChange, counts }: AppTabsProps) {
           onSelect={onTabChange}
         />
       )}
-      <TabButton
-        id="search"
-        label="Search"
-        activeTab={activeTab}
-        onSelect={onTabChange}
-      />
+      <button
+        id="tab-search"
+        className={`nav-tab ${activeTab === 'search' ? 'active' : ''}`}
+        onClick={() => onTabChange('search')}
+        role="tab"
+        aria-selected={activeTab === 'search'}
+        aria-controls="tabpanel-search"
+        aria-label="Search"
+        tabIndex={activeTab === 'search' ? 0 : -1}
+      >
+        <Search size={16} strokeWidth={2} />
+      </button>
     </nav>
   )
 }
