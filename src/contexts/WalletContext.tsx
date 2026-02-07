@@ -12,9 +12,9 @@ import {
   clearWallet,
   getFeeRatePerKB,
   setFeeRateFromKB,
-  transferOrdinal,
-  listOrdinal
+  transferOrdinal
 } from '../services/wallet'
+import { listOrdinal } from '../services/wallet/marketplace'
 import { setWalletKeys } from '../services/brc100'
 import { useNetwork, type NetworkInfo } from './NetworkContext'
 import { useAccounts } from './AccountsContext'

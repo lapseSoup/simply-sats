@@ -3,11 +3,16 @@
  * Listing and cancelling ordinal sales via js-1sat-ord OrdinalLock contracts
  */
 
-import { PrivateKey, P2PKH } from '@bsv/sdk'
+import { PrivateKey, P2PKH, type Transaction } from '@bsv/sdk'
 import { createOrdListings, cancelOrdListings } from 'js-1sat-ord'
 import type { Utxo as OrdUtxo } from 'js-1sat-ord'
 import type { UTXO } from './types'
 import { broadcastTransaction } from './transactions'
+
+// js-1sat-ord bundles its own @bsv/sdk with different class declarations.
+// We cast through unknown at the type boundary since the runtime types are compatible.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyPrivateKey = any
 import {
   recordSentTransaction,
   markUtxosPendingSpend,
@@ -106,12 +111,12 @@ export async function listOrdinal(
         listingUtxo: toOrdUtxo(ordinalUtxo, ordPk),
         ordAddress,
       }],
-      ordPk,
-      paymentPk,
+      ordPk: ordPk as AnyPrivateKey,
+      paymentPk: paymentPk as AnyPrivateKey,
     })
 
     // Broadcast the signed transaction
-    txid = await broadcastTransaction(result.tx)
+    txid = await broadcastTransaction(result.tx as unknown as Transaction)
   } catch (err) {
     // Rollback pending status on failure
     try {
@@ -177,11 +182,11 @@ export async function cancelOrdinalListing(
     const result = await cancelOrdListings({
       utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
       listingUtxos: [toOrdUtxo(listingUtxo)],
-      ordPk,
-      paymentPk,
+      ordPk: ordPk as AnyPrivateKey,
+      paymentPk: paymentPk as AnyPrivateKey,
     })
 
-    txid = await broadcastTransaction(result.tx)
+    txid = await broadcastTransaction(result.tx as unknown as Transaction)
   } catch (err) {
     try {
       await rollbackPendingSpend(utxosToSpend)

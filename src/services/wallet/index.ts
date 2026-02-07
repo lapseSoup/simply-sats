@@ -87,10 +87,8 @@ export {
 } from './ordinals'
 
 // Marketplace operations
-export {
-  listOrdinal,
-  cancelOrdinalListing
-} from './marketplace'
+// Note: Import directly from './marketplace' due to verbatimModuleSyntax
+// compatibility with js-1sat-ord's ESM types.
 
 // Lock operations
 export {
