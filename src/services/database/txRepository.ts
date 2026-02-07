@@ -280,6 +280,31 @@ export async function getAllLabels(accountId?: number): Promise<string[]> {
 }
 
 /**
+ * Get the most frequently used labels (by count of transactions), excluding system labels
+ */
+export async function getTopLabels(limit = 3, accountId?: number): Promise<string[]> {
+  const database = getDatabase()
+  const systemLabels = ['lock', 'unlock']
+  const placeholders = systemLabels.map((_, i) => `$${i + 1}`).join(', ')
+
+  const rows = await database.select<{ label: string }[]>(
+    accountId !== undefined && accountId !== null
+      ? `SELECT tl.label, COUNT(*) as cnt FROM transaction_labels tl
+         INNER JOIN transactions t ON tl.txid = t.txid AND t.account_id = $${systemLabels.length + 1}
+         WHERE tl.label NOT IN (${placeholders})
+         GROUP BY tl.label ORDER BY cnt DESC LIMIT $${systemLabels.length + 2}`
+      : `SELECT label, COUNT(*) as cnt FROM transaction_labels
+         WHERE label NOT IN (${placeholders})
+         GROUP BY label ORDER BY cnt DESC LIMIT $${systemLabels.length + 1}`,
+    accountId !== undefined && accountId !== null
+      ? [...systemLabels, accountId, limit]
+      : [...systemLabels, limit]
+  )
+
+  return rows.map(row => row.label)
+}
+
+/**
  * Get labels for a specific transaction
  */
 export async function getTransactionLabels(txid: string): Promise<string[]> {

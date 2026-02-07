@@ -50,6 +50,7 @@ export {
   updateTransactionLabels,
   getTransactionLabels,
   getAllLabels,
+  getTopLabels,
   searchTransactions,
   searchTransactionsByLabels
 } from './txRepository'

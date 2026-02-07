@@ -1,22 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { getTransactionLabels, updateTransactionLabels, getTransactionByTxid } from '../../services/database'
+import { getTransactionLabels, updateTransactionLabels, getTransactionByTxid, getTopLabels } from '../../services/database'
+import { useWallet } from '../../contexts/WalletContext'
 import { getWocClient } from '../../infrastructure/api/wocClient'
 import { uiLogger } from '../../services/logger'
 import { Modal } from '../shared/Modal'
 
-// Common label suggestions for quick selection
-const SUGGESTED_LABELS = [
-  'personal',
-  'business',
-  'exchange',
-  'gift',
-  'refund',
-  'salary',
-  'subscription',
-  'savings'
-]
+// Default label suggestions (always shown as fallback)
+const DEFAULT_LABELS = ['personal', 'business', 'exchange']
 
 // Fast path: extract fee from transaction description + amount (no API call)
 function parseFee(amount?: number, description?: string): number | null {
@@ -72,20 +64,30 @@ export function TransactionDetailModal({
   onLabelsUpdated
 }: TransactionDetailModalProps) {
   const { copyToClipboard, showToast, formatUSD, displayInSats, formatBSVShort } = useUI()
+  const { activeAccountId } = useWallet()
   const [labels, setLabels] = useState<string[]>([])
   const [newLabel, setNewLabel] = useState('')
   const [loading, setLoading] = useState(true)
   const [fee, setFee] = useState<number | null>(null)
+  const [suggestedLabels, setSuggestedLabels] = useState<string[]>(DEFAULT_LABELS)
 
   // Load labels, DB record, and compute fee on mount
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [existingLabels, dbRecord] = await Promise.all([
+        const [existingLabels, dbRecord, topLabels] = await Promise.all([
           getTransactionLabels(transaction.tx_hash),
-          getTransactionByTxid(transaction.tx_hash)
+          getTransactionByTxid(transaction.tx_hash),
+          getTopLabels(3, activeAccountId || undefined)
         ])
         setLabels(existingLabels)
+
+        // Merge: top used labels first, then defaults (deduplicated)
+        const merged = [...topLabels]
+        for (const def of DEFAULT_LABELS) {
+          if (!merged.includes(def)) merged.push(def)
+        }
+        setSuggestedLabels(merged)
 
         // Try fast path: description-based fee
         const effectiveAmount = transaction.amount ?? dbRecord?.amount
@@ -106,7 +108,7 @@ export function TransactionDetailModal({
       }
     }
     loadData()
-  }, [transaction.tx_hash, transaction.amount, transaction.description])
+  }, [transaction.tx_hash, transaction.amount, transaction.description, activeAccountId])
 
   const openOnWoC = () => {
     openUrl(`https://whatsonchain.com/tx/${transaction.tx_hash}`)
@@ -154,7 +156,7 @@ export function TransactionDetailModal({
   }
 
   // Filter suggestions to exclude already-applied labels
-  const availableSuggestions = SUGGESTED_LABELS.filter(s => !labels.includes(s))
+  const availableSuggestions = suggestedLabels.filter(s => !labels.includes(s))
 
   return (
     <Modal title="Transaction Details" onClose={onClose}>
