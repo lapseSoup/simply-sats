@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Unlock, Sparkles } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { useUI } from '../../contexts/UIContext'
@@ -49,13 +50,19 @@ export function LockDetailModal({
   const estimatedSeconds = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
 
   // Calculate progress percentage
-  const lockDuration = lock.createdAt
-    ? lock.unlockBlock - Math.floor(lock.createdAt / 600000)
-    : blocksRemaining + 100
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const now = useMemo(() => Date.now(), [lock.txid])
+  const estimatedCreationBlock = lock.createdAt && currentHeight > 0
+    ? currentHeight - Math.round((now - lock.createdAt) / (AVERAGE_BLOCK_TIME_SECONDS * 1000))
+    : 0
+  const lockDurationBlocks = estimatedCreationBlock > 0
+    ? Math.max(lock.unlockBlock - estimatedCreationBlock, blocksRemaining + 1)
+    : blocksRemaining + 1
+  const blocksElapsed = lockDurationBlocks - blocksRemaining
 
   const progressPercent = isUnlockable
     ? 100
-    : Math.max(0, Math.min(99, ((lockDuration - blocksRemaining) / lockDuration) * 100))
+    : Math.max(0, Math.min(99, (blocksElapsed / lockDurationBlocks) * 100))
 
   const openOnWoC = () => {
     openUrl(`https://whatsonchain.com/tx/${lock.txid}`)
