@@ -65,7 +65,7 @@ const TransactionItem = memo(function TransactionItem({
 })
 
 export function ActivityTab() {
-  const { txHistory, locks, loading } = useWallet()
+  const { txHistory, locks, loading, activeAccountId } = useWallet()
   const { formatUSD } = useUI()
   const [lockTxids, setLockTxids] = useState<Set<string>>(new Set())
   const [unlockTxids, setUnlockTxids] = useState<Set<string>>(new Set())
@@ -81,8 +81,8 @@ export function ActivityTab() {
     const fetchLabeledTxids = async () => {
       try {
         const [lockTxs, unlockTxs] = await Promise.all([
-          getTransactionsByLabel('lock'),
-          getTransactionsByLabel('unlock')
+          getTransactionsByLabel('lock', activeAccountId || undefined),
+          getTransactionsByLabel('unlock', activeAccountId || undefined)
         ])
         setLockTxids(new Set(lockTxs.map(tx => tx.txid)))
         setUnlockTxids(new Set(unlockTxs.map(tx => tx.txid)))
@@ -91,7 +91,7 @@ export function ActivityTab() {
       }
     }
     fetchLabeledTxids()
-  }, [txHistory]) // Refresh when tx history changes
+  }, [txHistory, activeAccountId]) // Refresh when tx history or account changes
 
   // Measure container height for virtualized list
   useEffect(() => {

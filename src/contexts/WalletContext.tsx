@@ -357,6 +357,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
     try {
       const keys = await accountsSwitchAccount(accountId, sessionPassword)
       if (keys) {
+        // Clear stale state from previous account before setting new wallet
+        setLocks([])
+        resetSync()
         setWallet(keys)
         setIsLocked(false)
         walletLogger.info('Account switched successfully', { accountId })
@@ -368,7 +371,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       walletLogger.error('Error switching account', e)
       return false
     }
-  }, [accountsSwitchAccount, setWallet, sessionPassword])
+  }, [accountsSwitchAccount, setWallet, setLocks, resetSync, sessionPassword])
 
   // Create a new account - wraps AccountsContext to also set wallet state
   // Create a new account using session password
@@ -552,7 +555,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       wallet,
       activeAccountId,
       knownUnlockedLocks,
-      async ({ utxos: fetchedUtxos, shouldClearLocks }) => {
+      async ({ utxos: fetchedUtxos }) => {
         // Detect locks after UTXOs are fetched
         try {
           const detectedLocks = await detectLocks(wallet, fetchedUtxos)
@@ -567,18 +570,33 @@ export function WalletProvider({ children }: WalletProviderProps) {
                   await updateTransactionLabels(lock.txid, [...existingLabels, 'lock'])
                 }
                 const dbTx = await getTransactionByTxid(lock.txid)
-                if (dbTx && !dbTx.description) {
-                  await upsertTransaction({
-                    ...dbTx,
-                    description: `Locked ${lock.satoshis} sats until block ${lock.unlockBlock}`
-                  })
+                if (dbTx) {
+                  // After restore, calculateTxAmount may compute a wrong positive amount
+                  // for lock txs (sees change as received, misses spent input).
+                  // Correct to negative using lock data if the sign is wrong.
+                  const needsAmountFix = dbTx.amount !== undefined && dbTx.amount > 0
+                  const needsDescription = !dbTx.description
+
+                  if (needsDescription || needsAmountFix) {
+                    await upsertTransaction({
+                      txid: dbTx.txid,
+                      createdAt: dbTx.createdAt,
+                      status: dbTx.status,
+                      ...(needsDescription && {
+                        description: `Locked ${lock.satoshis} sats until block ${lock.unlockBlock}`
+                      }),
+                      ...(needsAmountFix && {
+                        amount: -lock.satoshis
+                      })
+                    })
+                  }
                 }
               } catch (_e) {
                 // Best-effort: don't fail lock detection if labeling fails
               }
             }
-          } else if (shouldClearLocks) {
-            // If we had unlocked locks and now there are none, clear the list
+          } else {
+            // No locks detected — clear any stale locks (e.g. after account switch)
             setLocks([])
           }
         } catch (e) {

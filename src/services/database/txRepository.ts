@@ -172,16 +172,24 @@ export async function updateTransactionAmount(txid: string, amount: number, acco
 /**
  * Get transactions by label
  */
-export async function getTransactionsByLabel(label: string): Promise<Transaction[]> {
+export async function getTransactionsByLabel(label: string, accountId?: number): Promise<Transaction[]> {
   const database = getDatabase()
 
-  const rows = await database.select<TransactionRow[]>(
-    `SELECT t.* FROM transactions t
-     INNER JOIN transaction_labels tl ON t.txid = tl.txid
-     WHERE tl.label = $1
-     ORDER BY t.created_at DESC`,
-    [label]
-  )
+  const query = accountId !== undefined && accountId !== null
+    ? `SELECT t.* FROM transactions t
+       INNER JOIN transaction_labels tl ON t.txid = tl.txid
+       WHERE tl.label = $1 AND t.account_id = $2
+       ORDER BY t.created_at DESC`
+    : `SELECT t.* FROM transactions t
+       INNER JOIN transaction_labels tl ON t.txid = tl.txid
+       WHERE tl.label = $1
+       ORDER BY t.created_at DESC`
+
+  const params = accountId !== undefined && accountId !== null
+    ? [label, accountId]
+    : [label]
+
+  const rows = await database.select<TransactionRow[]>(query, params)
 
   return rows.map(row => ({
     id: row.id,
