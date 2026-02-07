@@ -392,6 +392,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
           // Best-effort: full sync will pick up locks anyway
         }
 
+        // Bump version again AFTER preload — invalidates any fetchData that was
+        // triggered by setWallet() above (via App.tsx effect) so it can't overwrite
+        // the locks we just preloaded. The next effect cycle (from activeAccountId
+        // state propagating) will capture this new version and run correctly.
+        fetchVersionRef.current += 1
+
         walletLogger.info('Account switched successfully', { accountId })
         return true
       }

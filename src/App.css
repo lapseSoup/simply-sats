@@ -3506,38 +3506,16 @@ select:focus-visible {
   padding: var(--space-4);
 }
 
-.lock-progress-ring {
-  cursor: pointer;
-  transition: transform var(--duration-normal) var(--ease-out);
-}
-
-.lock-progress-ring:hover {
-  transform: scale(1.05);
-}
-
-.progress-ring-container {
-  position: relative;
+.lock-icon-container {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--accent);
 }
 
-.progress-ring-bg {
-  stroke: var(--bg-tertiary);
-}
-
-.progress-ring-progress {
-  stroke: var(--accent);
-  transition: stroke-dashoffset var(--duration-slow) var(--ease-out);
-}
-
-.progress-ring-progress.complete {
-  stroke: var(--success);
-}
-
-.progress-ring-content {
-  position: absolute;
-  font-size: 20px;
+.lock-card.unlockable .lock-icon-container {
+  color: var(--success);
 }
 
 .lock-info {

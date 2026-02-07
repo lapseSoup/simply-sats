@@ -1,5 +1,5 @@
 import { useState, memo, useMemo } from 'react'
-import { Unlock, Sparkles } from 'lucide-react'
+import { Lock, Unlock, Sparkles } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import type { LockedUTXO } from '../../services/wallet'
@@ -165,6 +165,14 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
       style={{ cursor: 'pointer' }}
     >
       <div className="lock-card-main">
+        <div className="lock-icon-container" aria-hidden="true">
+          {isUnlockable ? (
+            <Unlock size={24} strokeWidth={1.75} />
+          ) : (
+            <Lock size={24} strokeWidth={1.75} />
+          )}
+        </div>
+
         <div className="lock-info">
           <div className="lock-amount">
             {lock.satoshis.toLocaleString()} sats
@@ -190,8 +198,8 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
           </div>
         </div>
 
-        <div className="lock-actions">
-          {isUnlockable ? (
+        {isUnlockable && (
+          <div className="lock-actions">
             <button
               className="btn btn-unlock"
               onClick={(e) => { e.stopPropagation(); onUnlock(lock) }}
@@ -207,13 +215,8 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
                 <><Unlock size={14} strokeWidth={1.75} /> Unlock</>
               )}
             </button>
-          ) : (
-            <div className="lock-countdown" title={`~${formatTimeRemaining(estimatedSeconds)}`}>
-              <span className="lock-percent">{blocksRemaining}</span>
-              <span className="lock-status">blocks</span>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )
