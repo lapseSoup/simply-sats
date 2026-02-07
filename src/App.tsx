@@ -60,6 +60,7 @@ function WalletApp() {
 
   // Ordinal state
   const [ordinalToTransfer, setOrdinalToTransfer] = useState<Ordinal | null>(null)
+  const [ordinalToList, setOrdinalToList] = useState<Ordinal | null>(null)
   const [selectedOrdinal, setSelectedOrdinal] = useState<Ordinal | null>(null)
 
   // Wallet state
@@ -204,6 +205,7 @@ function WalletApp() {
     setOrdinalToTransfer(ordinal)
     setModal('transfer-ordinal')
   }
+
 
   const handleUnlockClick = (lock: LockedUTXO) => {
     setUnlockConfirm(lock)
@@ -395,9 +397,18 @@ function WalletApp() {
           setOrdinalToTransfer(ordinal)
           setModal('transfer-ordinal')
         }}
+        onListOrdinal={(ordinal) => {
+          setOrdinalToList(ordinal)
+          setModal('list-ordinal')
+        }}
         ordinalToTransfer={ordinalToTransfer}
         onTransferComplete={() => {
           setOrdinalToTransfer(null)
+          setModal(null)
+        }}
+        ordinalToList={ordinalToList}
+        onListComplete={() => {
+          setOrdinalToList(null)
           setModal(null)
         }}
         brc100Request={brc100Request}

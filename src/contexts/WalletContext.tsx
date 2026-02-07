@@ -12,7 +12,8 @@ import {
   clearWallet,
   getFeeRatePerKB,
   setFeeRateFromKB,
-  transferOrdinal
+  transferOrdinal,
+  listOrdinal
 } from '../services/wallet'
 import { setWalletKeys } from '../services/brc100'
 import { useNetwork, type NetworkInfo } from './NetworkContext'
@@ -144,6 +145,7 @@ interface WalletContextType {
   handleLock: (amountSats: number, blocks: number) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleUnlock: (lock: LockedUTXO) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
+  handleListOrdinal: (ordinal: Ordinal, priceSats: number) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
 
 }
@@ -917,6 +919,43 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [wallet, fetchData])
 
+  const handleListOrdinal = useCallback(async (
+    ordinal: Ordinal,
+    priceSats: number
+  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
+    if (!wallet) return { success: false, error: 'No wallet loaded' }
+
+    try {
+      const fundingUtxos = await getUTXOs(wallet.walletAddress)
+
+      if (fundingUtxos.length === 0) {
+        return { success: false, error: 'No funding UTXOs available for listing fee' }
+      }
+
+      const ordinalUtxo: UTXO = {
+        txid: ordinal.txid,
+        vout: ordinal.vout,
+        satoshis: 1,
+        script: ''
+      }
+
+      const txid = await listOrdinal(
+        wallet.ordWif,
+        ordinalUtxo,
+        wallet.walletWif,
+        fundingUtxos,
+        wallet.walletAddress,
+        wallet.ordAddress,
+        priceSats
+      )
+
+      await fetchData()
+      return { success: true, txid }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Listing failed' }
+    }
+  }, [wallet, fetchData])
+
   // Token send handler - wraps TokensContext sendTokenAction
   const handleSendToken = useCallback(async (
     ticker: string,
@@ -1052,6 +1091,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleLock,
     handleUnlock,
     handleTransferOrdinal,
+    handleListOrdinal,
     handleSendToken
   }
 

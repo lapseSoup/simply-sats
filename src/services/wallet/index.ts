@@ -86,6 +86,12 @@ export {
   transferOrdinal
 } from './ordinals'
 
+// Marketplace operations
+export {
+  listOrdinal,
+  cancelOrdinalListing
+} from './marketplace'
+
 // Lock operations
 export {
   getTimelockScriptSize,

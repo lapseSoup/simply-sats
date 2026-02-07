@@ -8,9 +8,10 @@ interface OrdinalModalProps {
   ordinal: Ordinal
   onClose: () => void
   onTransfer?: () => void
+  onList?: () => void
 }
 
-export function OrdinalModal({ ordinal, onClose, onTransfer }: OrdinalModalProps) {
+export function OrdinalModal({ ordinal, onClose, onTransfer, onList }: OrdinalModalProps) {
   const { copyToClipboard } = useUI()
 
   const openOnWoC = (txid: string) => {
@@ -58,6 +59,14 @@ export function OrdinalModal({ ordinal, onClose, onTransfer }: OrdinalModalProps
           >
             Copy Origin
           </button>
+          {onList && (
+            <button
+              className="btn btn-secondary"
+              onClick={onList}
+            >
+              List for Sale
+            </button>
+          )}
           {onTransfer && (
             <button
               className="btn btn-primary"

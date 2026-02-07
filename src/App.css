@@ -830,10 +830,18 @@ body::-webkit-scrollbar {
   color: var(--accent);
 }
 
-.ordinals-filters {
+.ordinals-filter-row {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
+}
+
+.ordinals-filters {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-2);
   overflow-x: auto;
   padding-bottom: var(--space-1);
 }
@@ -842,8 +850,8 @@ body::-webkit-scrollbar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
@@ -877,19 +885,8 @@ body::-webkit-scrollbar {
   background: var(--accent-subtle);
 }
 
-.ordinals-sort {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.sort-label {
-  font-size: var(--type-caption-size);
-  color: var(--text-tertiary);
-}
-
 .sort-select {
+  flex-shrink: 0;
   padding: var(--space-2) 28px var(--space-2) 10px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);

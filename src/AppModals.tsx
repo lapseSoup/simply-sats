@@ -9,6 +9,7 @@ import {
   UnlockConfirmModal,
   SettingsModal,
   OrdinalTransferModal,
+  OrdinalListModal,
   AccountModal
 } from './components/modals'
 import type { Ordinal, LockedUTXO } from './services/wallet'
@@ -66,6 +67,7 @@ export type Modal =
   | 'brc100'
   | 'lock'
   | 'transfer-ordinal'
+  | 'list-ordinal'
   | 'account'
   | null
 
@@ -84,10 +86,15 @@ interface AppModalsProps {
   // Ordinal modal
   selectedOrdinal: Ordinal | null
   onTransferOrdinal: (ordinal: Ordinal) => void
+  onListOrdinal: (ordinal: Ordinal) => void
 
   // Transfer ordinal modal
   ordinalToTransfer: Ordinal | null
   onTransferComplete: () => void
+
+  // List ordinal modal
+  ordinalToList: Ordinal | null
+  onListComplete: () => void
 
   // BRC-100 modal
   brc100Request: BRC100Request | null
@@ -124,8 +131,11 @@ export function AppModals({
   onCloseModal,
   selectedOrdinal,
   onTransferOrdinal,
+  onListOrdinal,
   ordinalToTransfer,
   onTransferComplete,
+  ordinalToList,
+  onListComplete,
   brc100Request,
   onApproveBRC100,
   onRejectBRC100,
@@ -198,6 +208,7 @@ export function AppModals({
             ordinal={selectedOrdinal}
             onClose={onCloseModal}
             onTransfer={() => onTransferOrdinal(selectedOrdinal)}
+            onList={() => onListOrdinal(selectedOrdinal)}
           />
         </ErrorBoundary>
       )}
@@ -212,6 +223,20 @@ export function AppModals({
           <OrdinalTransferModal
             ordinal={ordinalToTransfer}
             onClose={onTransferComplete}
+          />
+        </ErrorBoundary>
+      )}
+
+      {modal === 'list-ordinal' && ordinalToList && (
+        <ErrorBoundary
+          context="OrdinalListModal"
+          fallback={(error, reset) => (
+            <ModalErrorFallback modalName="List Ordinal" error={error} reset={reset} onClose={onListComplete} />
+          )}
+        >
+          <OrdinalListModal
+            ordinal={ordinalToList}
+            onClose={onListComplete}
           />
         </ErrorBoundary>
       )}

@@ -160,33 +160,31 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
         </div>
       </div>
 
-      {/* Filter Chips */}
-      <div className="ordinals-filters" role="group" aria-label="Filter by content type">
-        {(Object.keys(CONTENT_CATEGORIES) as ContentCategory[]).map((category) => (
-          <button
-            key={category}
-            className={`filter-chip ${filterCategory === category ? 'active' : ''}`}
-            onClick={() => setFilterCategory(category)}
-            aria-pressed={filterCategory === category}
-          >
-            {CONTENT_CATEGORIES[category]}
-            <span className="filter-count">{categoryCounts[category]}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Sort Controls */}
-      <div className="ordinals-sort">
-        <label htmlFor="sort-select" className="sort-label">Sort by:</label>
+      {/* Filter Chips + Sort */}
+      <div className="ordinals-filter-row">
+        <div className="ordinals-filters" role="group" aria-label="Filter by content type">
+          {(Object.keys(CONTENT_CATEGORIES) as ContentCategory[]).map((category) => (
+            <button
+              key={category}
+              className={`filter-chip ${filterCategory === category ? 'active' : ''}`}
+              onClick={() => setFilterCategory(category)}
+              aria-pressed={filterCategory === category}
+            >
+              {CONTENT_CATEGORIES[category]}
+              <span className="filter-count">{categoryCounts[category]}</span>
+            </button>
+          ))}
+        </div>
         <select
           id="sort-select"
           className="sort-select"
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortOption)}
+          aria-label="Sort ordinals"
         >
-          <option value="newest">Newest First</option>
-          <option value="oldest">Oldest First</option>
-          <option value="content">Content Type</option>
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="content">Type</option>
         </select>
       </div>
 
