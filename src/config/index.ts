@@ -181,7 +181,6 @@ export const API = {
 
   GORILLAPOOL: {
     BASE_URL: 'https://ordinals.gorillapool.io/api',
-    CONTENT_URL: 'https://ordinals.gorillapool.io/content',
     FEE_RATE: '/fee',
     BROADCAST: '/tx',
     TOKEN_BALANCE: '/bsv20/{address}/balance',

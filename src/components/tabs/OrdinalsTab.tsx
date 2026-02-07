@@ -301,7 +301,7 @@ const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect }: Ord
       aria-label={`Ordinal ${ordinal.origin.slice(0, 8)}`}
     >
       <OrdinalImage
-        contentHash={ordinal.content}
+        origin={ordinal.origin}
         contentType={ordinal.contentType}
         size="lg"
         alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
@@ -331,7 +331,7 @@ const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect }: Ord
       aria-label={`Ordinal ${ordinal.origin}`}
     >
       <OrdinalImage
-        contentHash={ordinal.content}
+        origin={ordinal.origin}
         contentType={ordinal.contentType}
         size="sm"
         alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}

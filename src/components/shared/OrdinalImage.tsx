@@ -3,7 +3,7 @@ import { Image, FileText, Braces, Diamond } from 'lucide-react'
 import { getOrdinalContentUrl, isImageOrdinal } from '../../utils/ordinals'
 
 interface OrdinalImageProps {
-  contentHash: string | undefined
+  origin: string | undefined
   contentType: string | undefined
   size?: 'sm' | 'md' | 'lg'
   alt?: string
@@ -11,14 +11,14 @@ interface OrdinalImageProps {
 }
 
 export const OrdinalImage = memo(function OrdinalImage({
-  contentHash,
+  origin,
   contentType,
   size = 'md',
   alt = 'Ordinal',
   lazy = true
 }: OrdinalImageProps) {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading')
-  const url = getOrdinalContentUrl(contentHash)
+  const url = getOrdinalContentUrl(origin)
   const isImage = isImageOrdinal(contentType)
 
   const handleLoad = useCallback(() => setStatus('loaded'), [])

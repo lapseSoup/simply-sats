@@ -142,7 +142,7 @@ export function OrdinalTransferModal({
         {/* Ordinal Preview */}
         <div className="transfer-ordinal-preview">
           <OrdinalImage
-            contentHash={ordinal.content}
+            origin={ordinal.origin}
             contentType={ordinal.contentType}
             size="md"
             alt="Ordinal"

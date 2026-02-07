@@ -3085,13 +3085,37 @@ textarea.form-input {
 .ordinal-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }
 
 .ordinal-preview {
   width: 100%;
+  max-height: 200px;
   border-radius: var(--radius-lg);
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+}
+
+.ordinal-preview .ordinal-img-lg {
+  aspect-ratio: auto;
+  max-height: 200px;
+}
+
+.ordinal-preview .ordinal-img {
+  object-fit: contain;
+}
+
+.ordinal-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.ordinal-actions .btn {
+  flex: 1;
 }
 
 .ordinal-info-list {
