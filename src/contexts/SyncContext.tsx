@@ -83,7 +83,7 @@ interface SyncProviderProps {
 }
 
 export function SyncProvider({ children }: SyncProviderProps) {
-  const { syncing, setSyncing } = useNetwork()
+  const { setSyncing } = useNetwork()
 
   // Sync-related state
   const [utxos, setUtxos] = useState<UTXO[]>([])
@@ -122,8 +122,6 @@ export function SyncProvider({ children }: SyncProviderProps) {
     activeAccountId: number | null,
     isRestore = false
   ) => {
-    if (syncing) return
-
     setSyncing(true)
     try {
       syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })
@@ -175,7 +173,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     } finally {
       setSyncing(false)
     }
-  }, [syncing, setSyncing])
+  }, [setSyncing])
 
   // Fetch data from database and API
   const fetchData = useCallback(async (

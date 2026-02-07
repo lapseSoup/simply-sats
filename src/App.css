@@ -762,8 +762,9 @@ body::-webkit-scrollbar {
   align-items: center;
   gap: 3px;
   padding: 2px 6px;
-  background: var(--accent);
-  color: var(--bg-primary);
+  background: rgba(255, 170, 0, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(255, 170, 0, 0.3);
   border-radius: var(--radius-sm);
   font-size: 11px;
   font-weight: 600;
@@ -776,7 +777,7 @@ body::-webkit-scrollbar {
   justify-content: center;
   background: none;
   border: none;
-  color: var(--bg-primary);
+  color: var(--accent);
   cursor: pointer;
   padding: 0;
   opacity: 0.7;
