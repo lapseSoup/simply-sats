@@ -185,8 +185,18 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   }
 
   // Mark spent UTXOs - only for UTXOs belonging to THIS address
+  // Protect recently-created UTXOs (e.g., change outputs from pending transactions)
+  // that may not yet be visible to the WoC API due to mempool propagation delay.
+  const RECENT_UTXO_GRACE_PERIOD_MS = 5 * 60 * 1000 // 5 minutes
+  const now = Date.now()
   for (const [key, utxo] of existingMap) {
     if (!currentUtxoKeys.has(key)) {
+      // Skip recently-created UTXOs — they may be change outputs from a
+      // just-broadcast transaction that the API hasn't indexed yet
+      if (utxo.createdAt && (now - utxo.createdAt) < RECENT_UTXO_GRACE_PERIOD_MS) {
+        syncLogger.debug(`[SYNC] Skipping recently-created UTXO (${Math.round((now - utxo.createdAt) / 1000)}s old): ${key}`)
+        continue
+      }
       // UTXO no longer exists at this address - mark as spent
       syncLogger.debug(`[SYNC] Marking spent: ${key}`)
       await markUTXOSpent(utxo.txid, utxo.vout, 'unknown')

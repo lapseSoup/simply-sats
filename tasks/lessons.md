@@ -27,3 +27,17 @@
 **Problem:** Vitest's jsdom environment creates a separate JavaScript realm. `ArrayBuffer` from Node.js isn't recognized by jsdom's `SubtleCrypto` as a valid `ArrayBuffer` instance (cross-realm type check). Even copying to a fresh `ArrayBuffer` doesn't help because the constructor itself is from the wrong realm.
 **Rule:** Use `// @vitest-environment node` for test files that use Node.js native APIs (crypto, fs, etc.) and don't need DOM access.
 **Fix:** Added `// @vitest-environment node` to crypto.test.ts.
+
+## verbatimModuleSyntax Breaks Barrel Re-exports of ESM Packages
+**Date:** 2025-02-07
+**Context:** Added `js-1sat-ord` marketplace functions to the wallet barrel `index.ts`. `tsc -b` (build mode) failed with "Module has no exported member 'listOrdinal'" when consuming the barrel.
+**Problem:** With `verbatimModuleSyntax: true` in tsconfig, barrel re-exports (`export { listOrdinal } from './marketplace'`) silently fail when the source module imports from an ESM package (`js-1sat-ord`) that has complex type exports. The types are visible to `tsc --noEmit` but not to `tsc -b` which respects module boundaries more strictly.
+**Rule:** When a module imports from an ESM-only npm package, do NOT re-export it through a barrel file under `verbatimModuleSyntax`. Instead, have consumers import directly from the module path (e.g., `from '../services/wallet/marketplace'`). Add a comment in the barrel explaining why.
+**Fix:** Removed marketplace exports from `wallet/index.ts`, imported directly from `wallet/marketplace` in WalletContext.
+
+## Dual @bsv/sdk Versions Require Type Casting at Boundary
+**Date:** 2025-02-07
+**Context:** `js-1sat-ord` bundles its own `@bsv/sdk` v2.0.1, while the project uses v1.10.3. Both define `PrivateKey` and `Transaction` classes with private fields.
+**Problem:** TypeScript considers `PrivateKey` from v1.10.3 incompatible with `PrivateKey` from v2.0.1 because they have different private class members (structural typing doesn't apply to classes with private fields). `tsc -b` rejects passing project keys to js-1sat-ord functions.
+**Rule:** When a dependency bundles a different version of a shared peer dep, use `type AnyX = any` aliases and cast at the boundary: `ordPk as AnyPrivateKey`. For return values, use double-cast: `result.tx as unknown as Transaction`. Add a comment explaining the version mismatch.
+**Fix:** Added `type AnyPrivateKey = any` and casted at the js-1sat-ord call boundary in `marketplace.ts`.

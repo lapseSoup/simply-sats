@@ -2,9 +2,13 @@
  * ImportAccountForm Component
  *
  * Form for importing an existing wallet account from mnemonic.
+ * Uses MnemonicInput for real-time BIP-39 validation, autocomplete,
+ * and smart paste handling — same experience as the wallet recovery flow.
  */
 
-import { useState, useCallback, memo } from 'react'
+import { useState, useCallback, useMemo, memo } from 'react'
+import { validateMnemonic } from 'bip39'
+import { MnemonicInput } from '../../forms/MnemonicInput'
 
 interface ImportAccountFormProps {
   onImportAccount: (name: string, mnemonic: string) => Promise<boolean>
@@ -20,15 +24,15 @@ export const ImportAccountForm = memo(function ImportAccountForm({
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const isMnemonicValid = useMemo(() => {
+    const words = mnemonic.trim().split(/\s+/).filter(w => w.length > 0)
+    if (words.length !== 12) return false
+    return validateMnemonic(mnemonic.trim().toLowerCase())
+  }, [mnemonic])
+
   const handleImport = useCallback(async () => {
     if (!accountName.trim()) {
       setError('Please enter an account name')
-      return
-    }
-
-    const words = mnemonic.trim().split(/\s+/)
-    if (words.length !== 12) {
-      setError('Please enter a valid 12-word recovery phrase')
       return
     }
 
@@ -69,14 +73,11 @@ export const ImportAccountForm = memo(function ImportAccountForm({
       </div>
 
       <div className="form-group">
-        <label htmlFor="import-mnemonic">Recovery Phrase</label>
-        <textarea
-          id="import-mnemonic"
+        <label>Recovery Phrase</label>
+        <MnemonicInput
           value={mnemonic}
-          onChange={e => setMnemonic(e.target.value)}
-          placeholder="Enter your 12 words separated by spaces"
-          rows={3}
-          disabled={loading}
+          onChange={setMnemonic}
+          placeholder="Start typing your seed words..."
         />
       </div>
 
@@ -90,7 +91,7 @@ export const ImportAccountForm = memo(function ImportAccountForm({
           type="button"
           className="primary-button"
           onClick={handleImport}
-          disabled={loading || !accountName.trim() || !mnemonic.trim()}
+          disabled={loading || !accountName.trim() || !isMnemonicValid}
         >
           {loading ? 'Importing...' : 'Import Account'}
         </button>
