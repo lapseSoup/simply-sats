@@ -90,10 +90,10 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
   }
 
   // Derive network status for indicator
-  const networkStatus = !networkInfo ? 'offline' : networkInfo.overlayHealthy ? 'online' : 'degraded'
+  const networkStatus = !networkInfo ? 'offline' : 'online'
   const statusTooltip = !networkInfo
     ? 'Network: Disconnected'
-    : `Block ${networkInfo.blockHeight?.toLocaleString() || '...'} | Overlay: ${networkInfo.overlayHealthy ? 'Healthy' : 'Degraded'}`
+    : `Block ${networkInfo.blockHeight?.toLocaleString() || '...'}${networkInfo.overlayHealthy ? ' | Overlay: Healthy' : ''}`
 
   return (
       <header className="header">

@@ -45,6 +45,7 @@ import {
   getActiveAccount,
   migrateToMultiAccount
 } from '../services/accounts'
+import { discoverAccounts } from '../services/accountDiscovery'
 import { type TokenBalance } from '../services/tokens'
 import { useTokens } from './TokensContext'
 import {
@@ -435,10 +436,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
     if (keys) {
       setWallet(keys)
       setIsLocked(false)
+      // Discover derivative accounts for this mnemonic (non-blocking)
+      const active = await getActiveAccount()
+      discoverAccounts(mnemonic, sessionPassword, active?.id)
+        .then(async (found) => {
+          if (found > 0) {
+            await refreshAccounts()
+            walletLogger.info(`Discovered ${found} derivative account(s) for imported wallet`)
+          }
+        })
+        .catch(() => {})
       return true
     }
     return false
-  }, [accountsImportAccount, setWallet, sessionPassword])
+  }, [accountsImportAccount, setWallet, sessionPassword, refreshAccounts])
 
   // Delete an account - wraps AccountsContext, may need to load new active account
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {

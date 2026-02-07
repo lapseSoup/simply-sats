@@ -22,7 +22,9 @@ import {
   rollbackPendingSpend,
   getPendingUtxos,
   getUtxoByOutpoint,
-  type UTXO as DBUtxo
+  type UTXO as DBUtxo,
+  getTransactionLabels,
+  updateTransactionLabels
 } from './database'
 import { RATE_LIMITS } from './config'
 import { getWocClient, type WocTransaction } from '../infrastructure/api/wocClient'
@@ -36,6 +38,7 @@ import {
   isSyncInProgress
 } from './cancellation'
 import { syncLogger } from './logger'
+import { parseTimelockScript } from './wallet/locks'
 
 // Re-export cancellation functions for external use
 export { cancelSync, startNewSync, isSyncInProgress }
@@ -299,6 +302,34 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
       amount = await calculateTxAmount(txDetails, address, allWalletAddresses || [address], accountId)
     }
 
+    // Check if this is a lock transaction (works for both active and spent locks)
+    let txLabel: 'lock' | 'unlock' | undefined
+    let txDescription: string | undefined
+    let lockSats: number | undefined
+    if (txDetails) {
+      // Check outputs for timelock scripts (lock creation)
+      for (const vout of txDetails.vout) {
+        const parsed = parseTimelockScript(vout.scriptPubKey.hex)
+        if (parsed) {
+          lockSats = Math.round(vout.value * 1e8)
+          txDescription = `Locked ${lockSats.toLocaleString()} sats until block ${parsed.unlockBlock.toLocaleString()}`
+          txLabel = 'lock'
+          break
+        }
+      }
+
+      // If not a lock creation, check if this is an unlock (spending a timelock UTXO)
+      // Uses locktime + sequence as sufficient signal — no parent tx fetch needed
+      if (!txLabel && txDetails.locktime > 500000) {
+        const hasNLockTimeInput = txDetails.vin.some(v => v.sequence === 4294967294)
+        if (hasNLockTimeInput) {
+          const totalOutput = txDetails.vout.reduce((sum, v) => sum + Math.round(v.value * 1e8), 0)
+          txDescription = `Unlocked ${totalOutput.toLocaleString()} sats`
+          txLabel = 'unlock'
+        }
+      }
+    }
+
     // Store in database (addTransaction won't overwrite existing)
     try {
       await addTransaction({
@@ -306,12 +337,34 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
         createdAt: Date.now(),
         blockHeight: txRef.height > 0 ? txRef.height : undefined,
         status: txRef.height > 0 ? 'confirmed' : 'pending',
-        amount
+        amount: txLabel === 'lock' && lockSats && amount !== undefined && amount > 0 ? -lockSats : amount,
+        description: txDescription
       }, accountId)
       newTxCount++
     } catch (_e) {
-      // Ignore duplicates
+      // Ignore duplicates — but still label transactions that already exist
       syncLogger.debug(`Tx ${txRef.tx_hash.slice(0,8)} already exists in database`)
+    }
+
+    // Label lock/unlock transactions (idempotent — safe for both new and existing txs)
+    if (txLabel && txDescription) {
+      try {
+        const existingLabels = await getTransactionLabels(txRef.tx_hash)
+        if (!existingLabels.includes(txLabel)) {
+          await updateTransactionLabels(txRef.tx_hash, [...existingLabels, txLabel])
+        }
+        // Update description and fix amount if needed (handles existing txs from prior sync)
+        await upsertTransaction({
+          txid: txRef.tx_hash,
+          createdAt: Date.now(),
+          status: txRef.height > 0 ? 'confirmed' : 'pending',
+          description: txDescription,
+          ...(txLabel === 'lock' && lockSats && amount !== undefined && amount > 0 ? { amount: -lockSats } : {}),
+          ...(txLabel === 'unlock' && amount !== undefined ? { amount } : {})
+        })
+      } catch (_e) {
+        // Best-effort: don't fail sync if labeling fails
+      }
     }
   }
 

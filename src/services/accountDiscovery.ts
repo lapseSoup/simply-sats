@@ -8,7 +8,7 @@
 
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 import { createWocClient } from '../infrastructure/api/wocClient'
-import { createAccount } from './accounts'
+import { createAccount, switchAccount } from './accounts'
 import { syncWallet } from './sync'
 import { accountLogger } from './logger'
 
@@ -23,11 +23,13 @@ const MAX_ACCOUNT_DISCOVERY = 20
  *
  * @param mnemonic - The BIP-39 mnemonic used to derive accounts
  * @param password - Password for encrypting discovered account keys
+ * @param restoreActiveAccountId - If provided, re-activates this account after discovery
  * @returns Number of additional accounts discovered and created
  */
 export async function discoverAccounts(
   mnemonic: string,
-  password: string
+  password: string,
+  restoreActiveAccountId?: number
 ): Promise<number> {
   const wocClient = createWocClient()
   let found = 0
@@ -58,6 +60,12 @@ export async function discoverAccounts(
       accountLogger.error('Failed to create discovered account', err, { accountIndex: i })
       break // Don't continue if DB write fails
     }
+  }
+
+  // Restore the originally active account (createAccount deactivates all others)
+  if (found > 0 && restoreActiveAccountId) {
+    await switchAccount(restoreActiveAccountId)
+    accountLogger.info('Restored active account after discovery', { restoreActiveAccountId })
   }
 
   if (found > 0) {

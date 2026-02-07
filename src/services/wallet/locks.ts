@@ -566,7 +566,7 @@ export async function generateUnlockTxHex(
  * Parse a timelock script to extract the unlock block height and public key hash
  * Returns null if the script is not a recognized timelock script
  */
-function parseTimelockScript(scriptHex: string): { unlockBlock: number; publicKeyHash: string } | null {
+export function parseTimelockScript(scriptHex: string): { unlockBlock: number; publicKeyHash: string } | null {
   // Check if script starts with our timelock signature
   if (!scriptHex.startsWith(TIMELOCK_SCRIPT_SIGNATURE)) {
     return null

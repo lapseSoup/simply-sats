@@ -98,19 +98,21 @@ const nodeCache: Map<string, ShipNode> = new Map()
 const serviceLookupCache: Map<string, SlapService[]> = new Map()
 
 /**
- * Check if an overlay node is healthy
+ * Check if an overlay node is healthy (with one retry)
  */
 async function checkNodeHealth(nodeUrl: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${nodeUrl}/health`, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(5000)
-    })
-    return response.ok
-  } catch {
-    return false
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(`${nodeUrl}/health`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000)
+      })
+      if (response.ok) return true
+    } catch { /* retry */ }
+    if (attempt === 0) await new Promise(r => setTimeout(r, 1000))
   }
+  return false
 }
 
 /**
@@ -141,8 +143,8 @@ export async function discoverOverlayNodes(): Promise<ShipNode[]> {
     const cached = nodeCache.get(url)
     const now = Date.now()
 
-    // Use cache if less than 5 minutes old
-    if (cached && now - cached.lastChecked < 5 * 60 * 1000) {
+    // Use cache if less than 2 minutes old
+    if (cached && now - cached.lastChecked < 2 * 60 * 1000) {
       nodes.push(cached)
       continue
     }

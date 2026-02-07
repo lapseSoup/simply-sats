@@ -12,7 +12,7 @@ import { importDatabase, type DatabaseBackup } from '../../services/database'
 import { decrypt, type EncryptedData } from '../../services/crypto'
 import { setWalletKeys } from '../../services/brc100'
 import { saveWallet } from '../../services/wallet'
-import { migrateToMultiAccount } from '../../services/accounts'
+import { migrateToMultiAccount, getActiveAccount } from '../../services/accounts'
 import { discoverAccounts } from '../../services/accountDiscovery'
 
 interface RestoreModalProps {
@@ -57,7 +57,8 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       if (success) {
         onSuccess()
         // Discover additional accounts with on-chain activity (non-blocking)
-        discoverAccounts(restoreMnemonic.trim(), password)
+        const active = await getActiveAccount()
+        discoverAccounts(restoreMnemonic.trim(), password, active?.id)
           .then(async (found) => {
             if (found > 0) {
               await refreshAccounts()
@@ -163,7 +164,8 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
 
       // Discover additional accounts if mnemonic is available (non-blocking)
       if (backup.wallet.mnemonic) {
-        discoverAccounts(backup.wallet.mnemonic, password)
+        const activeAfterRestore = await getActiveAccount()
+        discoverAccounts(backup.wallet.mnemonic, password, activeAfterRestore?.id)
           .then(async (found) => {
             if (found > 0) {
               await refreshAccounts()
