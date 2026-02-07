@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { getTransactionLabels, updateTransactionLabels } from '../../services/database'
+import { getTransactionLabels, updateTransactionLabels, getTransactionByTxid } from '../../services/database'
 import { uiLogger } from '../../services/logger'
 import { Modal } from '../shared/Modal'
 
@@ -48,20 +48,30 @@ export function TransactionDetailModal({
   const [labels, setLabels] = useState<string[]>([])
   const [newLabel, setNewLabel] = useState('')
   const [loading, setLoading] = useState(true)
+  // DB-enriched fields (fills gaps when TxHistoryItem lacks description/amount)
+  const [dbDescription, setDbDescription] = useState<string | undefined>(undefined)
+  const [dbAmount, setDbAmount] = useState<number | undefined>(undefined)
 
-  // Load existing labels on mount
+  // Load existing labels + full DB record on mount
   useEffect(() => {
-    const loadLabels = async () => {
+    const loadData = async () => {
       try {
-        const existingLabels = await getTransactionLabels(transaction.tx_hash)
+        const [existingLabels, dbRecord] = await Promise.all([
+          getTransactionLabels(transaction.tx_hash),
+          getTransactionByTxid(transaction.tx_hash)
+        ])
         setLabels(existingLabels)
+        if (dbRecord) {
+          setDbDescription(dbRecord.description)
+          if (dbRecord.amount !== undefined) setDbAmount(dbRecord.amount)
+        }
       } catch (e) {
-        uiLogger.warn('Failed to load transaction labels', { error: String(e) })
+        uiLogger.warn('Failed to load transaction data', { error: String(e) })
       } finally {
         setLoading(false)
       }
     }
-    loadLabels()
+    loadData()
   }, [transaction.tx_hash])
 
   const openOnWoC = () => {
@@ -137,7 +147,10 @@ export function TransactionDetailModal({
           )}
 
           {(() => {
-            const fee = parseFee(transaction.amount, transaction.description)
+            // Use DB-enriched values as fallback for fee calculation
+            const effectiveAmount = transaction.amount ?? dbAmount
+            const effectiveDescription = transaction.description ?? dbDescription
+            const fee = parseFee(effectiveAmount, effectiveDescription)
             return fee !== null ? (
               <div className="tx-detail-row">
                 <span className="tx-detail-label">Fee Paid</span>

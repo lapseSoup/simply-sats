@@ -277,6 +277,97 @@ export async function getTransactionLabels(txid: string): Promise<string[]> {
 }
 
 /**
+ * Get a single transaction by txid
+ */
+export async function getTransactionByTxid(txid: string, accountId?: number): Promise<Transaction | null> {
+  const database = getDatabase()
+
+  const rows = await database.select<TransactionRow[]>(
+    accountId
+      ? 'SELECT * FROM transactions WHERE txid = $1 AND account_id = $2 LIMIT 1'
+      : 'SELECT * FROM transactions WHERE txid = $1 LIMIT 1',
+    accountId ? [txid, accountId] : [txid]
+  )
+
+  if (rows.length === 0) return null
+
+  const row = rows[0]
+  return {
+    id: row.id,
+    txid: row.txid,
+    rawTx: row.raw_tx ?? undefined,
+    description: row.description ?? undefined,
+    createdAt: row.created_at,
+    confirmedAt: row.confirmed_at ?? undefined,
+    blockHeight: row.block_height ?? undefined,
+    status: row.status as 'pending' | 'confirmed' | 'failed',
+    amount: row.amount ?? undefined
+  }
+}
+
+/**
+ * Search transactions that have ALL of the given labels (AND logic)
+ * Uses dynamic INNER JOINs so a tx must have every label to match.
+ * Optional freeText filters additionally on txid/description.
+ */
+export async function searchTransactionsByLabels(
+  labels: string[],
+  freeText?: string,
+  accountId?: number,
+  limit: number = 50
+): Promise<Transaction[]> {
+  const database = getDatabase()
+  const params: SqlParams = []
+  let paramIndex = 1
+
+  // Build FROM clause with one INNER JOIN per label
+  let fromClause = 'FROM transactions t'
+  const whereConditions: string[] = []
+
+  for (let i = 0; i < labels.length; i++) {
+    const alias = `tl${i}`
+    fromClause += ` INNER JOIN transaction_labels ${alias} ON t.txid = ${alias}.txid`
+    whereConditions.push(`${alias}.label = $${paramIndex++}`)
+    params.push(labels[i])
+  }
+
+  if (accountId) {
+    whereConditions.push(`t.account_id = $${paramIndex++}`)
+    params.push(accountId)
+  }
+
+  if (freeText && freeText.trim()) {
+    const searchTerm = `%${freeText.trim()}%`
+    whereConditions.push(`(t.txid LIKE $${paramIndex} OR t.description LIKE $${paramIndex})`)
+    paramIndex++
+    params.push(searchTerm)
+  }
+
+  const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : ''
+
+  params.push(limit)
+  const query = `SELECT DISTINCT t.id, t.txid, t.raw_tx, t.description, t.created_at, t.confirmed_at,
+          t.block_height, t.status, t.amount, t.account_id
+   ${fromClause}
+   ${whereClause}
+   ORDER BY t.created_at DESC
+   LIMIT $${paramIndex}`
+
+  const rows = await database.select<TransactionRow[]>(query, params)
+
+  return rows.map(row => ({
+    txid: row.txid,
+    rawTx: row.raw_tx || undefined,
+    description: row.description || undefined,
+    createdAt: row.created_at,
+    confirmedAt: row.confirmed_at || undefined,
+    blockHeight: row.block_height || undefined,
+    status: row.status as 'pending' | 'confirmed' | 'failed',
+    amount: row.amount || undefined
+  }))
+}
+
+/**
  * Search transactions by txid or label (partial match)
  */
 export async function searchTransactions(

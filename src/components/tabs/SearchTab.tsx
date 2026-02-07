@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Search, ArrowDownLeft, ArrowUpRight, Circle } from 'lucide-react'
+import { Search, X, ArrowDownLeft, ArrowUpRight, Circle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { searchTransactions, getAllLabels } from '../../services/database'
+import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../services/database'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 
 type SearchResult = {
@@ -21,8 +21,11 @@ export function SearchTab() {
   const [selectedTx, setSelectedTx] = useState<SearchResult | null>(null)
   const [allLabels, setAllLabels] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
 
   // Load all labels on mount
   useEffect(() => {
@@ -31,12 +34,22 @@ export function SearchTab() {
       .catch(() => setAllLabels([]))
   }, [activeAccountId])
 
+  // Filter suggestions: match query text, exclude already-selected labels
   const filteredLabels = query.trim()
-    ? allLabels.filter(l => l.toLowerCase().includes(query.trim().toLowerCase()))
+    ? allLabels.filter(l =>
+        l.toLowerCase().includes(query.trim().toLowerCase()) &&
+        !selectedLabels.includes(l)
+      )
     : []
 
-  const performSearch = useCallback(async (searchQuery: string) => {
-    if (!searchQuery.trim()) {
+  // Reset highlighted index when suggestions change
+  useEffect(() => {
+    setHighlightedIndex(-1)
+  }, [filteredLabels.length])
+
+  const performSearch = useCallback(async (freeText: string, labels: string[]) => {
+    // Nothing to search
+    if (!freeText.trim() && labels.length === 0) {
       setResults([])
       setSearching(false)
       return
@@ -44,7 +57,18 @@ export function SearchTab() {
 
     setSearching(true)
     try {
-      const txs = await searchTransactions(searchQuery.trim(), activeAccountId || undefined)
+      let txs
+      if (labels.length > 0) {
+        // Multi-label AND search with optional freeText
+        txs = await searchTransactionsByLabels(
+          labels,
+          freeText.trim() || undefined,
+          activeAccountId || undefined
+        )
+      } else {
+        // Simple text search
+        txs = await searchTransactions(freeText.trim(), activeAccountId || undefined)
+      }
       setResults(txs.map(tx => ({
         tx_hash: tx.txid,
         amount: tx.amount,
@@ -58,19 +82,19 @@ export function SearchTab() {
     }
   }, [activeAccountId])
 
-  // Debounced search
+  // Debounced search — triggers on query or selectedLabels change
   useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)
     }
 
-    if (!query.trim()) {
+    if (!query.trim() && selectedLabels.length === 0) {
       setResults([])
       return
     }
 
     debounceRef.current = setTimeout(() => {
-      performSearch(query)
+      performSearch(query, selectedLabels)
     }, 300)
 
     return () => {
@@ -78,13 +102,46 @@ export function SearchTab() {
         clearTimeout(debounceRef.current)
       }
     }
-  }, [query, performSearch])
+  }, [query, selectedLabels, performSearch])
 
   const selectLabel = (label: string) => {
-    setQuery(label)
+    setSelectedLabels(prev => [...prev, label])
+    setQuery('')
     setShowSuggestions(false)
+    setHighlightedIndex(-1)
     inputRef.current?.focus()
   }
+
+  const removeLabel = (label: string) => {
+    setSelectedLabels(prev => prev.filter(l => l !== label))
+    inputRef.current?.focus()
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSuggestions || filteredLabels.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlightedIndex(prev =>
+        prev < filteredLabels.length - 1 ? prev + 1 : 0
+      )
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlightedIndex(prev =>
+        prev > 0 ? prev - 1 : filteredLabels.length - 1
+      )
+    } else if (e.key === 'Enter' && highlightedIndex >= 0) {
+      e.preventDefault()
+      selectLabel(filteredLabels[highlightedIndex])
+    }
+  }
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (highlightedIndex < 0 || !suggestionsRef.current) return
+    const items = suggestionsRef.current.querySelectorAll('.search-suggestion-item')
+    items[highlightedIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedIndex])
 
   const getTxIcon = (amount?: number) => {
     if (amount && amount > 0) return <ArrowDownLeft size={14} strokeWidth={1.75} />
@@ -103,11 +160,30 @@ export function SearchTab() {
       <div className="search-tab">
         <div className="search-input-container">
           <Search size={16} strokeWidth={1.75} className="search-icon" />
+
+          {/* Selected label chips */}
+          {selectedLabels.length > 0 && (
+            <div className="search-label-chips">
+              {selectedLabels.map(label => (
+                <span key={label} className="search-label-chip">
+                  {label}
+                  <button
+                    onClick={() => removeLabel(label)}
+                    className="search-label-chip-remove"
+                    aria-label={`Remove ${label} filter`}
+                  >
+                    <X size={10} strokeWidth={2.5} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           <input
             ref={inputRef}
             type="text"
             className="search-input"
-            placeholder="Search by label, TXID, or address..."
+            placeholder={selectedLabels.length > 0 ? 'Add another label or search...' : 'Search by label, TXID, or address...'}
             value={query}
             onChange={e => {
               setQuery(e.target.value)
@@ -118,18 +194,20 @@ export function SearchTab() {
               // Delay to allow click on suggestion
               setTimeout(() => setShowSuggestions(false), 200)
             }}
+            onKeyDown={handleKeyDown}
             autoFocus
           />
           {showSuggestions && filteredLabels.length > 0 && (
-            <div className="search-suggestions">
-              {filteredLabels.map(label => (
+            <div className="search-suggestions" ref={suggestionsRef}>
+              {filteredLabels.map((label, index) => (
                 <button
                   key={label}
-                  className="search-suggestion-item"
+                  className={`search-suggestion-item${index === highlightedIndex ? ' highlighted' : ''}`}
                   onMouseDown={e => {
                     e.preventDefault()
                     selectLabel(label)
                   }}
+                  onMouseEnter={() => setHighlightedIndex(index)}
                 >
                   {label}
                 </button>
@@ -142,11 +220,11 @@ export function SearchTab() {
           <div className="search-status">Searching...</div>
         )}
 
-        {!searching && query.trim() && results.length === 0 && (
+        {!searching && (query.trim() || selectedLabels.length > 0) && results.length === 0 && (
           <div className="search-empty">No transactions found</div>
         )}
 
-        {!query.trim() && (
+        {!query.trim() && selectedLabels.length === 0 && (
           <div className="search-empty">
             Search transactions by label, TXID, or description
           </div>

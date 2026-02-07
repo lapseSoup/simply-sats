@@ -43,13 +43,15 @@ export {
   addTransaction,
   upsertTransaction,
   getAllTransactions,
+  getTransactionByTxid,
   updateTransactionAmount,
   getTransactionsByLabel,
   updateTransactionStatus,
   updateTransactionLabels,
   getTransactionLabels,
   getAllLabels,
-  searchTransactions
+  searchTransactions,
+  searchTransactionsByLabels
 } from './txRepository'
 
 // Lock operations

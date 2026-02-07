@@ -1,11 +1,13 @@
+import { Lock } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 
 export function BalanceDisplay() {
-  const { balance, ordBalance } = useWallet()
+  const { balance, ordBalance, locks } = useWallet()
   const { displayInSats, toggleDisplayUnit, formatBSVShort, formatUSD } = useUI()
 
   const totalBalance = balance + ordBalance
+  const lockedBalance = locks.reduce((sum, l) => sum + l.satoshis, 0)
 
   return (
     <div className="balance-row">
@@ -29,6 +31,15 @@ export function BalanceDisplay() {
           </>
         )}
       </div>
+      {lockedBalance > 0 && (
+        <div className="balance-locked">
+          <Lock size={11} strokeWidth={2} />
+          {displayInSats
+            ? `${lockedBalance.toLocaleString()} locked`
+            : `${formatBSVShort(lockedBalance)} locked`
+          }
+        </div>
+      )}
       <div className="balance-sub">
         ${formatUSD(totalBalance)} USD
       </div>
