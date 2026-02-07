@@ -44,7 +44,7 @@ export function UIProvider({ children }: UIProviderProps) {
 
   const [displayInSats, setDisplayInSats] = useState<boolean>(() => {
     const saved = localStorage.getItem('simply_sats_display_sats')
-    return saved === 'true'
+    return saved !== null ? saved === 'true' : true
   })
 
   const [toasts, setToasts] = useState<ToastItem[]>([])

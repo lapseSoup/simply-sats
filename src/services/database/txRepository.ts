@@ -24,12 +24,21 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: nu
     [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status, tx.amount ?? null, accId]
   )
 
-  // If amount was provided and row already existed, update the amount
+  // If amount was provided and row already existed, update the amount (only if currently NULL)
   // Scope by account_id to avoid updating other accounts' rows for the same txid
   if (tx.amount !== undefined) {
     await database.execute(
       'UPDATE transactions SET amount = COALESCE(amount, $1) WHERE txid = $2 AND account_id = $3 AND amount IS NULL',
       [tx.amount, tx.txid, accId]
+    )
+  }
+
+  // Update block_height and status when a pending tx gets confirmed
+  if (tx.blockHeight && tx.status === 'confirmed') {
+    await database.execute(
+      `UPDATE transactions SET block_height = $1, status = 'confirmed'
+       WHERE txid = $2 AND account_id = $3 AND (block_height IS NULL OR status = 'pending')`,
+      [tx.blockHeight, tx.txid, accId]
     )
   }
 

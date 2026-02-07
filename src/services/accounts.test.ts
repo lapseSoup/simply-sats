@@ -489,7 +489,7 @@ describe('Account Management Service', () => {
 
   describe('DEFAULT_ACCOUNT_SETTINGS', () => {
     it('should have expected default values', () => {
-      expect(DEFAULT_ACCOUNT_SETTINGS.displayInSats).toBe(false)
+      expect(DEFAULT_ACCOUNT_SETTINGS.displayInSats).toBe(true)
       expect(DEFAULT_ACCOUNT_SETTINGS.feeRateKB).toBe(100)
       expect(DEFAULT_ACCOUNT_SETTINGS.autoLockMinutes).toBe(10)
       expect(DEFAULT_ACCOUNT_SETTINGS.trustedOrigins).toEqual([])

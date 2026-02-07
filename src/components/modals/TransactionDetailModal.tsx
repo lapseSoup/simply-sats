@@ -71,7 +71,7 @@ export function TransactionDetailModal({
   onClose,
   onLabelsUpdated
 }: TransactionDetailModalProps) {
-  const { copyToClipboard, showToast, formatUSD } = useUI()
+  const { copyToClipboard, showToast, formatUSD, displayInSats, formatBSVShort } = useUI()
   const [labels, setLabels] = useState<string[]>([])
   const [newLabel, setNewLabel] = useState('')
   const [loading, setLoading] = useState(true)
@@ -172,7 +172,10 @@ export function TransactionDetailModal({
             <div className="tx-detail-row">
               <span className="tx-detail-label">Amount</span>
               <span className={`tx-detail-value ${transaction.amount > 0 ? 'positive' : 'negative'}`}>
-                {transaction.amount > 0 ? '+' : ''}{transaction.amount.toLocaleString()} sats
+                {displayInSats
+                  ? <>{transaction.amount > 0 ? '+' : ''}{transaction.amount.toLocaleString()} sats</>
+                  : <>{transaction.amount > 0 ? '+' : '-'}{formatBSVShort(Math.abs(transaction.amount))} BSV</>
+                }
                 <span className="tx-detail-usd">
                   (${formatUSD(Math.abs(transaction.amount))})
                 </span>
@@ -184,7 +187,10 @@ export function TransactionDetailModal({
             <div className="tx-detail-row">
               <span className="tx-detail-label">Fee Paid</span>
               <span className="tx-detail-value">
-                {fee.toLocaleString()} sats
+                {displayInSats
+                  ? <>{fee.toLocaleString()} sats</>
+                  : <>{formatBSVShort(fee)} BSV</>
+                }
                 <span className="tx-detail-usd">
                   (${formatUSD(fee)})
                 </span>

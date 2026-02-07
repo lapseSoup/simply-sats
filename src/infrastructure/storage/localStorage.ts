@@ -148,7 +148,7 @@ export const storage = {
 
   displayInSats: {
     get(): boolean {
-      return safeParseBoolean(localStorage.getItem(STORAGE_KEYS.DISPLAY_SATS), false)
+      return safeParseBoolean(localStorage.getItem(STORAGE_KEYS.DISPLAY_SATS), true)
     },
     set(value: boolean): void {
       localStorage.setItem(STORAGE_KEYS.DISPLAY_SATS, String(value))

@@ -21,13 +21,17 @@ const TransactionItem = memo(function TransactionItem({
   txType,
   txIcon,
   onClick,
-  formatUSD
+  formatUSD,
+  displayInSats,
+  formatBSVShort
 }: {
   tx: TxHistoryItem
   txType: string
   txIcon: ReactNode
   onClick: () => void
   formatUSD: (sats: number) => string
+  displayInSats: boolean
+  formatBSVShort: (sats: number) => string
 }) {
   return (
     <div
@@ -50,7 +54,10 @@ const TransactionItem = memo(function TransactionItem({
         {tx.amount ? (
           <>
             <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
-              {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats
+              {displayInSats
+                ? <>{tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats</>
+                : <>{tx.amount > 0 ? '+' : ''}{formatBSVShort(Math.abs(tx.amount))} BSV</>
+              }
             </div>
             <div className="tx-amount-usd" style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
               ${formatUSD(Math.abs(tx.amount))}
@@ -66,7 +73,7 @@ const TransactionItem = memo(function TransactionItem({
 
 export function ActivityTab() {
   const { txHistory, locks, loading, activeAccountId } = useWallet()
-  const { formatUSD } = useUI()
+  const { formatUSD, displayInSats, formatBSVShort } = useUI()
   const [lockTxids, setLockTxids] = useState<Set<string>>(new Set())
   const [unlockTxids, setUnlockTxids] = useState<Set<string>>(new Set())
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
@@ -173,6 +180,8 @@ export function ActivityTab() {
                     txIcon={txIcon}
                     onClick={() => handleTxClick(tx)}
                     formatUSD={formatUSD}
+                    displayInSats={displayInSats}
+                    formatBSVShort={formatBSVShort}
                   />
                 </div>
               )
@@ -204,6 +213,8 @@ export function ActivityTab() {
               txIcon={txIcon}
               onClick={() => handleTxClick(tx)}
               formatUSD={formatUSD}
+              displayInSats={displayInSats}
+              formatBSVShort={formatBSVShort}
             />
           )
         })}
