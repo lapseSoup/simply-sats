@@ -32,6 +32,7 @@ import {
   getTransactionByTxid,
   upsertTransaction,
   updateLockBlock,
+  getLocks as getLocksFromDB,
   type Contact,
   type UTXO as DatabaseUTXO
 } from '../services/database'
@@ -208,6 +209,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
     getKeysForAccount
   } = useAccounts()
 
+  // Always-current account ID ref — avoids stale closure in fetchData after account switch
+  const activeAccountIdRef = useRef(activeAccountId)
+  activeAccountIdRef.current = activeAccountId
+
   // Token state from TokensContext
   const {
     tokenBalances,
@@ -367,6 +372,26 @@ export function WalletProvider({ children }: WalletProviderProps) {
         resetSync()
         setWallet(keys)
         setIsLocked(false)
+
+        // Preload locks from DB instantly so they appear before the full sync cycle
+        try {
+          const dbLocks = await getLocksFromDB(0, accountId)
+          if (dbLocks.length > 0) {
+            setLocks(dbLocks.map(lock => ({
+              txid: lock.utxo.txid,
+              vout: lock.utxo.vout,
+              satoshis: lock.utxo.satoshis,
+              lockingScript: lock.utxo.lockingScript,
+              unlockBlock: lock.unlockBlock,
+              publicKeyHex: keys.walletPubKey,
+              createdAt: lock.createdAt,
+              lockBlock: lock.lockBlock
+            })))
+          }
+        } catch (_e) {
+          // Best-effort: full sync will pick up locks anyway
+        }
+
         walletLogger.info('Account switched successfully', { accountId })
         return true
       }
@@ -549,8 +574,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Sync wallet with blockchain - delegates to SyncContext
   const performSync = useCallback(async (isRestore = false, _forceReset = false) => {
     if (!wallet) return
-    await syncPerformSync(wallet, activeAccountId, isRestore)
-  }, [wallet, activeAccountId, syncPerformSync])
+    await syncPerformSync(wallet, activeAccountIdRef.current, isRestore)
+  }, [wallet, syncPerformSync])
 
   // Fetch data from database and API - delegates to SyncContext with lock detection callback
   const fetchData = useCallback(async () => {
@@ -558,10 +583,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
     // Capture version before async work — if it changes, account was switched
     const version = fetchVersionRef.current
+    // Use ref for always-current account ID (avoids stale closure after account switch)
+    const currentAccountId = activeAccountIdRef.current
 
     await syncFetchData(
       wallet,
-      activeAccountId,
+      currentAccountId,
       knownUnlockedLocks,
       async ({ utxos: fetchedUtxos, shouldClearLocks, preloadedLocks }) => {
         // Guard: discard results if account was switched during this fetch
@@ -651,7 +678,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         }
       }
     )
-  }, [wallet, activeAccountId, knownUnlockedLocks, syncFetchData, detectLocks, setLocks])
+  }, [wallet, knownUnlockedLocks, syncFetchData, detectLocks, setLocks])
 
   // Wallet actions
   const handleCreateWallet = useCallback(async (password: string): Promise<string | null> => {

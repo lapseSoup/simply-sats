@@ -1,5 +1,5 @@
-import { useState, useEffect, memo, useMemo } from 'react'
-import { Lock, Unlock, Sparkles } from 'lucide-react'
+import { useState, memo, useMemo } from 'react'
+import { Unlock, Sparkles } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import type { LockedUTXO } from '../../services/wallet'
@@ -35,79 +35,10 @@ function formatTimeRemaining(seconds: number): string {
 }
 
 
-interface ProgressRingProps {
-  progress: number
-  size?: number
-  strokeWidth?: number
-  isUnlockable?: boolean
-}
-
-function ProgressRing({ progress, size = 48, strokeWidth = 4, isUnlockable = false }: ProgressRingProps) {
-  const radius = (size - strokeWidth) / 2
-  const circumference = radius * 2 * Math.PI
-  const offset = circumference - (progress / 100) * circumference
-
-  return (
-    <div className="progress-ring-container">
-      <svg
-        width={size}
-        height={size}
-        className="progress-ring"
-        role="progressbar"
-        aria-valuenow={Math.round(progress)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-      >
-        {/* Background circle */}
-        <circle
-          className="progress-ring-bg"
-          strokeWidth={strokeWidth}
-          fill="transparent"
-          r={radius}
-          cx={size / 2}
-          cy={size / 2}
-        />
-        {/* Progress circle */}
-        <circle
-          className={`progress-ring-progress ${isUnlockable ? 'complete' : ''}`}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          fill="transparent"
-          r={radius}
-          cx={size / 2}
-          cy={size / 2}
-          style={{
-            strokeDasharray: circumference,
-            strokeDashoffset: offset,
-            transform: 'rotate(-90deg)',
-            transformOrigin: '50% 50%'
-          }}
-        />
-      </svg>
-      <div className="progress-ring-content">
-        {isUnlockable ? (
-          <Unlock size={20} strokeWidth={2} />
-        ) : (
-          <Lock size={20} strokeWidth={2} />
-        )}
-      </div>
-    </div>
-  )
-}
-
 export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabProps) {
   const { locks, networkInfo } = useWallet()
   const { formatUSD } = useUI()
-  const [now, setNow] = useState(() => Date.now())
   const [selectedLock, setSelectedLock] = useState<LockedUTXO | null>(null)
-
-  // Update time estimates every minute
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setNow(Date.now())
-    }, 60000)
-    return () => clearInterval(interval)
-  }, [])
 
   const currentHeight = networkInfo?.blockHeight || 0
 
@@ -140,7 +71,6 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
                       key={lock.txid}
                       lock={lock}
                       currentHeight={currentHeight}
-                      now={now}
                       isUnlockable={true}
                       isUnlocking={isUnlocking}
                       onUnlock={onUnlock}
@@ -162,7 +92,6 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
                     key={lock.txid}
                     lock={lock}
                     currentHeight={currentHeight}
-                    now={now}
                     isUnlockable={false}
                     isUnlocking={false}
                     onUnlock={onUnlock}
@@ -215,37 +144,15 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
 interface LockItemProps {
   lock: LockedUTXO
   currentHeight: number
-  now: number
   isUnlockable: boolean
   isUnlocking: boolean
   onUnlock: (lock: LockedUTXO) => void
   onClick: (lock: LockedUTXO) => void
 }
 
-const LockItem = memo(function LockItem({ lock, currentHeight, now, isUnlockable, isUnlocking, onUnlock, onClick }: LockItemProps) {
+const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, onClick }: LockItemProps) {
   const blocksRemaining = Math.max(0, lock.unlockBlock - currentHeight)
   const estimatedSeconds = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
-
-  // Calculate progress percentage using block-based approach
-  let progressPercent: number
-  if (isUnlockable) {
-    progressPercent = 100
-  } else if (lock.lockBlock && lock.lockBlock < lock.unlockBlock) {
-    // Accurate: use stored lock creation block height (new locks)
-    const totalBlocks = lock.unlockBlock - lock.lockBlock
-    const elapsed = currentHeight - lock.lockBlock
-    progressPercent = Math.max(0, Math.min(99, (elapsed / totalBlocks) * 100))
-  } else if (lock.createdAt && currentHeight > 0) {
-    // Fallback: estimate creation block from timestamp
-    const ageMs = now - lock.createdAt
-    const estimatedBlocksAgo = Math.round(ageMs / (AVERAGE_BLOCK_TIME_SECONDS * 1000))
-    const estimatedCreationBlock = currentHeight - estimatedBlocksAgo
-    const totalBlocks = Math.max(lock.unlockBlock - estimatedCreationBlock, blocksRemaining + 1)
-    const elapsed = totalBlocks - blocksRemaining
-    progressPercent = Math.max(0, Math.min(99, (elapsed / totalBlocks) * 100))
-  } else {
-    progressPercent = 0
-  }
 
   return (
     <div
@@ -258,15 +165,6 @@ const LockItem = memo(function LockItem({ lock, currentHeight, now, isUnlockable
       style={{ cursor: 'pointer' }}
     >
       <div className="lock-card-main">
-        <div className="lock-progress-ring">
-          <ProgressRing
-            progress={progressPercent}
-            size={56}
-            strokeWidth={4}
-            isUnlockable={isUnlockable}
-          />
-        </div>
-
         <div className="lock-info">
           <div className="lock-amount">
             {lock.satoshis.toLocaleString()} sats
@@ -310,27 +208,13 @@ const LockItem = memo(function LockItem({ lock, currentHeight, now, isUnlockable
               )}
             </button>
           ) : (
-            <div className="lock-countdown" title={`${blocksRemaining.toLocaleString()} blocks remaining (~${formatTimeRemaining(estimatedSeconds)})`}>
-              <span className="lock-percent">{Math.round(progressPercent)}%</span>
-              <span className="lock-status">complete</span>
+            <div className="lock-countdown" title={`~${formatTimeRemaining(estimatedSeconds)}`}>
+              <span className="lock-percent">{blocksRemaining}</span>
+              <span className="lock-status">blocks</span>
             </div>
           )}
         </div>
       </div>
-
-      {/* Expanded progress bar for locked items */}
-      {!isUnlockable && (
-        <div className="lock-progress-bar-container">
-          <div
-            className="lock-progress-bar"
-            style={{ width: `${progressPercent}%` }}
-            role="progressbar"
-            aria-valuenow={Math.round(progressPercent)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          />
-        </div>
-      )}
     </div>
   )
 })
