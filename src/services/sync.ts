@@ -213,20 +213,32 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
  * Strategy: First try local UTXO DB (cheap), then fetch parent tx from API (reliable).
  * Spent UTXOs may not exist in the local DB after a fresh sync (only current UTXOs
  * are fetched from blockchain), so the API fallback is essential for accuracy.
+ *
+ * @param tx - Transaction details from WoC
+ * @param primaryAddress - The address whose history we're syncing (used for received calculation)
+ * @param allWalletAddresses - ALL wallet addresses (wallet, ord, identity, derived) to identify our inputs
+ * @param accountId - Account ID for DB lookups
  */
-async function calculateTxAmount(tx: WocTransaction, address: string, accountId?: number): Promise<number> {
-  const lockingScript = getLockingScript(address)
+async function calculateTxAmount(
+  tx: WocTransaction,
+  primaryAddress: string,
+  allWalletAddresses: string[],
+  accountId?: number
+): Promise<number> {
+  const primaryLockingScript = getLockingScript(primaryAddress)
+  const allLockingScripts = new Set(allWalletAddresses.map(a => getLockingScript(a)))
   const wocClient = getWocClient()
   let received = 0
 
-  // Sum outputs going TO our address
+  // Sum outputs going TO the primary address (the one whose history we're viewing)
   for (const vout of tx.vout) {
-    if (vout.scriptPubKey.hex === lockingScript) {
+    if (vout.scriptPubKey.hex === primaryLockingScript) {
       received += Math.round(vout.value * 100000000) // Convert BSV to sats
     }
   }
 
   // Check if we spent any of our UTXOs in this transaction's inputs
+  // Match against ALL wallet addresses (not just primary) to catch cross-address spends
   let spent = 0
   for (const vin of tx.vin) {
     if (vin.txid && vin.vout !== undefined) {
@@ -242,12 +254,15 @@ async function calculateTxAmount(tx: WocTransaction, address: string, accountId?
         const prevTx = await wocClient.getTransactionDetails(vin.txid)
         if (prevTx?.vout?.[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]
-          if (prevOutput.scriptPubKey.hex === lockingScript) {
+          if (allLockingScripts.has(prevOutput.scriptPubKey.hex)) {
             spent += Math.round(prevOutput.value * 100000000)
           }
         }
-      } catch {
-        // If we can't fetch, skip this input
+      } catch (e) {
+        syncLogger.warn('Failed to fetch parent tx for amount calculation', {
+          txid: vin.txid,
+          error: String(e)
+        })
       }
     }
   }
@@ -262,7 +277,7 @@ async function calculateTxAmount(tx: WocTransaction, address: string, accountId?
  * @param limit - Maximum transactions to sync
  * @param accountId - Account ID for scoping data
  */
-async function syncTransactionHistory(address: string, limit: number = 50, accountId?: number): Promise<number> {
+async function syncTransactionHistory(address: string, limit: number = 50, accountId?: number, allWalletAddresses?: string[]): Promise<number> {
   const wocClient = getWocClient()
 
   // Fetch transaction history
@@ -281,7 +296,7 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
 
     let amount: number | undefined
     if (txDetails) {
-      amount = await calculateTxAmount(txDetails, address, accountId)
+      amount = await calculateTxAmount(txDetails, address, allWalletAddresses || [address], accountId)
     }
 
     // Store in database (addTransaction won't overwrite existing)
@@ -412,12 +427,14 @@ export async function syncWallet(
     // Sync transaction history for main addresses (not ordinals/identity to reduce API calls)
     // Include derived addresses since they receive payments
     const txHistoryAddresses = [walletAddress, ...derivedAddresses.map(d => d.address)]
+    // All wallet addresses for accurate input matching in calculateTxAmount
+    const allWalletAddresses = [walletAddress, ordAddress, identityAddress, ...derivedAddresses.map(d => d.address)]
     syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses (account=${accountId || 1})`)
 
     for (const addr of txHistoryAddresses) {
       if (token.isCancelled) break
       try {
-        await syncTransactionHistory(addr, 30, accountId)
+        await syncTransactionHistory(addr, 30, accountId, allWalletAddresses)
         // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
       } catch (e) {
