@@ -10,9 +10,10 @@ import { walletLogger } from '../../services/logger'
 interface HeaderProps {
   onSettingsClick: () => void
   onAccountModalOpen: (mode: 'create' | 'import' | 'manage') => void
+  onAccountSwitch?: () => void
 }
 
-export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
+export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }: HeaderProps) {
   const {
     wallet,
     networkInfo,
@@ -69,7 +70,9 @@ export function Header({ onSettingsClick, onAccountModalOpen }: HeaderProps) {
   const handleSwitchAccount = async (accountId: number) => {
     if (accountId !== activeAccountId) {
       const success = await switchAccount(accountId)
-      if (!success) {
+      if (success) {
+        onAccountSwitch?.()
+      } else {
         walletLogger.error('Failed to switch account - session password may be missing')
         showToast('Please unlock wallet to switch accounts')
       }

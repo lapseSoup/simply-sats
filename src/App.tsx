@@ -317,6 +317,7 @@ function WalletApp() {
       <Header
         onSettingsClick={() => setModal('settings')}
         onAccountModalOpen={handleAccountModalOpen}
+        onAccountSwitch={() => setActiveTab('activity')}
       />
 
       <BalanceDisplay />
