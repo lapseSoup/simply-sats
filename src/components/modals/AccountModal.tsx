@@ -5,8 +5,10 @@
  * and managing account settings.
  */
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { validateMnemonic } from 'bip39'
 import { Modal } from '../shared/Modal'
+import { MnemonicInput } from '../forms/MnemonicInput'
 import type { Account } from '../../services/accounts'
 
 type ModalMode = 'create' | 'import' | 'manage' | 'settings'
@@ -85,15 +87,15 @@ export function AccountModal({
     }
   }
 
+  const isMnemonicValid = useMemo(() => {
+    const words = mnemonic.trim().split(/\s+/).filter(w => w.length > 0)
+    if (words.length !== 12) return false
+    return validateMnemonic(mnemonic.trim().toLowerCase())
+  }, [mnemonic])
+
   const handleImportAccount = async () => {
     if (!accountName.trim()) {
       setError('Please enter an account name')
-      return
-    }
-
-    const words = mnemonic.trim().split(/\s+/)
-    if (words.length !== 12) {
-      setError('Please enter a valid 12-word recovery phrase')
       return
     }
 
@@ -228,14 +230,11 @@ export function AccountModal({
       </div>
 
       <div className="form-group">
-        <label htmlFor="import-mnemonic">Recovery Phrase</label>
-        <textarea
-          id="import-mnemonic"
+        <label>Recovery Phrase</label>
+        <MnemonicInput
           value={mnemonic}
-          onChange={e => setMnemonic(e.target.value)}
-          placeholder="Enter your 12 words separated by spaces"
-          rows={3}
-          disabled={loading}
+          onChange={setMnemonic}
+          placeholder="Start typing your seed words..."
         />
       </div>
 
@@ -249,7 +248,7 @@ export function AccountModal({
           type="button"
           className="btn btn-primary"
           onClick={handleImportAccount}
-          disabled={loading || !accountName.trim() || !mnemonic.trim()}
+          disabled={loading || !accountName.trim() || !isMnemonicValid}
         >
           {loading ? 'Importing...' : 'Import Account'}
         </button>

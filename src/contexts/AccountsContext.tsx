@@ -156,7 +156,9 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
 
       const keys = deriveWalletKeysForAccount(firstAccountKeys.mnemonic, newAccountIndex)
 
-      const accountId = await createAccount(name, keys, password)
+      // Use legacy password requirements since we're reusing the session password
+      // (which may have been created under older, less strict requirements)
+      const accountId = await createAccount(name, keys, password, true)
       if (!accountId) {
         accountLogger.error('Failed to create account in database')
         return null
@@ -175,7 +177,8 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   const importAccount = useCallback(async (name: string, mnemonic: string, password: string): Promise<WalletKeys | null> => {
     try {
       const keys = restoreWallet(mnemonic)
-      const accountId = await createAccount(name, keys, password)
+      // Use legacy password requirements since we're reusing the session password
+      const accountId = await createAccount(name, keys, password, true)
       if (!accountId) return null
 
       await refreshAccounts()
