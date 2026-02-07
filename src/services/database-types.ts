@@ -109,6 +109,7 @@ export interface LockRow {
   created_at: number
   unlocked_at: number | null
   account_id: number
+  lock_block: number | null
 }
 
 /**

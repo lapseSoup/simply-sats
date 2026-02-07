@@ -241,7 +241,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
           lockingScript: lock.utxo.lockingScript,
           unlockBlock: lock.unlockBlock,
           publicKeyHex: wallet.walletPubKey,
-          createdAt: lock.createdAt
+          createdAt: lock.createdAt,
+          lockBlock: lock.lockBlock
         }))
         if (preloadedLocks.length > 0) {
           // Send preloaded locks immediately via callback so UI updates

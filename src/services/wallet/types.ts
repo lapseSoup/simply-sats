@@ -176,4 +176,5 @@ export interface LockedUTXO {
   unlockBlock: number
   publicKeyHex: string
   createdAt: number
+  lockBlock?: number
 }

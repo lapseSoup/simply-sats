@@ -120,7 +120,8 @@ export async function lockBSV(
   satoshis: number,
   unlockBlock: number,
   utxos: UTXO[],
-  ordinalOrigin?: string
+  ordinalOrigin?: string,
+  lockBlock?: number
 ): Promise<{ txid: string; lockedUtxo: LockedUTXO }> {
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
@@ -246,7 +247,8 @@ export async function lockBSV(
     lockingScript: timelockScript.toHex(),
     unlockBlock,
     publicKeyHex: publicKey.toString(),
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    lockBlock
   }
 
   // Track transaction and confirm spend
@@ -298,6 +300,7 @@ export async function lockBSV(
     await addLock({
       utxoId,
       unlockBlock,
+      lockBlock,
       ordinalOrigin: ordinalOrigin ?? undefined,
       createdAt: Date.now()
     })
@@ -771,7 +774,8 @@ export async function detectLockedUtxos(
             lockingScript: scriptHex,
             unlockBlock: parsed.unlockBlock,
             publicKeyHex,
-            createdAt: txDetails.time ? txDetails.time * 1000 : Date.now()
+            createdAt: txDetails.time ? txDetails.time * 1000 : Date.now(),
+            lockBlock: txDetails.blockheight
           })
         }
       } catch (error) {

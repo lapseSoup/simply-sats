@@ -1,4 +1,3 @@
-import { useMemo } from 'react'
 import { Unlock, Sparkles } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { useUI } from '../../contexts/UIContext'
@@ -49,20 +48,18 @@ export function LockDetailModal({
   const isUnlockable = currentHeight >= lock.unlockBlock
   const estimatedSeconds = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
 
-  // Calculate progress percentage
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const now = useMemo(() => Date.now(), [lock.txid])
-  const estimatedCreationBlock = lock.createdAt && currentHeight > 0
-    ? currentHeight - Math.round((now - lock.createdAt) / (AVERAGE_BLOCK_TIME_SECONDS * 1000))
-    : 0
-  const lockDurationBlocks = estimatedCreationBlock > 0
-    ? Math.max(lock.unlockBlock - estimatedCreationBlock, blocksRemaining + 1)
-    : blocksRemaining + 1
-  const blocksElapsed = lockDurationBlocks - blocksRemaining
-
-  const progressPercent = isUnlockable
-    ? 100
-    : Math.max(0, Math.min(99, (blocksElapsed / lockDurationBlocks) * 100))
+  // Calculate progress percentage using block-based approach
+  let progressPercent: number
+  if (isUnlockable) {
+    progressPercent = 100
+  } else if (lock.lockBlock && lock.lockBlock < lock.unlockBlock) {
+    const totalBlocks = lock.unlockBlock - lock.lockBlock
+    const elapsed = currentHeight - lock.lockBlock
+    progressPercent = Math.max(0, Math.min(99, (elapsed / totalBlocks) * 100))
+  } else {
+    // Fallback for old locks without lockBlock
+    progressPercent = currentHeight > 0 ? Math.min(50, Math.max(1, 100 - (blocksRemaining / 10))) : 0
+  }
 
   const openOnWoC = () => {
     openUrl(`https://whatsonchain.com/tx/${lock.txid}`)

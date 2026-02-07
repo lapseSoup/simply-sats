@@ -16,9 +16,9 @@ export async function addLock(lock: Omit<Lock, 'id'>, accountId?: number): Promi
   const database = getDatabase()
 
   const result = await database.execute(
-    `INSERT INTO locks (utxo_id, unlock_block, ordinal_origin, created_at, account_id)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [lock.utxoId, lock.unlockBlock, lock.ordinalOrigin || null, lock.createdAt, accountId ?? 1]
+    `INSERT INTO locks (utxo_id, unlock_block, lock_block, ordinal_origin, created_at, account_id)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [lock.utxoId, lock.unlockBlock, lock.lockBlock || null, lock.ordinalOrigin || null, lock.createdAt, accountId ?? 1]
   )
 
   return result.lastInsertId as number
@@ -49,6 +49,7 @@ export async function getLocks(currentHeight: number, accountId?: number): Promi
     id: row.id,
     utxoId: row.utxo_id,
     unlockBlock: row.unlock_block,
+    lockBlock: row.lock_block ?? undefined,
     ordinalOrigin: row.ordinal_origin ?? undefined,
     createdAt: row.created_at,
     unlockedAt: row.unlocked_at ?? undefined,
@@ -107,6 +108,7 @@ export async function getAllLocks(): Promise<Lock[]> {
     id: row.id,
     utxoId: row.utxo_id,
     unlockBlock: row.unlock_block,
+    lockBlock: row.lock_block ?? undefined,
     ordinalOrigin: row.ordinal_origin ?? undefined,
     createdAt: row.created_at,
     unlockedAt: row.unlocked_at ?? undefined

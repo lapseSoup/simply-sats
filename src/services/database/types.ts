@@ -44,6 +44,7 @@ export interface Lock {
   ordinalOrigin?: string
   createdAt: number
   unlockedAt?: number
+  lockBlock?: number
 }
 
 // Basket type

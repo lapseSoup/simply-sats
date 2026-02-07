@@ -106,7 +106,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
       const unlockBlock = currentHeight + blocks
       const walletUtxos = await getUTXOs(wallet.walletAddress)
 
-      const result = await lockBSV(wallet.walletWif, amountSats, unlockBlock, walletUtxos)
+      const result = await lockBSV(wallet.walletWif, amountSats, unlockBlock, walletUtxos, undefined, currentHeight)
 
       // Add the locked UTXO to our list
       const newLocks = [...locks, result.lockedUtxo]
