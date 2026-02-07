@@ -98,13 +98,13 @@ function ProgressRing({ progress, size = 48, strokeWidth = 4, isUnlockable = fal
 export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabProps) {
   const { locks, networkInfo } = useWallet()
   const { formatUSD } = useUI()
-  const [, forceUpdate] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
   const [selectedLock, setSelectedLock] = useState<LockedUTXO | null>(null)
 
   // Update time estimates every minute
   useEffect(() => {
     const interval = setInterval(() => {
-      forceUpdate(n => n + 1)
+      setNow(Date.now())
     }, 60000)
     return () => clearInterval(interval)
   }, [])
@@ -140,6 +140,7 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
                       key={lock.txid}
                       lock={lock}
                       currentHeight={currentHeight}
+                      now={now}
                       isUnlockable={true}
                       isUnlocking={isUnlocking}
                       onUnlock={onUnlock}
@@ -161,6 +162,7 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
                     key={lock.txid}
                     lock={lock}
                     currentHeight={currentHeight}
+                    now={now}
                     isUnlockable={false}
                     isUnlocking={false}
                     onUnlock={onUnlock}
@@ -213,13 +215,14 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
 interface LockItemProps {
   lock: LockedUTXO
   currentHeight: number
+  now: number
   isUnlockable: boolean
   isUnlocking: boolean
   onUnlock: (lock: LockedUTXO) => void
   onClick: (lock: LockedUTXO) => void
 }
 
-const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, onClick }: LockItemProps) {
+const LockItem = memo(function LockItem({ lock, currentHeight, now, isUnlockable, isUnlocking, onUnlock, onClick }: LockItemProps) {
   const blocksRemaining = Math.max(0, lock.unlockBlock - currentHeight)
   const estimatedSeconds = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
 
@@ -228,13 +231,20 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
   if (isUnlockable) {
     progressPercent = 100
   } else if (lock.lockBlock && lock.lockBlock < lock.unlockBlock) {
-    // Accurate: use stored lock creation block height
+    // Accurate: use stored lock creation block height (new locks)
     const totalBlocks = lock.unlockBlock - lock.lockBlock
     const elapsed = currentHeight - lock.lockBlock
     progressPercent = Math.max(0, Math.min(99, (elapsed / totalBlocks) * 100))
+  } else if (lock.createdAt && currentHeight > 0) {
+    // Fallback: estimate creation block from timestamp
+    const ageMs = now - lock.createdAt
+    const estimatedBlocksAgo = Math.round(ageMs / (AVERAGE_BLOCK_TIME_SECONDS * 1000))
+    const estimatedCreationBlock = currentHeight - estimatedBlocksAgo
+    const totalBlocks = Math.max(lock.unlockBlock - estimatedCreationBlock, blocksRemaining + 1)
+    const elapsed = totalBlocks - blocksRemaining
+    progressPercent = Math.max(0, Math.min(99, (elapsed / totalBlocks) * 100))
   } else {
-    // Fallback for old locks without lockBlock: minimal progress indication
-    progressPercent = currentHeight > 0 ? Math.min(50, Math.max(1, 100 - (blocksRemaining / 10))) : 0
+    progressPercent = 0
   }
 
   return (

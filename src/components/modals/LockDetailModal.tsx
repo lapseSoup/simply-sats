@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Unlock, Sparkles } from 'lucide-react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { useUI } from '../../contexts/UIContext'
@@ -43,6 +44,7 @@ export function LockDetailModal({
   isUnlocking = false
 }: LockDetailModalProps) {
   const { copyToClipboard } = useUI()
+  const [now] = useState(() => Date.now())
 
   const blocksRemaining = Math.max(0, lock.unlockBlock - currentHeight)
   const isUnlockable = currentHeight >= lock.unlockBlock
@@ -53,12 +55,20 @@ export function LockDetailModal({
   if (isUnlockable) {
     progressPercent = 100
   } else if (lock.lockBlock && lock.lockBlock < lock.unlockBlock) {
+    // Accurate: use stored lock creation block height (new locks)
     const totalBlocks = lock.unlockBlock - lock.lockBlock
     const elapsed = currentHeight - lock.lockBlock
     progressPercent = Math.max(0, Math.min(99, (elapsed / totalBlocks) * 100))
+  } else if (lock.createdAt && currentHeight > 0) {
+    // Fallback: estimate creation block from timestamp
+    const ageMs = now - lock.createdAt
+    const estimatedBlocksAgo = Math.round(ageMs / (AVERAGE_BLOCK_TIME_SECONDS * 1000))
+    const estimatedCreationBlock = currentHeight - estimatedBlocksAgo
+    const totalBlocks = Math.max(lock.unlockBlock - estimatedCreationBlock, blocksRemaining + 1)
+    const elapsed = totalBlocks - blocksRemaining
+    progressPercent = Math.max(0, Math.min(99, (elapsed / totalBlocks) * 100))
   } else {
-    // Fallback for old locks without lockBlock
-    progressPercent = currentHeight > 0 ? Math.min(50, Math.max(1, 100 - (blocksRemaining / 10))) : 0
+    progressPercent = 0
   }
 
   const openOnWoC = () => {

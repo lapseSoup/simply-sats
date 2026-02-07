@@ -579,10 +579,23 @@ export function WalletProvider({ children }: WalletProviderProps) {
           if (fetchVersionRef.current !== version) return
 
           if (detectedLocks.length > 0) {
-            setLocks(detectedLocks)
+            // Merge preloaded DB data into detected locks (preserve lockBlock + earlier createdAt)
+            const preloadMap = new Map(
+              (preloadedLocks || []).map(l => [`${l.txid}:${l.vout}`, l])
+            )
+            const mergedLocks = detectedLocks.map(lock => {
+              const preloaded = preloadMap.get(`${lock.txid}:${lock.vout}`)
+              if (!preloaded) return lock
+              return {
+                ...lock,
+                lockBlock: lock.lockBlock || preloaded.lockBlock,
+                createdAt: Math.min(lock.createdAt, preloaded.createdAt)
+              }
+            })
+            setLocks(mergedLocks)
 
             // Auto-label and describe lock transactions (enables search + fee display after restore)
-            for (const lock of detectedLocks) {
+            for (const lock of mergedLocks) {
               try {
                 const existingLabels = await getTransactionLabels(lock.txid)
                 if (!existingLabels.includes('lock')) {
