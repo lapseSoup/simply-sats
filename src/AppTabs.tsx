@@ -112,7 +112,7 @@ export function AppTabNav({ activeTab, onTabChange, counts }: AppTabsProps) {
         aria-label="Search"
         tabIndex={activeTab === 'search' ? 0 : -1}
       >
-        <Search size={16} strokeWidth={2} />
+        <Search size={18} strokeWidth={2} />
       </button>
     </nav>
   )
