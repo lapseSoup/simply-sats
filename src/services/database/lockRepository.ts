@@ -12,31 +12,38 @@ import type { LockRow, LockWithUTXORow } from '../database-types'
 /**
  * Add a time-locked output
  */
-export async function addLock(lock: Omit<Lock, 'id'>): Promise<number> {
+export async function addLock(lock: Omit<Lock, 'id'>, accountId?: number): Promise<number> {
   const database = getDatabase()
 
   const result = await database.execute(
-    `INSERT INTO locks (utxo_id, unlock_block, ordinal_origin, created_at)
-     VALUES ($1, $2, $3, $4)`,
-    [lock.utxoId, lock.unlockBlock, lock.ordinalOrigin || null, lock.createdAt]
+    `INSERT INTO locks (utxo_id, unlock_block, ordinal_origin, created_at, account_id)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [lock.utxoId, lock.unlockBlock, lock.ordinalOrigin || null, lock.createdAt, accountId ?? 1]
   )
 
   return result.lastInsertId as number
 }
 
 /**
- * Get all locks with UTXO details
+ * Get all locks with UTXO details, optionally scoped to an account
  */
-export async function getLocks(currentHeight: number): Promise<(Lock & { utxo: UTXO })[]> {
+export async function getLocks(currentHeight: number, accountId?: number): Promise<(Lock & { utxo: UTXO })[]> {
   const database = getDatabase()
 
-  const rows = await database.select<LockWithUTXORow[]>(
-    `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket, u.address
-     FROM locks l
-     INNER JOIN utxos u ON l.utxo_id = u.id
-     WHERE l.unlocked_at IS NULL
-     ORDER BY l.unlock_block ASC`
-  )
+  const query = accountId !== undefined && accountId !== null
+    ? `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket, u.address
+       FROM locks l
+       INNER JOIN utxos u ON l.utxo_id = u.id
+       WHERE l.unlocked_at IS NULL AND l.account_id = $1
+       ORDER BY l.unlock_block ASC`
+    : `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket, u.address
+       FROM locks l
+       INNER JOIN utxos u ON l.utxo_id = u.id
+       WHERE l.unlocked_at IS NULL
+       ORDER BY l.unlock_block ASC`
+
+  const params = accountId !== undefined && accountId !== null ? [accountId] : []
+  const rows = await database.select<LockWithUTXORow[]>(query, params)
 
   return rows.map(row => ({
     id: row.id,

@@ -260,7 +260,7 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
           <div className="lock-details">
             {isUnlockable ? (
               <span className="unlock-ready-badge"><Sparkles size={12} strokeWidth={1.75} /> Ready to unlock!</span>
-            ) : (
+            ) : currentHeight > 0 ? (
               <>
                 <span className="lock-blocks-remaining">
                   {blocksRemaining.toLocaleString()} block{blocksRemaining !== 1 ? 's' : ''} remaining
@@ -269,6 +269,8 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
                   {formatTimeRemaining(estimatedSeconds)} estimated
                 </span>
               </>
+            ) : (
+              <span className="lock-blocks-remaining">Loading...</span>
             )}
           </div>
           <div className="lock-target">

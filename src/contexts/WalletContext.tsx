@@ -562,9 +562,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
       wallet,
       activeAccountId,
       knownUnlockedLocks,
-      async ({ utxos: fetchedUtxos, shouldClearLocks }) => {
+      async ({ utxos: fetchedUtxos, shouldClearLocks, preloadedLocks }) => {
         // Guard: discard results if account was switched during this fetch
         if (fetchVersionRef.current !== version) return
+
+        // Set preloaded locks from DB immediately (before slow blockchain detection)
+        if (preloadedLocks && preloadedLocks.length > 0) {
+          setLocks(preloadedLocks)
+        }
 
         // Detect locks after UTXOs are fetched
         try {

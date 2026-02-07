@@ -127,7 +127,7 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
           >
             <span className={`status-dot ${networkStatus}`} aria-hidden="true"></span>
             <span className="sr-only">Current block height:</span>
-            {networkInfo?.blockHeight?.toLocaleString() || '...'}
+            {networkInfo?.blockHeight ? networkInfo.blockHeight.toLocaleString() : '...'}
           </div>
           <button
             className={`icon-btn ${syncing || manualSyncing ? 'active' : ''}`}

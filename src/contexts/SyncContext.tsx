@@ -8,7 +8,7 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
 import type { WalletKeys, UTXO, Ordinal } from '../services/wallet'
 import { getBalance, getUTXOs, getOrdinals } from '../services/wallet'
-import { getAllTransactions, getDerivedAddresses } from '../services/database'
+import { getAllTransactions, getDerivedAddresses, getLocks as getLocksFromDB } from '../services/database'
 import {
   syncWallet,
   restoreFromBlockchain,
@@ -63,7 +63,7 @@ interface SyncContextType {
     wallet: WalletKeys,
     activeAccountId: number | null,
     knownUnlockedLocks: Set<string>,
-    onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean }) => void
+    onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void
   ) => Promise<void>
 }
 
@@ -180,7 +180,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     wallet: WalletKeys,
     activeAccountId: number | null,
     knownUnlockedLocks: Set<string>,
-    onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean }) => void
+    onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void
   ) => {
     syncLogger.debug('Fetching data (database-first approach)...', {
       activeAccountId,
@@ -229,6 +229,27 @@ export function SyncProvider({ children }: SyncProviderProps) {
       })
 
       setTxHistory(dbTxHistory)
+
+      // Load locks from database instantly so they appear before blockchain detection
+      let preloadedLocks: import('../services/wallet').LockedUTXO[] = []
+      try {
+        const dbLocks = await getLocksFromDB(0, activeAccountId || undefined)
+        preloadedLocks = dbLocks.map(lock => ({
+          txid: lock.utxo.txid,
+          vout: lock.utxo.vout,
+          satoshis: lock.utxo.satoshis,
+          lockingScript: lock.utxo.lockingScript,
+          unlockBlock: lock.unlockBlock,
+          publicKeyHex: wallet.walletPubKey,
+          createdAt: lock.createdAt
+        }))
+        if (preloadedLocks.length > 0) {
+          // Send preloaded locks immediately via callback so UI updates
+          onLocksDetected({ utxos: [], shouldClearLocks: false, preloadedLocks })
+        }
+      } catch (_e) {
+        syncLogger.warn('Failed to preload locks from DB')
+      }
 
       // Get ordinals - first from database (already synced), then supplement with API calls
       try {

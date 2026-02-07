@@ -108,6 +108,7 @@ export interface LockRow {
   ordinal_origin: string | null
   created_at: number
   unlocked_at: number | null
+  account_id: number
 }
 
 /**
