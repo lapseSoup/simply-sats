@@ -17,13 +17,14 @@ const SUGGESTED_LABELS = [
   'savings'
 ]
 
-// Extract fee from sent transaction description + amount
+// Extract fee from transaction description + amount
+// Works for: "Sent X sats to ...", "Locked X sats until block Y"
 function parseFee(amount?: number, description?: string): number | null {
   if (!amount || amount >= 0 || !description) return null
-  const match = description.match(/Sent (\d+) sats/)
+  const match = description.match(/(?:Sent|Locked) (\d+) sats/)
   if (!match) return null
-  const sentAmount = parseInt(match[1], 10)
-  const fee = Math.abs(amount) - sentAmount
+  const primaryAmount = parseInt(match[1], 10)
+  const fee = Math.abs(amount) - primaryAmount
   return fee > 0 ? fee : null
 }
 

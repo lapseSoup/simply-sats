@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Lock, AlertTriangle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { calculateLockFee, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
+import { calculateLockFee } from '../../services/wallet/fees'
 import { getTimelockScriptSize } from '../../services/wallet'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
@@ -84,14 +84,17 @@ export function LockModal({ onClose }: LockModalProps) {
     })
   }
 
-  // Calculate exact fee using actual script size
+  // Calculate exact fee using actual script size and user's fee rate setting
   let fee = 0
   if (wallet && blocks > 0) {
     const scriptSize = getTimelockScriptSize(wallet.walletPubKey, unlockBlock)
-    fee = calculateLockFee(1, DEFAULT_FEE_RATE, scriptSize)
+    fee = calculateLockFee(1, scriptSize)
   } else {
-    fee = calculateLockFee(1, DEFAULT_FEE_RATE)
+    fee = calculateLockFee(1)
   }
+
+  const totalRequired = lockSats + fee
+  const insufficientBalance = lockSats > 0 && totalRequired > balance
 
   const executeLock = async () => {
     setShowLongLockWarning(false)
@@ -251,6 +254,15 @@ export function LockModal({ onClose }: LockModalProps) {
             )}
           </div>
 
+          {insufficientBalance && (
+            <div className="warning compact" role="alert">
+              <span className="warning-icon"><AlertTriangle size={16} strokeWidth={1.75} /></span>
+              <span className="warning-text">
+                Insufficient balance. Need {totalRequired.toLocaleString()} sats (amount + fee) but only {balance.toLocaleString()} available.
+              </span>
+            </div>
+          )}
+
           {lockError && (
             <div className="warning compact" role="alert">
               <span className="warning-icon"><AlertTriangle size={16} strokeWidth={1.75} /></span>
@@ -260,7 +272,7 @@ export function LockModal({ onClose }: LockModalProps) {
           <button
             className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={locking || !lockAmount || !lockBlocks || lockSats <= 0 || blocks <= 0}
+            disabled={locking || !lockAmount || !lockBlocks || lockSats <= 0 || blocks <= 0 || insufficientBalance}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
           >
             {!locking && (

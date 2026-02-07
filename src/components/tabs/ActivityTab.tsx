@@ -67,6 +67,7 @@ const TransactionItem = memo(function TransactionItem({
 export function ActivityTab() {
   const { txHistory, locks, loading } = useWallet()
   const { formatUSD } = useUI()
+  const [lockTxids, setLockTxids] = useState<Set<string>>(new Set())
   const [unlockTxids, setUnlockTxids] = useState<Set<string>>(new Set())
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
 
@@ -75,17 +76,21 @@ export function ActivityTab() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerHeight, setContainerHeight] = useState(400)
 
-  // Fetch unlock transaction IDs from database
+  // Fetch lock and unlock transaction IDs from database labels
   useEffect(() => {
-    const fetchUnlockTxids = async () => {
+    const fetchLabeledTxids = async () => {
       try {
-        const unlockTxs = await getTransactionsByLabel('unlock')
+        const [lockTxs, unlockTxs] = await Promise.all([
+          getTransactionsByLabel('lock'),
+          getTransactionsByLabel('unlock')
+        ])
+        setLockTxids(new Set(lockTxs.map(tx => tx.txid)))
         setUnlockTxids(new Set(unlockTxs.map(tx => tx.txid)))
       } catch (e) {
-        uiLogger.warn('Failed to fetch unlock transactions', { error: String(e) })
+        uiLogger.warn('Failed to fetch labeled transactions', { error: String(e) })
       }
     }
-    fetchUnlockTxids()
+    fetchLabeledTxids()
   }, [txHistory]) // Refresh when tx history changes
 
   // Measure container height for virtualized list
@@ -111,7 +116,8 @@ export function ActivityTab() {
 
   // Determine transaction type and icon
   const getTxTypeAndIcon = useCallback((tx: { tx_hash: string; amount?: number }) => {
-    const isLockTx = locks.some(l => l.txid === tx.tx_hash)
+    // Check active locks from context + historical lock labels from DB
+    const isLockTx = locks.some(l => l.txid === tx.tx_hash) || lockTxids.has(tx.tx_hash)
     const isUnlockTx = unlockTxids.has(tx.tx_hash)
 
     if (isLockTx) {
@@ -127,7 +133,7 @@ export function ActivityTab() {
       return { type: 'Sent', icon: <ArrowUpRight size={14} strokeWidth={1.75} /> }
     }
     return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }
-  }, [locks, unlockTxids])
+  }, [locks, lockTxids, unlockTxids])
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {

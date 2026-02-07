@@ -256,12 +256,31 @@ export async function lockBSV(
       tx.toHex(),
       `Locked ${satoshis} sats until block ${unlockBlock}`,
       ['lock'],
-      -satoshis  // Negative because we're sending/locking
+      -(satoshis + fee)  // Negative: locked amount + mining fee
     )
     // Confirm UTXOs as spent (updates from pending -> spent)
     await confirmUtxosSpent(utxosToSpend, txid)
   } catch (error) {
     walletLogger.warn('Failed to track lock transaction', { error: String(error) })
+  }
+
+  // Best-effort: track change UTXO so balance stays correct until next sync
+  if (change > 0) {
+    try {
+      await addUTXO({
+        txid,
+        vout: tx.outputs.length - 1, // Change is always last output
+        satoshis: change,
+        lockingScript: new P2PKH().lock(fromAddress).toHex(),
+        address: fromAddress,
+        basket: 'default',
+        spendable: true,
+        createdAt: Date.now()
+      })
+      walletLogger.debug('Lock change UTXO tracked', { txid, change })
+    } catch (error) {
+      walletLogger.warn('Failed to track lock change UTXO (will recover on next sync)', { error: String(error) })
+    }
   }
 
   // Add lock to database so it can be properly tracked for unlock

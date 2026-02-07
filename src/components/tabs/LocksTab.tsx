@@ -1,9 +1,10 @@
-import { useState, useEffect, memo, useCallback, useMemo } from 'react'
+import { useState, useEffect, memo, useMemo } from 'react'
 import { Lock, Unlock, Sparkles } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
+import { useUI } from '../../contexts/UIContext'
 import type { LockedUTXO } from '../../services/wallet'
-import { openUrl } from '@tauri-apps/plugin-opener'
 import { NoLocksEmpty } from '../shared/EmptyState'
+import { LockDetailModal } from '../modals/LockDetailModal'
 
 interface LocksTabProps {
   onLock: () => void
@@ -33,39 +34,6 @@ function formatTimeRemaining(seconds: number): string {
   }
 }
 
-function formatCountdownTimer(seconds: number): { days: string; hours: string; minutes: string; seconds: string } {
-  if (seconds <= 0) {
-    return { days: '00', hours: '00', minutes: '00', seconds: '00' }
-  }
-
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = Math.floor(seconds % 60)
-
-  return {
-    days: String(days).padStart(2, '0'),
-    hours: String(hours).padStart(2, '0'),
-    minutes: String(minutes).padStart(2, '0'),
-    seconds: String(secs).padStart(2, '0')
-  }
-}
-
-function formatFullTimeRemaining(seconds: number): string {
-  if (seconds <= 0) return 'Ready to unlock!'
-
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-
-  const parts = []
-  if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`)
-  if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`)
-  if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`)
-
-  if (parts.length === 0) return 'Less than a minute'
-  return `Approximately ${parts.join(', ')}`
-}
 
 interface ProgressRingProps {
   progress: number
@@ -129,7 +97,9 @@ function ProgressRing({ progress, size = 48, strokeWidth = 4, isUnlockable = fal
 
 export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabProps) {
   const { locks, networkInfo } = useWallet()
+  const { formatUSD } = useUI()
   const [, forceUpdate] = useState(0)
+  const [selectedLock, setSelectedLock] = useState<LockedUTXO | null>(null)
 
   // Update time estimates every minute
   useEffect(() => {
@@ -137,10 +107,6 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
       forceUpdate(n => n + 1)
     }, 60000)
     return () => clearInterval(interval)
-  }, [])
-
-  const openOnWoC = useCallback((txid: string) => {
-    openUrl(`https://whatsonchain.com/tx/${txid}`)
   }, [])
 
   const currentHeight = networkInfo?.blockHeight || 0
@@ -153,78 +119,94 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
   }, [locks, currentHeight])
 
   return (
-    <div className="locks-tab">
-      {/* Locks List */}
-      {locks.length === 0 ? (
-        <NoLocksEmpty onLock={onLock} />
-      ) : (
-        <div className="locks-list" role="list" aria-label="Locked UTXOs">
-          {/* Unlockable locks first */}
-          {unlockableLocks.length > 0 && (
-            <div className="locks-section">
-              <h3 className="locks-section-title">
-                <span className="pulse-dot" aria-hidden="true" />
-                Ready to Unlock
-              </h3>
-              {unlockableLocks.map((lock) => {
-                const isUnlocking = unlocking === lock.txid
-                return (
+    <>
+      <div className="locks-tab">
+        {/* Locks List */}
+        {locks.length === 0 ? (
+          <NoLocksEmpty onLock={onLock} />
+        ) : (
+          <div className="locks-list" role="list" aria-label="Locked UTXOs">
+            {/* Unlockable locks first */}
+            {unlockableLocks.length > 0 && (
+              <div className="locks-section">
+                <h3 className="locks-section-title">
+                  <span className="pulse-dot" aria-hidden="true" />
+                  Ready to Unlock
+                </h3>
+                {unlockableLocks.map((lock) => {
+                  const isUnlocking = unlocking === lock.txid
+                  return (
+                    <LockItem
+                      key={lock.txid}
+                      lock={lock}
+                      currentHeight={currentHeight}
+                      isUnlockable={true}
+                      isUnlocking={isUnlocking}
+                      onUnlock={onUnlock}
+                      onClick={setSelectedLock}
+                    />
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Pending locks */}
+            {lockedLocks.length > 0 && (
+              <div className="locks-section">
+                {unlockableLocks.length > 0 && (
+                  <h3 className="locks-section-title">Still Locked</h3>
+                )}
+                {lockedLocks.map((lock) => (
                   <LockItem
                     key={lock.txid}
                     lock={lock}
                     currentHeight={currentHeight}
-                    isUnlockable={true}
-                    isUnlocking={isUnlocking}
+                    isUnlockable={false}
+                    isUnlocking={false}
                     onUnlock={onUnlock}
-                    onOpenWoC={openOnWoC}
+                    onClick={setSelectedLock}
                   />
-                )
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
 
-          {/* Pending locks */}
-          {lockedLocks.length > 0 && (
-            <div className="locks-section">
-              {unlockableLocks.length > 0 && (
-                <h3 className="locks-section-title">Still Locked</h3>
-              )}
-              {lockedLocks.map((lock) => (
-                <LockItem
-                  key={lock.txid}
-                  lock={lock}
-                  currentHeight={currentHeight}
-                  isUnlockable={false}
-                  isUnlocking={false}
-                  onUnlock={onUnlock}
-                  onOpenWoC={openOnWoC}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Action buttons at bottom */}
-          <div className="locks-footer-actions">
-            <button
-              className="btn btn-secondary"
-              onClick={onLock}
-              aria-label="Create a new lock"
-            >
-              + New Lock
-            </button>
-            {unlockableLocks.length > 1 && (
+            {/* Action buttons at bottom */}
+            <div className="locks-footer-actions">
               <button
                 className="btn btn-secondary"
-                onClick={onUnlockAll}
-                aria-label={`Unlock all ${unlockableLocks.length} ready locks`}
+                onClick={onLock}
+                aria-label="Create a new lock"
               >
-                Unlock All ({unlockableLocks.length})
+                + New Lock
               </button>
-            )}
+              {unlockableLocks.length > 1 && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={onUnlockAll}
+                  aria-label={`Unlock all ${unlockableLocks.length} ready locks`}
+                >
+                  Unlock All ({unlockableLocks.length})
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {selectedLock && (
+        <LockDetailModal
+          lock={selectedLock}
+          currentHeight={currentHeight}
+          formatUSD={formatUSD}
+          onClose={() => setSelectedLock(null)}
+          onUnlock={(lock) => {
+            setSelectedLock(null)
+            onUnlock(lock)
+          }}
+          isUnlocking={unlocking === selectedLock.txid}
+        />
       )}
-    </div>
+    </>
   )
 }
 
@@ -234,30 +216,12 @@ interface LockItemProps {
   isUnlockable: boolean
   isUnlocking: boolean
   onUnlock: (lock: LockedUTXO) => void
-  onOpenWoC: (txid: string) => void
+  onClick: (lock: LockedUTXO) => void
 }
 
-const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, onOpenWoC }: LockItemProps) {
+const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isUnlocking, onUnlock, onClick }: LockItemProps) {
   const blocksRemaining = Math.max(0, lock.unlockBlock - currentHeight)
-  const [estimatedSecondsRemaining, setEstimatedSecondsRemaining] = useState(
-    blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
-  )
-
-  // Update countdown every second for a real-time feel
-  useEffect(() => {
-    if (isUnlockable) return
-
-    const startTime = Date.now()
-    const initialSeconds = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
-
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000)
-      const remaining = Math.max(0, initialSeconds - elapsed)
-      setEstimatedSecondsRemaining(remaining)
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [blocksRemaining, isUnlockable])
+  const estimatedSeconds = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
 
   // Calculate progress percentage
   // We estimate lock duration based on createdAt timestamp vs unlock block
@@ -269,24 +233,18 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
     ? 100
     : Math.max(0, Math.min(99, ((lockDuration - blocksRemaining) / lockDuration) * 100))
 
-  const countdown = formatCountdownTimer(estimatedSecondsRemaining)
-  const showDetailedCountdown = blocksRemaining <= 144 // Show detailed countdown for last ~24 hours
-
   return (
     <div
       className={`lock-card ${isUnlockable ? 'unlockable' : ''}`}
-      role="listitem"
+      role="button"
+      tabIndex={0}
       aria-label={`${lock.satoshis.toLocaleString()} sats locked until block ${lock.unlockBlock.toLocaleString()}`}
+      onClick={() => onClick(lock)}
+      onKeyDown={(e) => e.key === 'Enter' && onClick(lock)}
+      style={{ cursor: 'pointer' }}
     >
       <div className="lock-card-main">
-        <div
-          className="lock-progress-ring"
-          onClick={() => onOpenWoC(lock.txid)}
-          role="button"
-          tabIndex={0}
-          aria-label="View transaction on WhatsOnChain"
-          onKeyDown={(e) => e.key === 'Enter' && onOpenWoC(lock.txid)}
-        >
+        <div className="lock-progress-ring">
           <ProgressRing
             progress={progressPercent}
             size={56}
@@ -302,30 +260,13 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
           <div className="lock-details">
             {isUnlockable ? (
               <span className="unlock-ready-badge"><Sparkles size={12} strokeWidth={1.75} /> Ready to unlock!</span>
-            ) : showDetailedCountdown ? (
-              <div className="countdown-timer">
-                <div className="countdown-unit">
-                  <span className="countdown-value">{countdown.hours}</span>
-                  <span className="countdown-label">h</span>
-                </div>
-                <span className="countdown-separator">:</span>
-                <div className="countdown-unit">
-                  <span className="countdown-value">{countdown.minutes}</span>
-                  <span className="countdown-label">m</span>
-                </div>
-                <span className="countdown-separator">:</span>
-                <div className="countdown-unit">
-                  <span className="countdown-value">{countdown.seconds}</span>
-                  <span className="countdown-label">s</span>
-                </div>
-              </div>
             ) : (
               <>
-                <span className="lock-time-remaining">
-                  {formatTimeRemaining(estimatedSecondsRemaining)}
+                <span className="lock-blocks-remaining">
+                  {blocksRemaining.toLocaleString()} block{blocksRemaining !== 1 ? 's' : ''} remaining
                 </span>
-                <span className="lock-blocks">
-                  {blocksRemaining.toLocaleString()} blocks
+                <span className="lock-time-estimate">
+                  {formatTimeRemaining(estimatedSeconds)} estimated
                 </span>
               </>
             )}
@@ -339,7 +280,7 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
           {isUnlockable ? (
             <button
               className="btn btn-unlock"
-              onClick={() => onUnlock(lock)}
+              onClick={(e) => { e.stopPropagation(); onUnlock(lock) }}
               disabled={isUnlocking}
               aria-label={`Unlock ${lock.satoshis.toLocaleString()} sats`}
             >
@@ -353,7 +294,7 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
               )}
             </button>
           ) : (
-            <div className="lock-countdown" title={formatFullTimeRemaining(estimatedSecondsRemaining)}>
+            <div className="lock-countdown" title={`${blocksRemaining.toLocaleString()} blocks remaining (~${formatTimeRemaining(estimatedSeconds)})`}>
               <span className="lock-percent">{Math.round(progressPercent)}%</span>
               <span className="lock-status">complete</span>
             </div>
