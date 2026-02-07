@@ -374,7 +374,6 @@ body::-webkit-scrollbar {
   color: var(--text-tertiary);
   margin-left: var(--space-1);
   letter-spacing: 0.03em;
-  text-transform: lowercase;
 }
 
 .balance-unit.clickable {
@@ -786,6 +785,10 @@ body::-webkit-scrollbar {
 
 .search-label-chip-remove:hover {
   opacity: 1;
+}
+
+.search-label-chips + .search-input {
+  padding-left: 10px;
 }
 
 .search-status,

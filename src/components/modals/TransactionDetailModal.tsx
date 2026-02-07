@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { getTransactionLabels, updateTransactionLabels, getTransactionByTxid } from '../../services/database'
+import { getWocClient } from '../../infrastructure/api/wocClient'
 import { uiLogger } from '../../services/logger'
 import { Modal } from '../shared/Modal'
 
@@ -17,8 +18,7 @@ const SUGGESTED_LABELS = [
   'savings'
 ]
 
-// Extract fee from transaction description + amount
-// Works for: "Sent X sats to ...", "Locked X sats until block Y"
+// Fast path: extract fee from transaction description + amount (no API call)
 function parseFee(amount?: number, description?: string): number | null {
   if (!amount || amount >= 0 || !description) return null
   const match = description.match(/(?:Sent|Locked) (\d+) sats/)
@@ -26,6 +26,33 @@ function parseFee(amount?: number, description?: string): number | null {
   const primaryAmount = parseInt(match[1], 10)
   const fee = Math.abs(amount) - primaryAmount
   return fee > 0 ? fee : null
+}
+
+// Slow path: compute fee from blockchain (sum inputs - sum outputs)
+async function computeFeeFromBlockchain(txid: string): Promise<number | null> {
+  try {
+    const wocClient = getWocClient()
+    const tx = await wocClient.getTransactionDetails(txid)
+    if (!tx) return null
+
+    const totalOut = tx.vout.reduce((sum, o) => sum + Math.round(o.value * 1e8), 0)
+
+    let totalIn = 0
+    for (const vin of tx.vin) {
+      if (vin.coinbase) return null // coinbase txs have no user-paid fee
+      if (vin.txid && vin.vout !== undefined) {
+        const prevTx = await wocClient.getTransactionDetails(vin.txid)
+        if (prevTx?.vout?.[vin.vout]) {
+          totalIn += Math.round(prevTx.vout[vin.vout].value * 1e8)
+        }
+      }
+    }
+
+    const fee = totalIn - totalOut
+    return fee > 0 ? fee : null
+  } catch {
+    return null
+  }
 }
 
 interface TransactionDetailModalProps {
@@ -48,11 +75,9 @@ export function TransactionDetailModal({
   const [labels, setLabels] = useState<string[]>([])
   const [newLabel, setNewLabel] = useState('')
   const [loading, setLoading] = useState(true)
-  // DB-enriched fields (fills gaps when TxHistoryItem lacks description/amount)
-  const [dbDescription, setDbDescription] = useState<string | undefined>(undefined)
-  const [dbAmount, setDbAmount] = useState<number | undefined>(undefined)
+  const [fee, setFee] = useState<number | null>(null)
 
-  // Load existing labels + full DB record on mount
+  // Load labels, DB record, and compute fee on mount
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -61,9 +86,18 @@ export function TransactionDetailModal({
           getTransactionByTxid(transaction.tx_hash)
         ])
         setLabels(existingLabels)
-        if (dbRecord) {
-          setDbDescription(dbRecord.description)
-          if (dbRecord.amount !== undefined) setDbAmount(dbRecord.amount)
+
+        // Try fast path: description-based fee
+        const effectiveAmount = transaction.amount ?? dbRecord?.amount
+        const effectiveDescription = transaction.description ?? dbRecord?.description
+        const descFee = parseFee(effectiveAmount, effectiveDescription)
+
+        if (descFee !== null) {
+          setFee(descFee)
+        } else if (effectiveAmount !== undefined && effectiveAmount < 0) {
+          // Slow path: compute from blockchain for outgoing txs
+          const blockchainFee = await computeFeeFromBlockchain(transaction.tx_hash)
+          if (blockchainFee !== null) setFee(blockchainFee)
         }
       } catch (e) {
         uiLogger.warn('Failed to load transaction data', { error: String(e) })
@@ -72,7 +106,7 @@ export function TransactionDetailModal({
       }
     }
     loadData()
-  }, [transaction.tx_hash])
+  }, [transaction.tx_hash, transaction.amount, transaction.description])
 
   const openOnWoC = () => {
     openUrl(`https://whatsonchain.com/tx/${transaction.tx_hash}`)
@@ -146,23 +180,17 @@ export function TransactionDetailModal({
             </div>
           )}
 
-          {(() => {
-            // Use DB-enriched values as fallback for fee calculation
-            const effectiveAmount = transaction.amount ?? dbAmount
-            const effectiveDescription = transaction.description ?? dbDescription
-            const fee = parseFee(effectiveAmount, effectiveDescription)
-            return fee !== null ? (
-              <div className="tx-detail-row">
-                <span className="tx-detail-label">Fee Paid</span>
-                <span className="tx-detail-value">
-                  {fee.toLocaleString()} sats
-                  <span className="tx-detail-usd">
-                    (${formatUSD(fee)})
-                  </span>
+          {fee !== null && (
+            <div className="tx-detail-row">
+              <span className="tx-detail-label">Fee Paid</span>
+              <span className="tx-detail-value">
+                {fee.toLocaleString()} sats
+                <span className="tx-detail-usd">
+                  (${formatUSD(fee)})
                 </span>
-              </div>
-            ) : null
-          })()}
+              </span>
+            </div>
+          )}
 
           {transaction.height > 0 && (
             <div className="tx-detail-row">

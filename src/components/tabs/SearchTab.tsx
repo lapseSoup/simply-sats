@@ -159,7 +159,9 @@ export function SearchTab() {
     <>
       <div className="search-tab">
         <div className="search-input-container">
-          <Search size={16} strokeWidth={1.75} className="search-icon" />
+          {selectedLabels.length === 0 && (
+            <Search size={16} strokeWidth={1.75} className="search-icon" />
+          )}
 
           {/* Selected label chips */}
           {selectedLabels.length > 0 && (

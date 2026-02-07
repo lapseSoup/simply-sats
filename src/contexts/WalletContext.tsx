@@ -27,6 +27,10 @@ import {
   getContacts,
   getDerivedAddresses,
   clearDatabase,
+  getTransactionLabels,
+  updateTransactionLabels,
+  getTransactionByTxid,
+  upsertTransaction,
   type Contact,
   type UTXO as DatabaseUTXO
 } from '../services/database'
@@ -554,6 +558,25 @@ export function WalletProvider({ children }: WalletProviderProps) {
           const detectedLocks = await detectLocks(wallet, fetchedUtxos)
           if (detectedLocks.length > 0) {
             setLocks(detectedLocks)
+
+            // Auto-label and describe lock transactions (enables search + fee display after restore)
+            for (const lock of detectedLocks) {
+              try {
+                const existingLabels = await getTransactionLabels(lock.txid)
+                if (!existingLabels.includes('lock')) {
+                  await updateTransactionLabels(lock.txid, [...existingLabels, 'lock'])
+                }
+                const dbTx = await getTransactionByTxid(lock.txid)
+                if (dbTx && !dbTx.description) {
+                  await upsertTransaction({
+                    ...dbTx,
+                    description: `Locked ${lock.satoshis} sats until block ${lock.unlockBlock}`
+                  })
+                }
+              } catch (_e) {
+                // Best-effort: don't fail lock detection if labeling fails
+              }
+            }
           } else if (shouldClearLocks) {
             // If we had unlocked locks and now there are none, clear the list
             setLocks([])
