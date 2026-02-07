@@ -596,7 +596,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       wallet,
       currentAccountId,
       knownUnlockedLocks,
-      async ({ utxos: fetchedUtxos, shouldClearLocks, preloadedLocks }) => {
+      async ({ utxos: fetchedUtxos, preloadedLocks }) => {
         // Guard: discard results if account was switched during this fetch
         if (fetchVersionRef.current !== version) return
 
@@ -675,12 +675,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
                 // Best-effort: don't fail lock detection if labeling fails
               }
             }
-          } else if (shouldClearLocks) {
-            // Only clear locks when we know locks were explicitly unlocked
-            setLocks([])
           }
+          // Note: when detectedLocks is empty, we keep whatever locks are
+          // already in state (from DB preload). Locks are removed individually
+          // by handleUnlock, not by bulk-clearing here. This prevents API
+          // failures from wiping valid lock data.
         } catch (e) {
           walletLogger.error('Failed to detect locks', e)
+          // Don't clear locks on detection failure — keep preloaded DB data
         }
       }
     )
