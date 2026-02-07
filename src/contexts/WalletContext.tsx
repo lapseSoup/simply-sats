@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import type { WalletKeys, UTXO, LockedUTXO, Ordinal, ExtendedUTXO } from '../services/wallet'
 import {
   createWallet,
@@ -165,6 +165,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const [wallet, setWalletState] = useState<WalletKeys | null>(null)
   const [loading, setLoading] = useState(true)
   const [contacts, setContacts] = useState<Contact[]>([])
+  // Incremented on account switch to invalidate stale async callbacks
+  const fetchVersionRef = useRef(0)
 
   // Get sync state from SyncContext
   const {
@@ -357,6 +359,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     try {
       const keys = await accountsSwitchAccount(accountId, sessionPassword)
       if (keys) {
+        // Invalidate any in-flight fetchData callbacks from the previous account
+        fetchVersionRef.current += 1
         // Clear stale state from previous account before setting new wallet
         setLocks([])
         resetSync()
@@ -551,14 +555,24 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const fetchData = useCallback(async () => {
     if (!wallet) return
 
+    // Capture version before async work — if it changes, account was switched
+    const version = fetchVersionRef.current
+
     await syncFetchData(
       wallet,
       activeAccountId,
       knownUnlockedLocks,
-      async ({ utxos: fetchedUtxos }) => {
+      async ({ utxos: fetchedUtxos, shouldClearLocks }) => {
+        // Guard: discard results if account was switched during this fetch
+        if (fetchVersionRef.current !== version) return
+
         // Detect locks after UTXOs are fetched
         try {
           const detectedLocks = await detectLocks(wallet, fetchedUtxos)
+
+          // Guard again after async lock detection
+          if (fetchVersionRef.current !== version) return
+
           if (detectedLocks.length > 0) {
             setLocks(detectedLocks)
 
@@ -595,8 +609,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
                 // Best-effort: don't fail lock detection if labeling fails
               }
             }
-          } else {
-            // No locks detected — clear any stale locks (e.g. after account switch)
+          } else if (shouldClearLocks) {
+            // Only clear locks when we know locks were explicitly unlocked
             setLocks([])
           }
         } catch (e) {
