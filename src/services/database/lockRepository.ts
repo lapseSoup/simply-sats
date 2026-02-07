@@ -97,6 +97,21 @@ export async function markLockUnlockedByTxid(txid: string, vout: number): Promis
 }
 
 /**
+ * Backfill lock_block for locks that were created before migration 014
+ */
+export async function updateLockBlock(txid: string, vout: number, lockBlock: number): Promise<void> {
+  const database = getDatabase()
+
+  await database.execute(
+    `UPDATE locks SET lock_block = $1
+     WHERE utxo_id IN (SELECT id FROM utxos WHERE txid = $2 AND vout = $3)
+     AND lock_block IS NULL`,
+    [lockBlock, txid, vout]
+  )
+  dbLogger.debug(`[DB] Backfilled lock_block: ${txid}:${vout} -> ${lockBlock}`)
+}
+
+/**
  * Get all locks for export
  */
 export async function getAllLocks(): Promise<Lock[]> {

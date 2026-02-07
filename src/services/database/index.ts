@@ -61,7 +61,8 @@ export {
   getLocks,
   markLockUnlocked,
   markLockUnlockedByTxid,
-  getAllLocks
+  getAllLocks,
+  updateLockBlock
 } from './lockRepository'
 
 // Sync state operations

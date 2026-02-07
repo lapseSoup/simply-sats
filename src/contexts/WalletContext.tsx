@@ -31,6 +31,7 @@ import {
   updateTransactionLabels,
   getTransactionByTxid,
   upsertTransaction,
+  updateLockBlock,
   type Contact,
   type UTXO as DatabaseUTXO
 } from '../services/database'
@@ -588,13 +589,17 @@ export function WalletProvider({ children }: WalletProviderProps) {
               const preloaded = preloadMap.get(`${lock.txid}:${lock.vout}`)
               if (!preloaded) return lock
               const earlierCreatedAt = Math.min(lock.createdAt, preloaded.createdAt)
-              // Estimate lockBlock from confirmation data + broadcast timestamp
-              let estimatedLockBlock = lock.lockBlock || preloaded.lockBlock
+              // Prefer DB lockBlock (exact from creation or previous backfill) over detected (confirmation block)
+              let estimatedLockBlock = preloaded.lockBlock || lock.lockBlock
               if (!estimatedLockBlock && lock.confirmationBlock && earlierCreatedAt < lock.createdAt) {
                 // earlierCreatedAt = broadcast time, lock.createdAt = confirmation time
                 const mempoolMs = lock.createdAt - earlierCreatedAt
                 const mempoolBlocks = Math.round(mempoolMs / AVG_BLOCK_MS)
                 estimatedLockBlock = lock.confirmationBlock - mempoolBlocks
+              }
+              // Backfill lockBlock to DB so we don't re-estimate next time
+              if (estimatedLockBlock && !preloaded.lockBlock) {
+                updateLockBlock(lock.txid, lock.vout, estimatedLockBlock).catch(() => {})
               }
               return {
                 ...lock,

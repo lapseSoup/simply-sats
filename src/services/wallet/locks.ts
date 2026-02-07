@@ -775,7 +775,9 @@ export async function detectLockedUtxos(
             unlockBlock: parsed.unlockBlock,
             publicKeyHex,
             createdAt: txDetails.time ? txDetails.time * 1000 : Date.now(),
-            confirmationBlock: txDetails.blockheight || undefined
+            confirmationBlock: txDetails.blockheight || undefined,
+            // Use confirmation block as lockBlock fallback for restore (best available data)
+            lockBlock: txDetails.blockheight || undefined
           })
         }
       } catch (error) {
