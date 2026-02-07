@@ -177,4 +177,6 @@ export interface LockedUTXO {
   publicKeyHex: string
   createdAt: number
   lockBlock?: number
+  /** Block height where tx was confirmed (from API, not stored in DB) */
+  confirmationBlock?: number
 }

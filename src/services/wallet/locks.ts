@@ -774,7 +774,8 @@ export async function detectLockedUtxos(
             lockingScript: scriptHex,
             unlockBlock: parsed.unlockBlock,
             publicKeyHex,
-            createdAt: txDetails.time ? txDetails.time * 1000 : Date.now()
+            createdAt: txDetails.time ? txDetails.time * 1000 : Date.now(),
+            confirmationBlock: txDetails.blockheight || undefined
           })
         }
       } catch (error) {

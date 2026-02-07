@@ -580,16 +580,26 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
           if (detectedLocks.length > 0) {
             // Merge preloaded DB data into detected locks (preserve lockBlock + earlier createdAt)
+            const AVG_BLOCK_MS = 600_000
             const preloadMap = new Map(
               (preloadedLocks || []).map(l => [`${l.txid}:${l.vout}`, l])
             )
             const mergedLocks = detectedLocks.map(lock => {
               const preloaded = preloadMap.get(`${lock.txid}:${lock.vout}`)
               if (!preloaded) return lock
+              const earlierCreatedAt = Math.min(lock.createdAt, preloaded.createdAt)
+              // Estimate lockBlock from confirmation data + broadcast timestamp
+              let estimatedLockBlock = lock.lockBlock || preloaded.lockBlock
+              if (!estimatedLockBlock && lock.confirmationBlock && earlierCreatedAt < lock.createdAt) {
+                // earlierCreatedAt = broadcast time, lock.createdAt = confirmation time
+                const mempoolMs = lock.createdAt - earlierCreatedAt
+                const mempoolBlocks = Math.round(mempoolMs / AVG_BLOCK_MS)
+                estimatedLockBlock = lock.confirmationBlock - mempoolBlocks
+              }
               return {
                 ...lock,
-                lockBlock: lock.lockBlock || preloaded.lockBlock,
-                createdAt: Math.min(lock.createdAt, preloaded.createdAt)
+                lockBlock: estimatedLockBlock,
+                createdAt: earlierCreatedAt
               }
             })
             setLocks(mergedLocks)
