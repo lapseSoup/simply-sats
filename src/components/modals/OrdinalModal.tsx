@@ -1,6 +1,8 @@
 import type { Ordinal } from '../../services/wallet'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { Modal } from '../shared/Modal'
+import { OrdinalImage } from '../shared/OrdinalImage'
 
 interface OrdinalModalProps {
   ordinal: Ordinal
@@ -16,51 +18,56 @@ export function OrdinalModal({ ordinal, onClose, onTransfer }: OrdinalModalProps
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-handle" />
-        <div className="modal-header">
-          <h2 className="modal-title">Ordinal</h2>
-          <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="modal-content">
-          <div className="ordinal-detail">
-            <div className="ordinal-preview" aria-hidden="true">🔮</div>
-            <div className="ordinal-info-list">
-              <div className="ordinal-info-row">
-                <span className="ordinal-info-label">Origin</span>
-                <span className="ordinal-info-value">{ordinal.origin.slice(0, 16)}...</span>
-              </div>
-              <div className="ordinal-info-row">
-                <span className="ordinal-info-label">Outpoint</span>
-                <span className="ordinal-info-value">{`${ordinal.txid}:${ordinal.vout}`.slice(0, 16)}...</span>
-              </div>
-              <div className="ordinal-info-row">
-                <span className="ordinal-info-label">TXID</span>
-                <button className="link-btn" onClick={() => openOnWoC(ordinal.txid)}>
-                  View on WhatsOnChain
-                </button>
-              </div>
+    <Modal onClose={onClose} title="Ordinal">
+      <div className="modal-content">
+        <div className="ordinal-detail">
+          <OrdinalImage
+            contentHash={ordinal.content}
+            contentType={ordinal.contentType}
+            size="lg"
+            alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
+            lazy={false}
+          />
+          <div className="ordinal-info-list">
+            <div className="ordinal-info-row">
+              <span className="ordinal-info-label">Origin</span>
+              <span className="ordinal-info-value">{ordinal.origin.slice(0, 16)}...</span>
             </div>
-            <div className="ordinal-actions">
-              <button
-                className="btn btn-secondary"
-                onClick={() => copyToClipboard(ordinal.origin, 'Origin copied!')}
-              >
-                Copy Origin
+            <div className="ordinal-info-row">
+              <span className="ordinal-info-label">Outpoint</span>
+              <span className="ordinal-info-value">{`${ordinal.txid}:${ordinal.vout}`.slice(0, 16)}...</span>
+            </div>
+            {ordinal.contentType && (
+              <div className="ordinal-info-row">
+                <span className="ordinal-info-label">Type</span>
+                <span className="ordinal-info-value">{ordinal.contentType}</span>
+              </div>
+            )}
+            <div className="ordinal-info-row">
+              <span className="ordinal-info-label">TXID</span>
+              <button className="link-btn" onClick={() => openOnWoC(ordinal.txid)}>
+                View on WhatsOnChain
               </button>
-              {onTransfer && (
-                <button
-                  className="btn btn-primary"
-                  onClick={onTransfer}
-                >
-                  Transfer
-                </button>
-              )}
             </div>
+          </div>
+          <div className="ordinal-actions">
+            <button
+              className="btn btn-secondary"
+              onClick={() => copyToClipboard(ordinal.origin, 'Origin copied!')}
+            >
+              Copy Origin
+            </button>
+            {onTransfer && (
+              <button
+                className="btn btn-primary"
+                onClick={onTransfer}
+              >
+                Transfer
+              </button>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { CircleCheck, AlertTriangle } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
+import { OrdinalImage } from '../shared/OrdinalImage'
 import type { Ordinal } from '../../services/wallet'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
@@ -139,16 +140,14 @@ export function OrdinalTransferModal({
     <Modal onClose={handleClose} title="Transfer Ordinal">
       <div className="transfer-content">
         {/* Ordinal Preview */}
-        <div className="ordinal-preview">
-          <div className="ordinal-thumbnail">
-            {ordinal.contentType?.startsWith('image/') && ordinal.content ? (
-              <img src={ordinal.content} alt="Ordinal" />
-            ) : (
-              <div className="ordinal-placeholder">
-                <span>{getContentTypeDisplay()}</span>
-              </div>
-            )}
-          </div>
+        <div className="transfer-ordinal-preview">
+          <OrdinalImage
+            contentHash={ordinal.content}
+            contentType={ordinal.contentType}
+            size="md"
+            alt="Ordinal"
+            lazy={false}
+          />
           <div className="ordinal-info">
             <span className="ordinal-origin">{ordinal.origin}</span>
             <span className="ordinal-type">{getContentTypeDisplay()}</span>
@@ -169,6 +168,8 @@ export function OrdinalTransferModal({
           <input
             id="recipient-address"
             type="text"
+            className="form-input"
+            style={{ fontFamily: 'var(--font-mono)' }}
             value={toAddress}
             onChange={e => setToAddress(e.target.value)}
             placeholder="Enter BSV address"

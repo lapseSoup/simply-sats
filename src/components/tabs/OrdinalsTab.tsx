@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useMemo, memo, type ReactNode } from 'react'
-import { Search, LayoutGrid, List as ListIcon, ChevronRight, Image, FileText, Braces, Diamond } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo, memo } from 'react'
+import { Search, LayoutGrid, List as ListIcon, ChevronRight } from 'lucide-react'
 import { List } from 'react-window'
 import { useWallet } from '../../contexts/WalletContext'
 import type { Ordinal } from '../../services/wallet'
 import { NoOrdinalsEmpty } from '../shared/EmptyState'
 import { OrdinalsGridSkeleton } from '../shared/Skeleton'
+import { OrdinalImage } from '../shared/OrdinalImage'
 
 const VIRTUALIZATION_THRESHOLD = 50
 const ORDINAL_LIST_ITEM_HEIGHT = 68 // ~60px item + 8px gap
@@ -34,20 +35,6 @@ function getContentCategory(contentType: string | undefined): ContentCategory {
   if (contentType.startsWith('text/')) return 'text'
   if (contentType.includes('json')) return 'json'
   return 'other'
-}
-
-function getContentIcon(contentType: string | undefined): ReactNode {
-  const category = getContentCategory(contentType)
-  switch (category) {
-    case 'image':
-      return <Image size={16} strokeWidth={1.75} />
-    case 'text':
-      return <FileText size={16} strokeWidth={1.75} />
-    case 'json':
-      return <Braces size={16} strokeWidth={1.75} />
-    default:
-      return <Diamond size={16} strokeWidth={1.75} />
-  }
 }
 
 export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
@@ -304,8 +291,6 @@ interface OrdinalItemProps {
 }
 
 const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect }: OrdinalItemProps) {
-  const icon = getContentIcon(ordinal.contentType)
-
   return (
     <div
       className="ordinal-card"
@@ -315,9 +300,12 @@ const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect }: Ord
       onKeyDown={(e) => e.key === 'Enter' && onSelect(ordinal)}
       aria-label={`Ordinal ${ordinal.origin.slice(0, 8)}`}
     >
-      <div className="ordinal-card-icon" aria-hidden="true">
-        {icon}
-      </div>
+      <OrdinalImage
+        contentHash={ordinal.content}
+        contentType={ordinal.contentType}
+        size="lg"
+        alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
+      />
       <div className="ordinal-card-info">
         <div className="ordinal-card-id">
           {ordinal.origin.slice(0, 8)}...
@@ -333,8 +321,6 @@ const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect }: Ord
 })
 
 const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect }: OrdinalItemProps) {
-  const icon = getContentIcon(ordinal.contentType)
-
   return (
     <div
       className="ordinal-list-item"
@@ -344,9 +330,12 @@ const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect }: Ord
       onKeyDown={(e) => e.key === 'Enter' && onSelect(ordinal)}
       aria-label={`Ordinal ${ordinal.origin}`}
     >
-      <div className="ordinal-list-icon" aria-hidden="true">
-        {icon}
-      </div>
+      <OrdinalImage
+        contentHash={ordinal.content}
+        contentType={ordinal.contentType}
+        size="sm"
+        alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
+      />
       <div className="ordinal-list-info">
         <div className="ordinal-list-id">{ordinal.origin}</div>
         <div className="ordinal-list-meta">
