@@ -1,8 +1,10 @@
+import { useCallback } from 'react'
 import type { Ordinal } from '../../services/wallet'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { currentMonitor } from '@tauri-apps/api/window'
+import { Copy, Maximize2 } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { OrdinalImage } from '../shared/OrdinalImage'
 
@@ -22,7 +24,7 @@ export function OrdinalModal({ ordinal, onClose, onTransfer, onList }: OrdinalMo
 
   const isImage = ordinal.contentType?.startsWith('image/')
 
-  const openFullSize = async () => {
+  const openFullSize = useCallback(async () => {
     const label = `ordinal-${ordinal.origin.slice(0, 12).replace(/[^a-zA-Z0-9-_]/g, '_')}`
     const imageUrl = `https://ordinals.gorillapool.io/content/${ordinal.origin}`
     const viewerUrl = `${window.location.origin}/ordinal-viewer.html?src=${encodeURIComponent(imageUrl)}`
@@ -49,12 +51,23 @@ export function OrdinalModal({ ordinal, onClose, onTransfer, onList }: OrdinalMo
       height,
       resizable: true,
     })
-  }
+  }, [ordinal.origin])
+
+  const handleCopyValue = useCallback((value: string, label: string) => {
+    copyToClipboard(value, `${label} copied!`)
+  }, [copyToClipboard])
 
   return (
     <Modal onClose={onClose} title="Ordinal">
       <div className="ordinal-detail">
-        <div className="ordinal-preview">
+        <div
+          className={`ordinal-preview${isImage ? ' ordinal-preview-clickable' : ''}`}
+          onClick={isImage ? openFullSize : undefined}
+          role={isImage ? 'button' : undefined}
+          tabIndex={isImage ? 0 : undefined}
+          onKeyDown={isImage ? (e) => { if (e.key === 'Enter') openFullSize() } : undefined}
+          aria-label={isImage ? 'Open full size viewer' : undefined}
+        >
           <OrdinalImage
             origin={ordinal.origin}
             contentType={ordinal.contentType}
@@ -62,15 +75,40 @@ export function OrdinalModal({ ordinal, onClose, onTransfer, onList }: OrdinalMo
             alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
             lazy={false}
           />
+          {isImage && (
+            <div className="ordinal-preview-overlay" aria-hidden="true">
+              <Maximize2 size={28} strokeWidth={1.75} />
+            </div>
+          )}
         </div>
         <div className="ordinal-info-list">
-          <div className="ordinal-info-row">
+          <div
+            className="ordinal-info-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => handleCopyValue(ordinal.origin, 'Origin')}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCopyValue(ordinal.origin, 'Origin') }}
+            aria-label="Copy origin"
+          >
             <span className="ordinal-info-label">Origin</span>
-            <span className="ordinal-info-value">{ordinal.origin.slice(0, 16)}...</span>
+            <span className="ordinal-info-value ordinal-info-value-copyable">
+              {ordinal.origin.slice(0, 16)}...
+              <Copy size={12} strokeWidth={1.75} />
+            </span>
           </div>
-          <div className="ordinal-info-row">
+          <div
+            className="ordinal-info-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => handleCopyValue(`${ordinal.txid}:${ordinal.vout}`, 'Outpoint')}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCopyValue(`${ordinal.txid}:${ordinal.vout}`, 'Outpoint') }}
+            aria-label="Copy outpoint"
+          >
             <span className="ordinal-info-label">Outpoint</span>
-            <span className="ordinal-info-value">{`${ordinal.txid}:${ordinal.vout}`.slice(0, 16)}...</span>
+            <span className="ordinal-info-value ordinal-info-value-copyable">
+              {`${ordinal.txid}:${ordinal.vout}`.slice(0, 16)}...
+              <Copy size={12} strokeWidth={1.75} />
+            </span>
           </div>
           {ordinal.contentType && (
             <div className="ordinal-info-row">
@@ -85,29 +123,20 @@ export function OrdinalModal({ ordinal, onClose, onTransfer, onList }: OrdinalMo
             </button>
           </div>
         </div>
-        <div className="ordinal-actions">
-          {isImage && (
-            <button className="btn btn-secondary" onClick={openFullSize}>
-              Full Size
-            </button>
-          )}
-          <button
-            className="btn btn-secondary"
-            onClick={() => copyToClipboard(ordinal.origin, 'Origin copied!')}
-          >
-            Copy Origin
-          </button>
-          {onList && (
-            <button className="btn btn-secondary" onClick={onList}>
-              List for Sale
-            </button>
-          )}
-          {onTransfer && (
-            <button className="btn btn-primary" onClick={onTransfer}>
-              Transfer
-            </button>
-          )}
-        </div>
+        {(onList || onTransfer) && (
+          <div className="ordinal-actions">
+            {onList && (
+              <button className="btn btn-secondary" onClick={onList}>
+                List for Sale
+              </button>
+            )}
+            {onTransfer && (
+              <button className="btn btn-primary" onClick={onTransfer}>
+                Transfer
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </Modal>
   )

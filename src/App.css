@@ -3057,33 +3057,60 @@ textarea.form-input {
 
 .ordinal-preview {
   width: 100%;
-  max-height: 200px;
+  max-height: 50vh;
   border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-base);
+  position: relative;
 }
 
 .ordinal-preview .ordinal-img-lg {
   aspect-ratio: auto;
-  max-height: 200px;
+  max-height: 50vh;
 }
 
 .ordinal-preview .ordinal-img {
   object-fit: contain;
 }
 
+.ordinal-preview-clickable {
+  cursor: pointer;
+}
+
+.ordinal-preview-clickable:hover {
+  opacity: 0.92;
+}
+
+.ordinal-preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-out);
+  border-radius: var(--radius-lg);
+  pointer-events: none;
+  color: #fff;
+}
+
+.ordinal-preview-clickable:hover .ordinal-preview-overlay {
+  opacity: 1;
+}
+
 .ordinal-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
   gap: var(--space-2);
 }
 
 .ordinal-actions .btn {
+  flex: 1;
   font-size: var(--type-caption-size);
-  padding: var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   white-space: nowrap;
 }
 
@@ -3108,6 +3135,18 @@ textarea.form-input {
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: var(--type-caption-size);
+}
+
+.ordinal-info-value-copyable {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  transition: color var(--duration-normal) var(--ease-out);
+}
+
+.ordinal-info-value-copyable:hover {
+  color: var(--accent);
 }
 
 .link-btn {
