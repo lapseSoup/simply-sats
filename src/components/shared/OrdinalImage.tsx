@@ -33,7 +33,7 @@ export const OrdinalImage = memo(function OrdinalImage({
   const cachedImageUrl = useMemo(() => {
     if (isImage && cachedContent?.contentData && cachedContent.contentData.length > 0) {
       try {
-        const blob = new Blob([cachedContent.contentData], { type: contentType || 'image/png' })
+        const blob = new Blob([cachedContent.contentData.buffer as ArrayBuffer], { type: contentType || 'image/png' })
         return URL.createObjectURL(blob)
       } catch {
         return undefined

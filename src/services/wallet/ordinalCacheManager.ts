@@ -68,7 +68,7 @@ async function resizeImage(
   maxDimension: number
 ): Promise<Uint8Array | null> {
   return new Promise((resolve) => {
-    const blob = new Blob([data], { type: contentType })
+    const blob = new Blob([data.buffer as ArrayBuffer], { type: contentType })
     const url = URL.createObjectURL(blob)
     const img = new window.Image()
 
