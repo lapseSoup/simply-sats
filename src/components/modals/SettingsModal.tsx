@@ -601,7 +601,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
               ) : (
                 <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                  <label htmlFor="sender-pubkey-input" className="sr-only">Sender public key</label>
                   <input
+                    id="sender-pubkey-input"
                     type="text"
                     className="form-input"
                     placeholder="66 character hex public key"
@@ -635,7 +637,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               )}
               {showDebugInput && (
                 <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                  <label htmlFor="debug-address-input" className="sr-only">Target address</label>
                   <input
+                    id="debug-address-input"
                     type="text"
                     className="form-input"
                     placeholder="Target address (e.g. 172Hcm...)"
@@ -695,7 +699,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </div>
               ) : (
                 <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                  <label htmlFor="trusted-origin-input" className="sr-only">Trusted origin name</label>
                   <input
+                    id="trusted-origin-input"
                     type="text"
                     className="form-input"
                     placeholder="Origin name (e.g., ai-agent, wrootz)"

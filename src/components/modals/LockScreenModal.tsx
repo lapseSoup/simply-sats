@@ -63,9 +63,11 @@ export function LockScreenModal({
         </p>
 
         <form onSubmit={handleSubmit} className="lock-screen-form">
+          <label htmlFor="lock-screen-password" className="sr-only">Password</label>
           <div className="password-input-container">
             <input
               ref={inputRef}
+              id="lock-screen-password"
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={e => setPassword(e.target.value)}
@@ -73,7 +75,6 @@ export function LockScreenModal({
               className={`lock-screen-input ${error ? 'error' : ''}`}
               disabled={loading}
               autoComplete="current-password"
-              aria-label="Password"
               aria-invalid={!!error}
               aria-describedby={error ? 'password-error' : undefined}
             />

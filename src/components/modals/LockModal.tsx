@@ -273,9 +273,12 @@ export function LockModal({ onClose }: LockModalProps) {
             className="btn btn-primary"
             onClick={handleSubmit}
             disabled={locking || !lockAmount || !lockBlocks || lockSats <= 0 || blocks <= 0 || insufficientBalance}
+            aria-busy={locking}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
           >
-            {!locking && (
+            {locking ? (
+              <span className="spinner-small" aria-hidden="true" />
+            ) : (
               <Lock size={16} strokeWidth={1.75} />
             )}
             {locking ? 'Locking...' : `Lock ${lockSats > 0 ? lockSats.toLocaleString() + ' sats' : 'BSV'}`}

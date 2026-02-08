@@ -3381,9 +3381,8 @@ textarea.form-input {
 /* Improved button focus states */
 button:focus-visible,
 .btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--accent-subtle);
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* Input focus states */

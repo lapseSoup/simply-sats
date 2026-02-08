@@ -78,9 +78,11 @@ export function PasswordPromptModal({
           <p className="password-prompt-message">{message}</p>
         )}
 
+        <label htmlFor="password-prompt-input" className="sr-only">Password</label>
         <div className="password-input-wrapper">
           <input
             ref={inputRef}
+            id="password-prompt-input"
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -88,6 +90,8 @@ export function PasswordPromptModal({
             disabled={loading}
             className="password-input"
             autoComplete="current-password"
+            aria-invalid={!!error}
+            aria-describedby={error ? 'password-prompt-error' : undefined}
           />
           <button
             type="button"
@@ -103,7 +107,7 @@ export function PasswordPromptModal({
           </button>
         </div>
 
-        {error && <p className="password-error">{error}</p>}
+        {error && <p id="password-prompt-error" className="password-error" role="alert">{error}</p>}
 
         <div className="password-actions">
           <button

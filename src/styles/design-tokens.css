@@ -113,6 +113,18 @@
   --opacity-disabled: 0.38;
   --opacity-overlay:  0.75;
 
+  /* ── Overlay ── */
+  --overlay-bg: rgba(0, 0, 0, 0.75);
+
+  /* ── Interactive States ── */
+  --hover-overlay: rgba(255, 255, 255, 0.04);
+  --active-overlay: rgba(255, 255, 255, 0.08);
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+
+  /* ── Skeleton Loading ── */
+  --skeleton-base: var(--bg-surface-2);
+  --skeleton-shine: var(--bg-surface-3);
+
   /* ── Type Scale ── */
   --type-balance-size: 40px;
   --type-balance-weight: 700;
@@ -228,6 +240,7 @@
   border: none;
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
+  min-height: 44px;
   cursor: pointer;
   transition: transform var(--duration-fast) var(--ease-out),
               box-shadow var(--duration-fast) var(--ease-out);
@@ -239,6 +252,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
+  min-height: 44px;
   cursor: pointer;
   transition: background var(--duration-fast) ease,
               border-color var(--duration-fast) ease;
@@ -251,6 +265,7 @@
   border: none;
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-4);
+  min-height: 44px;
   cursor: pointer;
   transition: color var(--duration-fast) ease,
               background var(--duration-fast) ease;
@@ -263,6 +278,7 @@
   border: 1px solid var(--error-border);
   border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
+  min-height: 44px;
   cursor: pointer;
   transition: background var(--duration-fast) ease,
               color var(--duration-fast) ease;

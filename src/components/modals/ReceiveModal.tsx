@@ -190,7 +190,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                   </div>
                   <div className="brc100-qr-label" style={{ fontSize: 12 }}>Your Identity Public Key</div>
                   <div className="qr-wrapper compact" style={{ padding: 8 }}>
-                    <QRCodeSVG value={wallet.identityPubKey} size={64} level="L" bgColor="#fff" fgColor="#000" />
+                    <QRCodeSVG value={wallet.identityPubKey} size={64} level="L" bgColor="#fff" fgColor="#000" aria-label={`QR code for identity key ${wallet.identityPubKey.slice(0, 8)}...`} />
                   </div>
                   <div className="address-display compact">
                     {wallet.identityPubKey}
@@ -250,10 +250,11 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                   )}
 
                   <div className="form-group" style={{ width: '100%', marginBottom: 12 }}>
-                    <label className="form-label" style={{ fontSize: 12, marginBottom: 6 }}>
+                    <label className="form-label" htmlFor="sender-pubkey" style={{ fontSize: 12, marginBottom: 6 }}>
                       {localContacts.length > 0 ? 'Or enter public key manually:' : "Sender's Identity Public Key"}
                     </label>
                     <input
+                      id="sender-pubkey"
                       type="text"
                       className="form-input mono"
                       placeholder="Enter sender's identity public key (66 characters)..."
@@ -274,7 +275,9 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                           </button>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                            <label htmlFor="new-contact-name" className="sr-only">Contact name</label>
                             <input
+                              id="new-contact-name"
                               type="text"
                               className="form-input"
                               placeholder="Contact name (e.g., Alice, Bob's Shop)..."
@@ -321,7 +324,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                           Private Address #{currentInvoiceIndex}
                         </div>
                         <div className="qr-wrapper compact" style={{ display: 'flex', justifyContent: 'center' }}>
-                          <QRCodeSVG value={derivedReceiveAddress} size={100} level="M" bgColor="#fff" fgColor="#000" />
+                          <QRCodeSVG value={derivedReceiveAddress} size={100} level="M" bgColor="#fff" fgColor="#000" aria-label={`QR code for address ${derivedReceiveAddress.slice(0, 8)}...`} />
                         </div>
                         <div className="address-display compact" style={{ marginTop: 12, textAlign: 'center' }}>
                           {derivedReceiveAddress}
@@ -371,6 +374,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                   level="M"
                   bgColor="#ffffff"
                   fgColor="#000000"
+                  aria-label={`QR code for ${receiveType} address ${(receiveType === 'wallet' ? wallet.walletAddress : wallet.ordAddress).slice(0, 8)}...`}
                 />
               </div>
               <div className="address-display compact">

@@ -230,7 +230,7 @@ export function AccountModal({
       </div>
 
       <div className="form-group">
-        <label>Recovery Phrase</label>
+        <label htmlFor="import-mnemonic">Recovery Phrase</label>
         <MnemonicInput
           value={mnemonic}
           onChange={setMnemonic}
@@ -271,6 +271,7 @@ export function AccountModal({
                   onChange={e => setEditName(e.target.value)}
                   placeholder="Account name"
                   autoFocus
+                  aria-label="Rename account"
                 />
                 <button
                   type="button"

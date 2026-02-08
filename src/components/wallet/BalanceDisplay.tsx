@@ -10,7 +10,7 @@ export function BalanceDisplay() {
   const lockedBalance = locks.reduce((sum, l) => sum + l.satoshis, 0)
 
   return (
-    <div className="balance-row">
+    <div className="balance-row" aria-live="polite">
       <div
         className="balance-main"
         onClick={toggleDisplayUnit}

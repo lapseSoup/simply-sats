@@ -205,7 +205,9 @@ export function FeeEstimation({
           </button>
           {showCustom && (
             <div className="fee-custom-input">
+              <label htmlFor="custom-fee-rate" className="sr-only">Custom fee rate (sat/byte)</label>
               <input
+                id="custom-fee-rate"
                 type="range"
                 min={MIN_FEE_RATE}
                 max={MAX_FEE_RATE}
@@ -213,6 +215,7 @@ export function FeeEstimation({
                 value={customRate}
                 onChange={e => handleCustomRateChange(parseFloat(e.target.value))}
                 className="fee-slider"
+                aria-valuetext={`${customRate.toFixed(2)} sat per byte`}
               />
               <div className="fee-custom-labels">
                 <span>Low ({MIN_FEE_RATE})</span>

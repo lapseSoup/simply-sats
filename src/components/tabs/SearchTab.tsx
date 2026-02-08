@@ -198,6 +198,10 @@ export function SearchTab() {
             }}
             onKeyDown={handleKeyDown}
             autoFocus
+            aria-label="Search transactions by label, TXID, or address"
+            role="combobox"
+            aria-expanded={showSuggestions && filteredLabels.length > 0}
+            aria-autocomplete="list"
           />
           {showSuggestions && filteredLabels.length > 0 && (
             <div className="search-suggestions" ref={suggestionsRef}>

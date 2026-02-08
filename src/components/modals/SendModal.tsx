@@ -300,8 +300,14 @@ export function SendModal({ onClose }: SendModalProps) {
             className="btn btn-primary"
             onClick={handleSubmitClick}
             disabled={sending || !sendAddress || !sendAmount || !!addressError || sendSats + fee > availableSats}
+            aria-busy={sending}
           >
-            {sending ? 'Sending...' : `Send ${sendSats > 0 ? sendSats.toLocaleString() + ' sats' : 'BSV'}`}
+            {sending ? (
+              <>
+                <span className="spinner-small" aria-hidden="true" />
+                Sending...
+              </>
+            ) : `Send ${sendSats > 0 ? sendSats.toLocaleString() + ' sats' : 'BSV'}`}
           </button>
         </div>
       </Modal>
