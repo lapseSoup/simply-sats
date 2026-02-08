@@ -164,23 +164,21 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
         </div>
       </div>
 
-      {/* Filter Chips + Sort */}
-      <div className="ordinals-filter-row">
-        <div className="ordinals-filters" role="group" aria-label="Filter by content type">
-          {(Object.keys(CONTENT_CATEGORIES) as ContentCategory[]).map((category) => (
-            <button
-              key={category}
-              className={`filter-chip ${filterCategory === category ? 'active' : ''}`}
-              onClick={() => setFilterCategory(category)}
-              aria-pressed={filterCategory === category}
-            >
-              {CONTENT_CATEGORIES[category]}
-              <span className="filter-count">{categoryCounts[category]}</span>
-            </button>
-          ))}
-        </div>
+      {/* Filter + Sort Dropdowns */}
+      <div className="ordinals-toolbar">
         <select
-          id="sort-select"
+          className="sort-select"
+          value={filterCategory}
+          onChange={(e) => setFilterCategory(e.target.value as ContentCategory)}
+          aria-label="Filter ordinals by type"
+        >
+          {(Object.keys(CONTENT_CATEGORIES) as ContentCategory[]).map((category) => (
+            <option key={category} value={category}>
+              {CONTENT_CATEGORIES[category]} ({categoryCounts[category]})
+            </option>
+          ))}
+        </select>
+        <select
           className="sort-select"
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortOption)}
@@ -308,16 +306,6 @@ const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect }: Ord
         size="lg"
         alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
       />
-      <div className="ordinal-card-info">
-        <div className="ordinal-card-id">
-          {ordinal.origin.slice(0, 8)}...
-        </div>
-        {ordinal.contentType && (
-          <div className="ordinal-card-type">
-            {ordinal.contentType.split('/')[1] || ordinal.contentType}
-          </div>
-        )}
-      </div>
     </div>
   )
 })
