@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useState, useEffect, type KeyboardEvent } from 'react'
 import { PrivateKey } from '@bsv/sdk'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs'
@@ -21,7 +21,8 @@ import {
   ChevronRight,
   Clock,
   ClipboardCheck,
-  Layers
+  Layers,
+  HardDrive
 } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
@@ -36,7 +37,8 @@ const handleKeyDown = (handler: () => void) => (e: KeyboardEvent) => {
 }
 import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../services/keyDerivation'
 import { checkForPayments, getPaymentNotifications } from '../../services/messageBox'
-import { exportDatabase, importDatabase, type DatabaseBackup } from '../../services/database'
+import { exportDatabase, exportDatabaseFull, importDatabase, type DatabaseBackup } from '../../services/database'
+import { getCacheStats, resizeOrdinalCache, clearImageCache, clearAllContentCache, formatCacheSize } from '../../services/wallet/ordinalCacheManager'
 import { encrypt, decrypt, type EncryptedData } from '../../services/crypto'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
@@ -92,6 +94,16 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const [mnemonicToShow, setMnemonicToShow] = useState<string | null>(null)
   const [pendingImportBackup, setPendingImportBackup] = useState<DatabaseBackup | null>(null)
   const [showUtxoExplorer, setShowUtxoExplorer] = useState(false)
+
+  // Cache management state
+  const [cacheStats, setCacheStats] = useState<{ totalBytes: number; ordinalCount: number; imageCount: number; textCount: number } | null>(null)
+  const [cacheLoading, setCacheLoading] = useState(false)
+  const [showCacheOptions, setShowCacheOptions] = useState(false)
+
+  // Load cache stats when settings opens
+  useEffect(() => {
+    getCacheStats().then(stats => setCacheStats(stats)).catch(() => {})
+  }, [])
 
   if (!wallet) return null
 
@@ -164,7 +176,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     }, 100)
   }
 
-  const handleExportFullBackup = async () => {
+  const handleExportEssentialBackup = async () => {
     if (!sessionPassword) {
       showToast('Session password not available — try locking and unlocking first')
       return
@@ -191,12 +203,53 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       }
       const backupJson = JSON.stringify(encryptedBackup, null, 2)
       const filePath = await save({
-        defaultPath: `simply-sats-backup-${new Date().toISOString().split('T')[0]}.json`,
+        defaultPath: `simply-sats-backup-essential-${new Date().toISOString().split('T')[0]}.json`,
         filters: [{ name: 'JSON', extensions: ['json'] }]
       })
       if (filePath) {
         await writeTextFile(filePath, backupJson)
-        showToast('Encrypted backup saved!')
+        showToast('Essential backup saved!')
+      }
+    } catch (err) {
+      console.error('Backup failed:', err)
+      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleExportFullBackup = async () => {
+    if (!sessionPassword) {
+      showToast('Session password not available — try locking and unlocking first')
+      return
+    }
+    try {
+      showToast('Exporting full backup (including ordinal content)...')
+      const dbBackup = await exportDatabaseFull()
+      const fullBackup = {
+        format: 'simply-sats-full',
+        wallet: {
+          mnemonic: wallet.mnemonic || null,
+          keys: {
+            identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
+            payment: { wif: wallet.walletWif, address: wallet.walletAddress },
+            ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
+          }
+        },
+        database: dbBackup
+      }
+      const encrypted = await encrypt(JSON.stringify(fullBackup), sessionPassword)
+      const encryptedBackup = {
+        format: 'simply-sats-backup-encrypted',
+        version: 1,
+        encrypted
+      }
+      const backupJson = JSON.stringify(encryptedBackup, null, 2)
+      const filePath = await save({
+        defaultPath: `simply-sats-backup-full-${new Date().toISOString().split('T')[0]}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      })
+      if (filePath) {
+        await writeTextFile(filePath, backupJson)
+        showToast('Full backup saved!')
       }
     } catch (err) {
       console.error('Backup failed:', err)
@@ -252,6 +305,50 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       setPendingImportBackup(null)
     }
     setShowImportConfirm(null)
+  }
+
+  const refreshCacheStats = async () => {
+    const stats = await getCacheStats()
+    setCacheStats(stats)
+  }
+
+  const handleResizeCache = async (maxDim: number) => {
+    setCacheLoading(true)
+    try {
+      const saved = await resizeOrdinalCache(maxDim)
+      await refreshCacheStats()
+      showToast(`Cache resized! Saved ${formatCacheSize(saved)}`)
+    } catch {
+      showToast('Failed to resize cache')
+    }
+    setCacheLoading(false)
+    setShowCacheOptions(false)
+  }
+
+  const handleClearImageCache = async () => {
+    setCacheLoading(true)
+    try {
+      await clearImageCache()
+      await refreshCacheStats()
+      showToast('Image cache cleared!')
+    } catch {
+      showToast('Failed to clear cache')
+    }
+    setCacheLoading(false)
+    setShowCacheOptions(false)
+  }
+
+  const handleClearAllCache = async () => {
+    setCacheLoading(true)
+    try {
+      await clearAllContentCache()
+      await refreshCacheStats()
+      showToast('All cached content cleared!')
+    } catch {
+      showToast('Failed to clear cache')
+    }
+    setCacheLoading(false)
+    setShowCacheOptions(false)
   }
 
   const handleExportKeys = () => {
@@ -511,12 +608,22 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <div className="settings-section">
             <div className="settings-section-title">Backup</div>
             <div className="settings-card">
+              <div className="settings-row" role="button" tabIndex={0} onClick={handleExportEssentialBackup} onKeyDown={handleKeyDown(handleExportEssentialBackup)} aria-label="Export essential backup">
+                <div className="settings-row-left">
+                  <div className="settings-row-icon" aria-hidden="true"><Save size={16} strokeWidth={1.75} /></div>
+                  <div className="settings-row-content">
+                    <div className="settings-row-label">Export Essential</div>
+                    <div className="settings-row-value">Keys + transactions (restores with sync)</div>
+                  </div>
+                </div>
+                <span className="settings-row-arrow" aria-hidden="true"><ChevronRight size={16} strokeWidth={1.75} /></span>
+              </div>
               <div className="settings-row" role="button" tabIndex={0} onClick={handleExportFullBackup} onKeyDown={handleKeyDown(handleExportFullBackup)} aria-label="Export full backup">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><Save size={16} strokeWidth={1.75} /></div>
                   <div className="settings-row-content">
-                    <div className="settings-row-label">Export Full Backup</div>
-                    <div className="settings-row-value">Wallet + transactions</div>
+                    <div className="settings-row-label">Export Full</div>
+                    <div className="settings-row-value">Everything + ordinal content</div>
                   </div>
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><ChevronRight size={16} strokeWidth={1.75} /></span>
@@ -543,6 +650,63 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               </div>
             </div>
           </div>
+
+          {/* ORDINALS CACHE SECTION */}
+          {cacheStats && cacheStats.ordinalCount > 0 && (
+            <div className="settings-section">
+              <div className="settings-section-title">Ordinals Cache</div>
+              <div className="settings-card">
+                <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowCacheOptions(!showCacheOptions)} onKeyDown={handleKeyDown(() => setShowCacheOptions(!showCacheOptions))} aria-label="Manage ordinals cache">
+                  <div className="settings-row-left">
+                    <div className="settings-row-icon" aria-hidden="true"><HardDrive size={16} strokeWidth={1.75} /></div>
+                    <div className="settings-row-content">
+                      <div className="settings-row-label">Cache Size</div>
+                      <div className="settings-row-value">
+                        {formatCacheSize(cacheStats.totalBytes)} ({cacheStats.ordinalCount} ordinals)
+                      </div>
+                    </div>
+                  </div>
+                  <span className="settings-row-arrow" aria-hidden="true"><ChevronRight size={16} strokeWidth={1.75} /></span>
+                </div>
+                {showCacheOptions && (
+                  <div className="settings-sub-options">
+                    {cacheStats.imageCount > 0 && (
+                      <>
+                        <button
+                          className="btn btn-secondary settings-sub-btn"
+                          onClick={() => handleResizeCache(256)}
+                          disabled={cacheLoading}
+                        >
+                          Resize images to 256px
+                        </button>
+                        <button
+                          className="btn btn-secondary settings-sub-btn"
+                          onClick={() => handleResizeCache(512)}
+                          disabled={cacheLoading}
+                        >
+                          Resize images to 512px
+                        </button>
+                        <button
+                          className="btn btn-secondary settings-sub-btn"
+                          onClick={handleClearImageCache}
+                          disabled={cacheLoading}
+                        >
+                          Clear image cache
+                        </button>
+                      </>
+                    )}
+                    <button
+                      className="btn btn-secondary settings-sub-btn"
+                      onClick={handleClearAllCache}
+                      disabled={cacheLoading}
+                    >
+                      Clear all cached content
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ADVANCED SECTION */}
           <div className="settings-section">

@@ -10,6 +10,7 @@ import type { DatabaseBackup, UTXO, Transaction, Lock, Basket } from './types'
 import type { UTXORow, TransactionRow, LockRow, BasketRow, SyncStateRow } from '../database-types'
 import { getDerivedAddresses, ensureDerivedAddressesTable } from './addressRepository'
 import { getContacts, ensureContactsTable } from './contactRepository'
+import { getCachedOrdinalsWithContent, ensureOrdinalCacheTable, upsertOrdinalCache, upsertOrdinalContent } from './ordinalRepository'
 
 /**
  * Export entire database as JSON
@@ -89,7 +90,7 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   const contacts = await getContacts()
 
   return {
-    version: 3,  // Updated to include contacts
+    version: 4,
     exportedAt: Date.now(),
     utxos,
     transactions,
@@ -99,6 +100,29 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
     derivedAddresses,
     contacts
   }
+}
+
+/**
+ * Export essential data only — wallet keys + transaction data.
+ * Enough to restore fully via a sync. No ordinal content cache.
+ * This is the same as exportDatabase() — alias for clarity in UI.
+ */
+export async function exportDatabaseEssential(): Promise<DatabaseBackup> {
+  return exportDatabase()
+}
+
+/**
+ * Export full database including ordinal content cache.
+ * Larger file but restores instantly without needing to re-fetch content.
+ */
+export async function exportDatabaseFull(): Promise<DatabaseBackup> {
+  const backup = await exportDatabase()
+
+  // Add ordinal cache with content
+  const ordinalCache = await getCachedOrdinalsWithContent()
+  backup.ordinalCache = ordinalCache
+
+  return backup
 }
 
 /**
@@ -194,6 +218,18 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
     dbLogger.info(`Imported ${backup.contacts.length} contacts`)
   }
 
+  // Import ordinal cache (if present - version 4+)
+  if (backup.ordinalCache && backup.ordinalCache.length > 0) {
+    await ensureOrdinalCacheTable()
+    for (const cached of backup.ordinalCache) {
+      await upsertOrdinalCache(cached)
+      if (cached.contentData || cached.contentText) {
+        await upsertOrdinalContent(cached.origin, cached.contentData, cached.contentText)
+      }
+    }
+    dbLogger.info(`Imported ${backup.ordinalCache.length} cached ordinals`)
+  }
+
   dbLogger.info('Database import complete')
 }
 
@@ -266,6 +302,13 @@ export async function clearDatabase(): Promise<void> {
   // Clear audit log
   try {
     await database.execute('DELETE FROM audit_log')
+  } catch (_e) {
+    // Table may not exist yet
+  }
+
+  // Clear ordinal cache
+  try {
+    await database.execute('DELETE FROM ordinal_cache')
   } catch (_e) {
     // Table may not exist yet
   }

@@ -17,6 +17,7 @@ export type {
   DerivedAddress,
   Contact,
   ActionResult,
+  CachedOrdinal,
   DatabaseBackup
 } from './types'
 
@@ -112,9 +113,28 @@ export {
   getActionResultByTxid
 } from './actionRepository'
 
+// Ordinal cache operations
+export {
+  ensureOrdinalCacheTable,
+  getCachedOrdinals,
+  getCachedOrdinalContent,
+  upsertOrdinalCache,
+  upsertOrdinalContent,
+  hasOrdinalContent,
+  getCachedOrdinalsWithContent,
+  getOrdinalCacheStats,
+  clearOrdinalContentAll,
+  clearOrdinalImageContent,
+  updateOrdinalContentData,
+  getImageOrdinalsWithContent,
+  clearOrdinalCache
+} from './ordinalRepository'
+
 // Backup/restore operations
 export {
   exportDatabase,
+  exportDatabaseEssential,
+  exportDatabaseFull,
   importDatabase,
   clearDatabase,
   resetUTXOs

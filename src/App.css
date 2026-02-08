@@ -937,6 +937,27 @@ body::-webkit-scrollbar {
   color: var(--text-tertiary);
 }
 
+/* Text/JSON Content Previews */
+.ordinal-text-preview {
+  width: 100%;
+  height: 100%;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  overflow: hidden;
+  word-break: break-all;
+  white-space: pre-wrap;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+
+.ordinal-json-preview {
+  color: var(--accent);
+}
+
 /* Ordinals List View */
 .ordinals-list {
   display: flex;
@@ -2464,6 +2485,20 @@ textarea.form-input {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
+}
+
+.settings-sub-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.settings-sub-btn {
+  width: 100%;
+  font-size: 12px;
 }
 
 .settings-row {

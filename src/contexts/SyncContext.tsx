@@ -5,18 +5,35 @@
  * Provides sync-related state that can be consumed independently.
  */
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react'
 import type { WalletKeys, UTXO, Ordinal } from '../services/wallet'
 import { getBalance, getUTXOs, getOrdinals } from '../services/wallet'
-import { getAllTransactions, getDerivedAddresses, getLocks as getLocksFromDB } from '../services/database'
+import {
+  getAllTransactions,
+  getDerivedAddresses,
+  getLocks as getLocksFromDB,
+  upsertOrdinalCache,
+  getCachedOrdinalContent,
+  upsertOrdinalContent,
+  hasOrdinalContent,
+  getCachedOrdinals,
+  type CachedOrdinal
+} from '../services/database'
 import {
   syncWallet,
   restoreFromBlockchain,
   getBalanceFromDatabase,
   getOrdinalsFromDatabase
 } from '../services/sync'
+import { fetchOrdinalContent } from '../services/wallet/ordinalContent'
 import { useNetwork } from './NetworkContext'
 import { syncLogger } from '../services/logger'
+
+/** Cached content for rendering ordinal previews */
+export interface OrdinalContentEntry {
+  contentData?: Uint8Array
+  contentText?: string
+}
 
 export interface TxHistoryItem {
   tx_hash: string
@@ -43,6 +60,7 @@ interface SyncContextType {
   balance: number
   ordBalance: number
   syncError: string | null
+  ordinalContentCache: Map<string, OrdinalContentEntry>
 
   // State setters (for WalletContext to update when needed)
   setUtxos: (utxos: UTXO[]) => void
@@ -105,6 +123,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
     return cached ? parseInt(cached, 10) : 0
   })
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [ordinalContentCache, setOrdinalContentCache] = useState<Map<string, OrdinalContentEntry>>(new Map())
+  const contentCacheRef = useRef<Map<string, OrdinalContentEntry>>(new Map())
 
   const resetSync = useCallback(() => {
     setUtxos([])
@@ -114,6 +134,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setBalance(0)
     setOrdBalance(0)
     setSyncError(null)
+    setOrdinalContentCache(new Map())
+    contentCacheRef.current = new Map()
   }, [])
 
   // Sync wallet with blockchain
@@ -258,6 +280,22 @@ export function SyncProvider({ children }: SyncProviderProps) {
         const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId || undefined)
         syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length, accountId: activeAccountId })
 
+        // Load cached content from DB for instant previews
+        const cachedOrdinals = await getCachedOrdinals(activeAccountId || undefined)
+        const newCache = new Map<string, OrdinalContentEntry>()
+        for (const cached of cachedOrdinals) {
+          // Load actual content for ordinals that have it cached
+          const content = await getCachedOrdinalContent(cached.origin)
+          if (content && (content.contentData || content.contentText)) {
+            newCache.set(cached.origin, content)
+          }
+        }
+        if (newCache.size > 0) {
+          contentCacheRef.current = newCache
+          setOrdinalContentCache(new Map(newCache))
+          syncLogger.debug('Loaded cached ordinal content', { count: newCache.size })
+        }
+
         // Get derived addresses
         const derivedAddrs = await getDerivedAddresses()
 
@@ -284,6 +322,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
         })
 
         setOrdinals(allOrdinals)
+
+        // Cache ordinal metadata to DB and fetch missing content in background
+        cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache)
       } catch (e) {
         syncLogger.error('Failed to fetch ordinals', e)
       }
@@ -314,6 +355,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     balance,
     ordBalance,
     syncError,
+    ordinalContentCache,
     setUtxos,
     setOrdinals,
     setTxHistory,
@@ -330,4 +372,69 @@ export function SyncProvider({ children }: SyncProviderProps) {
       {children}
     </SyncContext.Provider>
   )
+}
+
+/**
+ * Background task: save ordinal metadata to DB and fetch missing content.
+ * Non-blocking — runs after ordinals are displayed to user.
+ */
+async function cacheOrdinalsInBackground(
+  allOrdinals: Ordinal[],
+  activeAccountId: number | null,
+  contentCacheRef: React.MutableRefObject<Map<string, OrdinalContentEntry>>,
+  setOrdinalContentCache: React.Dispatch<React.SetStateAction<Map<string, OrdinalContentEntry>>>
+): Promise<void> {
+  try {
+    // 1. Save metadata to DB
+    const now = Date.now()
+    for (const ord of allOrdinals) {
+      const cached: CachedOrdinal = {
+        origin: ord.origin,
+        txid: ord.txid,
+        vout: ord.vout,
+        satoshis: ord.satoshis,
+        contentType: ord.contentType,
+        contentHash: ord.content,
+        accountId: activeAccountId || undefined,
+        fetchedAt: now
+      }
+      await upsertOrdinalCache(cached)
+    }
+    syncLogger.debug('Cached ordinal metadata', { count: allOrdinals.length })
+
+    // 2. Fetch missing content (up to 10 per cycle)
+    const toFetch: Ordinal[] = []
+    for (const ord of allOrdinals) {
+      if (contentCacheRef.current.has(ord.origin)) continue
+      const hasCached = await hasOrdinalContent(ord.origin)
+      if (!hasCached) {
+        toFetch.push(ord)
+      }
+      if (toFetch.length >= 10) break
+    }
+
+    if (toFetch.length === 0) return
+
+    syncLogger.debug('Fetching ordinal content', { count: toFetch.length })
+
+    let contentAdded = false
+    for (const ord of toFetch) {
+      const content = await fetchOrdinalContent(ord.origin, ord.contentType)
+      if (content) {
+        // Save to DB
+        await upsertOrdinalContent(ord.origin, content.contentData, content.contentText)
+        // Update in-memory cache
+        contentCacheRef.current.set(ord.origin, content)
+        contentAdded = true
+      }
+    }
+
+    // Trigger a single re-render with all new content
+    if (contentAdded) {
+      setOrdinalContentCache(new Map(contentCacheRef.current))
+      syncLogger.debug('Ordinal content fetched and cached', { fetched: toFetch.length })
+    }
+  } catch (e) {
+    syncLogger.warn('Background ordinal caching failed (non-critical)', { error: String(e) })
+  }
 }

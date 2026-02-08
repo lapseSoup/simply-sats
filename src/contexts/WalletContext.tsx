@@ -85,6 +85,7 @@ interface WalletContextType {
   usdPrice: number
   utxos: UTXO[]
   ordinals: Ordinal[]
+  ordinalContentCache: Map<string, { contentData?: Uint8Array; contentText?: string }>
   locks: LockedUTXO[]
   txHistory: TxHistoryItem[]
   basketBalances: BasketBalances
@@ -177,6 +178,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const {
     utxos,
     ordinals,
+    ordinalContentCache,
     txHistory,
     basketBalances,
     balance,
@@ -1031,6 +1033,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     usdPrice,
     utxos,
     ordinals,
+    ordinalContentCache,
     locks,
     txHistory,
     basketBalances,

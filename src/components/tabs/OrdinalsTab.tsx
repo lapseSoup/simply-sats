@@ -39,7 +39,7 @@ function getContentCategory(contentType: string | undefined): ContentCategory {
 
 export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
   // Note: _onTransferOrdinal is available for future use
-  const { ordinals, loading } = useWallet()
+  const { ordinals, ordinalContentCache, loading } = useWallet()
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [filterCategory, setFilterCategory] = useState<ContentCategory>('all')
@@ -220,6 +220,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
               key={ord.origin}
               ordinal={ord}
               onSelect={onSelectOrdinal}
+              cachedContent={ordinalContentCache.get(ord.origin)}
             />
           ))}
         </div>
@@ -235,6 +236,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
               key={ord.origin}
               ordinal={ord}
               onSelect={onSelectOrdinal}
+              cachedContent={ordinalContentCache.get(ord.origin)}
             />
           ))}
         </div>
@@ -288,9 +290,10 @@ function VirtualizedOrdinalList({ ordinals, onSelect }: VirtualizedOrdinalListPr
 interface OrdinalItemProps {
   ordinal: Ordinal
   onSelect: (ordinal: Ordinal) => void
+  cachedContent?: { contentData?: Uint8Array; contentText?: string }
 }
 
-const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect }: OrdinalItemProps) {
+const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect, cachedContent }: OrdinalItemProps) {
   return (
     <div
       className="ordinal-card"
@@ -305,12 +308,13 @@ const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect }: Ord
         contentType={ordinal.contentType}
         size="lg"
         alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
+        cachedContent={cachedContent}
       />
     </div>
   )
 })
 
-const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect }: OrdinalItemProps) {
+const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect, cachedContent }: OrdinalItemProps) {
   return (
     <div
       className="ordinal-list-item"
@@ -325,6 +329,7 @@ const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect }: Ord
         contentType={ordinal.contentType}
         size="sm"
         alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
+        cachedContent={cachedContent}
       />
       <div className="ordinal-list-info">
         <div className="ordinal-list-id">{ordinal.origin}</div>

@@ -328,6 +328,35 @@ export interface FavoriteTokenRow {
 }
 
 // ============================================
+// Ordinal Cache Table Rows
+// ============================================
+
+/**
+ * Raw ordinal cache row from database
+ */
+export interface OrdinalCacheRow {
+  id: number
+  origin: string
+  txid: string
+  vout: number
+  satoshis: number
+  content_type: string | null
+  content_hash: string | null
+  content_data: ArrayBuffer | null  // BLOB returns as ArrayBuffer
+  content_text: string | null
+  account_id: number | null
+  fetched_at: number
+}
+
+/**
+ * Ordinal cache stats row
+ */
+export interface OrdinalCacheStatsRow {
+  count: number
+  total_size: number
+}
+
+// ============================================
 // Aggregate Query Rows
 // ============================================
 

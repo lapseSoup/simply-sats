@@ -102,6 +102,21 @@ export interface ActionResult {
   completedAt?: number
 }
 
+// Cached ordinal content (for content previews and offline access)
+export interface CachedOrdinal {
+  id?: number
+  origin: string
+  txid: string
+  vout: number
+  satoshis: number
+  contentType?: string
+  contentHash?: string
+  contentData?: Uint8Array  // Binary content (images)
+  contentText?: string      // Text/JSON content
+  accountId?: number
+  fetchedAt: number
+}
+
 // Database backup format
 export interface DatabaseBackup {
   version: number
@@ -113,4 +128,5 @@ export interface DatabaseBackup {
   syncState: { address: string; height: number; syncedAt: number }[]
   derivedAddresses?: DerivedAddress[]  // Added in version 2
   contacts?: Contact[]  // Added in version 3
+  ordinalCache?: CachedOrdinal[]  // Added in version 4 (full backups only)
 }
