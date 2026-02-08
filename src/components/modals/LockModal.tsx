@@ -184,6 +184,7 @@ export function LockModal({ onClose }: LockModalProps) {
               step={displayInSats ? '1' : '0.00000001'}
               value={lockAmount}
               onChange={e => setLockAmount(e.target.value)}
+              autoComplete="off"
             />
           </div>
           <div className="form-group">
@@ -196,6 +197,7 @@ export function LockModal({ onClose }: LockModalProps) {
               min="1"
               value={lockBlocks}
               onChange={e => setLockBlocks(e.target.value)}
+              autoComplete="off"
             />
             <div className="form-hint" id="lock-hint">
               {blocks > 0 ? (

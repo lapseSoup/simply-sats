@@ -69,6 +69,7 @@ export function TransactionDetailModal({
   const [newLabel, setNewLabel] = useState('')
   const [loading, setLoading] = useState(true)
   const [fee, setFee] = useState<number | null>(null)
+  const [recipientAddress, setRecipientAddress] = useState<string | null>(null)
   const [suggestedLabels, setSuggestedLabels] = useState<string[]>(DEFAULT_LABELS)
 
   // Load labels, DB record, and compute fee on mount
@@ -92,6 +93,11 @@ export function TransactionDetailModal({
         // Try fast path: description-based fee
         const effectiveAmount = transaction.amount ?? dbRecord?.amount
         const effectiveDescription = transaction.description ?? dbRecord?.description
+
+        // Extract recipient address from description (e.g. "Sent 25 sats to 1ABC...")
+        const addrMatch = effectiveDescription?.match(/to\s+([A-Za-z0-9]+)$/)
+        if (addrMatch?.[1]) setRecipientAddress(addrMatch[1])
+
         const descFee = parseFee(effectiveAmount, effectiveDescription)
 
         if (descFee !== null) {
@@ -185,6 +191,15 @@ export function TransactionDetailModal({
             </div>
           )}
 
+          {recipientAddress && (
+            <div className="tx-detail-row">
+              <span className="tx-detail-label">Sent To</span>
+              <span className="tx-detail-value tx-detail-mono">
+                {recipientAddress.slice(0, 8)}...{recipientAddress.slice(-6)}
+              </span>
+            </div>
+          )}
+
           {fee !== null && (
             <div className="tx-detail-row">
               <span className="tx-detail-label">Fee Paid</span>
@@ -252,6 +267,10 @@ export function TransactionDetailModal({
                   value={newLabel}
                   onChange={e => setNewLabel(e.target.value)}
                   onKeyDown={handleKeyDown}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                 />
                 <button
                   className="btn btn-secondary tx-label-add-btn"

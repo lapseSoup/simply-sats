@@ -392,6 +392,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                         value={feeRateKB}
                         onChange={(e) => setFeeRate(parseInt(e.target.value) || 100)}
                         onClick={(e) => e.stopPropagation()}
+                        autoComplete="off"
                         aria-label="Fee rate in sats per KB"
                         style={{
                           width: '60px',
@@ -609,6 +610,10 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     placeholder="66 character hex public key"
                     value={senderInput}
                     onChange={e => setSenderInput(e.target.value)}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                     style={{ fontFamily: 'monospace', fontSize: 11, marginBottom: 8 }}
                   />
                   <div className="btn-group">
@@ -645,6 +650,10 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     placeholder="Target address (e.g. 172Hcm...)"
                     value={debugAddressInput}
                     onChange={e => setDebugAddressInput(e.target.value)}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                     style={{ fontFamily: 'monospace', fontSize: 11, marginBottom: 8 }}
                   />
                   <div className="btn-group">
@@ -707,6 +716,10 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     placeholder="Origin name (e.g., ai-agent, wrootz)"
                     value={trustedOriginInput}
                     onChange={e => setTrustedOriginInput(e.target.value)}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                     style={{ marginBottom: 8 }}
                   />
                   <div className="btn-group">

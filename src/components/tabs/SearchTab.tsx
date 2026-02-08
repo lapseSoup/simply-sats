@@ -198,6 +198,10 @@ export function SearchTab() {
             }}
             onKeyDown={handleKeyDown}
             autoFocus
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             aria-label="Search transactions by label, TXID, or address"
             role="combobox"
             aria-expanded={showSuggestions && filteredLabels.length > 0}

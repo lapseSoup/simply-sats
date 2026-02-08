@@ -833,15 +833,15 @@ body::-webkit-scrollbar {
 .ordinals-filter-row {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
 }
 
 .ordinals-filters {
   display: flex;
   flex: 1;
   min-width: 0;
-  gap: var(--space-2);
+  gap: var(--space-1);
   flex-wrap: wrap;
 }
 
@@ -849,8 +849,10 @@ body::-webkit-scrollbar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
+  gap: 3px;
+  padding: 2px var(--space-2);
+  min-height: 28px;
+  min-width: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
@@ -874,7 +876,7 @@ body::-webkit-scrollbar {
 
 .filter-count {
   background: var(--bg-tertiary);
-  padding: 2px var(--space-2);
+  padding: 1px 5px;
   border-radius: var(--radius-sm);
   font-size: 10px;
   font-weight: 600;
@@ -886,7 +888,7 @@ body::-webkit-scrollbar {
 
 .sort-select {
   flex-shrink: 0;
-  padding: var(--space-2) 28px var(--space-2) 10px;
+  padding: 4px 28px 4px 10px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -3107,12 +3109,15 @@ textarea.form-input {
 }
 
 .ordinal-actions {
-  display: flex;
-  gap: var(--space-3);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
 }
 
 .ordinal-actions .btn {
-  flex: 1;
+  font-size: var(--type-caption-size);
+  padding: var(--space-2) var(--space-2);
+  white-space: nowrap;
 }
 
 .ordinal-info-list {

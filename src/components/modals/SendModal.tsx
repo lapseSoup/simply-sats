@@ -198,6 +198,7 @@ export function SendModal({ onClose }: SendModalProps) {
                 step={displayInSats ? '1' : '0.00000001'}
                 value={sendAmount}
                 onChange={e => setSendAmount(e.target.value)}
+                autoComplete="off"
               />
               <button
                 className="input-action"
