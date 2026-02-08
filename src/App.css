@@ -842,8 +842,7 @@ body::-webkit-scrollbar {
   flex: 1;
   min-width: 0;
   gap: var(--space-2);
-  overflow-x: auto;
-  padding-bottom: var(--space-1);
+  flex-wrap: wrap;
 }
 
 .filter-chip {
@@ -3175,6 +3174,9 @@ textarea.form-input {
   bottom: var(--space-6);
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   background: rgba(34, 34, 46, 0.85);
   backdrop-filter: blur(12px);
   color: var(--text-primary);

@@ -26,38 +26,60 @@ const ordLogger = walletLogger
 export async function getOrdinals(address: string): Promise<Ordinal[]> {
   try {
     // First, try the GorillaPool 1Sat Ordinals API for proper inscription data
+    // Paginate to fetch ALL ordinals (API returns max 100 per request)
+    const PAGE_SIZE = 100
+    const MAX_PAGES = 10 // Safety cap: 1000 ordinals max
+    const allGpItems: GpOrdinalItem[] = []
+    let gpSuccess = false
+
     ordLogger.debug('Fetching ordinals from GorillaPool', { address })
-    const gpResponse = await fetch(`https://ordinals.gorillapool.io/api/txos/address/${address}/unspent?limit=100`)
-    ordLogger.debug('GorillaPool response', { status: gpResponse.status })
-    if (gpResponse.ok) {
-      const gpData = await gpResponse.json()
-      ordLogger.debug('GorillaPool response data', { count: Array.isArray(gpData) ? gpData.length : 0 })
-      if (Array.isArray(gpData) && gpData.length > 0) {
-        // Filter for 1-sat UTXOs (actual ordinals) and those with origin set
-        const oneSatItems = gpData.filter((item: GpOrdinalItem) => item.satoshis === 1 || item.origin)
-        ordLogger.debug('Filtered ordinals', { totalUtxos: gpData.length, oneSatOrdinals: oneSatItems.length })
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const offset = page * PAGE_SIZE
+      const gpResponse = await fetch(`https://ordinals.gorillapool.io/api/txos/address/${address}/unspent?limit=${PAGE_SIZE}&offset=${offset}`)
+      ordLogger.debug('GorillaPool response', { status: gpResponse.status, page, offset })
 
-        if (oneSatItems.length > 0) {
-          // Log first item structure for debugging
-          ordLogger.debug('First ordinal structure', { sample: oneSatItems[0] })
-
-          const result = oneSatItems.map((item: GpOrdinalItem) => ({
-            origin: item.origin?.outpoint || item.outpoint || `${item.txid}_${item.vout}`,
-            txid: item.txid,
-            vout: item.vout,
-            satoshis: item.satoshis || 1,
-            contentType: item.origin?.data?.insc?.file?.type,
-            content: item.origin?.data?.insc?.file?.hash
-          }))
-          ordLogger.info('Returning ordinals', { count: result.length })
-          return result
-        }
-        ordLogger.debug('No 1-sat ordinals found, falling back to WhatsOnChain')
-      } else {
-        ordLogger.debug('GorillaPool returned empty array, falling back to WhatsOnChain', { address })
+      if (!gpResponse.ok) {
+        ordLogger.debug('GorillaPool API error, falling back to WhatsOnChain', { status: gpResponse.status })
+        break
       }
-    } else {
-      ordLogger.debug('GorillaPool API error, falling back to WhatsOnChain', { status: gpResponse.status })
+
+      const gpData = await gpResponse.json()
+      if (!Array.isArray(gpData) || gpData.length === 0) {
+        if (page === 0) {
+          ordLogger.debug('GorillaPool returned empty array, falling back to WhatsOnChain', { address })
+        }
+        gpSuccess = page > 0 // Had results on earlier pages
+        break
+      }
+
+      allGpItems.push(...gpData)
+      gpSuccess = true
+      ordLogger.debug('GorillaPool page fetched', { page, pageCount: gpData.length, totalSoFar: allGpItems.length })
+
+      // Last page — fewer results than page size means no more data
+      if (gpData.length < PAGE_SIZE) break
+    }
+
+    if (gpSuccess && allGpItems.length > 0) {
+      // Filter for 1-sat UTXOs (actual ordinals) and those with origin set
+      const oneSatItems = allGpItems.filter((item: GpOrdinalItem) => item.satoshis === 1 || item.origin)
+      ordLogger.debug('Filtered ordinals', { totalUtxos: allGpItems.length, oneSatOrdinals: oneSatItems.length })
+
+      if (oneSatItems.length > 0) {
+        ordLogger.debug('First ordinal structure', { sample: oneSatItems[0] })
+
+        const result = oneSatItems.map((item: GpOrdinalItem) => ({
+          origin: item.origin?.outpoint || item.outpoint || `${item.txid}_${item.vout}`,
+          txid: item.txid,
+          vout: item.vout,
+          satoshis: item.satoshis || 1,
+          contentType: item.origin?.data?.insc?.file?.type,
+          content: item.origin?.data?.insc?.file?.hash
+        }))
+        ordLogger.info('Returning ordinals', { count: result.length })
+        return result
+      }
+      ordLogger.debug('No 1-sat ordinals found, falling back to WhatsOnChain')
     }
 
     // Fallback: Use WhatsOnChain to get 1-sat UTXOs, then verify each with GorillaPool
