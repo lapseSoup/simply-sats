@@ -77,7 +77,7 @@ export function OrdinalModal({ ordinal, onClose, onTransfer, onList }: OrdinalMo
           />
           {isImage && (
             <div className="ordinal-preview-overlay" aria-hidden="true">
-              <Maximize2 size={28} strokeWidth={1.75} />
+              <Maximize2 size={16} strokeWidth={2} />
             </div>
           )}
         </div>

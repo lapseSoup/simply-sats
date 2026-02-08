@@ -3081,19 +3081,24 @@ textarea.form-input {
 }
 
 .ordinal-preview-clickable:hover {
-  opacity: 0.92;
+  /* no image dimming — overlay badge handles hover feedback */
 }
 
 .ordinal-preview-overlay {
   position: absolute;
-  inset: 0;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   opacity: 0;
   transition: opacity var(--duration-normal) var(--ease-out);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   pointer-events: none;
   color: #fff;
 }
