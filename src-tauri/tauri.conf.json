@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.whatsonchain.com https://ordinals.gorillapool.io https://arc.gorillapool.io https://mapi.gorillapool.io https://arc.taal.com https://overlay.gorillapool.io https://overlay.taal.com https://messagebox.babbage.systems; font-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'self'"
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://tauri.localhost https://api.whatsonchain.com https://ordinals.gorillapool.io https://arc.gorillapool.io https://mapi.gorillapool.io https://arc.taal.com https://overlay.gorillapool.io https://overlay.taal.com https://overlay.babbage.systems https://messagebox.babbage.systems; font-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'self'"
     }
   },
   "plugins": {

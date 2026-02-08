@@ -41,3 +41,10 @@
 **Problem:** TypeScript considers `PrivateKey` from v1.10.3 incompatible with `PrivateKey` from v2.0.1 because they have different private class members (structural typing doesn't apply to classes with private fields). `tsc -b` rejects passing project keys to js-1sat-ord functions.
 **Rule:** When a dependency bundles a different version of a shared peer dep, use `type AnyX = any` aliases and cast at the boundary: `ordPk as AnyPrivateKey`. For return values, use double-cast: `result.tx as unknown as Transaction`. Add a comment explaining the version mismatch.
 **Fix:** Added `type AnyPrivateKey = any` and casted at the js-1sat-ord call boundary in `marketplace.ts`.
+
+## CSP connect-src Must Include ALL Fetched Domains (Cross-Platform)
+**Date:** 2025-02-08
+**Context:** Windows tester got "Unable to sync — data may be stale" error. App worked on macOS.
+**Problem:** `https://overlay.babbage.systems` was used in `overlay.ts` KNOWN_OVERLAY_NODES but was missing from the CSP `connect-src` whitelist in `tauri.conf.json`. On Windows (WebView2), CSP violations may cascade differently than on macOS (WebKit). Also, `'self'` resolves to `tauri://localhost` on macOS but `https://tauri.localhost` on Windows — adding explicit `https://tauri.localhost` avoids edge cases.
+**Rule:** Every time you add a new external API URL to the codebase, cross-check it against the CSP `connect-src` in `tauri.conf.json`. Grep for `https://` in `src/` and verify all domains are whitelisted. Always test on both macOS and Windows.
+**Fix:** Added `https://overlay.babbage.systems` and `https://tauri.localhost` to CSP `connect-src`.

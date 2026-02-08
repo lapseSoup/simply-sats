@@ -132,7 +132,7 @@ export function AccountSwitcher({
     <div className="account-switcher" ref={dropdownRef}>
       <button
         className="account-switcher-button"
-        onClick={() => accounts.length > 0 && setIsOpen(!isOpen)}
+        onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={`Current account: ${activeAccount?.name || 'Account 1'}`}

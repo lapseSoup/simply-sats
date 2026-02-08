@@ -168,7 +168,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
         syncLogger.error('Failed to get basket balances', e)
       }
     } catch (error) {
-      setSyncError('Sync failed')
+      const msg = error instanceof Error ? error.message : 'Unknown error'
+      setSyncError(`Sync failed: ${msg}`)
       syncLogger.error('Sync failed', error)
     } finally {
       setSyncing(false)
