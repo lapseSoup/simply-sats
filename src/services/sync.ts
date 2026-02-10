@@ -22,6 +22,7 @@ import {
   rollbackPendingSpend,
   getPendingUtxos,
   getUtxoByOutpoint,
+  getPendingTransactionTxids,
   type UTXO as DBUtxo,
   getTransactionLabels,
   updateTransactionLabels
@@ -185,16 +186,16 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   }
 
   // Mark spent UTXOs - only for UTXOs belonging to THIS address
-  // Protect recently-created UTXOs (e.g., change outputs from pending transactions)
-  // that may not yet be visible to the WoC API due to mempool propagation delay.
-  const RECENT_UTXO_GRACE_PERIOD_MS = 5 * 60 * 1000 // 5 minutes
-  const now = Date.now()
+  // Protect change outputs from recently broadcast transactions: skip UTXOs whose
+  // txid matches a pending (unconfirmed) transaction we recorded locally.
+  // This replaces the old time-based grace period which was fragile.
+  const pendingTxids = await getPendingTransactionTxids(accountId)
   for (const [key, utxo] of existingMap) {
     if (!currentUtxoKeys.has(key)) {
-      // Skip recently-created UTXOs — they may be change outputs from a
-      // just-broadcast transaction that the API hasn't indexed yet
-      if (utxo.createdAt && (now - utxo.createdAt) < RECENT_UTXO_GRACE_PERIOD_MS) {
-        syncLogger.debug(`[SYNC] Skipping recently-created UTXO (${Math.round((now - utxo.createdAt) / 1000)}s old): ${key}`)
+      // Skip UTXOs that are outputs of our own pending (unconfirmed) transactions —
+      // the blockchain API hasn't indexed them yet but we know they exist
+      if (pendingTxids.has(utxo.txid)) {
+        syncLogger.debug(`[SYNC] Skipping UTXO from pending tx (${utxo.txid.slice(0, 8)}...): ${key}`)
         continue
       }
       // UTXO no longer exists at this address - mark as spent
@@ -246,7 +247,7 @@ async function calculateTxAmount(
   // Sum outputs going TO the primary address (the one whose history we're viewing)
   for (const vout of tx.vout) {
     if (vout.scriptPubKey.hex === primaryLockingScript) {
-      received += Math.round(vout.value * 100000000) // Convert BSV to sats
+      received += Math.round(vout.value * 1e8) // Convert BSV to sats
     }
   }
 

@@ -442,3 +442,22 @@ export async function searchTransactions(
     amount: row.amount || undefined
   }))
 }
+
+/**
+ * Get txids of all pending (unconfirmed) transactions for an account
+ * Used by sync to protect change UTXOs from recently broadcast transactions
+ */
+export async function getPendingTransactionTxids(accountId?: number): Promise<Set<string>> {
+  const database = getDatabase()
+
+  let query = "SELECT txid FROM transactions WHERE status = 'pending'"
+  const params: SqlParams = []
+
+  if (accountId !== undefined) {
+    query += ' AND account_id = $1'
+    params.push(accountId)
+  }
+
+  const rows = await database.select<{ txid: string }[]>(query, params)
+  return new Set(rows.map(r => r.txid))
+}

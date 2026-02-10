@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import {
   type TokenBalance,
   syncTokenBalances,
@@ -39,15 +39,19 @@ interface TokensProviderProps {
 export function TokensProvider({ children }: TokensProviderProps) {
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([])
   const [tokensSyncing, setTokensSyncing] = useState(false)
+  const tokensSyncingRef = useRef(false)
 
   const resetTokens = useCallback(() => {
     setTokenBalances([])
     setTokensSyncing(false)
+    tokensSyncingRef.current = false
   }, [])
 
   const refreshTokens = useCallback(async (wallet: WalletKeys, accountId: number) => {
-    if (tokensSyncing) return
+    // Use ref to avoid stale closure — prevents callback recreation on every toggle
+    if (tokensSyncingRef.current) return
 
+    tokensSyncingRef.current = true
     setTokensSyncing(true)
     try {
       const balances = await syncTokenBalances(
@@ -60,9 +64,10 @@ export function TokensProvider({ children }: TokensProviderProps) {
     } catch (e) {
       tokenLogger.error('Failed to sync tokens', e)
     } finally {
+      tokensSyncingRef.current = false
       setTokensSyncing(false)
     }
-  }, [tokensSyncing])
+  }, [])
 
   const sendTokenAction = useCallback(async (
     wallet: WalletKeys,
@@ -96,13 +101,13 @@ export function TokensProvider({ children }: TokensProviderProps) {
     }
   }, [])
 
-  const value: TokensContextType = {
+  const value: TokensContextType = useMemo(() => ({
     tokenBalances,
     tokensSyncing,
     resetTokens,
     refreshTokens,
     sendTokenAction
-  }
+  }), [tokenBalances, tokensSyncing, resetTokens, refreshTokens, sendTokenAction])
 
   return (
     <TokensContext.Provider value={value}>

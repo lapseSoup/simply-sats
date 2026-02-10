@@ -53,7 +53,8 @@ export {
   getAllLabels,
   getTopLabels,
   searchTransactions,
-  searchTransactionsByLabels
+  searchTransactionsByLabels,
+  getPendingTransactionTxids
 } from './txRepository'
 
 // Lock operations

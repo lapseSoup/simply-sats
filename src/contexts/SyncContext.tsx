@@ -5,7 +5,7 @@
  * Provides sync-related state that can be consumed independently.
  */
 
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import type { WalletKeys, UTXO, Ordinal } from '../services/wallet'
 import { getBalance, getUTXOs, getOrdinals } from '../services/wallet'
 import {
@@ -355,7 +355,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     }
   }, [])
 
-  const value: SyncContextType = {
+  const value: SyncContextType = useMemo(() => ({
     utxos,
     ordinals,
     txHistory,
@@ -373,7 +373,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     resetSync,
     performSync,
     fetchData
-  }
+  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, ordinalContentCache, setUtxos, setOrdinals, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchData])
 
   return (
     <SyncContext.Provider value={value}>

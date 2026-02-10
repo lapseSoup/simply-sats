@@ -13,7 +13,6 @@ import { walletLogger } from './logger'
 
 // Storage keys
 const STORAGE_PREFIX = 'simply_sats_'
-const SESSION_KEY_STORAGE = `${STORAGE_PREFIX}session_key`
 
 // Keys that should be encrypted
 const SENSITIVE_KEYS = new Set([
@@ -32,76 +31,24 @@ const SENSITIVE_KEYS = new Set([
 // Web Crypto API
 const getCrypto = () => globalThis.crypto
 
-/**
- * Generate a session encryption key
- * This key is generated per session and stored encrypted
- */
-async function generateSessionKey(): Promise<CryptoKey> {
-  return getCrypto().subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    true, // extractable for export
-    ['encrypt', 'decrypt']
-  )
-}
-
-/**
- * Export key to base64
- */
-async function exportKey(key: CryptoKey): Promise<string> {
-  const raw = await getCrypto().subtle.exportKey('raw', key)
-  const bytes = new Uint8Array(raw)
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!)
-  }
-  return btoa(binary)
-}
-
-/**
- * Import key from base64
- */
-async function importKey(base64: string): Promise<CryptoKey> {
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return getCrypto().subtle.importKey(
-    'raw',
-    bytes.buffer,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  )
-}
-
-// Session key cache
+// Session key cache (in-memory only, never persisted)
 let sessionKey: CryptoKey | null = null
 
 /**
  * Get or create session encryption key
+ * Key is kept in-memory only — never persisted to sessionStorage (XSS mitigation)
  */
 async function getSessionKey(): Promise<CryptoKey> {
   if (sessionKey) {
     return sessionKey
   }
 
-  // Try to load existing session key
-  const storedKey = sessionStorage.getItem(SESSION_KEY_STORAGE)
-  if (storedKey) {
-    try {
-      sessionKey = await importKey(storedKey)
-      return sessionKey
-    } catch {
-      walletLogger.warn('Failed to import session key, generating new one')
-    }
-  }
-
-  // Generate new session key, export to sessionStorage, then re-import as non-extractable
-  const tempKey = await generateSessionKey()
-  const exported = await exportKey(tempKey)
-  sessionStorage.setItem(SESSION_KEY_STORAGE, exported)
-  sessionKey = await importKey(exported)
+  // Generate new session key in-memory only (non-extractable)
+  sessionKey = await getCrypto().subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    false, // non-extractable
+    ['encrypt', 'decrypt']
+  )
 
   return sessionKey
 }
@@ -181,8 +128,8 @@ export async function secureSet(key: string, value: string): Promise<void> {
       localStorage.setItem(fullKey, `enc:${encrypted}`)
     } catch (e) {
       walletLogger.error('Failed to encrypt storage value', { key, error: e })
-      // Fall back to unencrypted storage in case of error
-      localStorage.setItem(fullKey, value)
+      // Fail-secure: never store sensitive data unencrypted
+      throw new Error(`Failed to encrypt sensitive data for key: ${key}`)
     }
   } else {
     localStorage.setItem(fullKey, value)
@@ -274,7 +221,6 @@ export async function migrateToSecureStorage(): Promise<void> {
  */
 export function clearSessionKey(): void {
   sessionKey = null
-  sessionStorage.removeItem(SESSION_KEY_STORAGE)
 }
 
 /**
@@ -292,9 +238,8 @@ export function clearAllSimplySatsStorage(): void {
   }
   keysToRemove.forEach(key => localStorage.removeItem(key))
 
-  // Clear session key from sessionStorage + memory
+  // Clear session key from memory
   sessionKey = null
-  sessionStorage.removeItem(SESSION_KEY_STORAGE)
 
   walletLogger.info('Cleared all simply_sats_ storage', { keysCleared: keysToRemove.length })
 }

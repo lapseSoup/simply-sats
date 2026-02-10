@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
 import type { WalletKeys } from '../services/wallet'
 import { restoreWallet } from '../services/wallet'
 import { deriveWalletKeysForAccount } from '../domain/wallet'
@@ -210,7 +210,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     await refreshAccounts()
   }, [refreshAccounts])
 
-  const value: AccountsContextType = {
+  const value: AccountsContextType = useMemo(() => ({
     accounts,
     activeAccount,
     activeAccountId,
@@ -223,7 +223,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     resetAccounts,
     setActiveAccountState,
     getKeysForAccount
-  }
+  }), [accounts, activeAccount, activeAccountId, switchAccount, createNewAccount, importAccount, deleteAccount, renameAccount, refreshAccounts, resetAccounts, setActiveAccountState, getKeysForAccount])
 
   return (
     <AccountsContext.Provider value={value}>

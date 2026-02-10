@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { getNetworkStatus } from '../services/brc100'
 import { apiLogger } from '../services/logger'
 
@@ -35,45 +35,83 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
   const [syncing, setSyncing] = useState(false)
   const [usdPrice, setUsdPrice] = useState<number>(0)
 
-  // Fetch network status periodically
+  // Track consecutive failures for exponential backoff
+  const networkFailuresRef = useRef(0)
+  const priceFailuresRef = useRef(0)
+
+  // Fetch network status with exponential backoff on failure
   useEffect(() => {
-    const fetchNetworkStatus = async () => {
+    let timeoutId: ReturnType<typeof setTimeout>
+    let cancelled = false
+
+    const scheduleNext = (failures: number) => {
+      // Base: 60s, backoff: 60s * 2^failures, max: 10min
+      const delay = Math.min(60000 * Math.pow(2, failures), 600000)
+      timeoutId = setTimeout(fetchNetworkStatus, delay)
+    }
+
+    async function fetchNetworkStatus() {
+      if (cancelled) return
       try {
         const status = await getNetworkStatus()
-        setNetworkInfo(status)
+        if (!cancelled) {
+          setNetworkInfo(status)
+          networkFailuresRef.current = 0
+          scheduleNext(0)
+        }
       } catch (error) {
         apiLogger.error('Failed to fetch network status', error)
+        if (!cancelled) {
+          networkFailuresRef.current = Math.min(networkFailuresRef.current + 1, 5)
+          scheduleNext(networkFailuresRef.current)
+        }
       }
     }
+
     fetchNetworkStatus()
-    const interval = setInterval(fetchNetworkStatus, 60000)
-    return () => clearInterval(interval)
+    return () => { cancelled = true; clearTimeout(timeoutId) }
   }, [])
 
-  // Fetch USD price periodically
+  // Fetch USD price with exponential backoff on failure
   useEffect(() => {
-    const fetchPrice = async () => {
+    let timeoutId: ReturnType<typeof setTimeout>
+    let cancelled = false
+
+    const scheduleNext = (failures: number) => {
+      const delay = Math.min(60000 * Math.pow(2, failures), 600000)
+      timeoutId = setTimeout(fetchPrice, delay)
+    }
+
+    async function fetchPrice() {
+      if (cancelled) return
       try {
         const res = await fetch('https://api.whatsonchain.com/v1/bsv/main/exchangerate')
         const data = await res.json()
-        if (data?.rate) {
+        if (!cancelled && data?.rate) {
           setUsdPrice(data.rate)
+          priceFailuresRef.current = 0
         }
+        if (!cancelled) scheduleNext(0)
       } catch (e) {
         apiLogger.error('Failed to fetch USD price', e)
+        if (!cancelled) {
+          priceFailuresRef.current = Math.min(priceFailuresRef.current + 1, 5)
+          scheduleNext(priceFailuresRef.current)
+        }
       }
     }
+
     fetchPrice()
-    const interval = setInterval(fetchPrice, 60000)
-    return () => clearInterval(interval)
+    return () => { cancelled = true; clearTimeout(timeoutId) }
   }, [])
 
-  const value: NetworkContextType = {
+  // Memoize context value to prevent unnecessary re-renders (B8)
+  const value: NetworkContextType = useMemo(() => ({
     networkInfo,
     syncing,
     setSyncing,
     usdPrice
-  }
+  }), [networkInfo, syncing, usdPrice])
 
   return (
     <NetworkContext.Provider value={value}>

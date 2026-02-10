@@ -324,10 +324,10 @@ describe('Wallet Service', () => {
           { txid: 'abc', vout: 0, satoshis: 1000, script: '76a914...' }
         ]
 
-        // Try to send almost all (leaving less than 100 for change)
-        const result = calculateExactFee(950, utxos)
+        // Send almost everything — fee for 2 outputs would exceed remaining balance
+        const result = calculateExactFee(990, utxos)
 
-        expect(result.outputCount).toBe(1) // No change needed
+        expect(result.outputCount).toBe(1) // No room for change after fee
       })
     })
   })

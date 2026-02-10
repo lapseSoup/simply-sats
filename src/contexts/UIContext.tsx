@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
 import { useNetwork } from './NetworkContext'
 import { uiLogger } from '../services/logger'
 import { UI } from '../config'
@@ -86,7 +86,7 @@ export function UIProvider({ children }: UIProviderProps) {
     return ((sats / 100000000) * usdPrice).toFixed(2)
   }, [usdPrice])
 
-  const value: UIContextType = {
+  const value: UIContextType = useMemo(() => ({
     displayInSats,
     toggleDisplayUnit,
     toasts,
@@ -95,7 +95,7 @@ export function UIProvider({ children }: UIProviderProps) {
     showToast,
     formatBSVShort,
     formatUSD
-  }
+  }), [displayInSats, toggleDisplayUnit, toasts, copyFeedback, copyToClipboard, showToast, formatBSVShort, formatUSD])
 
   return (
     <UIContext.Provider value={value}>

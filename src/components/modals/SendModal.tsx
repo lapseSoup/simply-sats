@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
+import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend } from '../../adapters/walletAdapter'
 import { P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../domain/transaction/fees'
@@ -29,16 +30,14 @@ export function SendModal({ onClose }: SendModalProps) {
   const [sendError, setSendError] = useState('')
   const [addressError, setAddressError] = useState('')
 
-  // Validate BSV address format
+  // Validate BSV address format and checksum using domain validator
   const validateAddress = useCallback((addr: string) => {
     if (!addr) {
       setAddressError('')
       return
     }
-    // BSV addresses start with 1, 3, or q (for bech32) and are 25-34 chars
-    // Legacy P2PKH starts with 1, P2SH starts with 3
-    if (!/^[13][a-km-zA-HJ-NP-Z1-9]{24,33}$/.test(addr)) {
-      setAddressError('Invalid BSV address format')
+    if (!isValidBSVAddress(addr)) {
+      setAddressError('Invalid BSV address')
     } else {
       setAddressError('')
     }

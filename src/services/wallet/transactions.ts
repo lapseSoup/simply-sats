@@ -163,46 +163,26 @@ export async function broadcastTransaction(tx: Transaction): Promise<string> {
 }
 
 /**
- * Build and sign a simple P2PKH transaction, then broadcast and record it
+ * Validate a send request — shared by sendBSV and sendBSVMultiKey
  */
-export async function sendBSV(
-  wif: string,
-  toAddress: string,
-  satoshis: number,
-  utxos: UTXO[],
-  accountId?: number  // Account ID for scoping transaction record
-): Promise<string> {
+function validateSendRequest(toAddress: string, satoshis: number): void {
   if (!Number.isFinite(satoshis) || satoshis <= 0) {
     throw new Error('Invalid amount')
   }
   if (!isValidBSVAddress(toAddress)) {
     throw new Error('Invalid BSV address')
   }
+}
 
-  // Select UTXOs using domain coin selection (smallest-first)
-  const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
-  if (!sufficient) {
-    throw new Error('Insufficient funds')
-  }
-
-  // Build the transaction using pure domain builder
-  const feeRate = getFeeRate()
-  const built = await buildP2PKHTx({
-    wif,
-    toAddress,
-    satoshis,
-    selectedUtxos: inputsToUse,
-    totalInput,
-    feeRate
-  })
-
-  const { tx, txid: pendingTxid, fee, change, changeAddress, spentOutpoints } = built
-
-  // Reset inactivity timer before send to prevent auto-lock during operation
-  resetInactivityTimer()
-
+/**
+ * Shared broadcast flow: mark pending → broadcast → rollback on failure
+ */
+async function executeBroadcast(
+  tx: Transaction,
+  pendingTxid: string,
+  spentOutpoints: { txid: string; vout: number }[]
+): Promise<string> {
   // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
-  // If we crash after broadcast but before marking as spent, these UTXOs won't be double-spent
   try {
     await markUtxosPendingSpend(spentOutpoints, pendingTxid)
     walletLogger.debug('Marked UTXOs as pending spend', { txid: pendingTxid })
@@ -212,9 +192,8 @@ export async function sendBSV(
   }
 
   // Now broadcast the transaction
-  let txid: string
   try {
-    txid = await broadcastTransaction(tx)
+    return await broadcastTransaction(tx)
   } catch (broadcastError) {
     // Broadcast failed - rollback the pending status
     walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)
@@ -226,46 +205,79 @@ export async function sendBSV(
     }
     throw broadcastError
   }
+}
 
-  // Broadcast succeeded - confirm the spend and record the transaction
-  // CRITICAL: recordSentTransaction + confirmUtxosSpent must be atomic
-  // addUTXO for change is best-effort and must NOT cause rollback of critical operations
+/**
+ * Shared post-broadcast flow: record tx → confirm spent → track change UTXO
+ */
+async function recordTransactionResult(
+  tx: Transaction,
+  txid: string,
+  pendingTxid: string,
+  description: string,
+  labels: string[],
+  amount: number,
+  change: number,
+  changeAddress: string,
+  spentOutpoints: { txid: string; vout: number }[],
+  accountId?: number
+): Promise<void> {
+  // CRITICAL: recordSentTransaction + confirmUtxosSpent + change UTXO must be atomic
   try {
     await withTransaction(async () => {
-      await recordSentTransaction(
-        txid,
-        tx.toHex(),
-        `Sent ${satoshis} sats to ${toAddress}`,
-        ['send'],
-        -(satoshis + fee),  // Negative = money out, includes fee
-        accountId
-      )
+      await recordSentTransaction(txid, tx.toHex(), description, labels, amount, accountId)
       await confirmUtxosSpent(spentOutpoints, txid)
+      // Track change UTXO atomically so balance stays correct until next sync
+      if (change > 0) {
+        try {
+          await addUTXO({
+            txid: pendingTxid,
+            vout: tx.outputs.length - 1,
+            satoshis: change,
+            lockingScript: p2pkhLockingScriptHex(changeAddress),
+            address: changeAddress,
+            basket: 'default',
+            spendable: true,
+            createdAt: Date.now()
+          }, accountId)
+          walletLogger.debug('Change UTXO tracked', { txid: pendingTxid, change })
+        } catch (error) {
+          // Non-fatal within transaction: change UTXO may already exist (duplicate key)
+          walletLogger.warn('Failed to track change UTXO (will recover on next sync)', { error: String(error) })
+        }
+      }
     })
     walletLogger.info('Transaction tracked locally', { txid, change })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to confirm transaction locally', error, { txid })
+    throw new Error(`Transaction broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`)
+  }
+}
+
+/**
+ * Build and sign a simple P2PKH transaction, then broadcast and record it
+ */
+export async function sendBSV(
+  wif: string,
+  toAddress: string,
+  satoshis: number,
+  utxos: UTXO[],
+  accountId?: number
+): Promise<string> {
+  validateSendRequest(toAddress, satoshis)
+
+  const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
+  if (!sufficient) {
+    throw new Error('Insufficient funds')
   }
 
-  // Best-effort: track change UTXO so balance stays correct until next sync
-  if (change > 0) {
-    try {
-      await addUTXO({
-        txid: pendingTxid,
-        vout: tx.outputs.length - 1,  // Change is always last output
-        satoshis: change,
-        lockingScript: p2pkhLockingScriptHex(changeAddress),
-        address: changeAddress,
-        basket: 'default',
-        spendable: true,
-        createdAt: Date.now()
-      }, accountId)
-      walletLogger.debug('Change UTXO tracked', { txid: pendingTxid, change })
-    } catch (error) {
-      walletLogger.warn('Failed to track change UTXO (will recover on next sync)', { error: String(error) })
-    }
-  }
+  const feeRate = getFeeRate()
+  const built = await buildP2PKHTx({ wif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
+  const { tx, txid: pendingTxid, fee, change, changeAddress, spentOutpoints } = built
 
+  resetInactivityTimer()
+  const txid = await executeBroadcast(tx, pendingTxid, spentOutpoints)
+  await recordTransactionResult(tx, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
   resetInactivityTimer()
   return txid
 }
@@ -324,105 +336,26 @@ export async function getAllSpendableUTXOs(walletWif: string): Promise<ExtendedU
  * Supports spending from both default wallet and derived addresses
  */
 export async function sendBSVMultiKey(
-  changeWif: string,  // WIF for change output (usually wallet WIF)
+  changeWif: string,
   toAddress: string,
   satoshis: number,
   utxos: ExtendedUTXO[],
-  accountId?: number  // Account ID for scoping transaction record
+  accountId?: number
 ): Promise<string> {
-  if (!Number.isFinite(satoshis) || satoshis <= 0) {
-    throw new Error('Invalid amount')
-  }
-  if (!isValidBSVAddress(toAddress)) {
-    throw new Error('Invalid BSV address')
-  }
+  validateSendRequest(toAddress, satoshis)
 
-  // Select UTXOs using domain coin selection (smallest-first)
   const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
   if (!sufficient) {
     throw new Error('Insufficient funds')
   }
 
-  // Build the transaction using pure domain builder
   const feeRate = getFeeRate()
-  const built = await buildMultiKeyP2PKHTx({
-    changeWif,
-    toAddress,
-    satoshis,
-    selectedUtxos: inputsToUse,
-    totalInput,
-    feeRate
-  })
-
+  const built = await buildMultiKeyP2PKHTx({ changeWif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
   const { tx, txid: pendingTxid, fee, change, changeAddress, spentOutpoints } = built
 
-  // Reset inactivity timer before send to prevent auto-lock during operation
   resetInactivityTimer()
-
-  // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
-  try {
-    await markUtxosPendingSpend(spentOutpoints, pendingTxid)
-    walletLogger.debug('Marked UTXOs as pending spend (multi-key)', { txid: pendingTxid })
-  } catch (error) {
-    walletLogger.error('Failed to mark UTXOs as pending', error)
-    throw new Error('Failed to prepare transaction - UTXOs could not be locked')
-  }
-
-  // Now broadcast the transaction
-  let txid: string
-  try {
-    txid = await broadcastTransaction(tx)
-  } catch (broadcastError) {
-    // Broadcast failed - rollback the pending status
-    walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)
-    try {
-      await rollbackPendingSpend(spentOutpoints)
-      walletLogger.debug('Rolled back pending status for UTXOs')
-    } catch (rollbackError) {
-      walletLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
-    }
-    throw broadcastError
-  }
-
-  // Broadcast succeeded - confirm the spend and record the transaction
-  // CRITICAL: recordSentTransaction + confirmUtxosSpent must be atomic
-  // addUTXO for change is best-effort and must NOT cause rollback of critical operations
-  try {
-    await withTransaction(async () => {
-      await recordSentTransaction(
-        txid,
-        tx.toHex(),
-        `Sent ${satoshis} sats to ${toAddress}`,
-        ['send'],
-        -(satoshis + fee),  // Negative = money out, includes fee
-        accountId
-      )
-      await confirmUtxosSpent(spentOutpoints, txid)
-    })
-    walletLogger.info('Transaction tracked locally', { txid, change })
-  } catch (error) {
-    walletLogger.error('CRITICAL: Failed to confirm transaction locally', error, { txid })
-  }
-
-  // Best-effort: track change UTXO so balance stays correct until next sync
-  if (change > 0) {
-    try {
-      await addUTXO({
-        txid: pendingTxid,
-        vout: tx.outputs.length - 1,
-        satoshis: change,
-        lockingScript: p2pkhLockingScriptHex(changeAddress),
-        address: changeAddress,
-        basket: 'default',
-        spendable: true,
-        createdAt: Date.now()
-      }, accountId)
-      walletLogger.debug('Change UTXO tracked', { txid: pendingTxid, change })
-    } catch (error) {
-      walletLogger.warn('Failed to track change UTXO (will recover on next sync)', { error: String(error) })
-    }
-  }
-
+  const txid = await executeBroadcast(tx, pendingTxid, spentOutpoints)
+  await recordTransactionResult(tx, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
   resetInactivityTimer()
   return txid
 }
@@ -435,70 +368,31 @@ export async function consolidateUtxos(
   wif: string,
   utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>
 ): Promise<{ txid: string; outputSats: number; fee: number }> {
-  // Build the consolidation transaction using pure domain builder
   const feeRate = getFeeRate()
   const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })
-
   const { tx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
-
-  // Reset inactivity timer before consolidation to prevent auto-lock during operation
-  resetInactivityTimer()
-
-  // Mark UTXOs as pending
-  try {
-    await markUtxosPendingSpend(spentOutpoints, pendingTxid)
-    walletLogger.debug('Marked UTXOs as pending for consolidation', { txid: pendingTxid })
-  } catch (error) {
-    walletLogger.error('Failed to mark UTXOs as pending', error)
-    throw new Error('Failed to prepare consolidation - UTXOs could not be locked')
-  }
-
-  // Broadcast
-  let txid: string
-  try {
-    txid = await broadcastTransaction(tx)
-  } catch (broadcastError) {
-    walletLogger.error('Consolidation broadcast failed, rolling back', broadcastError)
-    try {
-      await rollbackPendingSpend(spentOutpoints)
-    } catch (rollbackError) {
-      walletLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
-    }
-    throw broadcastError
-  }
-
-  // Record transaction -- critical ops must be atomic, addUTXO is best-effort
   const totalInput = utxoIds.reduce((sum, u) => sum + u.satoshis, 0)
+
+  resetInactivityTimer()
+  const txid = await executeBroadcast(tx, pendingTxid, spentOutpoints)
+
+  // Record — consolidation uses vout 0 (single output), not last output
   try {
     await withTransaction(async () => {
-      await recordSentTransaction(
-        txid,
-        tx.toHex(),
-        `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`,
-        ['consolidate']
-      )
+      await recordSentTransaction(txid, tx.toHex(), `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
       await confirmUtxosSpent(spentOutpoints, txid)
+      // Track consolidated UTXO atomically
+      try {
+        await addUTXO({ txid: pendingTxid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
+        walletLogger.debug('Consolidated UTXO tracked', { txid: pendingTxid, outputSats })
+      } catch (error) {
+        walletLogger.warn('Failed to track consolidated UTXO (will recover on next sync)', { error: String(error) })
+      }
     })
     walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
-  }
-
-  // Best-effort: track consolidated UTXO so balance stays correct until next sync
-  try {
-    await addUTXO({
-      txid: pendingTxid,
-      vout: 0,
-      satoshis: outputSats,
-      lockingScript: p2pkhLockingScriptHex(address),
-      address,
-      basket: 'default',
-      spendable: true,
-      createdAt: Date.now()
-    })
-    walletLogger.debug('Consolidated UTXO tracked', { txid: pendingTxid, outputSats })
-  } catch (error) {
-    walletLogger.warn('Failed to track consolidated UTXO (will recover on next sync)', { error: String(error) })
+    throw new Error(`Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`)
   }
 
   return { txid, outputSats, fee }

@@ -292,6 +292,8 @@ export function startPaymentListener(
     for (const payment of newPayments) {
       onNewPayment?.(payment)
     }
+  }).catch(e => {
+    messageLogger.error('Initial payment check failed', e)
   })
 
   // Set up interval

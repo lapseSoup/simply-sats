@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import type { WalletKeys, UTXO, LockedUTXO, Ordinal, ExtendedUTXO } from '../services/wallet'
 import {
   createWallet,
@@ -379,9 +379,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setIsLocked(false)
 
         // Preload locks from DB instantly so they appear before the full sync cycle
+        // Use version guard to prevent stale data from overwriting if user switches accounts rapidly
+        const preloadVersion = fetchVersionRef.current
         try {
           const dbLocks = await getLocksFromDB(0, accountId)
-          if (dbLocks.length > 0) {
+          // Check version hasn't changed during async DB call (rapid account switch)
+          if (fetchVersionRef.current !== preloadVersion) {
+            walletLogger.debug('Skipping lock preload — account switch detected during DB query')
+          } else if (dbLocks.length > 0) {
             setLocks(dbLocks.map(lock => ({
               txid: lock.utxo.txid,
               vout: lock.utxo.vout,
@@ -1024,7 +1029,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     audit.appDisconnected(origin, activeAccountId ?? undefined)
   }, [connectedApps, activeAccountId])
 
-  const value: WalletContextType = {
+  const value: WalletContextType = useMemo(() => ({
     // Wallet state
     wallet,
     setWallet,
@@ -1096,7 +1101,17 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleTransferOrdinal,
     handleListOrdinal,
     handleSendToken
-  }
+  }), [
+    wallet, setWallet, balance, ordBalance, usdPrice, utxos, ordinals, ordinalContentCache,
+    locks, txHistory, basketBalances, contacts, accounts, activeAccount, activeAccountId,
+    switchAccount, createNewAccount, importAccount, deleteAccount, renameAccount, refreshAccounts,
+    tokenBalances, refreshTokens, tokensSyncing, isLocked, lockWallet, unlockWallet,
+    autoLockMinutes, setAutoLockMinutes, networkInfo, syncing, syncError, loading,
+    feeRateKB, setFeeRate, connectedApps, trustedOrigins, addTrustedOrigin, removeTrustedOrigin,
+    disconnectApp, sessionPassword, refreshContacts, performSync, fetchData, handleCreateWallet,
+    handleRestoreWallet, handleImportJSON, handleDeleteWallet, handleSend, handleLock,
+    handleUnlock, handleTransferOrdinal, handleListOrdinal, handleSendToken
+  ])
 
   return (
     <WalletContext.Provider value={value}>

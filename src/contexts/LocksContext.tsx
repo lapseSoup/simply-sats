@@ -5,7 +5,7 @@
  * Provides lock/unlock functionality for BSV timelocks.
  */
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
 import type { WalletKeys, LockedUTXO, UTXO } from '../services/wallet'
 import { getUTXOs, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
 import { useNetwork } from './NetworkContext'
@@ -151,7 +151,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     }
   }, [networkInfo, locks, addKnownUnlockedLock])
 
-  const value: LocksContextType = {
+  const value: LocksContextType = useMemo(() => ({
     locks,
     knownUnlockedLocks,
     setLocks,
@@ -159,7 +159,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     handleLock,
     handleUnlock,
     detectLocks
-  }
+  }), [locks, knownUnlockedLocks, setLocks, addKnownUnlockedLock, handleLock, handleUnlock, detectLocks])
 
   return (
     <LocksContext.Provider value={value}>

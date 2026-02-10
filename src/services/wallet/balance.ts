@@ -24,8 +24,8 @@ export async function getBalance(address: string): Promise<number> {
 export async function getBalanceFromDB(basket?: string): Promise<number> {
   try {
     return await getBalanceFromDatabase(basket)
-  } catch {
-    walletLogger.warn('Database not ready, falling back to API')
+  } catch (error) {
+    walletLogger.error('Database query failed in getBalanceFromDB — returning 0 (wallet may appear empty)', { basket, error: String(error) })
     return 0
   }
 }
@@ -42,8 +42,8 @@ export async function getUTXOsFromDB(basket = BASKETS.DEFAULT): Promise<UTXO[]> 
       satoshis: u.satoshis,
       script: u.lockingScript
     }))
-  } catch {
-    walletLogger.warn('Database not ready')
+  } catch (error) {
+    walletLogger.error('Database query failed in getUTXOsFromDB — returning empty array', { basket, error: String(error) })
     return []
   }
 }
@@ -100,7 +100,7 @@ export async function calculateTxAmount(
   // Sum outputs to our addresses (received)
   for (const vout of txDetails.vout) {
     if (isOurAddress(vout.scriptPubKey?.addresses)) {
-      received += Math.round(vout.value * 100000000)
+      received += Math.round(vout.value * 1e8)
     }
   }
 
@@ -108,7 +108,7 @@ export async function calculateTxAmount(
   for (const vin of txDetails.vin) {
     // First check if prevout is available (some APIs include it)
     if (vin.prevout && isOurAddress(vin.prevout.scriptPubKey?.addresses)) {
-      sent += Math.round(vin.prevout.value * 100000000)
+      sent += Math.round(vin.prevout.value * 1e8)
     } else if (vin.txid && vin.vout !== undefined) {
       // Fetch the previous transaction to check if the spent output was ours
       try {
@@ -116,7 +116,7 @@ export async function calculateTxAmount(
         if (prevTx?.vout?.[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]!
           if (isOurAddress(prevOutput.scriptPubKey?.addresses)) {
-            sent += Math.round(prevOutput.value * 100000000)
+            sent += Math.round(prevOutput.value * 1e8)
           }
         }
       } catch {

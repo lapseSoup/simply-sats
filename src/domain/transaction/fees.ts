@@ -230,13 +230,15 @@ export function calculateExactFee(
     return { fee: 0, inputCount: inputsToUse.length, outputCount: 0, totalInput, canSend: false }
   }
 
-  // Calculate if we'll have change
+  // Determine if change output exists by matching the builder's logic:
+  // compute fee assuming 2 outputs, check if change is positive
   const numInputs = inputsToUse.length
-  const prelimChange = totalInput - satoshis
-  const willHaveChange = prelimChange > 100
+  const feeWith2Outputs = calculateTxFee(numInputs, 2, feeRate)
+  const changeWith2Outputs = totalInput - satoshis - feeWith2Outputs
+  const willHaveChange = changeWith2Outputs > 0
 
   const numOutputs = willHaveChange ? 2 : 1
-  const fee = calculateTxFee(numInputs, numOutputs, feeRate)
+  const fee = willHaveChange ? feeWith2Outputs : calculateTxFee(numInputs, 1, feeRate)
 
   const change = totalInput - satoshis - fee
   const canSend = change >= 0

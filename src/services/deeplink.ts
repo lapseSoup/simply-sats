@@ -23,6 +23,22 @@ function safeJsonParse<T>(value: string | undefined): T | undefined {
   }
 }
 
+/**
+ * Sanitize an origin string from deep link parameters.
+ * Prevents overly long or control-character-laden origin strings from
+ * being displayed in the BRC-100 approval UI.
+ */
+function sanitizeOrigin(raw: string): string {
+  // Strip control characters (U+0000–U+001F, U+007F–U+009F)
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.replace(/[\x00-\x1f\x7f-\x9f]/g, '')
+  // Limit length to prevent UI overflow
+  if (cleaned.length > 100) {
+    return cleaned.slice(0, 100) + '…'
+  }
+  return cleaned || 'Unknown App'
+}
+
 // Parse a deep link URL and convert to BRC-100 request
 export function parseDeepLink(url: string): BRC100Request | null {
   try {
@@ -42,7 +58,7 @@ export function parseDeepLink(url: string): BRC100Request | null {
           id: generateRequestId(),
           type: 'getPublicKey',
           params: { identityKey: true },
-          origin: params.origin || params.app || 'Unknown App'
+          origin: sanitizeOrigin(params.origin || params.app || 'Unknown App')
         }
 
       case 'sign':
@@ -54,7 +70,7 @@ export function parseDeepLink(url: string): BRC100Request | null {
             protocolID: params.protocol ? [1, params.protocol] : [1, 'unknown'],
             keyID: params.keyId || 'default'
           },
-          origin: params.origin || params.app || 'Unknown App'
+          origin: sanitizeOrigin(params.origin || params.app || 'Unknown App')
         }
 
       case 'action':
@@ -66,14 +82,14 @@ export function parseDeepLink(url: string): BRC100Request | null {
             description: params.description || 'Transaction',
             outputs: safeJsonParse<unknown[]>(params.outputs) ?? []
           },
-          origin: params.origin || params.app || 'Unknown App'
+          origin: sanitizeOrigin(params.origin || params.app || 'Unknown App')
         }
 
       case 'auth':
         return {
           id: generateRequestId(),
           type: 'isAuthenticated',
-          origin: params.origin || params.app || 'Unknown App'
+          origin: sanitizeOrigin(params.origin || params.app || 'Unknown App')
         }
 
       default:

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { AlertCircle } from 'lucide-react'
 import './App.css'
 
@@ -106,6 +106,12 @@ function WalletApp() {
     enabled: true
   })
 
+  // Keep a ref to fetchData so the payment listener doesn't re-setup on every sync
+  const fetchDataRef = useRef(fetchData)
+  useEffect(() => {
+    fetchDataRef.current = fetchData
+  }, [fetchData])
+
   // MessageBox listener for payments
   useEffect(() => {
     if (!wallet?.identityWif) return
@@ -116,7 +122,7 @@ function WalletApp() {
       logger.info('New payment received', { txid: payment.txid, amount: payment.amount })
       setNewPaymentAlert(payment)
       showToast(`Received ${payment.amount?.toLocaleString() || 'unknown'} sats!`)
-      fetchData()
+      fetchDataRef.current()
       setTimeout(() => setNewPaymentAlert(null), 5000)
     }
 
@@ -126,7 +132,7 @@ function WalletApp() {
     return () => {
       stopListener()
     }
-  }, [wallet?.identityWif, showToast, fetchData])
+  }, [wallet?.identityWif, showToast])
 
   // Auto-sync on wallet load (only when account is set)
   // Single effect handles both sync + data fetch to avoid race conditions

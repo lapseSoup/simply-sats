@@ -39,6 +39,35 @@ async function getDb(): Promise<Database> {
   return db
 }
 
+/** Maximum serialized size for audit log details (10 KB) */
+const MAX_DETAILS_SIZE = 10240
+
+/**
+ * Sanitize details object for audit logging.
+ * Prevents unbounded data from being stored in the database.
+ */
+function sanitizeDetails(details: Record<string, unknown>): string | null {
+  try {
+    const json = JSON.stringify(details)
+    if (json.length > MAX_DETAILS_SIZE) {
+      walletLogger.warn('Audit log details truncated', { originalSize: json.length })
+      // Keep only known safe keys, drop the rest
+      const safe: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(details)) {
+        const valStr = JSON.stringify(value)
+        if (typeof key === 'string' && key.length <= 64 && valStr.length <= 1024) {
+          safe[key] = value
+        }
+      }
+      return JSON.stringify(safe)
+    }
+    return json
+  } catch {
+    walletLogger.warn('Failed to serialize audit log details')
+    return null
+  }
+}
+
 /**
  * Log an audit action to the database
  */
@@ -59,7 +88,7 @@ export async function logAuditAction(
   try {
     const database = await getDb()
     const timestamp = Math.floor(Date.now() / 1000)
-    const detailsJson = options?.details ? JSON.stringify(options.details) : null
+    const detailsJson = options?.details ? sanitizeDetails(options.details) : null
 
     await database.execute(
       `INSERT INTO audit_log (timestamp, action, details, account_id, origin, txid, success)

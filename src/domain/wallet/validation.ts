@@ -11,6 +11,7 @@
  */
 
 import * as bip39 from 'bip39'
+import { Utils } from '@bsv/sdk'
 
 /**
  * Result of mnemonic validation.
@@ -123,9 +124,15 @@ export function isValidBSVAddress(address: string): boolean {
     return false
   }
 
-  // Base58 character set (no 0, O, I, l)
-  const base58Regex = /^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$/
-  return base58Regex.test(address)
+  // Validate checksum using Base58Check decoding
+  // This catches single-character typos that would cause permanent fund loss
+  try {
+    const { prefix } = Utils.fromBase58Check(address)
+    // Verify prefix matches expected address type (0 = P2PKH, 5 = P2SH)
+    return prefix[0] === 0 || prefix[0] === 5
+  } catch {
+    return false
+  }
 }
 
 /**
