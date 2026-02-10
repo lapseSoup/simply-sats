@@ -26,3 +26,19 @@ export {
 } from './coinSelection'
 
 export type { CoinSelectionResult } from './coinSelection'
+
+export {
+  buildP2PKHTx,
+  buildMultiKeyP2PKHTx,
+  buildConsolidationTx,
+  calculateChangeAndFee,
+  p2pkhLockingScriptHex
+} from './builder'
+
+export type {
+  BuildP2PKHTxParams,
+  BuildMultiKeyP2PKHTxParams,
+  BuildConsolidationTxParams,
+  BuiltTransaction,
+  BuiltConsolidationTransaction
+} from './builder'

@@ -170,7 +170,7 @@ export function ActivityTab() {
             overscanCount={5}
             style={{ height: containerHeight }}
             rowComponent={({ index, style }) => {
-              const tx = txHistory[index]
+              const tx = txHistory[index]!
               const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
               return (
                 <div style={{ ...style, paddingBottom: 6 }}>

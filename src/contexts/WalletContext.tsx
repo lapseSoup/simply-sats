@@ -298,7 +298,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
           // No accounts at all - try to get first available account
           const allAccounts = await getAllAccounts()
           if (allAccounts.length > 0) {
-            account = allAccounts[0]
+            account = allAccounts[0]!
           }
         }
       }

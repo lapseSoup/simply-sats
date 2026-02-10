@@ -83,7 +83,7 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
   )
 
   if (existing.length > 0) {
-    const ex = existing[0]
+    const ex = existing[0]!
     const spendableValue = utxo.spendable ? 1 : 0
 
     // CRITICAL: If we're re-syncing a UTXO that exists on-chain, it's NOT spent!

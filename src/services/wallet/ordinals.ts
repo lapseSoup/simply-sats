@@ -15,6 +15,16 @@ import {
   rollbackPendingSpend
 } from '../sync'
 import { walletLogger } from '../logger'
+import {
+  mapGpItemToOrdinal,
+  filterOneSatOrdinals,
+  isOrdinalInscriptionScript,
+  extractPkhFromInscriptionScript,
+  pkhMatches,
+  extractContentTypeFromScript,
+  isOneSatOutput,
+  formatOrdinalOrigin
+} from '../../domain/ordinals'
 
 // Create a child logger for ordinals-specific logging
 const ordLogger = walletLogger
@@ -62,20 +72,13 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
 
     if (gpSuccess && allGpItems.length > 0) {
       // Filter for 1-sat UTXOs (actual ordinals) and those with origin set
-      const oneSatItems = allGpItems.filter((item: GpOrdinalItem) => item.satoshis === 1 || item.origin)
+      const oneSatItems = filterOneSatOrdinals(allGpItems)
       ordLogger.debug('Filtered ordinals', { totalUtxos: allGpItems.length, oneSatOrdinals: oneSatItems.length })
 
       if (oneSatItems.length > 0) {
         ordLogger.debug('First ordinal structure', { sample: oneSatItems[0] })
 
-        const result = oneSatItems.map((item: GpOrdinalItem) => ({
-          origin: item.origin?.outpoint || item.outpoint || `${item.txid}_${item.vout}`,
-          txid: item.txid,
-          vout: item.vout,
-          satoshis: item.satoshis || 1,
-          contentType: item.origin?.data?.insc?.file?.type,
-          content: item.origin?.data?.insc?.file?.hash
-        }))
+        const result = oneSatItems.map(mapGpItemToOrdinal)
         ordLogger.info('Returning ordinals', { count: result.length })
         return result
       }
@@ -101,7 +104,7 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
     for (const utxo of utxos) {
       // Check 1-sat UTXOs - these might be ordinals
       if (utxo.value === 1) {
-        const origin = `${utxo.tx_hash}_${utxo.tx_pos}`
+        const origin = formatOrdinalOrigin(utxo.tx_hash, utxo.tx_pos)
         ordLogger.debug('Found 1-sat UTXO', { origin })
 
         // Try to get inscription details from GorillaPool
@@ -186,25 +189,20 @@ export async function scanHistoryForOrdinals(
         if (!txDetails?.vout) continue
 
         for (let vout = 0; vout < txDetails.vout.length; vout++) {
-          const output = txDetails.vout[vout]
+          const output = txDetails.vout[vout]!
           const value = output.value
           const scriptHex = output.scriptPubKey?.hex
 
           // Only check 1-sat outputs (potential ordinals)
-          if (value !== 0.00000001 || !scriptHex) continue
+          if (!isOneSatOutput(value) || !scriptHex) continue
 
           // Check if this is an ordinal inscription (starts with OP_IF 'ord')
-          // OP_IF = 63, then push 'ord' = 03 6f7264
-          if (scriptHex.startsWith('63036f7264')) {
-            // Extract PKH from the script - it's after OP_ENDIF (68) OP_DUP (76) OP_HASH160 (a9) OP_PUSHBYTES_20 (14)
-            const pkhMarker = '6876a914'
-            const pkhIndex = scriptHex.indexOf(pkhMarker)
-            if (pkhIndex !== -1) {
-              const extractedPkh = scriptHex.substring(pkhIndex + pkhMarker.length, pkhIndex + pkhMarker.length + 40)
-
-              if (extractedPkh.toLowerCase() === publicKeyHash.toLowerCase()) {
+          if (isOrdinalInscriptionScript(scriptHex)) {
+            // Extract PKH from the script
+            const extractedPkh = extractPkhFromInscriptionScript(scriptHex)
+            if (extractedPkh && pkhMatches(extractedPkh, publicKeyHash)) {
                 // Check if still unspent by querying GorillaPool
-                const origin = `${txid}_${vout}`
+                const origin = formatOrdinalOrigin(txid, vout)
                 const details = await getOrdinalDetails(origin)
 
                 // Check if spent
@@ -216,16 +214,7 @@ export async function scanHistoryForOrdinals(
                 ordLogger.debug('Found unspent inscription', { origin })
 
                 // Try to extract content type from script
-                let contentType: string | undefined
-                // Content type is after 'ord' push and OP_1, usually like: 10 6170706c69636174696f6e2f6a736f6e
-                const contentTypeMatch = scriptHex.match(/63036f726451([0-9a-f]{2})([0-9a-f]+)00/)
-                if (contentTypeMatch) {
-                  const ctLen = parseInt(contentTypeMatch[1], 16)
-                  const ctHex = contentTypeMatch[2].substring(0, ctLen * 2)
-                  try {
-                    contentType = Buffer.from(ctHex, 'hex').toString('utf8')
-                  } catch { /* ignore */ }
-                }
+                const contentType = extractContentTypeFromScript(scriptHex)
 
                 ordinals.push({
                   origin,
@@ -234,7 +223,6 @@ export async function scanHistoryForOrdinals(
                   satoshis: 1,
                   contentType
                 })
-              }
             }
           }
         }

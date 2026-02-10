@@ -60,7 +60,7 @@ function getRecentDates(days: number): string[] {
   for (let i = 0; i < days; i++) {
     const d = new Date(now)
     d.setDate(d.getDate() - i)
-    dates.push(d.toISOString().split('T')[0]) // YYYY-MM-DD format
+    dates.push(d.toISOString().split('T')[0]!) // YYYY-MM-DD format
   }
   return dates
 }
@@ -404,8 +404,8 @@ export function getTaggedDerivationPath(label: string, id: string): string {
   const idHash = Hash.sha256(Array.from(new TextEncoder().encode(id))) as number[]
 
   // Take first 4 bytes as a 32-bit unsigned integer, limit to non-hardened range (< 2^31)
-  const labelIndex = (((labelHash[0] << 24) | (labelHash[1] << 16) | (labelHash[2] << 8) | labelHash[3]) >>> 0) % 2147483648
-  const idIndex = (((idHash[0] << 24) | (idHash[1] << 16) | (idHash[2] << 8) | idHash[3]) >>> 0) % 2147483648
+  const labelIndex = (((labelHash[0]! << 24) | (labelHash[1]! << 16) | (labelHash[2]! << 8) | labelHash[3]!) >>> 0) % 2147483648
+  const idIndex = (((idHash[0]! << 24) | (idHash[1]! << 16) | (idHash[2]! << 8) | idHash[3]!) >>> 0) % 2147483648
 
   return `m/44'/236'/218'/${labelIndex}/${idIndex}`
 }

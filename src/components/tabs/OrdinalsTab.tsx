@@ -277,7 +277,7 @@ function VirtualizedOrdinalList({ ordinals, onSelect }: VirtualizedOrdinalListPr
         rowComponent={({ index, style }) => (
           <div style={{ ...style, paddingBottom: 8 }}>
             <OrdinalListItem
-              ordinal={ordinals[index]}
+              ordinal={ordinals[index]!}
               onSelect={onSelect}
             />
           </div>

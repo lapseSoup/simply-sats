@@ -154,7 +154,7 @@ export async function getActiveAccount(): Promise<Account | null> {
 
     if (rows.length === 0) return null
 
-    const row = rows[0]
+    const row = rows[0]!
     return {
       id: row.id,
       name: row.name,
@@ -183,7 +183,7 @@ export async function getAccountById(accountId: number): Promise<Account | null>
 
     if (rows.length === 0) return null
 
-    const row = rows[0]
+    const row = rows[0]!
     return {
       id: row.id,
       name: row.name,
@@ -212,7 +212,7 @@ export async function getAccountByIdentity(identityAddress: string): Promise<Acc
 
     if (rows.length === 0) return null
 
-    const row = rows[0]
+    const row = rows[0]!
     return {
       id: row.id,
       name: row.name,
@@ -317,7 +317,7 @@ export async function deleteAccount(accountId: number): Promise<boolean> {
     if (wasActive) {
       const remaining = await getAllAccounts()
       if (remaining.length > 0) {
-        await switchAccount(remaining[0].id!)
+        await switchAccount(remaining[0]!.id!)
       }
     }
 

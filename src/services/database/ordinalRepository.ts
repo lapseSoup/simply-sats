@@ -85,7 +85,7 @@ export async function getCachedOrdinalContent(origin: string): Promise<{ content
 
     if (rows.length === 0) return null
 
-    const row = rows[0]
+    const row = rows[0]!
     return {
       contentData: row.content_data ? new Uint8Array(row.content_data) : undefined,
       contentText: row.content_text ?? undefined
@@ -144,7 +144,7 @@ export async function hasOrdinalContent(origin: string): Promise<boolean> {
       'SELECT (content_data IS NOT NULL OR content_text IS NOT NULL) as has_content FROM ordinal_cache WHERE origin = $1',
       [origin]
     )
-    return rows.length > 0 && rows[0].has_content === 1
+    return rows.length > 0 && rows[0]!.has_content === 1
   } catch (_e) {
     return false
   }

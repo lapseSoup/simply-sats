@@ -323,7 +323,7 @@ export async function getTokenByTicker(
 
     if (rows.length === 0) return null
 
-    const row = rows[0]
+    const row = rows[0]!
     return {
       id: row.id,
       ticker: row.ticker,
@@ -355,7 +355,7 @@ export async function getTokenById(tokenId: number): Promise<Token | null> {
 
     if (rows.length === 0) return null
 
-    const row = rows[0]
+    const row = rows[0]!
     return {
       id: row.id,
       ticker: row.ticker,

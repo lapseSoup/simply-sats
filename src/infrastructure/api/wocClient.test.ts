@@ -129,10 +129,10 @@ describe('WocClient', () => {
       const utxos = await client.getUtxos('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')
 
       expect(utxos).toHaveLength(1)
-      expect(utxos[0].txid).toBe('abc123')
-      expect(utxos[0].vout).toBe(0)
-      expect(utxos[0].satoshis).toBe(10000)
-      expect(utxos[0].script).toBeTruthy() // Should have a locking script
+      expect(utxos[0]!.txid).toBe('abc123')
+      expect(utxos[0]!.vout).toBe(0)
+      expect(utxos[0]!.satoshis).toBe(10000)
+      expect(utxos[0]!.script).toBeTruthy() // Should have a locking script
     })
 
     it('should return empty array on error', async () => {
@@ -179,8 +179,8 @@ describe('WocClient', () => {
       const history = await client.getTransactionHistory('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')
 
       expect(history).toHaveLength(2)
-      expect(history[0].tx_hash).toBe('abc123')
-      expect(history[0].height).toBe(850000)
+      expect(history[0]!.tx_hash).toBe('abc123')
+      expect(history[0]!.height).toBe(850000)
     })
 
     it('should return empty array on error', async () => {

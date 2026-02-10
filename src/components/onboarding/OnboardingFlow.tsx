@@ -156,9 +156,9 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
         {step === 'features' && (
           <div className="onboarding-step features">
             <div className="feature-card">
-              <span className="feature-icon" aria-hidden="true">{features[featureIndex].icon}</span>
-              <h2 className="feature-title">{features[featureIndex].title}</h2>
-              <p className="feature-description">{features[featureIndex].description}</p>
+              <span className="feature-icon" aria-hidden="true">{features[featureIndex]!.icon}</span>
+              <h2 className="feature-title">{features[featureIndex]!.title}</h2>
+              <p className="feature-description">{features[featureIndex]!.description}</p>
             </div>
             <div className="feature-dots" role="tablist" aria-label="Feature navigation">
               {features.map((_, idx) => (

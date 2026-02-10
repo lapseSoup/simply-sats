@@ -132,7 +132,7 @@ export function SearchTab() {
       )
     } else if (e.key === 'Enter' && highlightedIndex >= 0) {
       e.preventDefault()
-      selectLabel(filteredLabels[highlightedIndex])
+      selectLabel(filteredLabels[highlightedIndex]!)
     }
   }
 

@@ -114,7 +114,7 @@ export async function getDerivedAddressByAddress(address: string): Promise<Deriv
 
     if (rows.length === 0) return null
 
-    const row = rows[0]
+    const row = rows[0]!
     return {
       id: row.id,
       address: row.address,

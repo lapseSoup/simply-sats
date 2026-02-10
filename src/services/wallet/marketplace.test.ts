@@ -122,11 +122,11 @@ describe('Marketplace Service', () => {
       expect(mockConfirmSpent).toHaveBeenCalledOnce()
 
       // Verify listing config
-      const config = mockCreateOrdListings.mock.calls[0][0]
+      const config = mockCreateOrdListings.mock.calls[0]![0]
       expect(config.listings).toHaveLength(1)
-      expect(config.listings[0].price).toBe(50000)
-      expect(config.listings[0].payAddress).toBe('1PayAddress123')
-      expect(config.listings[0].ordAddress).toBe('1OrdAddress456')
+      expect(config.listings[0]!.price).toBe(50000)
+      expect(config.listings[0]!.payAddress).toBe('1PayAddress123')
+      expect(config.listings[0]!.ordAddress).toBe('1OrdAddress456')
     })
 
     it('should rollback on broadcast failure', async () => {
@@ -192,12 +192,12 @@ describe('Marketplace Service', () => {
         1000
       )
 
-      const config = mockCreateOrdListings.mock.calls[0][0]
+      const config = mockCreateOrdListings.mock.calls[0]![0]
       // Payment UTXOs should have base64-encoded scripts
-      expect(config.utxos[0].script).toBeDefined()
-      expect(typeof config.utxos[0].script).toBe('string')
+      expect(config.utxos[0]!.script).toBeDefined()
+      expect(typeof config.utxos[0]!.script).toBe('string')
       // The listing UTXO should also have a base64-encoded script
-      expect(config.listings[0].listingUtxo.script).toBeDefined()
+      expect(config.listings[0]!.listingUtxo.script).toBeDefined()
     })
   })
 

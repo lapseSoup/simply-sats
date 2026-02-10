@@ -112,7 +112,7 @@ class Logger {
   private logToConsole(entry: LogEntry): void {
     if (!this.config.enableConsole) return
 
-    const prefix = `[${entry.timestamp.split('T')[1].slice(0, 8)}]`
+    const prefix = `[${entry.timestamp.split('T')[1]!.slice(0, 8)}]`
     const contextStr = this.formatContext(entry.context)
 
     switch (entry.level) {

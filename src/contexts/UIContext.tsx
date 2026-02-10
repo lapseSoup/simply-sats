@@ -50,7 +50,7 @@ export function UIProvider({ children }: UIProviderProps) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
   // Backward compat: expose latest toast message as copyFeedback
-  const copyFeedback = toasts.length > 0 ? toasts[toasts.length - 1].message : null
+  const copyFeedback = toasts.length > 0 ? toasts[toasts.length - 1]!.message : null
 
   const toggleDisplayUnit = useCallback(() => {
     const newValue = !displayInSats

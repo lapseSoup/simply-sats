@@ -95,7 +95,7 @@ function WalletApp() {
     } else {
       newIndex = currentIndex === TAB_ORDER.length - 1 ? 0 : currentIndex + 1
     }
-    setActiveTab(TAB_ORDER[newIndex])
+    setActiveTab(TAB_ORDER[newIndex]!)
   }, [activeTab])
 
   // Keyboard navigation

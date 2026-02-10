@@ -132,7 +132,7 @@ describe('Key Derivation Service', () => {
 
       // Only valid sender should produce results
       expect(addresses).toHaveLength(1)
-      expect(addresses[0].senderPubKey).toBe(TEST_SENDER_PUBKEY)
+      expect(addresses[0]!.senderPubKey).toBe(TEST_SENDER_PUBKEY)
     })
 
     it('should produce unique addresses for each combination', () => {

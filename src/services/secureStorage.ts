@@ -52,7 +52,7 @@ async function exportKey(key: CryptoKey): Promise<string> {
   const bytes = new Uint8Array(raw)
   let binary = ''
   for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i])
+    binary += String.fromCharCode(bytes[i]!)
   }
   return btoa(binary)
 }
@@ -128,7 +128,7 @@ async function encryptData(data: string): Promise<string> {
   // Convert to base64
   let binary = ''
   for (let i = 0; i < combined.length; i++) {
-    binary += String.fromCharCode(combined[i])
+    binary += String.fromCharCode(combined[i]!)
   }
   return btoa(binary)
 }

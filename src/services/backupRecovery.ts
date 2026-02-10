@@ -115,12 +115,12 @@ export async function readExternalDatabase(dbPath: string): Promise<RecoveredAcc
       ORDER BY id ASC
     `)
 
-    if (results.length === 0 || results[0].values.length === 0) {
+    if (results.length === 0 || results[0]!.values.length === 0) {
       throw new Error('No accounts found in backup')
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const accounts: RecoveredAccount[] = results[0].values.map((row: any[]) => ({
+    const accounts: RecoveredAccount[] = results[0]!.values.map((row: any[]) => ({
       id: row[0] as number,
       name: row[1] as string,
       identityAddress: row[2] as string,

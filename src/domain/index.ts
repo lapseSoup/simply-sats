@@ -9,3 +9,5 @@
 export * from './types'
 export * from './wallet'
 export * from './transaction'
+export * from './locks'
+export * from './ordinals'

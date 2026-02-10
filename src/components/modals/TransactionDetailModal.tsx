@@ -15,7 +15,7 @@ function parseFee(amount?: number, description?: string): number | null {
   if (!amount || amount >= 0 || !description) return null
   const match = description.match(/(?:Sent|Locked) (\d+) sats/)
   if (!match) return null
-  const primaryAmount = parseInt(match[1], 10)
+  const primaryAmount = parseInt(match[1]!, 10)
   const fee = Math.abs(amount) - primaryAmount
   return fee > 0 ? fee : null
 }
@@ -35,7 +35,7 @@ async function computeFeeFromBlockchain(txid: string): Promise<number | null> {
       if (vin.txid && vin.vout !== undefined) {
         const prevTx = await wocClient.getTransactionDetails(vin.txid)
         if (prevTx?.vout?.[vin.vout]) {
-          totalIn += Math.round(prevTx.vout[vin.vout].value * 1e8)
+          totalIn += Math.round(prevTx.vout[vin.vout]!.value * 1e8)
         }
       }
     }

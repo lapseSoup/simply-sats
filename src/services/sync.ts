@@ -266,7 +266,7 @@ async function calculateTxAmount(
       try {
         const prevTx = await wocClient.getTransactionDetails(vin.txid)
         if (prevTx?.vout?.[vin.vout]) {
-          const prevOutput = prevTx.vout[vin.vout]
+          const prevOutput = prevTx.vout[vin.vout]!
           if (allLockingScripts.has(prevOutput.scriptPubKey.hex)) {
             spent += Math.round(prevOutput.value * 100000000)
           }
@@ -400,7 +400,7 @@ export async function syncAllAddresses(
       break
     }
 
-    const addr = addresses[i]
+    const addr = addresses[i]!
     try {
       // Add delay between requests to avoid rate limiting (429 errors)
       // Use configurable delay from config

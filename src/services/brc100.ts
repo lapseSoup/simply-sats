@@ -936,7 +936,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
           // Find the lock by outpoint
           const [txid, voutStr] = outpoint.split('.')
-          const vout = parseInt(voutStr) || 0
+          const vout = parseInt(voutStr!) || 0
           const lock = locks.find(l => l.utxo.txid === txid && l.utxo.vout === vout)
 
           if (!lock) {
@@ -1318,7 +1318,7 @@ async function buildAndBroadcastAction(
     // For inscriptions, add the ordinal output with parsed content-type
     if (isInscription) {
       for (let i = 0; i < actionRequest.outputs.length; i++) {
-        const output = actionRequest.outputs[i]
+        const output = actionRequest.outputs[i]!
         // Inscription outputs are typically 1 sat with envelope script
         if (output.satoshis === 1 && isInscriptionScript(output.lockingScript)) {
           // Parse the inscription to extract content-type

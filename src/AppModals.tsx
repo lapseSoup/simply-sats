@@ -1,21 +1,21 @@
+import { lazy, Suspense } from 'react'
 import { AlertCircle } from 'lucide-react'
-import {
-  SendModal,
-  LockModal,
-  ReceiveModal,
-  BRC100Modal,
-  MnemonicModal,
-  OrdinalModal,
-  UnlockConfirmModal,
-  SettingsModal,
-  OrdinalTransferModal,
-  OrdinalListModal,
-  AccountModal
-} from './components/modals'
+import { MnemonicModal, UnlockConfirmModal } from './components/modals'
 import type { Ordinal, LockedUTXO } from './services/wallet'
 import type { BRC100Request } from './services/brc100'
 import type { Account } from './services/accounts'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
+
+// Lazy-loaded modals for code splitting (only loaded when first opened)
+const SendModal = lazy(() => import('./components/modals/SendModal').then(m => ({ default: m.SendModal })))
+const LockModal = lazy(() => import('./components/modals/LockModal').then(m => ({ default: m.LockModal })))
+const ReceiveModal = lazy(() => import('./components/modals/ReceiveModal').then(m => ({ default: m.ReceiveModal })))
+const SettingsModal = lazy(() => import('./components/modals/SettingsModal').then(m => ({ default: m.SettingsModal })))
+const AccountModal = lazy(() => import('./components/modals/AccountModal').then(m => ({ default: m.AccountModal })))
+const BRC100Modal = lazy(() => import('./components/modals/BRC100Modal').then(m => ({ default: m.BRC100Modal })))
+const OrdinalModal = lazy(() => import('./components/modals/OrdinalModal').then(m => ({ default: m.OrdinalModal })))
+const OrdinalTransferModal = lazy(() => import('./components/modals/OrdinalTransferModal').then(m => ({ default: m.OrdinalTransferModal })))
+const OrdinalListModal = lazy(() => import('./components/modals/OrdinalListModal').then(m => ({ default: m.OrdinalListModal })))
 
 /**
  * Fallback UI for modal errors - shows error with close button
@@ -163,7 +163,9 @@ export function AppModals({
             <ModalErrorFallback modalName="Send" error={error} reset={reset} onClose={onCloseModal} />
           )}
         >
-          <SendModal onClose={onCloseModal} />
+          <Suspense fallback={null}>
+            <SendModal onClose={onCloseModal} />
+          </Suspense>
         </ErrorBoundary>
       )}
       {modal === 'lock' && (
@@ -173,7 +175,9 @@ export function AppModals({
             <ModalErrorFallback modalName="Lock" error={error} reset={reset} onClose={onCloseModal} />
           )}
         >
-          <LockModal onClose={onCloseModal} />
+          <Suspense fallback={null}>
+            <LockModal onClose={onCloseModal} />
+          </Suspense>
         </ErrorBoundary>
       )}
       {modal === 'receive' && (
@@ -183,7 +187,9 @@ export function AppModals({
             <ModalErrorFallback modalName="Receive" error={error} reset={reset} onClose={onCloseModal} />
           )}
         >
-          <ReceiveModal onClose={onCloseModal} />
+          <Suspense fallback={null}>
+            <ReceiveModal onClose={onCloseModal} />
+          </Suspense>
         </ErrorBoundary>
       )}
       {modal === 'settings' && (
@@ -193,7 +199,9 @@ export function AppModals({
             <ModalErrorFallback modalName="Settings" error={error} reset={reset} onClose={onCloseModal} />
           )}
         >
-          <SettingsModal onClose={onCloseModal} />
+          <Suspense fallback={null}>
+            <SettingsModal onClose={onCloseModal} />
+          </Suspense>
         </ErrorBoundary>
       )}
 
@@ -204,12 +212,14 @@ export function AppModals({
             <ModalErrorFallback modalName="Ordinal" error={error} reset={reset} onClose={onCloseModal} />
           )}
         >
-          <OrdinalModal
-            ordinal={selectedOrdinal}
-            onClose={onCloseModal}
-            onTransfer={() => onTransferOrdinal(selectedOrdinal)}
-            onList={() => onListOrdinal(selectedOrdinal)}
-          />
+          <Suspense fallback={null}>
+            <OrdinalModal
+              ordinal={selectedOrdinal}
+              onClose={onCloseModal}
+              onTransfer={() => onTransferOrdinal(selectedOrdinal)}
+              onList={() => onListOrdinal(selectedOrdinal)}
+            />
+          </Suspense>
         </ErrorBoundary>
       )}
 
@@ -220,10 +230,12 @@ export function AppModals({
             <ModalErrorFallback modalName="Transfer Ordinal" error={error} reset={reset} onClose={onTransferComplete} />
           )}
         >
-          <OrdinalTransferModal
-            ordinal={ordinalToTransfer}
-            onClose={onTransferComplete}
-          />
+          <Suspense fallback={null}>
+            <OrdinalTransferModal
+              ordinal={ordinalToTransfer}
+              onClose={onTransferComplete}
+            />
+          </Suspense>
         </ErrorBoundary>
       )}
 
@@ -234,10 +246,12 @@ export function AppModals({
             <ModalErrorFallback modalName="List Ordinal" error={error} reset={reset} onClose={onListComplete} />
           )}
         >
-          <OrdinalListModal
-            ordinal={ordinalToList}
-            onClose={onListComplete}
-          />
+          <Suspense fallback={null}>
+            <OrdinalListModal
+              ordinal={ordinalToList}
+              onClose={onListComplete}
+            />
+          </Suspense>
         </ErrorBoundary>
       )}
 
@@ -248,11 +262,13 @@ export function AppModals({
             <ModalErrorFallback modalName="BRC-100 Request" error={error} reset={reset} onClose={onRejectBRC100} />
           )}
         >
-          <BRC100Modal
-            request={brc100Request}
-            onApprove={onApproveBRC100}
-            onReject={onRejectBRC100}
-          />
+          <Suspense fallback={null}>
+            <BRC100Modal
+              request={brc100Request}
+              onApprove={onApproveBRC100}
+              onReject={onRejectBRC100}
+            />
+          </Suspense>
         </ErrorBoundary>
       )}
 
@@ -274,17 +290,19 @@ export function AppModals({
             <ModalErrorFallback modalName="Account" error={error} reset={reset} onClose={onCloseModal} />
           )}
         >
-          <AccountModal
-            isOpen={true}
-            onClose={onCloseModal}
-            mode={accountModalMode}
-            accounts={accounts}
-            activeAccountId={activeAccountId}
-            onCreateAccount={onCreateAccount}
-            onImportAccount={onImportAccount}
-            onDeleteAccount={onDeleteAccount}
-            onRenameAccount={onRenameAccount}
-          />
+          <Suspense fallback={null}>
+            <AccountModal
+              isOpen={true}
+              onClose={onCloseModal}
+              mode={accountModalMode}
+              accounts={accounts}
+              activeAccountId={activeAccountId}
+              onCreateAccount={onCreateAccount}
+              onImportAccount={onImportAccount}
+              onDeleteAccount={onDeleteAccount}
+              onRenameAccount={onRenameAccount}
+            />
+          </Suspense>
         </ErrorBoundary>
       )}
 

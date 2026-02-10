@@ -313,7 +313,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
           return [] as Ordinal[]
         })
 
-        const [ordAddressOrdinals, walletAddressOrdinals, identityAddressOrdinals, ...derivedOrdinals] = ordinalArrays
+        const [ordAddressOrdinals = [], walletAddressOrdinals = [], identityAddressOrdinals = [], ...derivedOrdinals] = ordinalArrays
 
         // Combine and deduplicate by origin
         const seen = new Set<string>()

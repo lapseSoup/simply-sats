@@ -212,9 +212,9 @@ describe('Account Management Service', () => {
 
       const accounts = await getAllAccounts()
       expect(accounts).toHaveLength(1)
-      expect(accounts[0].name).toBe('Test Account')
-      expect(accounts[0].identityAddress).toBe('identity-address-1')
-      expect(accounts[0].isActive).toBe(true)
+      expect(accounts[0]!.name).toBe('Test Account')
+      expect(accounts[0]!.identityAddress).toBe('identity-address-1')
+      expect(accounts[0]!.isActive).toBe(true)
     })
 
     it('should deactivate existing accounts when creating new one', async () => {
@@ -230,7 +230,7 @@ describe('Account Management Service', () => {
       // Only the newest should be active
       const active = accounts.filter(a => a.isActive)
       expect(active).toHaveLength(1)
-      expect(active[0].name).toBe('Account 2')
+      expect(active[0]!.name).toBe('Account 2')
     })
 
     it('should set default settings for new account', async () => {
@@ -403,7 +403,7 @@ describe('Account Management Service', () => {
 
       const accounts = await getAllAccounts()
       expect(accounts).toHaveLength(1)
-      expect(accounts[0].name).toBe('Account 2')
+      expect(accounts[0]!.name).toBe('Account 2')
     })
 
     it('should activate another account if deleted account was active', async () => {

@@ -62,7 +62,7 @@ const OP_PUSHDATA4 = 0x4e
 function readPushData(script: Uint8Array, offset: number): [Uint8Array, number] | null {
   if (offset >= script.length) return null
 
-  const opcode = script[offset]
+  const opcode = script[offset]!
 
   // OP_0 (empty data)
   if (opcode === 0x00) {
@@ -79,7 +79,7 @@ function readPushData(script: Uint8Array, offset: number): [Uint8Array, number] 
   // OP_PUSHDATA1 (next byte is length)
   if (opcode === OP_PUSHDATA1) {
     if (offset + 2 > script.length) return null
-    const len = script[offset + 1]
+    const len = script[offset + 1]!
     if (offset + 2 + len > script.length) return null
     return [script.slice(offset + 2, offset + 2 + len), 2 + len]
   }
@@ -87,7 +87,7 @@ function readPushData(script: Uint8Array, offset: number): [Uint8Array, number] 
   // OP_PUSHDATA2 (next 2 bytes are length, little-endian)
   if (opcode === OP_PUSHDATA2) {
     if (offset + 3 > script.length) return null
-    const len = script[offset + 1] | (script[offset + 2] << 8)
+    const len = script[offset + 1]! | (script[offset + 2]! << 8)
     if (offset + 3 + len > script.length) return null
     return [script.slice(offset + 3, offset + 3 + len), 3 + len]
   }
@@ -95,8 +95,8 @@ function readPushData(script: Uint8Array, offset: number): [Uint8Array, number] 
   // OP_PUSHDATA4 (next 4 bytes are length, little-endian)
   if (opcode === OP_PUSHDATA4) {
     if (offset + 5 > script.length) return null
-    const len = script[offset + 1] | (script[offset + 2] << 8) |
-                (script[offset + 3] << 16) | (script[offset + 4] << 24)
+    const len = script[offset + 1]! | (script[offset + 2]! << 8) |
+                (script[offset + 3]! << 16) | (script[offset + 4]! << 24)
     if (offset + 5 + len > script.length) return null
     return [script.slice(offset + 5, offset + 5 + len), 5 + len]
   }
@@ -159,7 +159,7 @@ export function parseInscription(scriptHex: string): ParsedInscription {
     let content: Uint8Array = new Uint8Array(0)
 
     while (offset < script.length) {
-      const opcode = script[offset]
+      const opcode = script[offset]!
 
       // OP_ENDIF - end of envelope
       if (opcode === OP_ENDIF) {

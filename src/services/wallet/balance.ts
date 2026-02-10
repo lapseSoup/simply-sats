@@ -114,7 +114,7 @@ export async function calculateTxAmount(
       try {
         const prevTx = await getTransactionDetails(vin.txid)
         if (prevTx?.vout?.[vin.vout]) {
-          const prevOutput = prevTx.vout[vin.vout]
+          const prevOutput = prevTx.vout[vin.vout]!
           if (isOurAddress(prevOutput.scriptPubKey?.addresses)) {
             sent += Math.round(prevOutput.value * 100000000)
           }

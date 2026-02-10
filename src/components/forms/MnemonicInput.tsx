@@ -61,12 +61,12 @@ export function MnemonicInput({
 
     // Find word boundaries
     let startIndex = cursorPos
-    while (startIndex > 0 && !/\s/.test(text[startIndex - 1])) {
+    while (startIndex > 0 && !/\s/.test(text[startIndex - 1]!)) {
       startIndex--
     }
 
     let endIndex = cursorPos
-    while (endIndex < text.length && !/\s/.test(text[endIndex])) {
+    while (endIndex < text.length && !/\s/.test(text[endIndex]!)) {
       endIndex++
     }
 
@@ -86,7 +86,7 @@ export function MnemonicInput({
       const { word } = getCurrentWord()
 
       if (word.length >= 1) {
-        const matches = BIP39_WORDLIST.filter(w => w.startsWith(word)).slice(0, 6)
+        const matches = BIP39_WORDLIST!.filter(w => w.startsWith(word)).slice(0, 6)
         setSuggestions(matches)
         setShowSuggestions(matches.length > 0)
         setSelectedIndex(0)
@@ -148,7 +148,7 @@ export function MnemonicInput({
       setSelectedIndex(prev => (prev - 1 + suggestions.length) % suggestions.length)
     } else if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault()
-      selectSuggestion(suggestions[selectedIndex])
+      selectSuggestion(suggestions[selectedIndex]!)
     } else if (e.key === 'Escape') {
       setShowSuggestions(false)
     }

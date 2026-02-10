@@ -333,7 +333,7 @@ export async function getTransactionByTxid(txid: string, accountId?: number): Pr
 
   if (rows.length === 0) return null
 
-  const row = rows[0]
+  const row = rows[0]!
   return {
     id: row.id,
     txid: row.txid,
@@ -370,7 +370,7 @@ export async function searchTransactionsByLabels(
     const alias = `tl${i}`
     fromClause += ` INNER JOIN transaction_labels ${alias} ON t.txid = ${alias}.txid`
     whereConditions.push(`${alias}.label = $${paramIndex++}`)
-    params.push(labels[i])
+    params.push(labels[i]!)
   }
 
   if (accountId) {

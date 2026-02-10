@@ -73,8 +73,8 @@ export function useBrc100Handler({
     const pending = getPendingRequests()
     if (pending.length > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Initialization on mount
-      setBrc100Request(pending[0])
-      onRequestReceived?.(pending[0])
+      setBrc100Request(pending[0]!)
+      onRequestReceived?.(pending[0]!)
     }
 
     return () => {

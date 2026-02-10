@@ -21,10 +21,10 @@ export function encodeScriptNum(num: number): string {
   }
 
   // Add sign bit if needed
-  if (bytes[bytes.length - 1] & 0x80) {
+  if (bytes[bytes.length - 1]! & 0x80) {
     bytes.push(num < 0 ? 0x80 : 0x00)
   } else if (num < 0) {
-    bytes[bytes.length - 1] |= 0x80
+    bytes[bytes.length - 1] = bytes[bytes.length - 1]! | 0x80
   }
 
   const len = bytes.length

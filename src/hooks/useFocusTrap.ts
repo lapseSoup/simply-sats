@@ -40,7 +40,7 @@ export function useFocusTrap(options: UseFocusTrapOptions = {}) {
     if (focusableElements.length > 0) {
       // Small delay to ensure DOM is ready
       requestAnimationFrame(() => {
-        focusableElements[0].focus()
+        focusableElements[0]!.focus()
       })
     }
   }, [enabled])
@@ -51,8 +51,8 @@ export function useFocusTrap(options: UseFocusTrapOptions = {}) {
     const focusableElements = containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS)
     if (focusableElements.length === 0) return
 
-    const firstElement = focusableElements[0]
-    const lastElement = focusableElements[focusableElements.length - 1]
+    const firstElement = focusableElements[0]!
+    const lastElement = focusableElements[focusableElements.length - 1]!
 
     // Shift+Tab on first element -> go to last
     if (e.shiftKey && document.activeElement === firstElement) {

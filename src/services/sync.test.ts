@@ -171,9 +171,9 @@ describe('Sync Service', () => {
 
       const utxos = await getSpendableUtxosFromDatabase()
 
-      expect(utxos[0].satoshis).toBe(1000)
-      expect(utxos[1].satoshis).toBe(3000)
-      expect(utxos[2].satoshis).toBe(5000)
+      expect(utxos[0]!.satoshis).toBe(1000)
+      expect(utxos[1]!.satoshis).toBe(3000)
+      expect(utxos[2]!.satoshis).toBe(5000)
     })
 
     it('should filter by basket', async () => {
@@ -185,7 +185,7 @@ describe('Sync Service', () => {
       const utxos = await getSpendableUtxosFromDatabase('default')
 
       expect(utxos.length).toBe(1)
-      expect(utxos[0].basket).toBe('default')
+      expect(utxos[0]!.basket).toBe('default')
     })
 
     it('should default to default basket', async () => {
@@ -197,7 +197,7 @@ describe('Sync Service', () => {
       const utxos = await getSpendableUtxosFromDatabase()
 
       expect(utxos.length).toBe(1)
-      expect(utxos[0].basket).toBe('default')
+      expect(utxos[0]!.basket).toBe('default')
     })
   })
 
@@ -212,8 +212,8 @@ describe('Sync Service', () => {
       const ordinals = await getOrdinalsFromDatabase()
 
       expect(ordinals.length).toBe(2)
-      expect(ordinals[0].origin).toBe('tx1_0')
-      expect(ordinals[1].origin).toBe('tx2_1')
+      expect(ordinals[0]!.origin).toBe('tx1_0')
+      expect(ordinals[1]!.origin).toBe('tx2_1')
     })
 
     it('should format origin correctly', async () => {
@@ -223,9 +223,9 @@ describe('Sync Service', () => {
 
       const ordinals = await getOrdinalsFromDatabase()
 
-      expect(ordinals[0].origin).toBe('abc123_5')
-      expect(ordinals[0].txid).toBe('abc123')
-      expect(ordinals[0].vout).toBe(5)
+      expect(ordinals[0]!.origin).toBe('abc123_5')
+      expect(ordinals[0]!.txid).toBe('abc123')
+      expect(ordinals[0]!.vout).toBe(5)
     })
 
     it('should return empty array when no ordinals', async () => {

@@ -182,7 +182,7 @@ export async function getActionResultByTxid(txid: string): Promise<ActionResult 
 
   if (rows.length === 0) return null
 
-  const row = rows[0]
+  const row = rows[0]!
   return {
     id: row.id,
     requestId: row.request_id,

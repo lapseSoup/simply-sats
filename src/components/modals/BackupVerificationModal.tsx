@@ -46,13 +46,13 @@ function generateChallenges(words: string[]): WordChallenge[] {
   positions.sort((a, b) => a - b)
 
   return positions.map(pos => {
-    const correctWord = words[pos]
+    const correctWord = words[pos]!
 
     // Pick 3 other random words as wrong options
     const wrongWords: string[] = []
     while (wrongWords.length < 3) {
       const randomPos = Math.floor(Math.random() * words.length)
-      const word = words[randomPos]
+      const word = words[randomPos]!
       if (word !== correctWord && !wrongWords.includes(word)) {
         wrongWords.push(word)
       }
@@ -62,7 +62,7 @@ function generateChallenges(words: string[]): WordChallenge[] {
     const options = [correctWord, ...wrongWords]
     for (let i = options.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1))
-      ;[options[i], options[j]] = [options[j], options[i]]
+      ;[options[i]!, options[j]!] = [options[j]!, options[i]!]
     }
 
     return {
@@ -94,7 +94,7 @@ export function BackupVerificationModal({
   }, [words])
 
   const handleSelectWord = useCallback((word: string) => {
-    const challenge = challenges[currentChallengeIndex]
+    const challenge = challenges[currentChallengeIndex]!
 
     if (word !== challenge.word) {
       setError(`Incorrect. Word #${challenge.position + 1} is not "${word}". Please try again.`)
@@ -217,7 +217,7 @@ export function BackupVerificationModal({
 
               <div className="verification-challenge">
                 <div className="verification-question">
-                  What is word <strong>#{challenges[currentChallengeIndex].position + 1}</strong>?
+                  What is word <strong>#{challenges[currentChallengeIndex]!.position + 1}</strong>?
                 </div>
 
                 {error && (
@@ -228,7 +228,7 @@ export function BackupVerificationModal({
                 )}
 
                 <div className="verification-options">
-                  {challenges[currentChallengeIndex].options.map((option, i) => (
+                  {challenges[currentChallengeIndex]!.options.map((option, i) => (
                     <button
                       key={i}
                       className="btn btn-secondary verification-option"

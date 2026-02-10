@@ -386,10 +386,10 @@ describe('Wallet Service', () => {
         const utxos = await getUTXOs('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')
 
         expect(utxos).toHaveLength(2)
-        expect(utxos[0].txid).toBe('abc123')
-        expect(utxos[0].vout).toBe(0)
-        expect(utxos[0].satoshis).toBe(10000)
-        expect(utxos[0].script).toBeDefined()
+        expect(utxos[0]!.txid).toBe('abc123')
+        expect(utxos[0]!.vout).toBe(0)
+        expect(utxos[0]!.satoshis).toBe(10000)
+        expect(utxos[0]!.script).toBeDefined()
       })
 
       it('should return empty array on error', async () => {
@@ -418,7 +418,7 @@ describe('Wallet Service', () => {
         const history = await getTransactionHistory('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')
 
         expect(history).toHaveLength(2)
-        expect(history[0].tx_hash).toBe('abc123')
+        expect(history[0]!.tx_hash).toBe('abc123')
       })
 
       it('should return empty array on error', async () => {

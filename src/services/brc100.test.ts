@@ -107,7 +107,7 @@ describe('BRC-100 Service', () => {
         const after = Date.now()
 
         const parts = id.split('_')
-        const timestamp = parseInt(parts[1])
+        const timestamp = parseInt(parts[1]!)
 
         expect(timestamp).toBeGreaterThanOrEqual(before)
         expect(timestamp).toBeLessThanOrEqual(after)

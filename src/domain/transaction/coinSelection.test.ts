@@ -18,9 +18,9 @@ describe('Coin Selection', () => {
 
       const sorted = sortUtxosByValue(utxos)
 
-      expect(sorted[0].satoshis).toBe(500)
-      expect(sorted[1].satoshis).toBe(1000)
-      expect(sorted[2].satoshis).toBe(2000)
+      expect(sorted[0]!.satoshis).toBe(500)
+      expect(sorted[1]!.satoshis).toBe(1000)
+      expect(sorted[2]!.satoshis).toBe(2000)
     })
 
     it('should not mutate original array', () => {
@@ -31,8 +31,8 @@ describe('Coin Selection', () => {
 
       const sorted = sortUtxosByValue(utxos)
 
-      expect(utxos[0].satoshis).toBe(1000) // Original unchanged
-      expect(sorted[0].satoshis).toBe(500)
+      expect(utxos[0]!.satoshis).toBe(1000) // Original unchanged
+      expect(sorted[0]!.satoshis).toBe(500)
     })
 
     it('should handle empty array', () => {
@@ -44,7 +44,7 @@ describe('Coin Selection', () => {
       const utxos: UTXO[] = [{ txid: 'a', vout: 0, satoshis: 1000, script: '' }]
       const sorted = sortUtxosByValue(utxos)
       expect(sorted).toHaveLength(1)
-      expect(sorted[0].satoshis).toBe(1000)
+      expect(sorted[0]!.satoshis).toBe(1000)
     })
 
     it('should handle UTXOs with equal values', () => {
@@ -56,9 +56,9 @@ describe('Coin Selection', () => {
 
       const sorted = sortUtxosByValue(utxos)
 
-      expect(sorted[0].satoshis).toBe(500)
-      expect(sorted[1].satoshis).toBe(1000)
-      expect(sorted[2].satoshis).toBe(1000)
+      expect(sorted[0]!.satoshis).toBe(500)
+      expect(sorted[1]!.satoshis).toBe(1000)
+      expect(sorted[2]!.satoshis).toBe(1000)
     })
   })
 
@@ -114,8 +114,8 @@ describe('Coin Selection', () => {
       const result = selectCoins(utxos, 500)
 
       // Should select smallest first: 100 + 500 = 600 (with buffer needs 600)
-      expect(result.selected[0].txid).toBe('small')
-      expect(result.selected[1].txid).toBe('medium')
+      expect(result.selected[0]!.txid).toBe('small')
+      expect(result.selected[1]!.txid).toBe('medium')
     })
 
     it('should work with zero buffer', () => {
@@ -166,8 +166,8 @@ describe('Coin Selection', () => {
       const result = selectCoinsMultiKey(utxos, 1000)
 
       expect(result.sufficient).toBe(true)
-      expect(result.selected[0].wif).toBeDefined()
-      expect(result.selected[0].address).toBeDefined()
+      expect(result.selected[0]!.wif).toBeDefined()
+      expect(result.selected[0]!.address).toBeDefined()
     })
 
     it('should return empty array if no UTXOs', () => {
@@ -191,7 +191,7 @@ describe('Coin Selection', () => {
 
       const result = selectCoinsMultiKey(utxos, 500, 0)
 
-      expect(result.selected[0]).toEqual({
+      expect(result.selected[0]!).toEqual({
         txid: 'tx1',
         vout: 0,
         satoshis: 1000,
@@ -223,7 +223,7 @@ describe('Coin Selection', () => {
 
       const result = selectCoinsMultiKey(utxos, 100, 0)
 
-      expect(result.selected[0].txid).toBe('small')
+      expect(result.selected[0]!.txid).toBe('small')
     })
   })
 

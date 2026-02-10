@@ -138,12 +138,12 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
       const firstAccount = sortedAccounts[0]
 
       accountLogger.debug('Getting keys from first account', {
-        accountId: firstAccount.id,
-        name: firstAccount.name,
+        accountId: firstAccount!.id,
+        name: firstAccount!.name,
         totalAccounts: allAccounts.length
       })
 
-      const firstAccountKeys = await getAccountKeys(firstAccount, password)
+      const firstAccountKeys = await getAccountKeys(firstAccount!, password)
       if (!firstAccountKeys) {
         accountLogger.error('Invalid password or failed to get keys from first account')
         return null

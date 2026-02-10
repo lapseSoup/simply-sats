@@ -79,7 +79,7 @@ export async function getContactByPubkey(pubkey: string): Promise<Contact | null
 
     if (rows.length === 0) return null
 
-    const row = rows[0]
+    const row = rows[0]!
     return {
       id: row.id,
       pubkey: row.pubkey,
