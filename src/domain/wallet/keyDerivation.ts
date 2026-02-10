@@ -4,13 +4,28 @@
  * This module provides pure functions for HD wallet key derivation
  * following the BRC-100 standard (Yours Wallet compatible).
  *
- * No side effects, no storage operations - all functions are deterministic.
+ * When running inside Tauri, derivation is delegated to Rust so that
+ * mnemonics and private keys never enter the webview's JavaScript heap.
+ * Falls back to @bsv/sdk in browser dev mode and tests.
  *
  * @module domain/wallet/keyDerivation
  */
 
 import { HD, Mnemonic, PrivateKey } from '@bsv/sdk'
 import type { WalletKeys, KeyPair } from '../types'
+
+// ---------------------------------------------------------------------------
+// Tauri bridge helpers (same pattern as services/crypto.ts)
+// ---------------------------------------------------------------------------
+
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<T>(cmd, args)
+}
 
 /**
  * BRC-100 standard derivation paths (matching Yours Wallet exactly)
@@ -87,7 +102,16 @@ export function deriveKeysFromPath(mnemonic: string, path: string): KeyPair {
  * console.log(keys.identityAddress) // Identity address
  * ```
  */
-export function deriveWalletKeys(mnemonic: string): WalletKeys {
+export async function deriveWalletKeys(mnemonic: string): Promise<WalletKeys> {
+  // Delegate to Rust when running in Tauri — mnemonic stays in native memory
+  if (isTauri()) {
+    try {
+      return await tauriInvoke<WalletKeys>('derive_wallet_keys', { mnemonic })
+    } catch (_e) {
+      // Fall through to JS implementation
+    }
+  }
+
   const paths = WALLET_PATHS.yours
   const wallet = deriveKeysFromPath(mnemonic, paths.wallet)
   const ord = deriveKeysFromPath(mnemonic, paths.ordinals)
@@ -134,7 +158,19 @@ export function deriveWalletKeys(mnemonic: string): WalletKeys {
  * const account1 = deriveWalletKeysForAccount('abandon...about', 1)
  * ```
  */
-export function deriveWalletKeysForAccount(mnemonic: string, accountIndex: number): WalletKeys {
+export async function deriveWalletKeysForAccount(mnemonic: string, accountIndex: number): Promise<WalletKeys> {
+  // Delegate to Rust when running in Tauri — mnemonic stays in native memory
+  if (isTauri()) {
+    try {
+      return await tauriInvoke<WalletKeys>('derive_wallet_keys_for_account', {
+        mnemonic,
+        accountIndex
+      })
+    } catch (_e) {
+      // Fall through to JS implementation
+    }
+  }
+
   // Derive paths with account index
   // wallet:   m/44'/236'/accountIndex'/1/0
   // ordinals: m/44'/236'/(accountIndex*2+1)'/0/0  - separate from wallet
@@ -179,7 +215,17 @@ export function deriveWalletKeysForAccount(mnemonic: string, accountIndex: numbe
  * console.log(keys.address) // Derived address
  * ```
  */
-export function keysFromWif(wif: string): KeyPair {
+export async function keysFromWif(wif: string): Promise<KeyPair> {
+  // Delegate to Rust when running in Tauri
+  if (isTauri()) {
+    try {
+      const result = await tauriInvoke<{ wif: string; address: string; pubKey: string }>('keys_from_wif', { wif })
+      return result
+    } catch (_e) {
+      // Fall through to JS implementation
+    }
+  }
+
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
 

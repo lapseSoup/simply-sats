@@ -133,7 +133,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
 
       // Restore wallet from backup with password
       if (backup.wallet.mnemonic) {
-        const keys = restoreWallet(backup.wallet.mnemonic)
+        const keys = await restoreWallet(backup.wallet.mnemonic)
         await saveWallet(keys, password)
         // Create account in database for persistence across app restarts
         await migrateToMultiAccount({ ...keys, mnemonic: backup.wallet.mnemonic }, password)

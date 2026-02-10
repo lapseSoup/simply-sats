@@ -7,9 +7,13 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 
+mod brc100_signing;
+mod crypto;
 mod http_server;
+mod key_derivation;
 mod rate_limiter;
 mod secure_storage;
+mod transaction;
 
 use rate_limiter::{
     SharedRateLimitState, RateLimitState,
@@ -433,7 +437,23 @@ pub fn run() {
             secure_storage_load,
             secure_storage_exists,
             secure_storage_clear,
-            secure_storage_migrate
+            secure_storage_migrate,
+            crypto::encrypt_data,
+            crypto::decrypt_data,
+            key_derivation::derive_wallet_keys,
+            key_derivation::derive_wallet_keys_for_account,
+            key_derivation::validate_mnemonic,
+            key_derivation::generate_mnemonic,
+            key_derivation::keys_from_wif,
+            transaction::build_p2pkh_tx,
+            transaction::build_multi_key_p2pkh_tx,
+            transaction::build_consolidation_tx,
+            brc100_signing::sign_message,
+            brc100_signing::sign_data,
+            brc100_signing::verify_signature,
+            brc100_signing::verify_data_signature,
+            brc100_signing::encrypt_ecies,
+            brc100_signing::decrypt_ecies
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();

@@ -24,7 +24,7 @@ function keysFromWif(wif: string) {
 /**
  * Create new wallet with fresh mnemonic
  */
-export function createWallet(): WalletKeys {
+export async function createWallet(): Promise<WalletKeys> {
   const mnemonic = bip39.generateMnemonic()
   return restoreWallet(mnemonic)
 }
@@ -32,7 +32,7 @@ export function createWallet(): WalletKeys {
 /**
  * Restore wallet from mnemonic - delegates to domain layer
  */
-export function restoreWallet(mnemonic: string): WalletKeys {
+export async function restoreWallet(mnemonic: string): Promise<WalletKeys> {
   // Use domain layer validation which normalizes and validates
   const validation = validateMnemonic(mnemonic)
 
@@ -43,7 +43,7 @@ export function restoreWallet(mnemonic: string): WalletKeys {
 
   try {
     // Delegate to domain layer for key derivation
-    return deriveWalletKeys(validation.normalizedMnemonic)
+    return await deriveWalletKeys(validation.normalizedMnemonic)
   } catch (error) {
     walletLogger.error('Error deriving keys from mnemonic', error)
     throw new Error('Failed to derive wallet keys from mnemonic')
@@ -53,18 +53,18 @@ export function restoreWallet(mnemonic: string): WalletKeys {
 /**
  * Import from Shaullet JSON backup
  */
-export function importFromShaullet(jsonString: string): WalletKeys {
+export async function importFromShaullet(jsonString: string): Promise<WalletKeys> {
   try {
     const backup: ShaulletBackup = JSON.parse(jsonString)
 
     // If mnemonic is present, use it
     if (backup.mnemonic) {
-      return restoreWallet(backup.mnemonic)
+      return await restoreWallet(backup.mnemonic)
     }
 
     // If WIF is present, import keys directly
     if (backup.keys?.wif) {
-      const wallet = keysFromWif(backup.keys.wif)
+      const wallet = await keysFromWif(backup.keys.wif)
       // For Shaullet imports without mnemonic, we use the same key for all purposes
       return {
         mnemonic: '', // No mnemonic available
@@ -93,19 +93,19 @@ export function importFromShaullet(jsonString: string): WalletKeys {
 /**
  * Import from 1Sat Ordinals wallet JSON
  */
-export function importFrom1SatOrdinals(jsonString: string): WalletKeys {
+export async function importFrom1SatOrdinals(jsonString: string): Promise<WalletKeys> {
   try {
     const backup: OneSatWalletBackup = JSON.parse(jsonString)
 
     // If mnemonic is present, use it
     if (backup.mnemonic) {
-      return restoreWallet(backup.mnemonic)
+      return await restoreWallet(backup.mnemonic)
     }
 
     // Import from separate keys
     if (backup.payPk || backup.ordPk) {
-      const paymentKey = backup.payPk ? keysFromWif(backup.payPk) : null
-      const ordKey = backup.ordPk ? keysFromWif(backup.ordPk) : null
+      const paymentKey = backup.payPk ? await keysFromWif(backup.payPk) : null
+      const ordKey = backup.ordPk ? await keysFromWif(backup.ordPk) : null
 
       // Use payment key as primary, ordinals key for ordinals
       const primaryKey = paymentKey || ordKey
@@ -141,18 +141,18 @@ export function importFrom1SatOrdinals(jsonString: string): WalletKeys {
 /**
  * Detect backup format and import accordingly
  */
-export function importFromJSON(jsonString: string): WalletKeys {
+export async function importFromJSON(jsonString: string): Promise<WalletKeys> {
   try {
     const backup = JSON.parse(jsonString)
 
     // Check for 1Sat Ordinals format (has ordPk or payPk)
     if (backup.ordPk || backup.payPk) {
-      return importFrom1SatOrdinals(jsonString)
+      return await importFrom1SatOrdinals(jsonString)
     }
 
     // Check for Shaullet format (has keys object or mnemonic at root)
     if (backup.keys || backup.mnemonic || backup.seed) {
-      return importFromShaullet(jsonString)
+      return await importFromShaullet(jsonString)
     }
 
     throw new Error('Unknown backup format')
@@ -177,7 +177,7 @@ export async function verifyMnemonicMatchesWallet(
   expectedAddress: string
 ): Promise<{ valid: boolean; derivedAddress: string }> {
   // Use the same restore logic but don't save anything
-  const walletKeys = restoreWallet(mnemonic)
+  const walletKeys = await restoreWallet(mnemonic)
 
   const derivedAddress = walletKeys.walletAddress
 

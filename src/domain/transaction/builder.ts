@@ -15,6 +15,19 @@ import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import type { UTXO, ExtendedUTXO } from '../types'
 import { calculateTxFee } from './fees'
 
+// ---------------------------------------------------------------------------
+// Tauri detection (same pattern as keyDerivation.ts / crypto.ts)
+// ---------------------------------------------------------------------------
+
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<T>(cmd, args)
+}
+
 // ============================================
 // Types
 // ============================================
@@ -69,10 +82,15 @@ export interface BuildConsolidationTxParams {
 
 /**
  * Result of building a transaction.
+ *
+ * When built via Rust (Tauri), `tx` is null and `rawTx` contains the signed hex.
+ * When built via JS fallback, `tx` is the Transaction object and `rawTx` is also set.
  */
 export interface BuiltTransaction {
-  /** The signed Transaction object */
-  tx: Transaction
+  /** The signed Transaction object (null when built in Rust) */
+  tx: Transaction | null
+  /** Hex-encoded raw signed transaction */
+  rawTx: string
   /** Transaction ID (hex) */
   txid: string
   /** Fee paid in satoshis */
@@ -81,16 +99,22 @@ export interface BuiltTransaction {
   change: number
   /** The sender/change address */
   changeAddress: string
+  /** Number of outputs in the transaction */
+  numOutputs: number
   /** References to spent UTXOs */
   spentOutpoints: Array<{ txid: string; vout: number }>
 }
 
 /**
  * Result of building a consolidation transaction.
+ *
+ * When built via Rust (Tauri), `tx` is null and `rawTx` contains the signed hex.
  */
 export interface BuiltConsolidationTransaction {
-  /** The signed Transaction object */
-  tx: Transaction
+  /** The signed Transaction object (null when built in Rust) */
+  tx: Transaction | null
+  /** Hex-encoded raw signed transaction */
+  rawTx: string
   /** Transaction ID (hex) */
   txid: string
   /** Fee paid in satoshis */
@@ -166,6 +190,42 @@ export function calculateChangeAndFee(
 export async function buildP2PKHTx(params: BuildP2PKHTxParams): Promise<BuiltTransaction> {
   const { wif, toAddress, satoshis, selectedUtxos, totalInput, feeRate } = params
 
+  // Delegate to Rust when running inside Tauri
+  if (isTauri()) {
+    const result = await tauriInvoke<{
+      rawTx: string
+      txid: string
+      fee: number
+      change: number
+      changeAddress: string
+      spentOutpoints: Array<{ txid: string; vout: number }>
+    }>('build_p2pkh_tx', {
+      wif,
+      toAddress,
+      satoshis,
+      selectedUtxos: selectedUtxos.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script ?? ''
+      })),
+      totalInput,
+      feeRate
+    })
+
+    return {
+      tx: null,
+      rawTx: result.rawTx,
+      txid: result.txid,
+      fee: result.fee,
+      change: result.change,
+      changeAddress: result.changeAddress,
+      numOutputs: result.change > 0 ? 2 : 1,
+      spentOutpoints: result.spentOutpoints
+    }
+  }
+
+  // JS fallback (browser dev mode)
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const fromAddress = publicKey.toAddress()
@@ -216,10 +276,12 @@ export async function buildP2PKHTx(params: BuildP2PKHTxParams): Promise<BuiltTra
 
   return {
     tx,
+    rawTx: tx.toHex(),
     txid: tx.id('hex'),
     fee,
     change,
     changeAddress: fromAddress,
+    numOutputs: tx.outputs.length,
     spentOutpoints: selectedUtxos.map(u => ({ txid: u.txid, vout: u.vout }))
   }
 }
@@ -252,6 +314,44 @@ export async function buildP2PKHTx(params: BuildP2PKHTxParams): Promise<BuiltTra
 export async function buildMultiKeyP2PKHTx(params: BuildMultiKeyP2PKHTxParams): Promise<BuiltTransaction> {
   const { changeWif, toAddress, satoshis, selectedUtxos, totalInput, feeRate } = params
 
+  // Delegate to Rust when running inside Tauri
+  if (isTauri()) {
+    const result = await tauriInvoke<{
+      rawTx: string
+      txid: string
+      fee: number
+      change: number
+      changeAddress: string
+      spentOutpoints: Array<{ txid: string; vout: number }>
+    }>('build_multi_key_p2pkh_tx', {
+      changeWif,
+      toAddress,
+      satoshis,
+      selectedUtxos: selectedUtxos.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script,
+        wif: u.wif,
+        address: u.address
+      })),
+      totalInput,
+      feeRate
+    })
+
+    return {
+      tx: null,
+      rawTx: result.rawTx,
+      txid: result.txid,
+      fee: result.fee,
+      change: result.change,
+      changeAddress: result.changeAddress,
+      numOutputs: result.change > 0 ? 2 : 1,
+      spentOutpoints: result.spentOutpoints
+    }
+  }
+
+  // JS fallback (browser dev mode)
   const changePrivKey = PrivateKey.fromWif(changeWif)
   const changeAddress = changePrivKey.toPublicKey().toAddress()
 
@@ -302,10 +402,12 @@ export async function buildMultiKeyP2PKHTx(params: BuildMultiKeyP2PKHTxParams): 
 
   return {
     tx,
+    rawTx: tx.toHex(),
     txid: tx.id('hex'),
     fee,
     change,
     changeAddress,
+    numOutputs: tx.outputs.length,
     spentOutpoints: selectedUtxos.map(u => ({ txid: u.txid, vout: u.vout }))
   }
 }
@@ -344,6 +446,38 @@ export async function buildConsolidationTx(
     throw new Error('Need at least 2 UTXOs to consolidate')
   }
 
+  // Delegate to Rust when running inside Tauri
+  if (isTauri()) {
+    const result = await tauriInvoke<{
+      rawTx: string
+      txid: string
+      fee: number
+      outputSats: number
+      address: string
+      spentOutpoints: Array<{ txid: string; vout: number }>
+    }>('build_consolidation_tx', {
+      wif,
+      utxos: utxos.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script
+      })),
+      feeRate
+    })
+
+    return {
+      tx: null,
+      rawTx: result.rawTx,
+      txid: result.txid,
+      fee: result.fee,
+      outputSats: result.outputSats,
+      address: result.address,
+      spentOutpoints: result.spentOutpoints
+    }
+  }
+
+  // JS fallback (browser dev mode)
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const address = publicKey.toAddress()
@@ -391,6 +525,7 @@ export async function buildConsolidationTx(
 
   return {
     tx,
+    rawTx: tx.toHex(),
     txid: tx.id('hex'),
     fee,
     outputSats,

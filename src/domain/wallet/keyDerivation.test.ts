@@ -48,8 +48,8 @@ describe('Key Derivation', () => {
   })
 
   describe('deriveWalletKeys', () => {
-    it('should derive all three key types', () => {
-      const walletKeys = deriveWalletKeys(TEST_MNEMONIC)
+    it('should derive all three key types', async () => {
+      const walletKeys = await deriveWalletKeys(TEST_MNEMONIC)
 
       expect(walletKeys.mnemonic).toBe(TEST_MNEMONIC)
       expect(walletKeys.walletType).toBe('yours')
@@ -70,8 +70,8 @@ describe('Key Derivation', () => {
       expect(walletKeys.identityPubKey).toBeDefined()
     })
 
-    it('should derive different addresses for each key type', () => {
-      const walletKeys = deriveWalletKeys(TEST_MNEMONIC)
+    it('should derive different addresses for each key type', async () => {
+      const walletKeys = await deriveWalletKeys(TEST_MNEMONIC)
 
       expect(walletKeys.walletAddress).not.toBe(walletKeys.ordAddress)
       expect(walletKeys.walletAddress).not.toBe(walletKeys.identityAddress)
@@ -80,12 +80,12 @@ describe('Key Derivation', () => {
   })
 
   describe('keysFromWif', () => {
-    it('should derive public key and address from WIF', () => {
+    it('should derive public key and address from WIF', async () => {
       // First get a valid WIF from derivation
       const derived = deriveKeysFromPath(TEST_MNEMONIC, WALLET_PATHS.yours.wallet)
 
       // Then test keysFromWif
-      const keys = keysFromWif(derived.wif)
+      const keys = await keysFromWif(derived.wif)
 
       expect(keys.wif).toBe(derived.wif)
       expect(keys.address).toBe(derived.address)

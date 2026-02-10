@@ -35,7 +35,7 @@ export async function discoverAccounts(
   let found = 0
 
   for (let i = 1; i <= MAX_ACCOUNT_DISCOVERY; i++) {
-    const keys = deriveWalletKeysForAccount(mnemonic, i)
+    const keys = await deriveWalletKeysForAccount(mnemonic, i)
 
     // Check both wallet and ordinals addresses for activity
     const [walletResult, ordResult] = await Promise.all([

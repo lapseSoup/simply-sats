@@ -30,10 +30,12 @@ import { walletLogger } from '../logger'
 import { resetInactivityTimer } from '../autoLock'
 
 /**
- * Broadcast a signed transaction - try multiple endpoints for non-standard scripts
+ * Broadcast a signed transaction - try multiple endpoints for non-standard scripts.
+ * Accepts either a Transaction object or a raw hex string.
  */
-export async function broadcastTransaction(tx: Transaction): Promise<string> {
-  const txhex = tx.toHex()
+export async function broadcastTransaction(txOrHex: Transaction | string): Promise<string> {
+  const txhex = typeof txOrHex === 'string' ? txOrHex : txOrHex.toHex()
+  const txid = typeof txOrHex === 'string' ? undefined : txOrHex.id('hex')
   walletLogger.debug('Broadcasting transaction', { txhex: txhex.slice(0, 100) + '...' })
 
   const errors: string[] = []
@@ -49,7 +51,9 @@ export async function broadcastTransaction(tx: Transaction): Promise<string> {
 
     if (response.ok) {
       walletLogger.info('WhatsOnChain broadcast successful')
-      return tx.id('hex')
+      // WoC returns the txid as response text; fall back to local computation
+      const responseTxid = (await response.text()).trim().replace(/"/g, '')
+      return responseTxid || txid || ''
     }
 
     const errorText = await response.text()
@@ -175,10 +179,11 @@ function validateSendRequest(toAddress: string, satoshis: number): void {
 }
 
 /**
- * Shared broadcast flow: mark pending → broadcast → rollback on failure
+ * Shared broadcast flow: mark pending → broadcast → rollback on failure.
+ * Accepts either a Transaction object or a raw hex string.
  */
 async function executeBroadcast(
-  tx: Transaction,
+  txOrHex: Transaction | string,
   pendingTxid: string,
   spentOutpoints: { txid: string; vout: number }[]
 ): Promise<string> {
@@ -193,7 +198,7 @@ async function executeBroadcast(
 
   // Now broadcast the transaction
   try {
-    return await broadcastTransaction(tx)
+    return await broadcastTransaction(txOrHex)
   } catch (broadcastError) {
     // Broadcast failed - rollback the pending status
     walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)
@@ -211,7 +216,8 @@ async function executeBroadcast(
  * Shared post-broadcast flow: record tx → confirm spent → track change UTXO
  */
 async function recordTransactionResult(
-  tx: Transaction,
+  rawTx: string,
+  numOutputs: number,
   txid: string,
   pendingTxid: string,
   description: string,
@@ -225,14 +231,14 @@ async function recordTransactionResult(
   // CRITICAL: recordSentTransaction + confirmUtxosSpent + change UTXO must be atomic
   try {
     await withTransaction(async () => {
-      await recordSentTransaction(txid, tx.toHex(), description, labels, amount, accountId)
+      await recordSentTransaction(txid, rawTx, description, labels, amount, accountId)
       await confirmUtxosSpent(spentOutpoints, txid)
       // Track change UTXO atomically so balance stays correct until next sync
       if (change > 0) {
         try {
           await addUTXO({
             txid: pendingTxid,
-            vout: tx.outputs.length - 1,
+            vout: numOutputs - 1,
             satoshis: change,
             lockingScript: p2pkhLockingScriptHex(changeAddress),
             address: changeAddress,
@@ -273,11 +279,11 @@ export async function sendBSV(
 
   const feeRate = getFeeRate()
   const built = await buildP2PKHTx({ wif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
-  const { tx, txid: pendingTxid, fee, change, changeAddress, spentOutpoints } = built
+  const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
 
   resetInactivityTimer()
-  const txid = await executeBroadcast(tx, pendingTxid, spentOutpoints)
-  await recordTransactionResult(tx, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+  const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+  await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
   resetInactivityTimer()
   return txid
 }
@@ -351,11 +357,11 @@ export async function sendBSVMultiKey(
 
   const feeRate = getFeeRate()
   const built = await buildMultiKeyP2PKHTx({ changeWif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
-  const { tx, txid: pendingTxid, fee, change, changeAddress, spentOutpoints } = built
+  const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
 
   resetInactivityTimer()
-  const txid = await executeBroadcast(tx, pendingTxid, spentOutpoints)
-  await recordTransactionResult(tx, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+  const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+  await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
   resetInactivityTimer()
   return txid
 }
@@ -370,16 +376,16 @@ export async function consolidateUtxos(
 ): Promise<{ txid: string; outputSats: number; fee: number }> {
   const feeRate = getFeeRate()
   const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })
-  const { tx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
+  const { rawTx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
   const totalInput = utxoIds.reduce((sum, u) => sum + u.satoshis, 0)
 
   resetInactivityTimer()
-  const txid = await executeBroadcast(tx, pendingTxid, spentOutpoints)
+  const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
 
   // Record — consolidation uses vout 0 (single output), not last output
   try {
     await withTransaction(async () => {
-      await recordSentTransaction(txid, tx.toHex(), `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
+      await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
       await confirmUtxosSpent(spentOutpoints, txid)
       // Track consolidated UTXO atomically
       try {

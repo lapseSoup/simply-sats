@@ -37,9 +37,9 @@ const TEST_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon a
 
 // Generate real keys from the test mnemonic (done lazily)
 let _testWalletKeys: WalletKeys | null = null
-function getTestKeys(): WalletKeys {
+async function getTestKeys(): Promise<WalletKeys> {
   if (!_testWalletKeys) {
-    _testWalletKeys = restoreWallet(TEST_MNEMONIC)
+    _testWalletKeys = await restoreWallet(TEST_MNEMONIC)
   }
   return _testWalletKeys
 }
@@ -52,16 +52,16 @@ describe('BRC-100 Service', () => {
 
   describe('Wallet Keys Management', () => {
     describe('setWalletKeys / getWalletKeys', () => {
-      it('should set and get wallet keys', () => {
+      it('should set and get wallet keys', async () => {
         expect(getWalletKeys()).toBeNull()
 
-        setWalletKeys(getTestKeys())
+        setWalletKeys(await getTestKeys())
 
-        expect(getWalletKeys()).toEqual(getTestKeys())
+        expect(getWalletKeys()).toEqual(await getTestKeys())
       })
 
-      it('should allow clearing wallet keys', () => {
-        setWalletKeys(getTestKeys())
+      it('should allow clearing wallet keys', async () => {
+        setWalletKeys(await getTestKeys())
         setWalletKeys(null)
 
         expect(getWalletKeys()).toBeNull()
@@ -125,10 +125,10 @@ describe('BRC-100 Service', () => {
         expect(typeof signMessage).toBe('function')
       })
 
-      it.skip('should sign a message with identity key', () => {
+      it.skip('should sign a message with identity key', async () => {
         // Skipped: signData has Buffer.from() type issue with Signature object
         const message = 'Hello, World!'
-        const signature = signMessage(getTestKeys(), message)
+        const signature = await signMessage(await getTestKeys(), message)
 
         expect(signature).toBeDefined()
         expect(typeof signature).toBe('string')
@@ -140,50 +140,50 @@ describe('BRC-100 Service', () => {
         expect(typeof signData).toBe('function')
       })
 
-      it.skip('should sign with identity key by default', () => {
+      it.skip('should sign with identity key by default', async () => {
         // Skipped: signData has Buffer.from() type issue with Signature object
         const data = [1, 2, 3, 4, 5]
-        const signature = signData(getTestKeys(), data)
+        const signature = await signData(await getTestKeys(), data)
 
         expect(signature).toBeDefined()
         expect(typeof signature).toBe('string')
       })
 
-      it.skip('should sign with wallet key when specified', () => {
+      it.skip('should sign with wallet key when specified', async () => {
         // Skipped: signData has Buffer.from() type issue with Signature object
         const data = [1, 2, 3, 4, 5]
-        const sigIdentity = signData(getTestKeys(), data, 'identity')
-        const sigWallet = signData(getTestKeys(), data, 'wallet')
+        const sigIdentity = await signData(await getTestKeys(), data, 'identity')
+        const sigWallet = await signData(await getTestKeys(), data, 'wallet')
 
         expect(sigIdentity).not.toBe(sigWallet)
       })
 
-      it.skip('should sign with ordinals key when specified', () => {
+      it.skip('should sign with ordinals key when specified', async () => {
         // Skipped: signData has Buffer.from() type issue with Signature object
         const data = [1, 2, 3, 4, 5]
-        const sigOrdinals = signData(getTestKeys(), data, 'ordinals')
+        const sigOrdinals = await signData(await getTestKeys(), data, 'ordinals')
 
         expect(sigOrdinals).toBeDefined()
       })
 
-      it.skip('should handle empty data array', () => {
+      it.skip('should handle empty data array', async () => {
         // Skipped: signData has Buffer.from() type issue with Signature object
-        const signature = signData(getTestKeys(), [])
+        const signature = await signData(await getTestKeys(), [])
 
         expect(signature).toBeDefined()
       })
     })
 
     describe('verifySignature', () => {
-      it('should verify a valid signature created with signMessage', () => {
-        const keys = getTestKeys()
+      it('should verify a valid signature created with signMessage', async () => {
+        const keys = await getTestKeys()
         const message = 'Hello, World!'
 
         // Create a signature using signMessage
-        const signatureHex = signMessage(keys, message)
+        const signatureHex = await signMessage(keys, message)
 
         // Verify with the corresponding public key
-        const result = verifySignature(
+        const result = await verifySignature(
           keys.identityPubKey,
           message,
           signatureHex
@@ -192,16 +192,16 @@ describe('BRC-100 Service', () => {
         expect(result).toBe(true)
       })
 
-      it('should reject signature with wrong message', () => {
-        const keys = getTestKeys()
+      it('should reject signature with wrong message', async () => {
+        const keys = await getTestKeys()
         const message = 'Hello, World!'
         const wrongMessage = 'Different message'
 
         // Create a signature for the original message
-        const signatureHex = signMessage(keys, message)
+        const signatureHex = await signMessage(keys, message)
 
         // Try to verify with a different message - should fail
-        const result = verifySignature(
+        const result = await verifySignature(
           keys.identityPubKey,
           wrongMessage,
           signatureHex
@@ -210,16 +210,16 @@ describe('BRC-100 Service', () => {
         expect(result).toBe(false)
       })
 
-      it('should reject signature with wrong public key', () => {
-        const keys = getTestKeys()
+      it('should reject signature with wrong public key', async () => {
+        const keys = await getTestKeys()
         const message = 'Hello, World!'
 
         // Create a signature with identity key
-        const signatureHex = signMessage(keys, message)
+        const signatureHex = await signMessage(keys, message)
 
         // Try to verify with a different public key (wallet key instead of identity key)
         // These are different keys derived from the same mnemonic
-        const result = verifySignature(
+        const result = await verifySignature(
           keys.walletPubKey,  // Wrong key!
           message,
           signatureHex
@@ -228,9 +228,9 @@ describe('BRC-100 Service', () => {
         expect(result).toBe(false)
       })
 
-      it('should return false for empty signature', () => {
-        const result = verifySignature(
-          getTestKeys().identityPubKey,
+      it('should return false for empty signature', async () => {
+        const result = await verifySignature(
+          (await getTestKeys()).identityPubKey,
           'message',
           ''
         )
@@ -238,9 +238,9 @@ describe('BRC-100 Service', () => {
         expect(result).toBe(false)
       })
 
-      it('should return false for invalid/malformed signature hex', () => {
-        const result = verifySignature(
-          getTestKeys().identityPubKey,
+      it('should return false for invalid/malformed signature hex', async () => {
+        const result = await verifySignature(
+          (await getTestKeys()).identityPubKey,
           'message',
           'not-valid-hex-at-all!'
         )
@@ -248,9 +248,9 @@ describe('BRC-100 Service', () => {
         expect(result).toBe(false)
       })
 
-      it('should return false for random hex that is not a valid signature', () => {
-        const result = verifySignature(
-          getTestKeys().identityPubKey,
+      it('should return false for random hex that is not a valid signature', async () => {
+        const result = await verifySignature(
+          (await getTestKeys()).identityPubKey,
           'message',
           'abcdef1234567890abcdef1234567890'  // Random hex, not a valid DER signature
         )
@@ -258,17 +258,17 @@ describe('BRC-100 Service', () => {
         expect(result).toBe(false)
       })
 
-      it('should return false for truncated signature', () => {
-        const keys = getTestKeys()
+      it('should return false for truncated signature', async () => {
+        const keys = await getTestKeys()
         const message = 'Hello, World!'
 
         // Create a valid signature
-        const signatureHex = signMessage(keys, message)
+        const signatureHex = await signMessage(keys, message)
 
         // Truncate the signature
         const truncatedSig = signatureHex.slice(0, signatureHex.length / 2)
 
-        const result = verifySignature(
+        const result = await verifySignature(
           keys.identityPubKey,
           message,
           truncatedSig
@@ -277,21 +277,21 @@ describe('BRC-100 Service', () => {
         expect(result).toBe(false)
       })
 
-      it('should verify signatures for different messages independently', () => {
-        const keys = getTestKeys()
+      it('should verify signatures for different messages independently', async () => {
+        const keys = await getTestKeys()
         const message1 = 'Message One'
         const message2 = 'Message Two'
 
-        const sig1 = signMessage(keys, message1)
-        const sig2 = signMessage(keys, message2)
+        const sig1 = await signMessage(keys, message1)
+        const sig2 = await signMessage(keys, message2)
 
         // Each signature should verify with its own message
-        expect(verifySignature(keys.identityPubKey, message1, sig1)).toBe(true)
-        expect(verifySignature(keys.identityPubKey, message2, sig2)).toBe(true)
+        expect(await verifySignature(keys.identityPubKey, message1, sig1)).toBe(true)
+        expect(await verifySignature(keys.identityPubKey, message2, sig2)).toBe(true)
 
         // But not with swapped messages
-        expect(verifySignature(keys.identityPubKey, message1, sig2)).toBe(false)
-        expect(verifySignature(keys.identityPubKey, message2, sig1)).toBe(false)
+        expect(await verifySignature(keys.identityPubKey, message1, sig2)).toBe(false)
+        expect(await verifySignature(keys.identityPubKey, message2, sig1)).toBe(false)
       })
     })
   })
@@ -322,8 +322,8 @@ describe('BRC-100 Service', () => {
     })
 
     describe('createCLTVLockingScript', () => {
-      it('should create a valid CLTV script', () => {
-        const pubKeyHex = getTestKeys().identityPubKey
+      it('should create a valid CLTV script', async () => {
+        const pubKeyHex = (await getTestKeys()).identityPubKey
         const lockTime = 850000
 
         const script = createCLTVLockingScript(pubKeyHex, lockTime)
@@ -334,8 +334,8 @@ describe('BRC-100 Service', () => {
         expect(/^[0-9a-f]+$/i.test(script)).toBe(true)
       })
 
-      it('should include locktime in script', () => {
-        const pubKeyHex = getTestKeys().identityPubKey
+      it('should include locktime in script', async () => {
+        const pubKeyHex = (await getTestKeys()).identityPubKey
         const lockTime = 850000
 
         const script = createCLTVLockingScript(pubKeyHex, lockTime)
@@ -344,8 +344,8 @@ describe('BRC-100 Service', () => {
         expect(script.includes('b175')).toBe(true)
       })
 
-      it('should include public key in script', () => {
-        const pubKeyHex = getTestKeys().identityPubKey
+      it('should include public key in script', async () => {
+        const pubKeyHex = (await getTestKeys()).identityPubKey
         const lockTime = 1000
 
         const script = createCLTVLockingScript(pubKeyHex, lockTime)
@@ -354,8 +354,8 @@ describe('BRC-100 Service', () => {
         expect(script.toLowerCase()).toContain(pubKeyHex.toLowerCase())
       })
 
-      it('should produce different scripts for different lock times', () => {
-        const pubKeyHex = getTestKeys().identityPubKey
+      it('should produce different scripts for different lock times', async () => {
+        const pubKeyHex = (await getTestKeys()).identityPubKey
 
         const script1 = createCLTVLockingScript(pubKeyHex, 1000)
         const script2 = createCLTVLockingScript(pubKeyHex, 2000)
@@ -363,8 +363,8 @@ describe('BRC-100 Service', () => {
         expect(script1).not.toBe(script2)
       })
 
-      it('should handle small lock times', () => {
-        const pubKeyHex = getTestKeys().identityPubKey
+      it('should handle small lock times', async () => {
+        const pubKeyHex = (await getTestKeys()).identityPubKey
 
         // Small numbers (1-16) use OP_1 through OP_16
         const script = createCLTVLockingScript(pubKeyHex, 5)
@@ -372,8 +372,8 @@ describe('BRC-100 Service', () => {
         expect(script).toBeDefined()
       })
 
-      it('should handle zero lock time', () => {
-        const pubKeyHex = getTestKeys().identityPubKey
+      it('should handle zero lock time', async () => {
+        const pubKeyHex = (await getTestKeys()).identityPubKey
 
         const script = createCLTVLockingScript(pubKeyHex, 0)
 
@@ -418,11 +418,12 @@ describe('BRC-100 Service', () => {
     })
 
     describe('getIdentityKeyForApp', () => {
-      it('should return identity key and address', () => {
-        const result = getIdentityKeyForApp(getTestKeys())
+      it('should return identity key and address', async () => {
+        const keys = await getTestKeys()
+        const result = getIdentityKeyForApp(keys)
 
-        expect(result.identityKey).toBe(getTestKeys().identityPubKey)
-        expect(result.identityAddress).toBe(getTestKeys().identityAddress)
+        expect(result.identityKey).toBe(keys.identityPubKey)
+        expect(result.identityAddress).toBe(keys.identityAddress)
       })
     })
   })

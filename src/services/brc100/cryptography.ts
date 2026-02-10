@@ -1,20 +1,44 @@
 /**
  * BRC-100 Cryptography Operations
  *
- * ECIES encryption and decryption using BSV SDK.
+ * ECIES encryption and decryption using BSV SDK (JS fallback)
+ * or Rust Tauri commands (desktop app).
  */
 
 import { PrivateKey, PublicKey, Hash, SymmetricKey } from '@bsv/sdk'
 import type { WalletKeys } from '../wallet'
 
+// ---------------------------------------------------------------------------
+// Tauri detection (same pattern as signing.ts)
+// ---------------------------------------------------------------------------
+
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<T>(cmd, args)
+}
+
 /**
  * Encrypt plaintext using ECIES with counterparty's public key
  */
-export function encryptECIES(
+export async function encryptECIES(
   keys: WalletKeys,
   plaintext: string,
   recipientPubKey: string
-): { ciphertext: string; senderPublicKey: string } {
+): Promise<{ ciphertext: string; senderPublicKey: string }> {
+  if (isTauri()) {
+    return tauriInvoke<{ ciphertext: string; senderPublicKey: string }>('encrypt_ecies', {
+      wif: keys.identityWif,
+      plaintext,
+      recipientPubKey,
+      senderPubKey: keys.identityPubKey
+    })
+  }
+
+  // JS fallback (browser dev mode)
   // Derive shared secret using ECDH
   const senderPrivKey = PrivateKey.fromWif(keys.identityWif)
   const recipientPublicKey = PublicKey.fromString(recipientPubKey)
@@ -43,11 +67,20 @@ export function encryptECIES(
 /**
  * Decrypt ciphertext using ECIES with counterparty's public key
  */
-export function decryptECIES(
+export async function decryptECIES(
   keys: WalletKeys,
   ciphertextBytes: number[],
   senderPubKey: string
-): string {
+): Promise<string> {
+  if (isTauri()) {
+    return tauriInvoke<string>('decrypt_ecies', {
+      wif: keys.identityWif,
+      ciphertextBytes: new Uint8Array(ciphertextBytes),
+      senderPubKey
+    })
+  }
+
+  // JS fallback (browser dev mode)
   // Derive shared secret using ECDH
   const recipientPrivKey = PrivateKey.fromWif(keys.identityWif)
   const senderPublicKey = PublicKey.fromString(senderPubKey)

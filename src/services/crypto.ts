@@ -28,6 +28,18 @@
 
 import { cryptoLogger } from './logger'
 
+// Use Rust backend for encryption when running in Tauri (keys stay in native memory).
+// Falls back to Web Crypto API for browser dev mode and tests.
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+// Lazy-load Tauri invoke to avoid import errors in browser/test environments
+async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<T>(cmd, args)
+}
+
 // Use Web Crypto API (available in both browser and Tauri)
 // Using a getter function allows tests to override globalThis.crypto
 const getCrypto = () => globalThis.crypto
@@ -140,14 +152,21 @@ export async function encrypt(plaintext: string | object, password: string): Pro
   // Convert to string if needed
   const data = typeof plaintext === 'string' ? plaintext : JSON.stringify(plaintext)
 
-  // Generate random salt and IV
+  // Use Rust backend when running in Tauri — plaintext stays in native memory
+  if (isTauri()) {
+    try {
+      return await tauriInvoke<EncryptedData>('encrypt_data', { plaintext: data, password })
+    } catch (e) {
+      cryptoLogger.error('Rust encrypt_data failed, falling back to Web Crypto', { error: e })
+    }
+  }
+
+  // Fallback: Web Crypto API (browser dev mode / tests)
   const salt = getCrypto().getRandomValues(new Uint8Array(SALT_LENGTH))
   const iv = getCrypto().getRandomValues(new Uint8Array(IV_LENGTH))
 
-  // Derive key from password
   const key = await deriveKey(password, salt, PBKDF2_ITERATIONS)
 
-  // Encrypt with AES-GCM
   const ciphertext = await getCrypto().subtle.encrypt(
     { name: 'AES-GCM', iv: toArrayBuffer(iv) },
     key,
@@ -172,21 +191,32 @@ export async function encrypt(plaintext: string | object, password: string): Pro
  * @throws Error if decryption fails (wrong password or corrupted data)
  */
 export async function decrypt(encryptedData: EncryptedData, password: string): Promise<string> {
-  // Handle version upgrades if needed in the future
+  // Use Rust backend when running in Tauri — decrypted plaintext stays in native memory
+  if (isTauri()) {
+    try {
+      return await tauriInvoke<string>('decrypt_data', { encryptedData, password })
+    } catch (e) {
+      // If the Rust command returned a decryption failure, propagate it (don't fallback)
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes('Decryption failed') || msg.includes('invalid password')) {
+        throw new Error('Decryption failed - invalid password or corrupted data')
+      }
+      cryptoLogger.error('Rust decrypt_data failed, falling back to Web Crypto', { error: e })
+    }
+  }
+
+  // Fallback: Web Crypto API (browser dev mode / tests)
   if (encryptedData.version !== CURRENT_VERSION) {
     cryptoLogger.warn(`Encrypted data version ${encryptedData.version}, current is ${CURRENT_VERSION}`)
   }
 
-  // Decode base64 data
   const ciphertext = base64ToBuffer(encryptedData.ciphertext)
   const iv = new Uint8Array(base64ToBuffer(encryptedData.iv))
   const salt = new Uint8Array(base64ToBuffer(encryptedData.salt))
 
-  // Derive key from password (using stored iterations for forwards compatibility)
   const key = await deriveKey(password, salt, encryptedData.iterations)
 
   try {
-    // Decrypt with AES-GCM
     const plaintext = await getCrypto().subtle.decrypt(
       { name: 'AES-GCM', iv: toArrayBuffer(iv) },
       key,
@@ -195,7 +225,6 @@ export async function decrypt(encryptedData: EncryptedData, password: string): P
 
     return new TextDecoder().decode(plaintext)
   } catch (_error) {
-    // AES-GCM will throw if authentication fails (wrong password or tampered data)
     throw new Error('Decryption failed - invalid password or corrupted data')
   }
 }

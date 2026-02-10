@@ -62,7 +62,7 @@ const makeMockKeys = (index: number) => ({
 describe('discoverAccounts', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(deriveWalletKeysForAccount).mockImplementation((_mnemonic, index) => makeMockKeys(index))
+    vi.mocked(deriveWalletKeysForAccount).mockImplementation((_mnemonic, index) => Promise.resolve(makeMockKeys(index)))
   })
 
   it('discovers 0 accounts when account 1 has no activity', async () => {

@@ -114,6 +114,7 @@ describe('Transaction Builder', () => {
       })
 
       expect(result.tx).toBeDefined()
+      expect(result.rawTx).toBeTruthy()
       expect(result.txid).toMatch(/^[0-9a-f]{64}$/)
       expect(result.fee).toBeGreaterThan(0)
       expect(result.change).toBe(10000 - 5000 - result.fee)
@@ -134,7 +135,7 @@ describe('Transaction Builder', () => {
       })
 
       // Should have 2 outputs: recipient + change
-      expect(result.tx.outputs.length).toBe(2)
+      expect(result.numOutputs).toBe(2)
       expect(result.change).toBeGreaterThan(0)
     })
 
@@ -157,7 +158,7 @@ describe('Transaction Builder', () => {
 
       // With exact max-send amount, change is 0 and only 1 output
       expect(result.change).toBe(0)
-      expect(result.tx.outputs.length).toBe(1)
+      expect(result.numOutputs).toBe(1)
     })
 
     it('should throw on insufficient funds for fee', async () => {
@@ -184,7 +185,7 @@ describe('Transaction Builder', () => {
         feeRate: DEFAULT_FEE_RATE
       })
 
-      expect(result.tx.inputs.length).toBe(3)
+      expect(result.tx!.inputs.length).toBe(3)
       expect(result.spentOutpoints).toHaveLength(3)
       expect(result.fee).toBeGreaterThan(0)
       expect(result.change).toBe(totalInput - 8000 - result.fee)
@@ -225,8 +226,9 @@ describe('Transaction Builder', () => {
       })
 
       expect(result.tx).toBeDefined()
+      expect(result.rawTx).toBeTruthy()
       expect(result.txid).toMatch(/^[0-9a-f]{64}$/)
-      expect(result.tx.inputs.length).toBe(2)
+      expect(result.tx!.inputs.length).toBe(2)
       expect(result.changeAddress).toBe(testAddress)
       expect(result.spentOutpoints).toHaveLength(2)
     })
@@ -279,9 +281,10 @@ describe('Transaction Builder', () => {
       })
 
       expect(result.tx).toBeDefined()
+      expect(result.rawTx).toBeTruthy()
       expect(result.txid).toMatch(/^[0-9a-f]{64}$/)
-      expect(result.tx.inputs.length).toBe(2)
-      expect(result.tx.outputs.length).toBe(1)
+      expect(result.tx!.inputs.length).toBe(2)
+      expect(result.tx!.outputs.length).toBe(1)
       expect(result.fee).toBeGreaterThan(0)
       expect(result.outputSats).toBe(800 - result.fee)
       expect(result.address).toBe(testAddress)
@@ -324,8 +327,8 @@ describe('Transaction Builder', () => {
         feeRate: DEFAULT_FEE_RATE
       })
 
-      expect(result.tx.inputs.length).toBe(10)
-      expect(result.tx.outputs.length).toBe(1)
+      expect(result.tx!.inputs.length).toBe(10)
+      expect(result.tx!.outputs.length).toBe(1)
       expect(result.outputSats).toBe(10000 - result.fee)
       expect(result.spentOutpoints).toHaveLength(10)
     })

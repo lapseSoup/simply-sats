@@ -154,7 +154,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
       const newAccountIndex = allAccounts.length
       accountLogger.debug('Deriving keys for new account', { newAccountIndex })
 
-      const keys = deriveWalletKeysForAccount(firstAccountKeys.mnemonic, newAccountIndex)
+      const keys = await deriveWalletKeysForAccount(firstAccountKeys.mnemonic, newAccountIndex)
 
       // Use legacy password requirements since we're reusing the session password
       // (which may have been created under older, less strict requirements)
@@ -176,7 +176,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   // Import account from external mnemonic
   const importAccount = useCallback(async (name: string, mnemonic: string, password: string): Promise<WalletKeys | null> => {
     try {
-      const keys = restoreWallet(mnemonic)
+      const keys = await restoreWallet(mnemonic)
       // Use legacy password requirements since we're reusing the session password
       const accountId = await createAccount(name, keys, password, true)
       if (!accountId) return null

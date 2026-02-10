@@ -699,10 +699,10 @@ export async function handleBRC100Request(
         }
 
         // Sign with identity key by default
-        const signature = signData(keys, sigRequest.data, 'identity')
+        const signature = await signData(keys, sigRequest.data, 'identity')
 
         // Defense-in-depth: verify our own signature before returning it
-        if (!verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
+        if (!await verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
           throw new Error('Self-verification of signature failed')
         }
 
@@ -789,10 +789,10 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
       case 'createSignature': {
         const sigRequest = request.params as unknown as SignatureRequest
-        const signature = signData(keys, sigRequest.data, 'identity')
+        const signature = await signData(keys, sigRequest.data, 'identity')
 
         // Defense-in-depth: verify our own signature before returning it
-        if (!verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
+        if (!await verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
           throw new Error('Self-verification of signature failed')
         }
 

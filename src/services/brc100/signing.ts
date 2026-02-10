@@ -1,16 +1,34 @@
 /**
  * BRC-100 Signing Operations
  *
- * Message signing and verification using BSV SDK.
+ * Message signing and verification using BSV SDK (JS fallback)
+ * or Rust Tauri commands (desktop app).
  */
 
 import { PrivateKey, PublicKey, Signature } from '@bsv/sdk'
 import type { WalletKeys } from '../wallet'
 
+// ---------------------------------------------------------------------------
+// Tauri detection (same pattern as keyDerivation.ts / crypto.ts)
+// ---------------------------------------------------------------------------
+
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  return invoke<T>(cmd, args)
+}
+
 /**
  * Sign a message with the identity key
  */
-export function signMessage(keys: WalletKeys, message: string): string {
+export async function signMessage(keys: WalletKeys, message: string): Promise<string> {
+  if (isTauri()) {
+    return tauriInvoke<string>('sign_message', { wif: keys.identityWif, message })
+  }
+
   const privateKey = PrivateKey.fromWif(keys.identityWif)
   const messageBytes = new TextEncoder().encode(message)
   const signature = privateKey.sign(Array.from(messageBytes))
@@ -22,11 +40,11 @@ export function signMessage(keys: WalletKeys, message: string): string {
 /**
  * Sign arbitrary data with specified key type
  */
-export function signData(
+export async function signData(
   keys: WalletKeys,
   data: number[],
   keyType: 'identity' | 'wallet' | 'ordinals' = 'identity'
-): string {
+): Promise<string> {
   let wif: string
   switch (keyType) {
     case 'wallet':
@@ -39,6 +57,10 @@ export function signData(
       wif = keys.identityWif
   }
 
+  if (isTauri()) {
+    return tauriInvoke<string>('sign_data', { wif, data: new Uint8Array(data) })
+  }
+
   const privateKey = PrivateKey.fromWif(wif)
   const signature = privateKey.sign(data)
   // Convert signature to DER-encoded hex string
@@ -49,11 +71,19 @@ export function signData(
 /**
  * Verify a signature over raw byte data (matching signData format)
  */
-export function verifyDataSignature(
+export async function verifyDataSignature(
   publicKeyHex: string,
   data: number[],
   signatureHex: string
-): boolean {
+): Promise<boolean> {
+  if (isTauri()) {
+    return tauriInvoke<boolean>('verify_data_signature', {
+      publicKeyHex,
+      data: new Uint8Array(data),
+      signatureHex
+    })
+  }
+
   try {
     if (!signatureHex || signatureHex.length === 0) return false
     if (!/^[0-9a-fA-F]+$/.test(signatureHex)) return false
@@ -71,11 +101,15 @@ export function verifyDataSignature(
 /**
  * Verify a signature
  */
-export function verifySignature(
+export async function verifySignature(
   publicKeyHex: string,
   message: string,
   signatureHex: string
-): boolean {
+): Promise<boolean> {
+  if (isTauri()) {
+    return tauriInvoke<boolean>('verify_signature', { publicKeyHex, message, signatureHex })
+  }
+
   try {
     // Reject empty signatures
     if (!signatureHex || signatureHex.length === 0) {

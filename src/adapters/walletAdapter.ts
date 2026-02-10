@@ -57,7 +57,7 @@ import * as bip39 from 'bip39'
 import { deriveWalletKeys } from '../domain/wallet/keyDerivation'
 import type { WalletKeys } from '../domain/types'
 
-export function createWallet(): WalletKeys {
+export async function createWallet(): Promise<WalletKeys> {
   const mnemonic = bip39.generateMnemonic()
   return deriveWalletKeys(mnemonic)
 }

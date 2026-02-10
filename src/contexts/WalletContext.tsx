@@ -715,7 +715,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
     }
     try {
-      const keys = createWallet()
+      const keys = await createWallet()
       await saveWallet(keys, password)
       // Create account in database for persistence across app restarts
       // Use legacy password requirements since we've already validated length above
@@ -738,7 +738,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
     }
     try {
-      const keys = restoreWallet(mnemonic.trim())
+      const keys = await restoreWallet(mnemonic.trim())
       await saveWallet(keys, password)
       // Create account in database for persistence across app restarts
       await migrateToMultiAccount({ ...keys, mnemonic: mnemonic.trim() }, password)
