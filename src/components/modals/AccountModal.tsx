@@ -202,8 +202,14 @@ export function AccountModal({
             className="btn btn-primary"
             onClick={handleCreateAccount}
             disabled={loading || !accountName.trim()}
+            aria-busy={loading}
           >
-            {loading ? 'Creating...' : 'Add Account'}
+            {loading ? (
+              <>
+                <span className="spinner-small" aria-hidden="true" />
+                Creating...
+              </>
+            ) : 'Add Account'}
           </button>
         </div>
       </div>
@@ -249,8 +255,14 @@ export function AccountModal({
           className="btn btn-primary"
           onClick={handleImportAccount}
           disabled={loading || !accountName.trim() || !isMnemonicValid}
+          aria-busy={loading}
         >
-          {loading ? 'Importing...' : 'Import Account'}
+          {loading ? (
+            <>
+              <span className="spinner-small" aria-hidden="true" />
+              Importing...
+            </>
+          ) : 'Import Account'}
         </button>
       </div>
     </div>

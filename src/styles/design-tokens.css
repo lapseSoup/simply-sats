@@ -15,7 +15,8 @@
   --bg-surface-3: #22222e;
   --bg-surface-4: #2a2a38;
 
-  /* Legacy aliases (used throughout App.css — will migrate gradually) */
+  /* Legacy aliases — canonical names are above (--bg-base, --bg-surface-N).
+     These exist for backward compatibility with App.css and will be removed. */
   --bg-primary:   var(--bg-base);
   --bg-secondary: var(--bg-surface-1);
   --bg-tertiary:  var(--bg-surface-2);
@@ -40,7 +41,7 @@
   /* ── Text hierarchy ── */
   --text-primary:   #f0f0f5;
   --text-secondary: #9898a8;
-  --text-tertiary:  #5c5c6e;
+  --text-tertiary:  #9ca3af;
   --text-muted:     #3d3d4e;
 
   /* ── Status colors ── */
@@ -160,6 +161,62 @@
   --icon-2xl: 48px;
 }
 
+/* ── Light Theme Override ── */
+[data-theme="light"] {
+  /* ── Background Surfaces ── */
+  --bg-base:      #ffffff;
+  --bg-surface-1: #f8f8fa;
+  --bg-surface-2: #f0f0f4;
+  --bg-surface-3: #e4e4ec;
+  --bg-surface-4: #d8d8e2;
+
+  /* Legacy aliases */
+  --bg-primary:   var(--bg-base);
+  --bg-secondary: var(--bg-surface-1);
+  --bg-tertiary:  var(--bg-surface-2);
+  --bg-elevated:  var(--bg-surface-3);
+  --bg-card:      var(--bg-surface-2);
+
+  /* ── Text hierarchy ── */
+  --text-primary:   #1a1a2e;
+  --text-secondary: #5c5c6e;
+  --text-tertiary:  #6b7280;
+  --text-muted:     #9ca3af;
+
+  /* ── Accent — slightly darker for contrast on light ── */
+  --accent:         #d97706;
+  --accent-light:   #f59e0b;
+  --accent-dark:    #b45309;
+  --accent-glow:    rgba(217, 119, 6, 0.12);
+  --accent-subtle:  rgba(217, 119, 6, 0.06);
+  --accent-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 40%, #b45309 100%);
+
+  /* ── Borders ── */
+  --border:       rgba(0, 0, 0, 0.10);
+  --border-light: rgba(0, 0, 0, 0.16);
+  --border-focus: rgba(217, 119, 6, 0.50);
+
+  /* ── Shadows ── lighter for light mode */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06), 0 0 1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.10), 0 4px 8px rgba(0, 0, 0, 0.06);
+  --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 24px rgba(217, 119, 6, 0.08), 0 0 48px rgba(217, 119, 6, 0.04);
+
+  /* ── Interactive States ── */
+  --hover-overlay: rgba(0, 0, 0, 0.04);
+  --active-overlay: rgba(0, 0, 0, 0.08);
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+
+  /* ── Overlay ── */
+  --overlay-bg: rgba(0, 0, 0, 0.40);
+
+  /* ── Skeleton Loading ── */
+  --skeleton-base: var(--bg-surface-2);
+  --skeleton-shine: var(--bg-surface-3);
+}
+
 /* ── Tailwind 4 Theme Integration ── */
 @theme {
   --color-bg-base:      #0c0c0f;
@@ -184,7 +241,7 @@
 
   --color-text-primary:   #f0f0f5;
   --color-text-secondary: #9898a8;
-  --color-text-tertiary:  #5c5c6e;
+  --color-text-tertiary:  #9ca3af;
   --color-text-muted:     #3d3d4e;
 
   --color-success: #34d399;

@@ -300,7 +300,12 @@ const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect, cache
       onClick={() => onSelect(ordinal)}
       role="listitem"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onSelect(ordinal)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(ordinal)
+        }
+      }}
       aria-label={`Ordinal ${ordinal.origin.slice(0, 8)}`}
     >
       <OrdinalImage
@@ -321,7 +326,12 @@ const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect, cache
       onClick={() => onSelect(ordinal)}
       role="listitem"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onSelect(ordinal)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect(ordinal)
+        }
+      }}
       aria-label={`Ordinal ${ordinal.origin}`}
     >
       <OrdinalImage

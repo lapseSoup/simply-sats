@@ -3,12 +3,21 @@ import { X } from 'lucide-react'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useKeyboardNav } from '../../hooks/useKeyboardNav'
 
+type ModalSize = 'sm' | 'md' | 'lg'
+
+const MODAL_WIDTHS: Record<ModalSize, string> = {
+  sm: '360px',
+  md: '420px',
+  lg: '560px'
+}
+
 interface ModalProps {
   children: ReactNode
   onClose: () => void
   title: string
   className?: string
   closeOnOverlayClick?: boolean
+  size?: ModalSize
 }
 
 export function Modal({
@@ -16,7 +25,8 @@ export function Modal({
   onClose,
   title,
   className = '',
-  closeOnOverlayClick = true
+  closeOnOverlayClick = true,
+  size = 'md'
 }: ModalProps) {
   const titleId = useId()
   const focusTrapRef = useFocusTrap({ enabled: true })
@@ -56,6 +66,7 @@ export function Modal({
       <div
         ref={focusTrapRef}
         className={`modal ${className}`}
+        style={size !== 'md' ? { maxWidth: MODAL_WIDTHS[size] } : undefined}
       >
         <div className="modal-header">
           <h2 id={titleId} className="modal-title">{title}</h2>

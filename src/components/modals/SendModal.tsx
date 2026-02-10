@@ -210,6 +210,10 @@ export function SendModal({ onClose }: SendModalProps) {
             </div>
             {sendSats > 0 && (
               <div className="form-hint" style={{ marginTop: '4px', color: 'var(--text-secondary)' }}>
+                {displayInSats
+                  ? <>{sendSats.toLocaleString()} sats &middot; </>
+                  : <>{(sendSats / 100000000).toFixed(8)} BSV &middot; </>
+                }
                 ≈ ${formatUSD(sendSats)} USD
               </div>
             )}

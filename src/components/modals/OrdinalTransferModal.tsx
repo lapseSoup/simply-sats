@@ -202,8 +202,14 @@ export function OrdinalTransferModal({
             className="btn btn-primary btn-danger"
             onClick={handleTransferClick}
             disabled={loading || !toAddress.trim()}
+            aria-busy={loading}
           >
-            {loading ? 'Transferring...' : 'Transfer Ordinal'}
+            {loading ? (
+              <>
+                <span className="spinner-small" aria-hidden="true" />
+                Transferring...
+              </>
+            ) : 'Transfer Ordinal'}
           </button>
         </div>
       </div>

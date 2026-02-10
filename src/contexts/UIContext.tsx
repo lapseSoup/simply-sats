@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import { useNetwork } from './NetworkContext'
 import { uiLogger } from '../services/logger'
 import { UI } from '../config'
@@ -8,10 +8,14 @@ interface ToastItem {
   message: string
 }
 
+type Theme = 'dark' | 'light'
+
 interface UIContextType {
   // Display settings
   displayInSats: boolean
   toggleDisplayUnit: () => void
+  theme: Theme
+  toggleTheme: () => void
 
   // Toast/feedback
   toasts: ToastItem[]
@@ -46,6 +50,22 @@ export function UIProvider({ children }: UIProviderProps) {
     const saved = localStorage.getItem('simply_sats_display_sats')
     return saved !== null ? saved === 'true' : true
   })
+
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem('simply_sats_theme')
+    return (saved === 'light' || saved === 'dark') ? saved : 'dark'
+  })
+
+  // Apply theme to document
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+
+  const toggleTheme = useCallback(() => {
+    const newTheme: Theme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(newTheme)
+    localStorage.setItem('simply_sats_theme', newTheme)
+  }, [theme])
 
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
@@ -89,13 +109,15 @@ export function UIProvider({ children }: UIProviderProps) {
   const value: UIContextType = useMemo(() => ({
     displayInSats,
     toggleDisplayUnit,
+    theme,
+    toggleTheme,
     toasts,
     copyFeedback,
     copyToClipboard,
     showToast,
     formatBSVShort,
     formatUSD
-  }), [displayInSats, toggleDisplayUnit, toasts, copyFeedback, copyToClipboard, showToast, formatBSVShort, formatUSD])
+  }), [displayInSats, toggleDisplayUnit, theme, toggleTheme, toasts, copyFeedback, copyToClipboard, showToast, formatBSVShort, formatUSD])
 
   return (
     <UIContext.Provider value={value}>

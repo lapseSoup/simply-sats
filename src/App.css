@@ -366,6 +366,11 @@ body::-webkit-scrollbar {
 
 .balance-value {
   color: var(--text-primary);
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.balance-value.updating {
+  opacity: 0.6;
 }
 
 .balance-unit {
@@ -3422,7 +3427,24 @@ select:focus-visible {
 /* Interactive element focus within cards */
 .tx-item:focus-visible,
 .ordinal-card:focus-visible,
+.ordinal-list-item:focus-visible,
 .lock-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
+/* Link focus states */
+a:focus-visible,
+.btn-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Select/dropdown focus states */
+.sort-select:focus-visible,
+.view-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

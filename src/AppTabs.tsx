@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { AlertCircle, Search } from 'lucide-react'
 import { ActivityTab, OrdinalsTab, LocksTab, TokensTab, SearchTab } from './components/tabs'
 import type { Ordinal, LockedUTXO } from './services/wallet'
@@ -142,6 +143,15 @@ export function AppTabContent({
   onUnlockAll,
   unlocking
 }: AppTabContentProps) {
+  // Scroll to top when switching tabs
+  useEffect(() => {
+    const mainContent = document.getElementById('main-content')
+    if (mainContent) {
+      mainContent.scrollTop = 0
+    }
+    window.scrollTo(0, 0)
+  }, [activeTab])
+
   return (
     <main
       id="main-content"
