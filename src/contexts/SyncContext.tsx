@@ -300,12 +300,20 @@ export function SyncProvider({ children }: SyncProviderProps) {
         const derivedAddrs = await getDerivedAddresses()
 
         // Fetch from all addresses in parallel
-        const [ordAddressOrdinals, walletAddressOrdinals, identityAddressOrdinals, ...derivedOrdinals] = await Promise.all([
-          getOrdinals(wallet.ordAddress).catch(() => []),
-          getOrdinals(wallet.walletAddress).catch(() => []),
-          getOrdinals(wallet.identityAddress).catch(() => []),
-          ...derivedAddrs.map(d => getOrdinals(d.address).catch(() => []))
+        const ordinalResults = await Promise.allSettled([
+          getOrdinals(wallet.ordAddress),
+          getOrdinals(wallet.walletAddress),
+          getOrdinals(wallet.identityAddress),
+          ...derivedAddrs.map(d => getOrdinals(d.address))
         ])
+
+        const ordinalArrays = ordinalResults.map((result, i) => {
+          if (result.status === 'fulfilled') return result.value
+          syncLogger.warn('Failed to fetch ordinals', { index: i, reason: String(result.reason) })
+          return [] as Ordinal[]
+        })
+
+        const [ordAddressOrdinals, walletAddressOrdinals, identityAddressOrdinals, ...derivedOrdinals] = ordinalArrays
 
         // Combine and deduplicate by origin
         const seen = new Set<string>()

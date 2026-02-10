@@ -8,7 +8,7 @@
  * Uses the BSV SDK's built-in deriveChild() which implements the correct BRC-42 algorithm.
  */
 
-import { PrivateKey, PublicKey } from '@bsv/sdk'
+import { PrivateKey, PublicKey, Hash } from '@bsv/sdk'
 
 /**
  * Derive a child private key using BRC-42 protocol
@@ -399,30 +399,15 @@ export interface TaggedKeyResult {
  * @returns Derivation path string
  */
 export function getTaggedDerivationPath(label: string, id: string): string {
-  // Use simple hash to get path indices
-  // In production, use proper SHA-256 like Yours Wallet
-  const labelHash = simpleHash(label)
-  const idHash = simpleHash(id)
+  // SHA-256 hash to get deterministic path indices
+  const labelHash = Hash.sha256(Array.from(new TextEncoder().encode(label))) as number[]
+  const idHash = Hash.sha256(Array.from(new TextEncoder().encode(id))) as number[]
 
-  // Limit to non-hardened range (< 2^31)
-  const labelIndex = Math.abs(labelHash) % 2147483648
-  const idIndex = Math.abs(idHash) % 2147483648
+  // Take first 4 bytes as a 32-bit unsigned integer, limit to non-hardened range (< 2^31)
+  const labelIndex = (((labelHash[0] << 24) | (labelHash[1] << 16) | (labelHash[2] << 8) | labelHash[3]) >>> 0) % 2147483648
+  const idIndex = (((idHash[0] << 24) | (idHash[1] << 16) | (idHash[2] << 8) | idHash[3]) >>> 0) % 2147483648
 
   return `m/44'/236'/218'/${labelIndex}/${idIndex}`
-}
-
-/**
- * Simple hash function for derivation indices
- * Uses a basic string hashing algorithm
- */
-function simpleHash(str: string): number {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32bit integer
-  }
-  return hash
 }
 
 /**

@@ -97,10 +97,11 @@ async function getSessionKey(): Promise<CryptoKey> {
     }
   }
 
-  // Generate new session key
-  sessionKey = await generateSessionKey()
-  const exported = await exportKey(sessionKey)
+  // Generate new session key, export to sessionStorage, then re-import as non-extractable
+  const tempKey = await generateSessionKey()
+  const exported = await exportKey(tempKey)
   sessionStorage.setItem(SESSION_KEY_STORAGE, exported)
+  sessionKey = await importKey(exported)
 
   return sessionKey
 }

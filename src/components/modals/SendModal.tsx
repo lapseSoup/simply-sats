@@ -51,9 +51,10 @@ export function SendModal({ onClose }: SendModalProps) {
   const feeRate = feeRateKB / 1000
 
   // Parse amount based on display mode (sats or BSV)
-  const sendSats = displayInSats
+  const rawSendSats = displayInSats
     ? Math.round(parseFloat(sendAmount || '0'))
     : Math.round(parseFloat(sendAmount || '0') * 100000000)
+  const sendSats = Number.isNaN(rawSendSats) ? 0 : rawSendSats
   const availableSats = balance
 
   // Calculate number of inputs (fallback if no UTXOs available yet)

@@ -6,6 +6,8 @@
 import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import type { UTXO, ExtendedUTXO } from './types'
 import { calculateTxFee } from './fees'
+import { isValidBSVAddress } from '../../domain/wallet/validation'
+import { selectCoins, selectCoinsMultiKey } from '../../domain/transaction/coinSelection'
 import {
   recordSentTransaction,
   markUtxosPendingSpend,
@@ -161,6 +163,13 @@ export async function sendBSV(
   utxos: UTXO[],
   accountId?: number  // Account ID for scoping transaction record
 ): Promise<string> {
+  if (!Number.isFinite(satoshis) || satoshis <= 0) {
+    throw new Error('Invalid amount')
+  }
+  if (!isValidBSVAddress(toAddress)) {
+    throw new Error('Invalid BSV address')
+  }
+
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const fromAddress = publicKey.toAddress()
@@ -170,19 +179,9 @@ export async function sendBSV(
 
   const tx = new Transaction()
 
-  // Collect inputs we'll use
-  const inputsToUse: UTXO[] = []
-  let totalInput = 0
-
-  for (const utxo of utxos) {
-    inputsToUse.push(utxo)
-    totalInput += utxo.satoshis
-
-    // Break if we have enough for amount + reasonable fee buffer
-    if (totalInput >= satoshis + 100) break
-  }
-
-  if (totalInput < satoshis) {
+  // Select UTXOs using domain coin selection (smallest-first)
+  const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
+  if (!sufficient) {
     throw new Error('Insufficient funds')
   }
 
@@ -374,24 +373,21 @@ export async function sendBSVMultiKey(
   utxos: ExtendedUTXO[],
   accountId?: number  // Account ID for scoping transaction record
 ): Promise<string> {
+  if (!Number.isFinite(satoshis) || satoshis <= 0) {
+    throw new Error('Invalid amount')
+  }
+  if (!isValidBSVAddress(toAddress)) {
+    throw new Error('Invalid BSV address')
+  }
+
   const changePrivKey = PrivateKey.fromWif(changeWif)
   const changeAddress = changePrivKey.toPublicKey().toAddress()
 
   const tx = new Transaction()
 
-  // Collect inputs we'll use
-  const inputsToUse: ExtendedUTXO[] = []
-  let totalInput = 0
-
-  for (const utxo of utxos) {
-    inputsToUse.push(utxo)
-    totalInput += utxo.satoshis
-
-    // Break if we have enough for amount + reasonable fee buffer
-    if (totalInput >= satoshis + 100) break
-  }
-
-  if (totalInput < satoshis) {
+  // Select UTXOs using domain coin selection (smallest-first)
+  const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
+  if (!sufficient) {
     throw new Error('Insufficient funds')
   }
 

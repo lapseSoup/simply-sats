@@ -162,19 +162,12 @@ pub type SharedSessionState = Arc<Mutex<SessionState>>;
 
 /// Get the platform-specific app data directory before Tauri is initialized.
 /// Matches Tauri's default path resolution for the app identifier.
+/// The `dirs` crate handles platform differences internally:
+///   macOS:   ~/Library/Application Support/com.simplysats.wallet
+///   Windows: C:\Users\<user>\AppData\Roaming\com.simplysats.wallet
+///   Linux:   ~/.local/share/com.simplysats.wallet
 fn get_app_data_dir() -> Option<std::path::PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        dirs::data_dir().map(|d| d.join("com.simplysats.wallet"))
-    }
-    #[cfg(target_os = "windows")]
-    {
-        dirs::data_dir().map(|d| d.join("com.simplysats.wallet"))
-    }
-    #[cfg(target_os = "linux")]
-    {
-        dirs::data_dir().map(|d| d.join("com.simplysats.wallet"))
-    }
+    dirs::data_dir().map(|d| d.join("com.simplysats.wallet"))
 }
 
 /// Pre-initialize the database for fresh installs.
