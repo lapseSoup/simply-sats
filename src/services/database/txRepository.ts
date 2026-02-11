@@ -35,19 +35,11 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: nu
 
   // Update block_height and status when a pending tx gets confirmed
   if (tx.blockHeight && tx.status === 'confirmed') {
-    const result = await database.execute(
+    await database.execute(
       `UPDATE transactions SET block_height = $1, status = 'confirmed'
        WHERE txid = $2 AND account_id = $3 AND (block_height IS NULL OR status = 'pending')`,
       [tx.blockHeight, tx.txid, accId]
     )
-    // Fallback: fix rows with wrong account_id (legacy data defaulted to account_id=1)
-    if (!result.rowsAffected) {
-      await database.execute(
-        `UPDATE transactions SET block_height = $1, status = 'confirmed', account_id = $3
-         WHERE txid = $2 AND (block_height IS NULL OR status = 'pending')`,
-        [tx.blockHeight, tx.txid, accId]
-      )
-    }
   }
 
   // Add labels if provided
