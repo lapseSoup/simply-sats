@@ -92,7 +92,8 @@ export async function lockBSV(
   unlockBlock: number,
   utxos: UTXO[],
   ordinalOrigin?: string,
-  lockBlock?: number
+  lockBlock?: number,
+  accountId?: number
 ): Promise<{ txid: string; lockedUtxo: LockedUTXO }> {
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
@@ -229,7 +230,8 @@ export async function lockBSV(
       tx.toHex(),
       `Locked ${satoshis} sats until block ${unlockBlock}`,
       ['lock'],
-      -(satoshis + fee)  // Negative: locked amount + mining fee
+      -(satoshis + fee),  // Negative: locked amount + mining fee
+      accountId
     )
     // Confirm UTXOs as spent (updates from pending -> spent)
     await confirmUtxosSpent(utxosToSpend, txid)
@@ -249,7 +251,7 @@ export async function lockBSV(
         basket: 'default',
         spendable: true,
         createdAt: Date.now()
-      })
+      }, accountId)
       walletLogger.debug('Lock change UTXO tracked', { txid, change })
     } catch (error) {
       walletLogger.warn('Failed to track lock change UTXO (will recover on next sync)', { error: String(error) })
@@ -266,7 +268,7 @@ export async function lockBSV(
       basket: 'locks',
       spendable: false,
       createdAt: Date.now()
-    })
+    }, accountId)
 
     await addLock({
       utxoId,
@@ -274,7 +276,7 @@ export async function lockBSV(
       lockBlock,
       ordinalOrigin: ordinalOrigin ?? undefined,
       createdAt: Date.now()
-    })
+    }, accountId)
     walletLogger.info('Added lock to database', { txid, vout: 0, unlockBlock })
   } catch (error) {
     walletLogger.warn('Failed to add lock to database', { error: String(error) })
@@ -292,7 +294,8 @@ export async function lockBSV(
 export async function unlockBSV(
   wif: string,
   lockedUtxo: LockedUTXO,
-  currentBlockHeight: number
+  currentBlockHeight: number,
+  accountId?: number
 ): Promise<string> {
   // Check block height for user feedback
   if (currentBlockHeight < lockedUtxo.unlockBlock) {
@@ -405,7 +408,8 @@ export async function unlockBSV(
       tx.toHex(),
       `Unlocked ${lockedUtxo.satoshis} sats`,
       ['unlock'],
-      outputSats
+      outputSats,
+      accountId
     )
   } catch (error) {
     walletLogger.warn('Failed to track unlock transaction', { error: String(error) })
