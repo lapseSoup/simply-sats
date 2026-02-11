@@ -36,6 +36,7 @@ export {
   getAllUTXOs,
   repairUTXOs,
   clearUtxosForAccount,
+  reassignAccountData,
   toggleUtxoFrozen,
   getUtxoByOutpoint
 } from './utxoRepository'

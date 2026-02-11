@@ -540,3 +540,66 @@ export async function clearUtxosForAccount(accountId: number): Promise<void> {
   dbLogger.info(`[DB] Clearing all UTXOs for account ${accountId}`)
   await database.execute('DELETE FROM utxos WHERE account_id = $1', [accountId])
 }
+
+/**
+ * Reassign ALL data from a legacy default account_id to the correct account.
+ *
+ * Before the accountId plumbing fix, lockBSV/unlockBSV and other operations
+ * defaulted to account_id=1. When the actual account has a different ID (e.g. 23),
+ * all that data becomes invisible to account-scoped queries. This function moves
+ * ALL records (utxos, transactions, locks, ordinal_cache) from account_id=1 to
+ * the specified target account.
+ *
+ * Safe to call multiple times — it's a no-op if no records need reassignment.
+ */
+export async function reassignAccountData(targetAccountId: number): Promise<number> {
+  if (targetAccountId === 1) return 0 // Nothing to reassign
+
+  const database = getDatabase()
+  let totalFixed = 0
+
+  // Reassign UTXOs
+  const utxoResult = await database.execute(
+    'UPDATE utxos SET account_id = $1 WHERE account_id = 1',
+    [targetAccountId]
+  )
+  const utxoFixed = utxoResult.rowsAffected || 0
+  totalFixed += utxoFixed
+
+  // Reassign transactions
+  const txResult = await database.execute(
+    'UPDATE transactions SET account_id = $1 WHERE account_id = 1',
+    [targetAccountId]
+  )
+  const txFixed = txResult.rowsAffected || 0
+  totalFixed += txFixed
+
+  // Reassign locks
+  const lockResult = await database.execute(
+    'UPDATE locks SET account_id = $1 WHERE account_id = 1',
+    [targetAccountId]
+  )
+  const lockFixed = lockResult.rowsAffected || 0
+  totalFixed += lockFixed
+
+  // Reassign ordinal cache
+  try {
+    const ordResult = await database.execute(
+      'UPDATE ordinal_cache SET account_id = $1 WHERE account_id = 1',
+      [targetAccountId]
+    )
+    const ordFixed = ordResult.rowsAffected || 0
+    totalFixed += ordFixed
+    if (ordFixed > 0) dbLogger.info(`[DB] Reassigned ${ordFixed} ordinal cache entries`)
+  } catch {
+    // ordinal_cache table may not exist yet
+  }
+
+  if (totalFixed > 0) {
+    dbLogger.info(`[DB] Reassigned ${totalFixed} records from account_id=1 to account_id=${targetAccountId}`, {
+      utxos: utxoFixed, transactions: txFixed, locks: lockFixed
+    })
+  }
+
+  return totalFixed
+}

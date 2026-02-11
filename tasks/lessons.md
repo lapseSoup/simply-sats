@@ -48,3 +48,10 @@
 **Problem:** `https://overlay.babbage.systems` was used in `overlay.ts` KNOWN_OVERLAY_NODES but was missing from the CSP `connect-src` whitelist in `tauri.conf.json`. On Windows (WebView2), CSP violations may cascade differently than on macOS (WebKit). Also, `'self'` resolves to `tauri://localhost` on macOS but `https://tauri.localhost` on Windows — adding explicit `https://tauri.localhost` avoids edge cases.
 **Rule:** Every time you add a new external API URL to the codebase, cross-check it against the CSP `connect-src` in `tauri.conf.json`. Grep for `https://` in `src/` and verify all domains are whitelisted. Always test on both macOS and Windows.
 **Fix:** Added `https://overlay.babbage.systems` and `https://tauri.localhost` to CSP `connect-src`.
+
+## addUTXO Upsert Must Update account_id
+**Date:** 2025-02-10
+**Context:** After locking BSV, balance showed 998 sats instead of ~380k. The change UTXO from the lock tx existed in the DB but under `account_id=1` (the default), while the active account was `account_id=23`.
+**Problem:** `addUTXO()` upsert (when UTXO already exists by txid:vout) updated `spending_status`, `address`, `spendable`, etc. but NEVER updated `account_id`. UTXOs created before the accountId plumbing fix (commit 94cfa03) defaulted to `account_id=1` via `accountId || 1`. When sync re-discovered them on-chain and called `addUTXO(utxo, 23)`, the UPDATE left `account_id=1`. Then `getSpendableUTXOs(23)` with `WHERE account_id = 23` never found them.
+**Rule:** Any upsert function that receives an `accountId` parameter MUST update `account_id` in ALL update branches, not just the INSERT. When debugging balance issues, always check `account_id` in the raw DB — the account the user sees in the UI may differ from the account_id stored on UTXOs.
+**Fix:** Added `account_id = $N` to all three UPDATE branches in `addUTXO()`. Debug tip: `accountId=23` not `1` revealed that multi-account support created non-obvious ID values.

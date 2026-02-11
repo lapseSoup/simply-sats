@@ -152,7 +152,17 @@ export function SyncProvider({ children }: SyncProviderProps) {
   ) => {
     setSyncing(true)
     try {
-      // When forceReset, clear all UTXOs for this account so sync rebuilds from chain state
+      // Fix records created before accountId plumbing fix (defaulted to account_id=1).
+      // Runs on every sync — no-op if no records need reassignment.
+      if (activeAccountId && activeAccountId !== 1) {
+        const { reassignAccountData } = await import('../services/database')
+        const reassigned = await reassignAccountData(activeAccountId)
+        if (reassigned > 0) {
+          syncLogger.info('Reassigned legacy records to active account', { count: reassigned, accountId: activeAccountId })
+        }
+      }
+
+      // When forceReset, clear all UTXOs so sync rebuilds from chain state
       if (forceReset && activeAccountId) {
         syncLogger.info('Force reset: clearing UTXOs for account', { accountId: activeAccountId })
         const { clearUtxosForAccount } = await import('../services/database')
