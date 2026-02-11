@@ -149,7 +149,7 @@ function WalletApp() {
         logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
         await performSync(true)
       } else {
-        const derivedAddrs = await getDerivedAddresses()
+        const derivedAddrs = await getDerivedAddresses(activeAccountId || undefined)
         if (derivedAddrs.length > 0) {
           logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
           await performSync(false)

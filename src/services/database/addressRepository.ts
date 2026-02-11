@@ -26,11 +26,13 @@ export async function ensureDerivedAddressesTable(): Promise<void> {
         label TEXT,
         created_at INTEGER NOT NULL,
         last_synced_at INTEGER,
+        account_id INTEGER NOT NULL DEFAULT 1,
         UNIQUE(sender_pubkey, invoice_number)
       )
     `)
     await database.execute('CREATE INDEX IF NOT EXISTS idx_derived_addresses_address ON derived_addresses(address)')
     await database.execute('CREATE INDEX IF NOT EXISTS idx_derived_addresses_sender ON derived_addresses(sender_pubkey)')
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_derived_addresses_account ON derived_addresses(account_id)')
 
     // Also ensure 'derived' basket exists
     await database.execute(
@@ -44,19 +46,22 @@ export async function ensureDerivedAddressesTable(): Promise<void> {
 
 /**
  * Add a derived address to track
+ * @param accountId - Account ID (defaults to 1 for backwards compat)
  */
-export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>): Promise<number> {
+export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>, accountId?: number): Promise<number> {
   const database = getDatabase()
+  const accId = accountId ?? derivedAddr.accountId ?? 1
 
   dbLogger.debug('[DB] Saving derived address:', {
     address: derivedAddr.address,
     invoiceNumber: derivedAddr.invoiceNumber,
-    senderPubkey: derivedAddr.senderPubkey.substring(0, 16) + '...'
+    senderPubkey: derivedAddr.senderPubkey.substring(0, 16) + '...',
+    accountId: accId
   })
 
   const result = await database.execute(
-    `INSERT OR REPLACE INTO derived_addresses (address, sender_pubkey, invoice_number, private_key_wif, label, created_at, last_synced_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    `INSERT OR REPLACE INTO derived_addresses (address, sender_pubkey, invoice_number, private_key_wif, label, created_at, last_synced_at, account_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       derivedAddr.address,
       derivedAddr.senderPubkey,
@@ -64,7 +69,8 @@ export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>)
       derivedAddr.privateKeyWif,
       derivedAddr.label || null,
       derivedAddr.createdAt,
-      derivedAddr.lastSyncedAt || null
+      derivedAddr.lastSyncedAt || null,
+      accId
     ]
   )
 
@@ -76,13 +82,19 @@ export async function addDerivedAddress(derivedAddr: Omit<DerivedAddress, 'id'>)
 }
 
 /**
- * Get all tracked derived addresses
+ * Get tracked derived addresses, optionally filtered by account
+ * @param accountId - Account ID to filter by (optional — returns all if omitted)
  */
-export async function getDerivedAddresses(): Promise<DerivedAddress[]> {
+export async function getDerivedAddresses(accountId?: number): Promise<DerivedAddress[]> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<DerivedAddressRow[]>('SELECT * FROM derived_addresses ORDER BY created_at DESC')
+    const query = accountId !== undefined && accountId !== null
+      ? 'SELECT * FROM derived_addresses WHERE account_id = $1 ORDER BY created_at DESC'
+      : 'SELECT * FROM derived_addresses ORDER BY created_at DESC'
+    const params = accountId !== undefined && accountId !== null ? [accountId] : []
+
+    const rows = await database.select<DerivedAddressRow[]>(query, params)
 
     return rows.map(row => ({
       id: row.id,
@@ -92,7 +104,8 @@ export async function getDerivedAddresses(): Promise<DerivedAddress[]> {
       privateKeyWif: row.private_key_wif,
       label: row.label ?? undefined,
       createdAt: row.created_at,
-      lastSyncedAt: row.last_synced_at ?? undefined
+      lastSyncedAt: row.last_synced_at ?? undefined,
+      accountId: row.account_id
     }))
   } catch (_e) {
     // Table may not exist yet

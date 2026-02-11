@@ -30,14 +30,11 @@ export async function addLock(lock: Omit<Lock, 'id'>, accountId?: number): Promi
 export async function getLocks(currentHeight: number, accountId?: number): Promise<(Lock & { utxo: UTXO })[]> {
   const database = getDatabase()
 
-  // Check both lock and UTXO account_id — legacy locks may have been created
-  // under account_id=1 before the accountId plumbing fix, while the UTXO may
-  // have been updated to the correct account by sync
   const query = accountId !== undefined && accountId !== null
     ? `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket, u.address
        FROM locks l
        INNER JOIN utxos u ON l.utxo_id = u.id
-       WHERE l.unlocked_at IS NULL AND (l.account_id = $1 OR u.account_id = $1)
+       WHERE l.unlocked_at IS NULL AND l.account_id = $1
        ORDER BY l.unlock_block ASC`
     : `SELECT l.*, u.txid, u.vout, u.satoshis, u.locking_script, u.basket, u.address
        FROM locks l

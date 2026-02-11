@@ -21,7 +21,7 @@ interface ReceiveModalProps {
 type ReceiveType = 'wallet' | 'ordinals' | 'brc100'
 
 export function ReceiveModal({ onClose }: ReceiveModalProps) {
-  const { wallet, contacts, refreshContacts } = useWallet()
+  const { wallet, contacts, refreshContacts, activeAccountId } = useWallet()
   const { copyToClipboard, showToast } = useUI()
 
   const [receiveType, setReceiveType] = useState<ReceiveType>('wallet')
@@ -69,7 +69,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
         privateKeyWif: childPrivKey.toWif(),
         label: label || `From ${senderPubKey.substring(0, 8)}...`,
         createdAt: Date.now()
-      })
+      }, activeAccountId || undefined)
       return true
     } catch (e) {
       uiLogger.error('Failed to save derived address:', e)

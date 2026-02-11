@@ -324,8 +324,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
           syncLogger.debug('Loaded cached ordinal content', { count: newCache.size })
         }
 
-        // Get derived addresses
-        const derivedAddrs = await getDerivedAddresses()
+        // Get derived addresses (scoped to active account)
+        const derivedAddrs = await getDerivedAddresses(activeAccountId || undefined)
 
         // Fetch from all addresses in parallel
         const ordinalResults = await Promise.allSettled([

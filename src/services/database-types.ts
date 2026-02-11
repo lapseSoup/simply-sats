@@ -167,6 +167,7 @@ export interface DerivedAddressRow {
   label: string | null
   created_at: number
   last_synced_at: number | null
+  account_id: number
 }
 
 // ============================================

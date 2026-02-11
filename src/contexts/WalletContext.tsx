@@ -849,7 +849,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }))
 
       // Also include derived address UTXOs if available
-      const derivedAddrs = await getDerivedAddresses()
+      const derivedAddrs = await getDerivedAddresses(activeAccountId || undefined)
       for (const derived of derivedAddrs) {
         if (derived.privateKeyWif) {
           try {

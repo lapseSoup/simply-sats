@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
     account_id INTEGER NOT NULL DEFAULT 1
 );
 
--- Derived addresses (002)
+-- Derived addresses (002 + 016 account_id)
 CREATE TABLE IF NOT EXISTS derived_addresses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     address TEXT NOT NULL UNIQUE,
@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS derived_addresses (
     label TEXT,
     created_at INTEGER NOT NULL,
     last_synced_at INTEGER,
+    account_id INTEGER NOT NULL DEFAULT 1,
     UNIQUE(sender_pubkey, invoice_number)
 );
 
@@ -291,6 +292,7 @@ CREATE INDEX IF NOT EXISTS idx_sync_state_address ON sync_state(address);
 CREATE INDEX IF NOT EXISTS idx_sync_state_account ON sync_state(account_id);
 CREATE INDEX IF NOT EXISTS idx_derived_addresses_address ON derived_addresses(address);
 CREATE INDEX IF NOT EXISTS idx_derived_addresses_sender ON derived_addresses(sender_pubkey);
+CREATE INDEX IF NOT EXISTS idx_derived_addresses_account ON derived_addresses(account_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_active ON accounts(is_active);
 CREATE INDEX IF NOT EXISTS idx_accounts_identity ON accounts(identity_address);
 CREATE INDEX IF NOT EXISTS idx_tagged_keys_account ON tagged_keys(account_id);

@@ -368,11 +368,12 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
         await upsertTransaction({
           txid: txRef.tx_hash,
           createdAt: Date.now(),
+          blockHeight: txRef.height > 0 ? txRef.height : undefined,
           status: txRef.height > 0 ? 'confirmed' : 'pending',
           description: txDescription,
           ...(txLabel === 'lock' && lockSats && amount !== undefined && amount > 0 ? { amount: -lockSats } : {}),
           ...(txLabel === 'unlock' && amount !== undefined ? { amount } : {})
-        })
+        }, accountId)
       } catch (_e) {
         // Best-effort: don't fail sync if labeling fails
       }
@@ -452,7 +453,7 @@ export async function syncWallet(
 
   try {
     // Sync derived addresses FIRST (most important for correct balance)
-    const derivedAddresses = await getDerivedAddressesFromDB()
+    const derivedAddresses = await getDerivedAddressesFromDB(accountId)
     syncLogger.debug(`[SYNC] Found ${derivedAddresses.length} derived addresses in database`)
 
     if (token.isCancelled) {

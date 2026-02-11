@@ -65,6 +65,7 @@ export interface DerivedAddress {
   label?: string
   createdAt: number
   lastSyncedAt?: number
+  accountId?: number
 }
 
 // Contact type - stores sender public keys with labels
