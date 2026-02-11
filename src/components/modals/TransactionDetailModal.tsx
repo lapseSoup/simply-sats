@@ -76,10 +76,11 @@ export function TransactionDetailModal({
   useEffect(() => {
     const loadData = async () => {
       try {
+        const accId = activeAccountId || 1
         const [existingLabels, dbRecord, topLabels] = await Promise.all([
-          getTransactionLabels(transaction.tx_hash),
-          getTransactionByTxid(transaction.tx_hash),
-          getTopLabels(3, activeAccountId || undefined)
+          getTransactionLabels(transaction.tx_hash, accId),
+          getTransactionByTxid(transaction.tx_hash, accId),
+          getTopLabels(3, accId)
         ])
         setLabels(existingLabels)
 
@@ -129,7 +130,7 @@ export function TransactionDetailModal({
     setNewLabel('')
 
     try {
-      await updateTransactionLabels(transaction.tx_hash, newLabels)
+      await updateTransactionLabels(transaction.tx_hash, newLabels, activeAccountId || undefined)
       onLabelsUpdated?.()
     } catch (e) {
       uiLogger.error('Failed to update labels', e)
@@ -144,7 +145,7 @@ export function TransactionDetailModal({
     setLabels(newLabels)
 
     try {
-      await updateTransactionLabels(transaction.tx_hash, newLabels)
+      await updateTransactionLabels(transaction.tx_hash, newLabels, activeAccountId || undefined)
       onLabelsUpdated?.()
     } catch (e) {
       uiLogger.error('Failed to remove label', e)

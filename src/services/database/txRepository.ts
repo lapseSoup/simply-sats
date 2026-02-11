@@ -236,12 +236,25 @@ export async function updateTransactionStatus(
 
 /**
  * Update labels for a transaction (replaces existing labels)
+ * @param txid - Transaction ID
+ * @param labels - New labels to set
+ * @param accountId - If provided, validates txid belongs to this account before modifying
  */
 export async function updateTransactionLabels(
   txid: string,
-  labels: string[]
+  labels: string[],
+  accountId?: number
 ): Promise<void> {
   const database = getDatabase()
+
+  // If accountId provided, verify the txid belongs to this account
+  if (accountId !== undefined && accountId !== null) {
+    const rows = await database.select<{ txid: string }[]>(
+      'SELECT txid FROM transactions WHERE txid = $1 AND account_id = $2 LIMIT 1',
+      [txid, accountId]
+    )
+    if (rows.length === 0) return // txid doesn't belong to this account — no-op
+  }
 
   // Delete existing labels for this txid
   await database.execute(
@@ -306,29 +319,35 @@ export async function getTopLabels(limit = 3, accountId?: number): Promise<strin
 
 /**
  * Get labels for a specific transaction
+ * @param txid - Transaction ID
+ * @param accountId - If provided, only returns labels for txids owned by this account
  */
-export async function getTransactionLabels(txid: string): Promise<string[]> {
+export async function getTransactionLabels(txid: string, accountId?: number): Promise<string[]> {
   const database = getDatabase()
 
   const rows = await database.select<{ label: string }[]>(
-    'SELECT label FROM transaction_labels WHERE txid = $1',
-    [txid]
+    accountId !== undefined && accountId !== null
+      ? `SELECT tl.label FROM transaction_labels tl
+         INNER JOIN transactions t ON tl.txid = t.txid
+         WHERE tl.txid = $1 AND t.account_id = $2`
+      : 'SELECT label FROM transaction_labels WHERE txid = $1',
+    accountId !== undefined && accountId !== null ? [txid, accountId] : [txid]
   )
 
   return rows.map(row => row.label)
 }
 
 /**
- * Get a single transaction by txid
+ * Get a single transaction by txid (always scoped to account)
+ * @param txid - Transaction ID
+ * @param accountId - Account ID (required — no cross-account queries)
  */
-export async function getTransactionByTxid(txid: string, accountId?: number): Promise<Transaction | null> {
+export async function getTransactionByTxid(txid: string, accountId: number): Promise<Transaction | null> {
   const database = getDatabase()
 
   const rows = await database.select<TransactionRow[]>(
-    accountId
-      ? 'SELECT * FROM transactions WHERE txid = $1 AND account_id = $2 LIMIT 1'
-      : 'SELECT * FROM transactions WHERE txid = $1 LIMIT 1',
-    accountId ? [txid, accountId] : [txid]
+    'SELECT * FROM transactions WHERE txid = $1 AND account_id = $2 LIMIT 1',
+    [txid, accountId]
   )
 
   if (rows.length === 0) return null
@@ -460,4 +479,30 @@ export async function getPendingTransactionTxids(accountId?: number): Promise<Se
 
   const rows = await database.select<{ txid: string }[]>(query, params)
   return new Set(rows.map(r => r.txid))
+}
+
+/**
+ * Delete all transactions and their labels for a specific account.
+ * Used for data cleanup — the sync process will rebuild correct data.
+ * @param accountId - Account ID whose transactions to delete
+ */
+export async function deleteTransactionsForAccount(accountId: number): Promise<number> {
+  const database = getDatabase()
+
+  // Delete labels for transactions belonging to this account
+  await database.execute(
+    `DELETE FROM transaction_labels WHERE txid IN (
+       SELECT txid FROM transactions WHERE account_id = $1
+     )`,
+    [accountId]
+  )
+
+  // Delete the transactions themselves
+  await database.execute(
+    'DELETE FROM transactions WHERE account_id = $1',
+    [accountId]
+  )
+
+  // Return isn't available from execute, but caller can verify via getAllTransactions
+  return 0
 }

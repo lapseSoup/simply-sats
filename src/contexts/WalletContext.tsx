@@ -34,11 +34,16 @@ import {
   upsertTransaction,
   updateLockBlock,
   getLocks as getLocksFromDB,
+  deleteTransactionsForAccount,
+  getAllTransactions,
   type Contact,
+  type Transaction,
   type UTXO as DatabaseUTXO
 } from '../services/database'
 import {
-  getSpendableUtxosFromDatabase
+  getSpendableUtxosFromDatabase,
+  getOrdinalsFromDatabase,
+  getBalanceFromDatabase
 } from '../services/sync'
 import {
   type Account,
@@ -184,6 +189,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
     balance,
     ordBalance,
     syncError,
+    setOrdinals,
+    setBalance,
+    setTxHistory,
     resetSync,
     performSync: syncPerformSync,
     fetchData: syncFetchData
@@ -412,6 +420,44 @@ export function WalletProvider({ children }: WalletProviderProps) {
           // Best-effort: full sync will pick up locks anyway
         }
 
+        // Preload ordinals from DB instantly (same pattern as locks)
+        try {
+          const dbOrdinals = await getOrdinalsFromDatabase(accountId)
+          if (fetchVersionRef.current === preloadVersion && dbOrdinals.length > 0) {
+            setOrdinals(dbOrdinals as Ordinal[])
+          }
+        } catch (_e) {
+          // Best-effort: fetchData will load ordinals anyway
+        }
+
+        // Preload balance from DB
+        try {
+          const [defaultBal, derivedBal] = await Promise.all([
+            getBalanceFromDatabase('default', accountId),
+            getBalanceFromDatabase('derived', accountId)
+          ])
+          if (fetchVersionRef.current === preloadVersion) {
+            setBalance(defaultBal + derivedBal)
+          }
+        } catch (_e) {
+          // Best-effort
+        }
+
+        // Preload transaction history from DB
+        try {
+          const dbTxs = await getAllTransactions(30, accountId)
+          if (fetchVersionRef.current === preloadVersion && dbTxs.length > 0) {
+            setTxHistory(dbTxs.map((tx: Transaction) => ({
+              tx_hash: tx.txid,
+              height: tx.blockHeight || 0,
+              amount: tx.amount,
+              description: tx.description
+            })))
+          }
+        } catch (_e) {
+          // Best-effort
+        }
+
         // Bump version again AFTER preload — invalidates any fetchData that was
         // triggered by setWallet() above (via App.tsx effect) so it can't overwrite
         // the locks we just preloaded. The next effect cycle (from activeAccountId
@@ -427,7 +473,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       walletLogger.error('Error switching account', e)
       return false
     }
-  }, [accountsSwitchAccount, setWallet, setLocks, resetSync, sessionPassword])
+  }, [accountsSwitchAccount, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, sessionPassword])
 
   // Create a new account - wraps AccountsContext to also set wallet state
   // Create a new account using session password
@@ -527,6 +573,27 @@ export function WalletProvider({ children }: WalletProviderProps) {
         if (repaired > 0) {
           uiLogger.info('Repaired UTXOs', { count: repaired })
         }
+
+        // One-time cleanup: delete corrupted transactions for non-account-1 accounts
+        // The reassignAccountData bug (removed in e378674) moved account 1's transactions
+        // to other accounts. Deleting those transactions lets sync rebuild correct data.
+        try {
+          const cleanupFlag = 'simply_sats_tx_cleanup_v1'
+          if (!localStorage.getItem(cleanupFlag)) {
+            const accounts = await getAllAccounts()
+            for (const acc of accounts) {
+              if (acc.id && acc.id !== 1) {
+                await deleteTransactionsForAccount(acc.id)
+                walletLogger.info('Cleaned corrupted transactions', { accountId: acc.id })
+              }
+            }
+            localStorage.setItem(cleanupFlag, String(Date.now()))
+            walletLogger.info('One-time transaction cleanup complete')
+          }
+        } catch (cleanupErr: unknown) {
+          walletLogger.warn('Transaction cleanup failed (non-fatal)', cleanupErr as Record<string, unknown>)
+        }
+        if (!mounted) return
 
         await ensureDerivedAddressesTable()
         if (!mounted) return
@@ -675,13 +742,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
             setLocks(mergedLocks)
 
             // Auto-label and describe lock transactions (enables search + fee display after restore)
+            const lockAccountId = currentAccountId || 1
             for (const lock of mergedLocks) {
               try {
-                const existingLabels = await getTransactionLabels(lock.txid)
+                const existingLabels = await getTransactionLabels(lock.txid, lockAccountId)
                 if (!existingLabels.includes('lock')) {
-                  await updateTransactionLabels(lock.txid, [...existingLabels, 'lock'])
+                  await updateTransactionLabels(lock.txid, [...existingLabels, 'lock'], lockAccountId)
                 }
-                const dbTx = await getTransactionByTxid(lock.txid)
+                const dbTx = await getTransactionByTxid(lock.txid, lockAccountId)
                 if (dbTx) {
                   // After restore, calculateTxAmount may compute a wrong positive amount
                   // for lock txs (sees change as received, misses spent input).
@@ -700,7 +768,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
                       ...(needsAmountFix && {
                         amount: -lock.satoshis
                       })
-                    })
+                    }, lockAccountId)
                   }
                 }
               } catch (_e) {

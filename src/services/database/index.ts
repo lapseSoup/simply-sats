@@ -36,7 +36,6 @@ export {
   getAllUTXOs,
   repairUTXOs,
   clearUtxosForAccount,
-  reassignAccountData,
   toggleUtxoFrozen,
   getUtxoByOutpoint
 } from './utxoRepository'
@@ -56,7 +55,8 @@ export {
   getTopLabels,
   searchTransactions,
   searchTransactionsByLabels,
-  getPendingTransactionTxids
+  getPendingTransactionTxids,
+  deleteTransactionsForAccount
 } from './txRepository'
 
 // Lock operations

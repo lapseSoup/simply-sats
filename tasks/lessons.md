@@ -55,3 +55,24 @@
 **Problem:** `addUTXO()` upsert (when UTXO already exists by txid:vout) updated `spending_status`, `address`, `spendable`, etc. but NEVER updated `account_id`. UTXOs created before the accountId plumbing fix (commit 94cfa03) defaulted to `account_id=1` via `accountId || 1`. When sync re-discovered them on-chain and called `addUTXO(utxo, 23)`, the UPDATE left `account_id=1`. Then `getSpendableUTXOs(23)` with `WHERE account_id = 23` never found them.
 **Rule:** Any upsert function that receives an `accountId` parameter MUST update `account_id` in ALL update branches, not just the INSERT. When debugging balance issues, always check `account_id` in the raw DB — the account the user sees in the UI may differ from the account_id stored on UTXOs.
 **Fix:** Added `account_id = $N` to all three UPDATE branches in `addUTXO()`. Debug tip: `accountId=23` not `1` revealed that multi-account support created non-obvious ID values.
+
+## One-Time Migration Hacks Must Be Removed After Migration
+**Date:** 2025-02-11
+**Context:** `reassignAccountData()` in `utxoRepository.ts` was a one-time hack to migrate data created before `accountId` plumbing was fixed. It blindly runs `UPDATE utxos/transactions/locks/ordinal_cache SET account_id = $targetId WHERE account_id = 1`. It was called from `performSync()` on every sync for non-account-1 accounts.
+**Problem:** Once the `accountId` plumbing was fixed (all new data gets correct `account_id`), this function became actively harmful. Every time account 5 synced, it stole ALL of account 1's legitimate data (621 ordinals, 1 lock, all transactions) by reassigning `account_id=1` rows to `account_id=5`. This caused cross-account data leakage that persisted across multiple fix attempts.
+**Rule:** One-time data migration functions MUST be (1) guarded by a flag/setting so they only run once, or (2) removed immediately after the migration is complete. Never leave a blanket `UPDATE WHERE account_id = 1` running on every sync — it will steal legitimate account 1 data after the migration is done.
+**Fix:** Removed the `reassignAccountData` call from `performSync()`. The accountId plumbing is now correct throughout, so new data gets the right account_id from the start.
+
+## Fallback SQL Without account_id Causes Cross-Account Theft
+**Date:** 2025-02-11
+**Context:** Added a fallback UPDATE to `addTransaction()` that matched transactions without an `account_id` constraint, intended to handle legacy rows that had wrong account_ids.
+**Problem:** The fallback `UPDATE transactions SET ... WHERE txid = $2 AND (block_height IS NULL OR status = 'pending')` matched ANY pending transaction across ALL accounts. Lock/unlock transactions from account 1 got grabbed by account 5 during its sync.
+**Rule:** NEVER write fallback SQL queries that drop the `account_id` constraint. If a row can't be matched with the correct `account_id`, it belongs to a different account and must not be touched. Fix the root cause of wrong `account_id` values instead of broadening the WHERE clause.
+**Fix:** Removed the fallback UPDATE. The primary UPDATE with `account_id = $3` is sufficient now that the accountId plumbing is correct.
+
+## Optional accountId Parameters Cause Silent Cross-Account Leaks
+**Date:** 2025-02-11
+**Context:** `getTransactionByTxid(txid, accountId?)` and `getTransactionLabels(txid)` had optional/missing accountId parameters. When callers forgot to pass accountId, the functions returned data from ANY account.
+**Problem:** 6 call sites across sync.ts, WalletContext.tsx, and TransactionDetailModal.tsx called these functions without accountId. This meant: (1) transaction detail modals could show wrong account's data, (2) label updates could corrupt labels globally, (3) lock labeling in WalletContext fetched/modified transactions across accounts.
+**Rule:** Multi-account repository functions that query by txid MUST require accountId as a non-optional parameter. Use `accountId: number` not `accountId?: number`. The TypeScript compiler then forces every caller to provide it — no silent fallbacks. For functions where schema lacks account_id (like transaction_labels), use a JOIN through the parent table.
+**Fix:** Made `getTransactionByTxid(txid, accountId: number)` required. Added accountId params to `getTransactionLabels` and `updateTransactionLabels` with JOIN-based ownership validation. Fixed all 6 callers.

@@ -12,7 +12,7 @@ interface OnboardingFlowProps {
   onWalletCreated?: (mnemonic: string) => void
 }
 
-type OnboardingStep = 'welcome' | 'features' | 'action'
+type OnboardingStep = 'welcome' | 'features' | 'action' | 'password'
 
 const features = [
   {
@@ -77,7 +77,12 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
   const handlePrev = () => {
     setIsAnimating(true)
     setTimeout(() => {
-      if (step === 'action') {
+      if (step === 'password') {
+        setStep('action')
+        setPassword('')
+        setConfirmPassword('')
+        setPasswordError('')
+      } else if (step === 'action') {
         setStep('features')
         setFeatureIndex(features.length - 1)
       } else if (step === 'features') {
@@ -121,9 +126,11 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
     setCreating(false)
   }
 
-  // Calculate total progress (welcome + features + action)
+  // Calculate total progress (welcome + features + action/password)
   const totalSteps = 2 + features.length
-  const currentProgress = step === 'welcome' ? 0 : step === 'features' ? 1 + featureIndex : totalSteps - 1
+  const currentProgress = step === 'welcome' ? 0
+    : step === 'features' ? 1 + featureIndex
+    : totalSteps - 1 // action and password both show as final step
   const progressPercent = (currentProgress / (totalSteps - 1)) * 100
 
   return (
@@ -175,7 +182,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
           </div>
         )}
 
-        {/* Action Step */}
+        {/* Action Step — buttons only, no password */}
         {step === 'action' && (
           <div className="onboarding-step action">
             <div className="onboarding-logo small">
@@ -185,9 +192,42 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
             <p className="onboarding-action-subtitle">
               Choose an option to get started with Simply Sats
             </p>
+            <div className="onboarding-actions">
+              <button
+                className="btn btn-primary btn-large"
+                onClick={() => setStep('password')}
+              >
+                <Wallet size={16} strokeWidth={1.75} aria-hidden="true" />
+                Create New Wallet
+              </button>
+              <button
+                className="btn btn-secondary btn-large"
+                onClick={onRestoreClick}
+              >
+                <KeyRound size={16} strokeWidth={1.75} aria-hidden="true" />
+                Restore Existing Wallet
+              </button>
+            </div>
+            <p className="onboarding-disclaimer">
+              Your recovery phrase is the only way to restore your wallet.
+              Keep it safe and never share it.
+            </p>
+          </div>
+        )}
+
+        {/* Password Step — shown after clicking Create New Wallet */}
+        {step === 'password' && (
+          <div className="onboarding-step action">
+            <div className="onboarding-logo small">
+              <SimplySatsLogo size={32} />
+            </div>
+            <h2 className="onboarding-action-title">Create a Password</h2>
+            <p className="onboarding-action-subtitle">
+              This password encrypts your wallet on this device.
+            </p>
             <div className="onboarding-password-section">
               <div className="form-group">
-                <label className="form-label" htmlFor="create-password">Create Password</label>
+                <label className="form-label" htmlFor="create-password">Password</label>
                 <PasswordInput
                   id="create-password"
                   placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
@@ -223,9 +263,6 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
               {passwordError && (
                 <div className="form-error" role="alert">{passwordError}</div>
               )}
-              <div className="form-hint">
-                This password encrypts your wallet on this device.
-              </div>
             </div>
             <div className="onboarding-actions">
               <button
@@ -241,23 +278,11 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                 ) : (
                   <>
                     <Wallet size={16} strokeWidth={1.75} aria-hidden="true" />
-                    Create New Wallet
+                    Create Wallet
                   </>
                 )}
               </button>
-              <button
-                className="btn btn-secondary btn-large"
-                onClick={onRestoreClick}
-                disabled={creating}
-              >
-                <KeyRound size={16} strokeWidth={1.75} aria-hidden="true" />
-                Restore Existing Wallet
-              </button>
             </div>
-            <p className="onboarding-disclaimer">
-              Your recovery phrase is the only way to restore your wallet.
-              Keep it safe and never share it.
-            </p>
           </div>
         )}
       </div>
@@ -274,7 +299,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
           </button>
         )}
         <div className="nav-spacer" />
-        {step !== 'action' && (
+        {step !== 'action' && step !== 'password' && (
           <>
             <button
               className="btn btn-ghost"

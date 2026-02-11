@@ -298,6 +298,11 @@ export function SyncProvider({ children }: SyncProviderProps) {
         const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId || undefined)
         syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length, accountId: activeAccountId })
 
+        // Display DB ordinals immediately (before slow API calls)
+        if (dbOrdinals.length > 0) {
+          setOrdinals(dbOrdinals as Ordinal[])
+        }
+
         // Load cached content from DB for instant previews
         const cachedOrdinals = await getCachedOrdinals(activeAccountId || undefined)
         const newCache = new Map<string, OrdinalContentEntry>()

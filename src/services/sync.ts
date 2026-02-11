@@ -360,9 +360,9 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
     // Label lock/unlock transactions (idempotent — safe for both new and existing txs)
     if (txLabel && txDescription) {
       try {
-        const existingLabels = await getTransactionLabels(txRef.tx_hash)
+        const existingLabels = await getTransactionLabels(txRef.tx_hash, accountId)
         if (!existingLabels.includes(txLabel)) {
-          await updateTransactionLabels(txRef.tx_hash, [...existingLabels, txLabel])
+          await updateTransactionLabels(txRef.tx_hash, [...existingLabels, txLabel], accountId)
         }
         // Update description and fix amount if needed (handles existing txs from prior sync)
         await upsertTransaction({
