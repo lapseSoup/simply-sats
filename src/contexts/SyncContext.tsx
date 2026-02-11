@@ -165,14 +165,16 @@ export function SyncProvider({ children }: SyncProviderProps) {
           wallet.walletAddress,
           wallet.ordAddress,
           wallet.identityAddress,
-          activeAccountId || undefined
+          activeAccountId || undefined,
+          wallet.walletPubKey
         )
       } else {
         await syncWallet(
           wallet.walletAddress,
           wallet.ordAddress,
           wallet.identityAddress,
-          activeAccountId || undefined
+          activeAccountId || undefined,
+          wallet.walletPubKey
         )
       }
       syncLogger.info('Sync complete')

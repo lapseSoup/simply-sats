@@ -25,6 +25,28 @@ export async function addLock(lock: Omit<Lock, 'id'>, accountId?: number): Promi
 }
 
 /**
+ * Idempotently add a lock — skips if a lock already exists for this utxo_id.
+ * Safe to call repeatedly during sync/restore without causing duplicate errors.
+ */
+export async function addLockIfNotExists(
+  lock: Omit<Lock, 'id'>,
+  accountId?: number
+): Promise<number> {
+  const database = getDatabase()
+
+  const existing = await database.select<{ id: number }[]>(
+    'SELECT id FROM locks WHERE utxo_id = $1',
+    [lock.utxoId]
+  )
+
+  if (existing.length > 0) {
+    return existing[0]!.id
+  }
+
+  return addLock(lock, accountId)
+}
+
+/**
  * Get all locks with UTXO details, optionally scoped to an account
  */
 export async function getLocks(currentHeight: number, accountId?: number): Promise<(Lock & { utxo: UTXO })[]> {

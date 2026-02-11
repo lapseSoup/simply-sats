@@ -76,11 +76,12 @@ CREATE TABLE IF NOT EXISTS baskets (
     created_at INTEGER NOT NULL
 );
 
--- Locks (001 + 003 account_id)
+-- Locks (001 + 003 account_id + 014 lock_block)
 CREATE TABLE IF NOT EXISTS locks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     utxo_id INTEGER NOT NULL,
     unlock_block INTEGER NOT NULL,
+    lock_block INTEGER,
     ordinal_origin TEXT,
     created_at INTEGER NOT NULL,
     unlocked_at INTEGER,
@@ -288,6 +289,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_locks_unlock_block ON locks(unlock_block);
 CREATE INDEX IF NOT EXISTS idx_locks_account ON locks(account_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_locks_utxo_id ON locks(utxo_id);
 CREATE INDEX IF NOT EXISTS idx_sync_state_address ON sync_state(address);
 CREATE INDEX IF NOT EXISTS idx_sync_state_account ON sync_state(account_id);
 CREATE INDEX IF NOT EXISTS idx_derived_addresses_address ON derived_addresses(address);

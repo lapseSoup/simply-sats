@@ -25,7 +25,8 @@ import {
   getPendingTransactionTxids,
   type UTXO as DBUtxo,
   getTransactionLabels,
-  updateTransactionLabels
+  updateTransactionLabels,
+  addLockIfNotExists
 } from './database'
 import { RATE_LIMITS } from './config'
 import { getWocClient, type WocTransaction } from '../infrastructure/api/wocClient'
@@ -40,6 +41,7 @@ import {
 } from './cancellation'
 import { syncLogger } from './logger'
 import { parseTimelockScript } from './wallet/locks'
+import { publicKeyToHash } from '../domain/locks'
 
 // Re-export cancellation functions for external use
 export { cancelSync, startNewSync, isSyncInProgress }
@@ -291,7 +293,7 @@ async function calculateTxAmount(
  * @param limit - Maximum transactions to sync
  * @param accountId - Account ID for scoping data
  */
-async function syncTransactionHistory(address: string, limit: number = 50, accountId?: number, allWalletAddresses?: string[]): Promise<number> {
+async function syncTransactionHistory(address: string, limit: number = 50, accountId?: number, allWalletAddresses?: string[], walletPubKey?: string): Promise<number> {
   const wocClient = getWocClient()
 
   // Fetch transaction history
@@ -326,6 +328,44 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
           txDescription = `Locked ${lockSats.toLocaleString()} sats until block ${parsed.unlockBlock.toLocaleString()}`
           txLabel = 'lock'
           break
+        }
+      }
+
+      // Persist detected lock to database (idempotent — safe for re-runs)
+      if (txLabel === 'lock' && walletPubKey) {
+        try {
+          const expectedPkh = publicKeyToHash(walletPubKey)
+          for (let i = 0; i < txDetails.vout.length; i++) {
+            const lockVout = txDetails.vout[i]!
+            const parsed = parseTimelockScript(lockVout.scriptPubKey.hex)
+            if (!parsed || parsed.publicKeyHash !== expectedPkh) continue
+
+            const utxoId = await addUTXO({
+              txid: txRef.tx_hash,
+              vout: i,
+              satoshis: Math.round(lockVout.value * 1e8),
+              lockingScript: lockVout.scriptPubKey.hex,
+              basket: 'locks',
+              spendable: false,
+              createdAt: Date.now()
+            }, accountId)
+
+            await addLockIfNotExists({
+              utxoId,
+              unlockBlock: parsed.unlockBlock,
+              lockBlock: txRef.height > 0 ? txRef.height : undefined,
+              createdAt: Date.now()
+            }, accountId)
+
+            syncLogger.info('Persisted lock during sync', {
+              txid: txRef.tx_hash, vout: i, unlockBlock: parsed.unlockBlock
+            })
+            break
+          }
+        } catch (lockErr) {
+          syncLogger.warn('Failed to persist lock during sync (non-fatal)', {
+            txid: txRef.tx_hash, error: String(lockErr)
+          })
         }
       }
 
@@ -442,7 +482,8 @@ export async function syncWallet(
   walletAddress: string,
   ordAddress: string,
   identityAddress: string,
-  accountId?: number
+  accountId?: number,
+  walletPubKey?: string
 ): Promise<{ total: number; results: SyncResult[] } | undefined> {
   // Acquire sync lock to prevent database race conditions
   // This ensures only one sync runs at a time
@@ -499,7 +540,7 @@ export async function syncWallet(
     for (const addr of txHistoryAddresses) {
       if (token.isCancelled) break
       try {
-        await syncTransactionHistory(addr, 30, accountId, allWalletAddresses)
+        await syncTransactionHistory(addr, 30, accountId, allWalletAddresses, walletPubKey)
         // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
       } catch (e) {
@@ -655,12 +696,13 @@ export async function restoreFromBlockchain(
   walletAddress: string,
   ordAddress: string,
   identityAddress: string,
-  accountId?: number
+  accountId?: number,
+  walletPubKey?: string
 ): Promise<{ total: number; results: SyncResult[] }> {
   syncLogger.info('Starting wallet restore from blockchain...')
 
   // Perform full sync
-  const result = await syncWallet(walletAddress, ordAddress, identityAddress, accountId)
+  const result = await syncWallet(walletAddress, ordAddress, identityAddress, accountId, walletPubKey)
 
   syncLogger.info(`Restore complete: ${result?.total ?? 0} total satoshis found`)
   if (result) {

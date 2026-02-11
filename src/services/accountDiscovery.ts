@@ -53,7 +53,7 @@ export async function discoverAccounts(
     // This account has activity — create it and sync its transaction history
     try {
       const accountId = await createAccount(`Account ${i + 1}`, keys, password, true)
-      await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId)
+      await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
       found++
       accountLogger.info('Discovered and synced account', { accountIndex: i, accountId, name: `Account ${i + 1}` })
     } catch (err) {

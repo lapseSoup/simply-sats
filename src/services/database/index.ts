@@ -62,6 +62,7 @@ export {
 // Lock operations
 export {
   addLock,
+  addLockIfNotExists,
   getLocks,
   markLockUnlocked,
   markLockUnlockedByTxid,

@@ -570,8 +570,8 @@ async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
     if (!response.ok) {
       walletLogger.debug('Could not fetch tx', { txid, status: response.status })
       if (response.status === 429) {
-        walletLogger.debug('Rate limited, conservatively treating as potentially spent')
-        return false
+        walletLogger.debug('Rate limited on fallback, conservatively treating as unspent')
+        return true
       }
       return true
     }
@@ -586,7 +586,7 @@ async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
     return true
   } catch (error) {
     walletLogger.error('Error checking UTXO', error, { txid, vout })
-    return false
+    return true // Assume unspent on error — better to show a stale lock than lose one
   }
 }
 

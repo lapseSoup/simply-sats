@@ -34,6 +34,8 @@ import {
   upsertTransaction,
   updateLockBlock,
   getLocks as getLocksFromDB,
+  addUTXO,
+  addLockIfNotExists,
   deleteTransactionsForAccount,
   getAllTransactions,
   type Contact,
@@ -740,6 +742,29 @@ export function WalletProvider({ children }: WalletProviderProps) {
               }
             })
             setLocks(mergedLocks)
+
+            // Persist detected locks to DB so they survive app restarts
+            for (const lock of mergedLocks) {
+              try {
+                const utxoId = await addUTXO({
+                  txid: lock.txid,
+                  vout: lock.vout,
+                  satoshis: lock.satoshis,
+                  lockingScript: lock.lockingScript,
+                  basket: 'locks',
+                  spendable: false,
+                  createdAt: lock.createdAt
+                }, currentAccountId || undefined)
+                await addLockIfNotExists({
+                  utxoId,
+                  unlockBlock: lock.unlockBlock,
+                  lockBlock: lock.lockBlock,
+                  createdAt: lock.createdAt
+                }, currentAccountId || undefined)
+              } catch (_e) {
+                // Best-effort — sync already handles primary persistence
+              }
+            }
 
             // Auto-label and describe lock transactions (enables search + fee display after restore)
             const lockAccountId = currentAccountId || 1

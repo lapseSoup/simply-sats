@@ -211,7 +211,7 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         return;
     }
 
-    // Mark all 13 migrations as applied with their correct checksums
+    // Mark all 17 migrations as applied with their correct checksums
     // Checksums must match the SQL content exactly or tauri_plugin_sql will re-run them
     let migrations: Vec<(i64, &str, &str)> = vec![
         (1, "Initial database schema", "C00D163C545940AF1CB0E2DC1AABE4A8D66902CFDA8BAAE50DD8D091E4A4D22BD36389CC70B5F95308BB8C29A79C7211"),
@@ -227,6 +227,10 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         (11, "Reset transaction amounts v2 (API fallback)", "091FFB058C9D7CC3C3017E12E680785572255990136F597C67ED018D49260864D13CA09301A2DE1C458F9A887BB0009E"),
         (12, "Clean up cross-account data contamination", "2E64BE0485EE42B15E900B7DF79FF2A2873E525402C903311E6D2AD35F92DB9EE293248131A67B93D053E53C8C75DA56"),
         (13, "Fix transaction_labels foreign key constraint", "694B93F5E6AAB0489222653FF1C06CAECC6454FB9F2032FC2C220302C2144D051F6EC71C44F14C9612A8D9EAA19F08DF"),
+        (14, "Add lock_block column to locks", "C44274FCEBDD31E866567D3E9660557B61CE73EFA34824B608CF56C0E3521D33EB3E05A21804EB92C1B3BE7B98EAB8D1"),
+        (15, "Ordinal content cache table", "EC58F70A6A31995F53F341C063C363393D5EE4FD8317D45189D4117248CF7D9C7CDE7AD4BD175B57D9026A0EEF7CBC23"),
+        (16, "Derived address account scoping", "98C5F5AC4957A3456EC54191A1217DC3AE5C7A84CA2A9DF5D06BF064E431C76661E9C76B51AA2A484BB6050882376AA6"),
+        (17, "Unique index on locks utxo_id", "E6B4E1322FB95571CCB99D425494F23DD9851735057F6FEE64A358D1F1FC5DE15B4F62950F9B3E7C3867352B772EF71E"),
     ];
 
     for (version, description, checksum_hex) in migrations {
@@ -327,6 +331,30 @@ fn include_migrations() -> Vec<Migration> {
             version: 13,
             description: "Fix transaction_labels foreign key constraint",
             sql: include_str!("../migrations/013_fix_transaction_labels.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 14,
+            description: "Add lock_block column to locks",
+            sql: include_str!("../migrations/014_add_lock_block.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 15,
+            description: "Ordinal content cache table",
+            sql: include_str!("../migrations/015_ordinal_cache.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 16,
+            description: "Derived address account scoping",
+            sql: include_str!("../migrations/016_derived_address_account.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 17,
+            description: "Unique index on locks utxo_id",
+            sql: include_str!("../migrations/017_lock_utxo_unique.sql"),
             kind: MigrationKind::Up,
         },
     ]

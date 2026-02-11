@@ -94,7 +94,7 @@ describe('discoverAccounts', () => {
     // Verify sync was called for the discovered account
     expect(syncWallet).toHaveBeenCalledTimes(1)
     const keys = makeMockKeys(1)
-    expect(syncWallet).toHaveBeenCalledWith(keys.walletAddress, keys.ordAddress, keys.identityAddress, 1)
+    expect(syncWallet).toHaveBeenCalledWith(keys.walletAddress, keys.ordAddress, keys.identityAddress, 1, keys.walletPubKey)
   })
 
   it('discovers accounts with ordinals address activity', async () => {
