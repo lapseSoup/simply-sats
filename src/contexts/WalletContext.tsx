@@ -610,9 +610,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [wallet, autoLockMinutes, lockWallet])
 
   // Sync wallet with blockchain - delegates to SyncContext
-  const performSync = useCallback(async (isRestore = false, _forceReset = false) => {
+  const performSync = useCallback(async (isRestore = false, forceReset = false) => {
     if (!wallet) return
-    await syncPerformSync(wallet, activeAccountIdRef.current, isRestore)
+    await syncPerformSync(wallet, activeAccountIdRef.current, isRestore, forceReset)
   }, [wallet, syncPerformSync])
 
   // Fetch data from database and API - delegates to SyncContext with lock detection callback

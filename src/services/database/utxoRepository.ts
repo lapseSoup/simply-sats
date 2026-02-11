@@ -90,16 +90,15 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
     // Always clear spent_at and ensure spendable is correct when adding a UTXO
     // that was found on the blockchain
 
-    // Case 1: Existing is 'derived' - keep derived, but ensure it's spendable and not marked spent
+    // Case 1: Existing is 'derived' - keep derived, but ensure it's spendable and unspent
     if (ex.basket === 'derived') {
-      // Always ensure spendable=1 and spent_at=NULL for UTXOs found on chain
-      if (!ex.address || ex.spendable !== spendableValue || ex.spent_at !== null) {
-        dbLogger.debug(`[DB] Updating derived UTXO ${utxo.txid.slice(0,8)}:${utxo.vout} - clearing spent_at, spendable=${spendableValue}`)
-        await database.execute(
-          'UPDATE utxos SET address = COALESCE($1, address), spendable = $2, spent_at = NULL WHERE id = $3',
-          [utxo.address, spendableValue, ex.id]
-        )
-      }
+      // ALWAYS reset spending state when a UTXO is confirmed on-chain — it's definitively unspent
+      dbLogger.debug(`[DB] Updating derived UTXO ${utxo.txid.slice(0,8)}:${utxo.vout} - clearing spent/pending state, spendable=${spendableValue}`)
+      await database.execute(
+        `UPDATE utxos SET address = COALESCE($1, address), spendable = $2, spent_at = NULL,
+         spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL WHERE id = $3`,
+        [utxo.address, spendableValue, ex.id]
+      )
       return ex.id
     }
 
@@ -107,19 +106,20 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
     if (utxo.basket === 'derived') {
       dbLogger.debug(`[DB] Upgrading ${utxo.txid.slice(0,8)}:${utxo.vout} to derived, spendable=${spendableValue}`)
       await database.execute(
-        'UPDATE utxos SET basket = $1, address = $2, locking_script = $3, spendable = $4, spent_at = NULL WHERE id = $5',
+        `UPDATE utxos SET basket = $1, address = $2, locking_script = $3, spendable = $4, spent_at = NULL,
+         spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL WHERE id = $5`,
         ['derived', utxo.address, utxo.lockingScript, spendableValue, ex.id]
       )
       return ex.id
     }
 
-    // Case 3: Same or compatible basket - update address if needed, ensure spendable and not spent
-    if (!ex.address || ex.spendable !== spendableValue || ex.spent_at !== null) {
-      await database.execute(
-        'UPDATE utxos SET address = COALESCE($1, address), spendable = $2, spent_at = NULL WHERE id = $3',
-        [utxo.address, spendableValue, ex.id]
-      )
-    }
+    // Case 3: Same or compatible basket - ensure spendable and all spending state is clean
+    // ALWAYS reset spending state when a UTXO is confirmed on-chain — it's definitively unspent
+    await database.execute(
+      `UPDATE utxos SET address = COALESCE($1, address), spendable = $2, spent_at = NULL,
+       spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL WHERE id = $3`,
+      [utxo.address, spendableValue, ex.id]
+    )
     return ex.id
   }
 
@@ -524,4 +524,14 @@ export async function repairUTXOs(): Promise<number> {
   }
 
   return fixed
+}
+
+/**
+ * Clear all UTXOs for a specific account.
+ * Used by Reset & Resync to rebuild UTXO state from chain.
+ */
+export async function clearUtxosForAccount(accountId: number): Promise<void> {
+  const database = getDatabase()
+  dbLogger.info(`[DB] Clearing all UTXOs for account ${accountId}`)
+  await database.execute('DELETE FROM utxos WHERE account_id = $1', [accountId])
 }

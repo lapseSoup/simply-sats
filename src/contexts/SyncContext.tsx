@@ -75,7 +75,8 @@ interface SyncContextType {
   performSync: (
     wallet: WalletKeys,
     activeAccountId: number | null,
-    isRestore?: boolean
+    isRestore?: boolean,
+    forceReset?: boolean
   ) => Promise<void>
   fetchData: (
     wallet: WalletKeys,
@@ -146,10 +147,18 @@ export function SyncProvider({ children }: SyncProviderProps) {
   const performSync = useCallback(async (
     wallet: WalletKeys,
     activeAccountId: number | null,
-    isRestore = false
+    isRestore = false,
+    forceReset = false
   ) => {
     setSyncing(true)
     try {
+      // When forceReset, clear all UTXOs for this account so sync rebuilds from chain state
+      if (forceReset && activeAccountId) {
+        syncLogger.info('Force reset: clearing UTXOs for account', { accountId: activeAccountId })
+        const { clearUtxosForAccount } = await import('../services/database')
+        await clearUtxosForAccount(activeAccountId)
+      }
+
       syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })
       if (isRestore) {
         await restoreFromBlockchain(
