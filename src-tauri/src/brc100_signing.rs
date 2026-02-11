@@ -10,10 +10,15 @@
 use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::Aes256Gcm;
+use rand::rngs::OsRng;
 use rand::RngCore;
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use zeroize::Zeroize;
+
+/// Maximum input size (1 MB) to prevent DoS via large payloads
+const MAX_INPUT_SIZE: usize = 1_048_576;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -61,10 +66,14 @@ fn parse_pubkey(hex_str: &str) -> Result<PublicKey, String> {
 /// Low-S normalization is applied (standard for BSV).
 #[tauri::command]
 pub fn sign_message(wif: String, message: String) -> Result<String, String> {
+    if message.len() > MAX_INPUT_SIZE {
+        return Err("Message too large".into());
+    }
     let secp = Secp256k1::new();
-    let privkey_bytes = wif_to_privkey(&wif)?;
+    let mut privkey_bytes = wif_to_privkey(&wif)?;
     let sk =
         SecretKey::from_slice(&privkey_bytes).map_err(|e| format!("Invalid private key: {}", e))?;
+    privkey_bytes.zeroize();
 
     let msg_bytes = message.as_bytes();
     let hash = Sha256::digest(msg_bytes);
@@ -81,10 +90,14 @@ pub fn sign_message(wif: String, message: String) -> Result<String, String> {
 /// Matches @bsv/sdk PrivateKey.sign(data): SHA256(data) → ECDSA sign → DER hex.
 #[tauri::command]
 pub fn sign_data(wif: String, data: Vec<u8>) -> Result<String, String> {
+    if data.len() > MAX_INPUT_SIZE {
+        return Err("Data too large".into());
+    }
     let secp = Secp256k1::new();
-    let privkey_bytes = wif_to_privkey(&wif)?;
+    let mut privkey_bytes = wif_to_privkey(&wif)?;
     let sk =
         SecretKey::from_slice(&privkey_bytes).map_err(|e| format!("Invalid private key: {}", e))?;
+    privkey_bytes.zeroize();
 
     let hash = Sha256::digest(&data);
     let msg = Message::from_digest(hash.into());
@@ -155,19 +168,19 @@ fn ecdh_shared_key(
     secp: &Secp256k1<secp256k1::All>,
     sk: &SecretKey,
     remote_pk: &PublicKey,
-) -> [u8; 32] {
+) -> Result<[u8; 32], String> {
     // EC point multiplication: shared_point = remote_pk * sk
     let mut shared_point = *remote_pk;
     shared_point = shared_point
         .mul_tweak(secp, &secp256k1::Scalar::from(sk.clone()))
-        .expect("ECDH point multiplication failed");
+        .map_err(|e| format!("ECDH point multiplication failed: {}", e))?;
 
     // Compressed encoding of the shared point (33 bytes)
     let compressed = shared_point.serialize();
 
     // SHA256 of compressed point → 32-byte symmetric key
     let hash = Sha256::digest(compressed);
-    hash.into()
+    Ok(hash.into())
 }
 
 /// AES-256-GCM encrypt with 12-byte nonce (standard).
@@ -203,21 +216,26 @@ pub fn encrypt_ecies(
     recipient_pub_key: String,
     sender_pub_key: String,
 ) -> Result<EncryptResult, String> {
+    if plaintext.len() > MAX_INPUT_SIZE {
+        return Err("Plaintext too large".into());
+    }
     let secp = Secp256k1::new();
-    let privkey_bytes = wif_to_privkey(&wif)?;
+    let mut privkey_bytes = wif_to_privkey(&wif)?;
     let sk =
         SecretKey::from_slice(&privkey_bytes).map_err(|e| format!("Invalid private key: {}", e))?;
+    privkey_bytes.zeroize();
     let remote_pk = parse_pubkey(&recipient_pub_key)?;
 
     // Derive shared symmetric key via ECDH + SHA256
-    let shared_key = ecdh_shared_key(&secp, &sk, &remote_pk);
+    let mut shared_key = ecdh_shared_key(&secp, &sk, &remote_pk)?;
 
     // AES-256-GCM encrypt
     let cipher = Aes256Gcm::new(GenericArray::from_slice(&shared_key));
+    shared_key.zeroize();
 
     // Generate 12-byte nonce (standard AES-GCM)
     let mut nonce_bytes = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = GenericArray::from_slice(&nonce_bytes);
 
     let ciphertext = cipher
@@ -247,14 +265,18 @@ pub fn decrypt_ecies(
     ciphertext_bytes: Vec<u8>,
     sender_pub_key: String,
 ) -> Result<String, String> {
+    if ciphertext_bytes.len() > MAX_INPUT_SIZE {
+        return Err("Ciphertext too large".into());
+    }
     let secp = Secp256k1::new();
-    let privkey_bytes = wif_to_privkey(&wif)?;
+    let mut privkey_bytes = wif_to_privkey(&wif)?;
     let sk =
         SecretKey::from_slice(&privkey_bytes).map_err(|e| format!("Invalid private key: {}", e))?;
+    privkey_bytes.zeroize();
     let remote_pk = parse_pubkey(&sender_pub_key)?;
 
     // Derive shared symmetric key via ECDH + SHA256
-    let shared_key = ecdh_shared_key(&secp, &sk, &remote_pk);
+    let mut shared_key = ecdh_shared_key(&secp, &sk, &remote_pk)?;
 
     // Unpack wire format: first 12 bytes = nonce, next 20 = padding, rest = ciphertext+tag
     if ciphertext_bytes.len() < 32 + 16 {
@@ -262,9 +284,14 @@ pub fn decrypt_ecies(
     }
 
     let nonce_bytes = &ciphertext_bytes[..12];
+    let padding = &ciphertext_bytes[12..32];
+    if padding != [0u8; 20] {
+        return Err("Invalid ECIES wire format: non-zero padding (cross-platform ciphertext not supported)".into());
+    }
     let encrypted_data = &ciphertext_bytes[32..]; // skip 32-byte IV header
 
     let cipher = Aes256Gcm::new(GenericArray::from_slice(&shared_key));
+    shared_key.zeroize();
     let nonce = GenericArray::from_slice(nonce_bytes);
 
     let plaintext = cipher

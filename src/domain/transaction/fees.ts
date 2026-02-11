@@ -84,6 +84,9 @@ export function varintSize(n: number): number {
  * ```
  */
 export function feeFromBytes(bytes: number, feeRate: number): number {
+  if (!Number.isFinite(bytes) || bytes < 0 || !Number.isFinite(feeRate) || feeRate < 0) {
+    return 1 // Safe minimum fee
+  }
   return Math.max(1, Math.ceil(bytes * feeRate))
 }
 

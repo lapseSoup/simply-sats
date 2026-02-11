@@ -46,8 +46,8 @@ export function SendModal({ onClose }: SendModalProps) {
   const [showCoinControl, setShowCoinControl] = useState(false)
   const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
 
-  // Use fee rate from settings (convert from sats/KB to sats/byte)
-  const feeRate = feeRateKB / 1000
+  // Use fee rate from settings (convert from sats/KB to sats/byte), fallback to 0.05 sat/byte
+  const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : 0.05
 
   // Parse amount based on display mode (sats or BSV)
   const rawSendSats = displayInSats

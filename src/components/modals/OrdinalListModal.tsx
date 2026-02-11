@@ -12,7 +12,7 @@ import { OrdinalImage } from '../shared/OrdinalImage'
 import type { Ordinal } from '../../services/wallet'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { calculateTxFee } from '../../services/transactions'
+import { calculateTxFee } from '../../services/wallet/fees'
 
 interface OrdinalListModalProps {
   ordinal: Ordinal

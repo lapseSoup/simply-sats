@@ -48,9 +48,14 @@ const KNOWN_SENDER_PUBKEYS: string[] = [
   // Add known sender public keys here as they're discovered
 ]
 
-// Helper to encode string to Base64
+// Helper to encode string to Base64 (handles non-ASCII safely)
 function toBase64(str: string): string {
-  return btoa(str)
+  const bytes = new TextEncoder().encode(str)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!)
+  }
+  return btoa(binary)
 }
 
 // Generate date strings for past N days in ISO format (YYYY-MM-DD)

@@ -28,6 +28,7 @@ import {
 import { getDerivedAddresses, withTransaction, addUTXO } from '../database'
 import { walletLogger } from '../logger'
 import { resetInactivityTimer } from '../autoLock'
+import { acquireSyncLock } from '../cancellation'
 
 /**
  * Broadcast a signed transaction - try multiple endpoints for non-standard scripts.
@@ -219,7 +220,7 @@ async function recordTransactionResult(
   rawTx: string,
   numOutputs: number,
   txid: string,
-  pendingTxid: string,
+  _pendingTxid: string,
   description: string,
   labels: string[],
   amount: number,
@@ -234,10 +235,11 @@ async function recordTransactionResult(
       await recordSentTransaction(txid, rawTx, description, labels, amount, accountId)
       await confirmUtxosSpent(spentOutpoints, txid)
       // Track change UTXO atomically so balance stays correct until next sync
+      // Use final txid (from broadcaster), NOT pendingTxid — broadcaster may return different txid
       if (change > 0) {
         try {
           await addUTXO({
-            txid: pendingTxid,
+            txid,
             vout: numOutputs - 1,
             satoshis: change,
             lockingScript: p2pkhLockingScriptHex(changeAddress),
@@ -246,7 +248,7 @@ async function recordTransactionResult(
             spendable: true,
             createdAt: Date.now()
           }, accountId)
-          walletLogger.debug('Change UTXO tracked', { txid: pendingTxid, change })
+          walletLogger.debug('Change UTXO tracked', { txid, change })
         } catch (error) {
           // Non-fatal within transaction: change UTXO may already exist (duplicate key)
           walletLogger.warn('Failed to track change UTXO (will recover on next sync)', { error: String(error) })
@@ -272,20 +274,26 @@ export async function sendBSV(
 ): Promise<string> {
   validateSendRequest(toAddress, satoshis)
 
-  const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
-  if (!sufficient) {
-    throw new Error('Insufficient funds')
+  // Acquire sync lock to prevent concurrent sync from modifying UTXOs during send
+  const releaseLock = await acquireSyncLock()
+  try {
+    const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
+    if (!sufficient) {
+      throw new Error('Insufficient funds')
+    }
+
+    const feeRate = getFeeRate()
+    const built = await buildP2PKHTx({ wif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
+    const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
+
+    resetInactivityTimer()
+    const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+    resetInactivityTimer()
+    return txid
+  } finally {
+    releaseLock()
   }
-
-  const feeRate = getFeeRate()
-  const built = await buildP2PKHTx({ wif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
-  const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
-
-  resetInactivityTimer()
-  const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
-  await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
-  resetInactivityTimer()
-  return txid
 }
 
 /**
@@ -350,20 +358,26 @@ export async function sendBSVMultiKey(
 ): Promise<string> {
   validateSendRequest(toAddress, satoshis)
 
-  const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
-  if (!sufficient) {
-    throw new Error('Insufficient funds')
+  // Acquire sync lock to prevent concurrent sync from modifying UTXOs during send
+  const releaseLock = await acquireSyncLock()
+  try {
+    const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
+    if (!sufficient) {
+      throw new Error('Insufficient funds')
+    }
+
+    const feeRate = getFeeRate()
+    const built = await buildMultiKeyP2PKHTx({ changeWif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
+    const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
+
+    resetInactivityTimer()
+    const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+    resetInactivityTimer()
+    return txid
+  } finally {
+    releaseLock()
   }
-
-  const feeRate = getFeeRate()
-  const built = await buildMultiKeyP2PKHTx({ changeWif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
-  const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
-
-  resetInactivityTimer()
-  const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
-  await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
-  resetInactivityTimer()
-  return txid
 }
 
 /**
@@ -374,6 +388,9 @@ export async function consolidateUtxos(
   wif: string,
   utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>
 ): Promise<{ txid: string; outputSats: number; fee: number }> {
+  // Acquire sync lock to prevent concurrent sync from modifying UTXOs during consolidation
+  const releaseLock = await acquireSyncLock()
+  try {
   const feeRate = getFeeRate()
   const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })
   const { rawTx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
@@ -387,10 +404,10 @@ export async function consolidateUtxos(
     await withTransaction(async () => {
       await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
       await confirmUtxosSpent(spentOutpoints, txid)
-      // Track consolidated UTXO atomically
+      // Track consolidated UTXO atomically — use final txid from broadcaster
       try {
-        await addUTXO({ txid: pendingTxid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
-        walletLogger.debug('Consolidated UTXO tracked', { txid: pendingTxid, outputSats })
+        await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
+        walletLogger.debug('Consolidated UTXO tracked', { txid, outputSats })
       } catch (error) {
         walletLogger.warn('Failed to track consolidated UTXO (will recover on next sync)', { error: String(error) })
       }
@@ -402,4 +419,7 @@ export async function consolidateUtxos(
   }
 
   return { txid, outputSats, fee }
+  } finally {
+    releaseLock()
+  }
 }

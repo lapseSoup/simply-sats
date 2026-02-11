@@ -120,7 +120,10 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
     try {
       // Convert to smallest unit based on decimals
       const amountParsed = parseFloat(sendAmount)
-      const multiplier = Math.pow(10, selectedToken.token.decimals)
+      const decimals = Number.isFinite(selectedToken.token.decimals) && selectedToken.token.decimals >= 0
+        ? selectedToken.token.decimals
+        : 0
+      const multiplier = Math.pow(10, decimals)
       const amountInSmallestUnit = Math.floor(amountParsed * multiplier).toString()
 
       // Determine ticker - for BSV21, use contract ID

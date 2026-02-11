@@ -115,12 +115,16 @@ export function SyncProvider({ children }: SyncProviderProps) {
     locks: 0
   })
   const [balance, setBalance] = useState<number>(() => {
-    const cached = localStorage.getItem('simply_sats_cached_balance')
-    return cached ? parseInt(cached, 10) : 0
+    try {
+      const cached = localStorage.getItem('simply_sats_cached_balance')
+      return cached ? parseInt(cached, 10) : 0
+    } catch { return 0 }
   })
   const [ordBalance, setOrdBalance] = useState<number>(() => {
-    const cached = localStorage.getItem('simply_sats_cached_ord_balance')
-    return cached ? parseInt(cached, 10) : 0
+    try {
+      const cached = localStorage.getItem('simply_sats_cached_ord_balance')
+      return cached ? parseInt(cached, 10) : 0
+    } catch { return 0 }
   })
   const [syncError, setSyncError] = useState<string | null>(null)
   const [ordinalContentCache, setOrdinalContentCache] = useState<Map<string, OrdinalContentEntry>>(new Map())
@@ -185,7 +189,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
         const totalBalance = defaultBal + derivedBal
         setBalance(totalBalance)
-        localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
+        try { localStorage.setItem('simply_sats_cached_balance', String(totalBalance)) } catch { /* quota exceeded */ }
       } catch (e) {
         syncLogger.error('Failed to get basket balances', e)
       }
@@ -217,18 +221,23 @@ export function SyncProvider({ children }: SyncProviderProps) {
       ])
       const totalBalance = defaultBal + derivedBal
       setBalance(totalBalance)
-      localStorage.setItem('simply_sats_cached_balance', String(totalBalance))
+      try { localStorage.setItem('simply_sats_cached_balance', String(totalBalance)) } catch { /* quota exceeded */ }
       setSyncError(null)
 
-      // Get ordinals balance from API
+      // Get ordinals balance from API (use allSettled so one failure doesn't lose the other)
       try {
-        const [ordBal, idBal] = await Promise.all([
+        const results = await Promise.allSettled([
           getBalance(wallet.ordAddress),
           getBalance(wallet.identityAddress)
         ])
+        const ordBal = results[0].status === 'fulfilled' ? results[0].value : 0
+        const idBal = results[1].status === 'fulfilled' ? results[1].value : 0
+        if (results.some(r => r.status === 'rejected')) {
+          syncLogger.warn('Partial failure fetching ord balance')
+        }
         const totalOrdBalance = ordBal + idBal
         setOrdBalance(totalOrdBalance)
-        localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance))
+        try { localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance)) } catch { /* quota exceeded */ }
       } catch (_e) {
         // On API failure, keep current React state — don't overwrite with stale cache
         syncLogger.warn('Failed to fetch ord balance from API, keeping current value')

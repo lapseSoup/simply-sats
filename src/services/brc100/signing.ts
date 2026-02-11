@@ -16,9 +16,15 @@ function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
+const TAURI_COMMAND_TIMEOUT_MS = 30_000
+
 async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke<T>(cmd, args)
+  const result = invoke<T>(cmd, args)
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`Tauri command '${cmd}' timed out after ${TAURI_COMMAND_TIMEOUT_MS}ms`)), TAURI_COMMAND_TIMEOUT_MS)
+  )
+  return Promise.race([result, timeout])
 }
 
 /**
@@ -32,9 +38,7 @@ export async function signMessage(keys: WalletKeys, message: string): Promise<st
   const privateKey = PrivateKey.fromWif(keys.identityWif)
   const messageBytes = new TextEncoder().encode(message)
   const signature = privateKey.sign(Array.from(messageBytes))
-  // Convert signature to DER-encoded hex string
-  const sigDER = signature.toDER() as number[]
-  return Buffer.from(sigDER).toString('hex')
+  return signature.toDER('hex') as string
 }
 
 /**
@@ -63,9 +67,7 @@ export async function signData(
 
   const privateKey = PrivateKey.fromWif(wif)
   const signature = privateKey.sign(data)
-  // Convert signature to DER-encoded hex string
-  const sigDER = signature.toDER() as number[]
-  return Buffer.from(sigDER).toString('hex')
+  return signature.toDER('hex') as string
 }
 
 /**

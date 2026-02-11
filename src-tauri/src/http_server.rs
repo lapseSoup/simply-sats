@@ -349,12 +349,14 @@ fn extract_origin(request: &Request<Body>) -> Option<String> {
         .get("Origin")
         .or_else(|| request.headers().get("Referer"))
         .and_then(|v| v.to_str().ok())
-        .map(|s| {
-            // For Referer, extract just the origin part
-            if let Ok(url) = url::Url::parse(s) {
-                format!("{}://{}", url.scheme(), url.host_str().unwrap_or("unknown"))
-            } else {
-                s.to_string()
+        .and_then(|s| {
+            // Parse and reconstruct origin to prevent validation bypass
+            match url::Url::parse(s) {
+                Ok(url) => Some(format!("{}://{}", url.scheme(), url.host_str().unwrap_or("unknown"))),
+                Err(_) => {
+                    eprintln!("Rejected unparseable origin header: {}", s);
+                    None
+                }
             }
         })
 }
@@ -471,6 +473,12 @@ async fn handle_list_outputs(
     request: Request<Body>,
 ) -> Response {
     let origin = extract_origin(&request);
+    let nonce = extract_nonce(&request);
+
+    // Validate CSRF nonce — read endpoints can still leak sensitive data
+    if let Err(err) = validate_nonce(&state, nonce).await {
+        return err;
+    }
 
     let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
         Ok(bytes) => bytes,
@@ -570,6 +578,12 @@ async fn handle_list_locks(
     request: Request<Body>,
 ) -> Response {
     let origin = extract_origin(&request);
+    let nonce = extract_nonce(&request);
+
+    // Validate CSRF nonce — read endpoints can still leak sensitive data
+    if let Err(err) = validate_nonce(&state, nonce).await {
+        return err;
+    }
 
     let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
         Ok(bytes) => bytes,

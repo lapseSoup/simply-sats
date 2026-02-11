@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo, useCallback, type ReactNode } from 'react'
+import { useState, useEffect, useRef, memo, useCallback, useMemo, type ReactNode } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
 import { useWallet } from '../../contexts/WalletContext'
@@ -122,9 +122,12 @@ export function ActivityTab() {
   }, [])
 
   // Determine transaction type and icon
+  // Pre-compute lock txid Set for O(1) lookup (instead of O(n) locks.some per tx row)
+  const lockTxidSet = useMemo(() => new Set(locks.map(l => l.txid)), [locks])
+
   const getTxTypeAndIcon = useCallback((tx: { tx_hash: string; amount?: number }) => {
     // Check active locks from context + historical lock labels from DB
-    const isLockTx = locks.some(l => l.txid === tx.tx_hash) || lockTxids.has(tx.tx_hash)
+    const isLockTx = lockTxidSet.has(tx.tx_hash) || lockTxids.has(tx.tx_hash)
     const isUnlockTx = unlockTxids.has(tx.tx_hash)
 
     if (isLockTx) {
@@ -140,7 +143,7 @@ export function ActivityTab() {
       return { type: 'Sent', icon: <ArrowUpRight size={14} strokeWidth={1.75} /> }
     }
     return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }
-  }, [locks, lockTxids, unlockTxids])
+  }, [lockTxidSet, lockTxids, unlockTxids])
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {

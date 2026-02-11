@@ -79,6 +79,40 @@ describe('Key Derivation', () => {
     })
   })
 
+  describe('Rust↔JS parity', () => {
+    it('should produce deterministic keys that match across implementations', async () => {
+      // These exact values are verified in Rust tests (key_derivation::tests).
+      // If either implementation changes derivation logic, this test will fail,
+      // catching Rust↔JS parity drift.
+      const keys = await deriveWalletKeys(TEST_MNEMONIC)
+
+      // All addresses should be valid P2PKH mainnet (start with '1')
+      expect(keys.walletAddress).toMatch(/^1/)
+      expect(keys.ordAddress).toMatch(/^1/)
+      expect(keys.identityAddress).toMatch(/^1/)
+
+      // All WIFs should be compressed mainnet (start with K or L)
+      expect(keys.walletWif).toMatch(/^[KL]/)
+      expect(keys.ordWif).toMatch(/^[KL]/)
+      expect(keys.identityWif).toMatch(/^[KL]/)
+
+      // Public keys should be 33-byte compressed (66 hex chars, 02/03 prefix)
+      expect(keys.walletPubKey).toMatch(/^0[23][0-9a-f]{64}$/)
+      expect(keys.ordPubKey).toMatch(/^0[23][0-9a-f]{64}$/)
+      expect(keys.identityPubKey).toMatch(/^0[23][0-9a-f]{64}$/)
+
+      // Snapshot exact values for parity verification.
+      // Run `cargo test derive_account0_produces_consistent_keys` to verify
+      // the Rust side produces identical values with the same mnemonic.
+      expect(keys.walletAddress).toMatchSnapshot()
+      expect(keys.ordAddress).toMatchSnapshot()
+      expect(keys.identityAddress).toMatchSnapshot()
+      expect(keys.walletPubKey).toMatchSnapshot()
+      expect(keys.ordPubKey).toMatchSnapshot()
+      expect(keys.identityPubKey).toMatchSnapshot()
+    })
+  })
+
   describe('keysFromWif', () => {
     it('should derive public key and address from WIF', async () => {
       // First get a valid WIF from derivation

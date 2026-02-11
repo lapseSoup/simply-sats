@@ -125,8 +125,7 @@ describe('BRC-100 Service', () => {
         expect(typeof signMessage).toBe('function')
       })
 
-      it.skip('should sign a message with identity key', async () => {
-        // Skipped: signData has Buffer.from() type issue with Signature object
+      it('should sign a message with identity key', async () => {
         const message = 'Hello, World!'
         const signature = await signMessage(await getTestKeys(), message)
 
@@ -140,8 +139,7 @@ describe('BRC-100 Service', () => {
         expect(typeof signData).toBe('function')
       })
 
-      it.skip('should sign with identity key by default', async () => {
-        // Skipped: signData has Buffer.from() type issue with Signature object
+      it('should sign with identity key by default', async () => {
         const data = [1, 2, 3, 4, 5]
         const signature = await signData(await getTestKeys(), data)
 
@@ -149,8 +147,7 @@ describe('BRC-100 Service', () => {
         expect(typeof signature).toBe('string')
       })
 
-      it.skip('should sign with wallet key when specified', async () => {
-        // Skipped: signData has Buffer.from() type issue with Signature object
+      it('should sign with wallet key when specified', async () => {
         const data = [1, 2, 3, 4, 5]
         const sigIdentity = await signData(await getTestKeys(), data, 'identity')
         const sigWallet = await signData(await getTestKeys(), data, 'wallet')
@@ -158,16 +155,14 @@ describe('BRC-100 Service', () => {
         expect(sigIdentity).not.toBe(sigWallet)
       })
 
-      it.skip('should sign with ordinals key when specified', async () => {
-        // Skipped: signData has Buffer.from() type issue with Signature object
+      it('should sign with ordinals key when specified', async () => {
         const data = [1, 2, 3, 4, 5]
         const sigOrdinals = await signData(await getTestKeys(), data, 'ordinals')
 
         expect(sigOrdinals).toBeDefined()
       })
 
-      it.skip('should handle empty data array', async () => {
-        // Skipped: signData has Buffer.from() type issue with Signature object
+      it('should handle empty data array', async () => {
         const signature = await signData(await getTestKeys(), [])
 
         expect(signature).toBeDefined()

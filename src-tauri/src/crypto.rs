@@ -14,9 +14,11 @@ use aes_gcm::{
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use pbkdf2::pbkdf2_hmac;
+use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use zeroize::Zeroize;
 
 /// Current encryption format version (must match TypeScript CURRENT_VERSION)
 const CURRENT_VERSION: u32 = 1;
@@ -28,6 +30,8 @@ const SALT_LENGTH: usize = 16;
 const IV_LENGTH: usize = 12;
 /// AES key length in bytes (256-bit)
 const KEY_LENGTH: usize = 32;
+/// Maximum plaintext/ciphertext size (1 MB) to prevent DoS via large payloads
+const MAX_INPUT_SIZE: usize = 1_048_576;
 
 /// Encrypted data envelope — matches TypeScript `EncryptedData` interface exactly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,18 +58,21 @@ fn derive_key(password: &str, salt: &[u8], iterations: u32) -> [u8; KEY_LENGTH] 
 /// appended by AES-GCM, matching Web Crypto's default behavior).
 #[tauri::command]
 pub fn encrypt_data(plaintext: String, password: String) -> Result<EncryptedData, String> {
+    if plaintext.len() > MAX_INPUT_SIZE {
+        return Err("Input too large".into());
+    }
     // Generate random salt and IV
     let mut salt = [0u8; SALT_LENGTH];
     let mut iv = [0u8; IV_LENGTH];
-    let mut rng = rand::thread_rng();
-    rng.fill_bytes(&mut salt);
-    rng.fill_bytes(&mut iv);
+    OsRng.fill_bytes(&mut salt);
+    OsRng.fill_bytes(&mut iv);
 
     // Derive key
-    let key = derive_key(&password, &salt, PBKDF2_ITERATIONS);
+    let mut key = derive_key(&password, &salt, PBKDF2_ITERATIONS);
 
     // Encrypt with AES-256-GCM
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
+    key.zeroize(); // Zero key material after cipher init
     let nonce = Nonce::from_slice(&iv);
     let ciphertext = cipher
         .encrypt(nonce, plaintext.as_bytes())
@@ -86,6 +93,9 @@ pub fn decrypt_data(
     encrypted_data: EncryptedData,
     password: String,
 ) -> Result<String, String> {
+    if encrypted_data.ciphertext.len() > MAX_INPUT_SIZE * 2 {
+        return Err("Input too large".into());
+    }
     // Decode base64 fields
     let ciphertext = BASE64
         .decode(&encrypted_data.ciphertext)
@@ -102,10 +112,11 @@ pub fn decrypt_data(
     }
 
     // Derive key using stored iterations for forward compatibility
-    let key = derive_key(&password, &salt, encrypted_data.iterations);
+    let mut key = derive_key(&password, &salt, encrypted_data.iterations);
 
     // Decrypt with AES-256-GCM
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
+    key.zeroize(); // Zero key material after cipher init
     let nonce = Nonce::from_slice(&iv);
     let plaintext = cipher
         .decrypt(nonce, ciphertext.as_ref())

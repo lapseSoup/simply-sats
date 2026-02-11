@@ -279,7 +279,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [activeAccountId])
 
   // Unlock wallet with password (with rate limiting)
+  // Uses constant-time padding to prevent timing side-channel attacks
+  const UNLOCK_MIN_TIME_MS = 300
   const unlockWallet = useCallback(async (password: string): Promise<boolean> => {
+    const startTime = performance.now()
+
     // Check rate limit before attempting unlock
     const rateLimit = await checkUnlockRateLimit()
     if (rateLimit.isLimited) {
@@ -345,6 +349,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }
       walletLogger.error('Failed to unlock', e)
       return false
+    } finally {
+      // Pad response time to prevent timing side-channel
+      const elapsed = performance.now() - startTime
+      if (elapsed < UNLOCK_MIN_TIME_MS) {
+        await new Promise(resolve => setTimeout(resolve, UNLOCK_MIN_TIME_MS - elapsed))
+      }
     }
   }, [activeAccount, getKeysForAccount, refreshAccounts])
 
@@ -454,7 +464,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
             walletLogger.info(`Discovered ${found} derivative account(s) for imported wallet`)
           }
         })
-        .catch(() => {})
+        .catch((e) => {
+          walletLogger.error('Account discovery failed', e)
+        })
       return true
     }
     return false

@@ -35,9 +35,15 @@ function isTauri(): boolean {
 }
 
 // Lazy-load Tauri invoke to avoid import errors in browser/test environments
+const TAURI_COMMAND_TIMEOUT_MS = 30_000
+
 async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke<T>(cmd, args)
+  const result = invoke<T>(cmd, args)
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`Tauri command '${cmd}' timed out after ${TAURI_COMMAND_TIMEOUT_MS}ms`)), TAURI_COMMAND_TIMEOUT_MS)
+  )
+  return Promise.race([result, timeout])
 }
 
 // Use Web Crypto API (available in both browser and Tauri)
@@ -196,12 +202,14 @@ export async function decrypt(encryptedData: EncryptedData, password: string): P
     try {
       return await tauriInvoke<string>('decrypt_data', { encryptedData, password })
     } catch (e) {
-      // If the Rust command returned a decryption failure, propagate it (don't fallback)
       const msg = e instanceof Error ? e.message : String(e)
-      if (msg.includes('Decryption failed') || msg.includes('invalid password')) {
+      // Only fallback to Web Crypto on Tauri invocation errors (command not found, etc.)
+      // Re-throw all Rust-originated errors to avoid silent data corruption
+      if (msg.includes('Decryption failed') || msg.includes('invalid password') ||
+          msg.includes('Invalid') || msg.includes('too large')) {
         throw new Error('Decryption failed - invalid password or corrupted data')
       }
-      cryptoLogger.error('Rust decrypt_data failed, falling back to Web Crypto', { error: e })
+      cryptoLogger.error('Rust decrypt_data unavailable, falling back to Web Crypto', { error: e })
     }
   }
 

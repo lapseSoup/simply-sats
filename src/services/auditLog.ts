@@ -132,7 +132,7 @@ export async function getRecentAuditLogs(limit: number = 100): Promise<AuditLogE
 
     return rows.map(row => ({
       ...row,
-      details: row.details ? JSON.parse(row.details as unknown as string) : undefined
+      details: row.details ? JSON.parse(String(row.details)) : undefined
     }))
   } catch (error) {
     walletLogger.error('Failed to get audit logs', { error })
@@ -166,7 +166,7 @@ export async function getAuditLogsByAction(
 
     return rows.map(row => ({
       ...row,
-      details: row.details ? JSON.parse(row.details as unknown as string) : undefined
+      details: row.details ? JSON.parse(String(row.details)) : undefined
     }))
   } catch (error) {
     walletLogger.error('Failed to get audit logs by action', { action, error })
@@ -200,7 +200,7 @@ export async function getAuditLogsByAccount(
 
     return rows.map(row => ({
       ...row,
-      details: row.details ? JSON.parse(row.details as unknown as string) : undefined
+      details: row.details ? JSON.parse(String(row.details)) : undefined
     }))
   } catch (error) {
     walletLogger.error('Failed to get audit logs by account', { accountId, error })
@@ -227,7 +227,7 @@ export async function exportAuditLogs(): Promise<AuditLogEntry[]> {
 
     return rows.map(row => ({
       ...row,
-      details: row.details ? JSON.parse(row.details as unknown as string) : undefined
+      details: row.details ? JSON.parse(String(row.details)) : undefined
     }))
   } catch (error) {
     walletLogger.error('Failed to export audit logs', { error })
@@ -287,7 +287,7 @@ export async function getFailedUnlockAttempts(
 
     return rows.map(row => ({
       ...row,
-      details: row.details ? JSON.parse(row.details as unknown as string) : undefined
+      details: row.details ? JSON.parse(String(row.details)) : undefined
     }))
   } catch (error) {
     walletLogger.error('Failed to get failed unlock attempts', { error })

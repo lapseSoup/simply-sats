@@ -16,9 +16,15 @@ function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
+const TAURI_COMMAND_TIMEOUT_MS = 30_000
+
 async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke<T>(cmd, args)
+  const result = invoke<T>(cmd, args)
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`Tauri command '${cmd}' timed out after ${TAURI_COMMAND_TIMEOUT_MS}ms`)), TAURI_COMMAND_TIMEOUT_MS)
+  )
+  return Promise.race([result, timeout])
 }
 
 /**

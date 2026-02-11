@@ -12,7 +12,8 @@ import { OrdinalImage } from '../shared/OrdinalImage'
 import type { Ordinal } from '../../services/wallet'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { calculateTxFee } from '../../services/transactions'
+import { calculateTxFee } from '../../services/wallet/fees'
+import { isValidBSVAddress } from '../../domain/wallet/validation'
 
 interface OrdinalTransferModalProps {
   ordinal: Ordinal
@@ -42,8 +43,8 @@ export function OrdinalTransferModal({
       return
     }
 
-    // Basic address validation (BSV addresses start with 1 and are 25-34 chars)
-    if (!/^[13][a-km-zA-HJ-NP-Z1-9]{24,33}$/.test(toAddress.trim())) {
+    // Full Base58Check address validation with checksum verification
+    if (!isValidBSVAddress(toAddress.trim())) {
       setError('Invalid BSV address format')
       return
     }

@@ -11,14 +11,17 @@
 
 use bip32::XPrv;
 use bip39::Mnemonic;
+use rand::rngs::OsRng;
 use rand::RngCore;
 use ripemd::Ripemd160;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use zeroize::Zeroize;
 
 /// Matches the TypeScript `WalletKeys` interface exactly.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Debug intentionally omitted to prevent accidental secret logging.
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WalletKeys {
     pub mnemonic: String,
@@ -127,17 +130,19 @@ fn pubkey_to_address(secp: &Secp256k1<secp256k1::All>, sk: &SecretKey) -> String
 /// Derive a full KeyPair from a BIP-39 seed and BIP-32 path.
 fn derive_keypair(seed: &[u8], path: &str) -> Result<KeyPair, String> {
     let xprv = derive_xprv_from_seed(seed, path)?;
-    let privkey_bytes: [u8; 32] = xprv.to_bytes().into();
+    let mut privkey_bytes: [u8; 32] = xprv.to_bytes().into();
 
     let secp = Secp256k1::new();
     let sk = SecretKey::from_slice(&privkey_bytes)
         .map_err(|e| format!("Invalid secret key: {}", e))?;
 
-    Ok(KeyPair {
+    let result = KeyPair {
         wif: privkey_to_wif(&privkey_bytes),
         address: pubkey_to_address(&secp, &sk),
         pub_key: pubkey_hex(&secp, &sk),
-    })
+    };
+    privkey_bytes.zeroize();
+    Ok(result)
 }
 
 /// Parse and validate a mnemonic, returning the 64-byte BIP-39 seed.
@@ -179,7 +184,7 @@ pub fn derive_wallet_keys_for_account(
     account_index: u32,
 ) -> Result<WalletKeys, String> {
     let trimmed = mnemonic.trim();
-    let seed = mnemonic_to_seed(trimmed)?;
+    let mut seed = mnemonic_to_seed(trimmed)?;
 
     // Build paths
     let wallet_path = format!("m/44'/236'/{}'/1/0", account_index);
@@ -189,6 +194,7 @@ pub fn derive_wallet_keys_for_account(
     let wallet = derive_keypair(&seed, &wallet_path)?;
     let ord = derive_keypair(&seed, &ordinals_path)?;
     let identity = derive_keypair(&seed, &identity_path)?;
+    seed.zeroize();
 
     Ok(WalletKeys {
         mnemonic: trimmed.to_string(),
@@ -215,9 +221,10 @@ pub fn validate_mnemonic(mnemonic: String) -> Result<bool, String> {
 #[tauri::command]
 pub fn generate_mnemonic() -> Result<String, String> {
     let mut entropy = [0u8; 16]; // 128 bits = 12 words
-    rand::thread_rng().fill_bytes(&mut entropy);
+    OsRng.fill_bytes(&mut entropy);
     let mn = Mnemonic::from_entropy(&entropy)
         .map_err(|e| format!("Failed to generate mnemonic: {}", e))?;
+    entropy.zeroize();
     Ok(mn.to_string())
 }
 
@@ -236,7 +243,7 @@ pub fn keys_from_wif(wif: String) -> Result<serde_json::Value, String> {
         return Err("Invalid WIF prefix (expected 0x80 for mainnet)".into());
     }
 
-    let privkey_bytes: [u8; 32] = if decoded.len() == 34 && decoded[33] == 0x01 {
+    let mut privkey_bytes: [u8; 32] = if decoded.len() == 34 && decoded[33] == 0x01 {
         // Compressed WIF (most common)
         decoded[1..33]
             .try_into()
@@ -257,11 +264,13 @@ pub fn keys_from_wif(wif: String) -> Result<serde_json::Value, String> {
     let sk = SecretKey::from_slice(&privkey_bytes)
         .map_err(|e| format!("Invalid private key: {}", e))?;
 
-    Ok(serde_json::json!({
+    let result = serde_json::json!({
         "wif": privkey_to_wif(&privkey_bytes),
         "address": pubkey_to_address(&secp, &sk),
         "pubKey": pubkey_hex(&secp, &sk),
-    }))
+    });
+    privkey_bytes.zeroize();
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -360,5 +369,30 @@ mod tests {
         let mn24 = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
         let result = derive_wallet_keys(mn24.to_string());
         assert!(result.is_ok(), "24-word mnemonic should be supported: {:?}", result.err());
+    }
+
+    #[test]
+    fn empty_mnemonic_fails() {
+        let result = derive_wallet_keys("".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn invalid_wif_fails() {
+        let result = keys_from_wif("not-a-valid-wif".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn empty_wif_fails() {
+        let result = keys_from_wif("".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn wrong_wif_prefix_fails() {
+        // A WIF with testnet prefix (0xef) should be rejected
+        let result = keys_from_wif("cNYfRxoekNJFJx5H7jiEJFHk9XAZVxZDJHFTApRdzBBr1L8MwNRL".to_string());
+        assert!(result.is_err());
     }
 }

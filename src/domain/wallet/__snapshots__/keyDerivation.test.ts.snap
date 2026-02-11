@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Key Derivation > Rust↔JS parity > should produce deterministic keys that match across implementations 1`] = `"125GFsvYsDtyzGkExfsX8DoHuXu2UsMUEZ"`;
+
+exports[`Key Derivation > Rust↔JS parity > should produce deterministic keys that match across implementations 2`] = `"18pBoqRpHUYf9udsab5G9LT3vQUPxEyMFf"`;
+
+exports[`Key Derivation > Rust↔JS parity > should produce deterministic keys that match across implementations 3`] = `"16UeyS7TvuQDwYreJpZqZceEKWbjzt4JW4"`;
+
+exports[`Key Derivation > Rust↔JS parity > should produce deterministic keys that match across implementations 4`] = `"0358d3f1aa8bf1e2861b68868b14e0be3b70206c8fbc1bea45e1cc344b4cc5aab5"`;
+
+exports[`Key Derivation > Rust↔JS parity > should produce deterministic keys that match across implementations 5`] = `"02b57f7dd17dba181abc49d158f3921a66ea5a4ca8d106114cb51583549c12ef41"`;
+
+exports[`Key Derivation > Rust↔JS parity > should produce deterministic keys that match across implementations 6`] = `"02140e1442a7a138870b36f84e41c07bb84068b3260542a0e5b7efd32f068d29e6"`;

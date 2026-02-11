@@ -4474,6 +4474,7 @@ dependencies = [
  "tokio",
  "tower-http 0.5.2",
  "url",
+ "zeroize",
 ]
 
 [[package]]

@@ -18,7 +18,7 @@ export interface PasswordValidationResult {
 export const MIN_PASSWORD_LENGTH = 14
 export const RECOMMENDED_PASSWORD_LENGTH = 16
 
-// Common weak passwords to reject (subset for illustration)
+// Common weak passwords to reject (keyboard patterns, common phrases, dictionary words)
 const COMMON_PASSWORDS = new Set([
   'password123456',
   '123456789012345',
@@ -33,6 +33,26 @@ const COMMON_PASSWORDS = new Set([
   'password1234567',
   'changeme123456',
   'trustno1234567',
+  // Keyboard walk patterns
+  'qazwsxedcrfvtg',
+  'qazwsxedcrfvtgy',
+  'zxcvbnmasdfghj',
+  '1qaz2wsx3edc4r',
+  'poiuytrewqlkjh',
+  'asdfjkl;asdfjk',
+  'mnbvcxzlkjhgfd',
+  // Extended common passwords
+  'abcdefghijklmn',
+  'abc12345678901',
+  'bitcoinpassword',
+  'satoshinakamoto',
+  'blockchain12345',
+  'cryptocurrency1',
+  'p@ssword1234567',
+  'P@ssw0rd1234567',
+  'supersecret1234',
+  'administrator12',
+  'rootpassword123',
 ])
 
 /**

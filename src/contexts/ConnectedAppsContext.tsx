@@ -7,7 +7,7 @@
  * @module contexts/ConnectedAppsContext
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { isValidOrigin, normalizeOrigin, validateOriginWithReason } from '../utils/validation'
 import { secureGetJSON, secureSetJSON, migrateToSecureStorage } from '../services/secureStorage'
 import { walletLogger } from '../services/logger'
@@ -187,7 +187,7 @@ export function ConnectedAppsProvider({ children }: ConnectedAppsProviderProps) 
     }
   }, [connectedApps])
 
-  const value: ConnectedAppsContextType = {
+  const value: ConnectedAppsContextType = useMemo(() => ({
     // State
     connectedApps,
     trustedOrigins,
@@ -200,7 +200,7 @@ export function ConnectedAppsProvider({ children }: ConnectedAppsProviderProps) 
     connectApp,
     disconnectApp,
     isAppConnected
-  }
+  }), [connectedApps, trustedOrigins, loading, addTrustedOrigin, removeTrustedOrigin, isTrustedOrigin, connectApp, disconnectApp, isAppConnected])
 
   return (
     <ConnectedAppsContext.Provider value={value}>
