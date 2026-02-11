@@ -4,9 +4,14 @@
  * After restoring a wallet from mnemonic, discovers additional accounts
  * that have on-chain activity by incrementally deriving account keys and
  * checking addresses for transaction history.
+ *
+ * Uses two-phase approach: lightweight discovery first (just address checks),
+ * then heavy sync after. This prevents syncWallet API calls from rate-limiting
+ * subsequent discovery checks.
  */
 
 import { deriveWalletKeysForAccount } from '../domain/wallet'
+import type { WalletKeys } from '../domain/types'
 import { createWocClient } from '../infrastructure/api/wocClient'
 import { createAccount, switchAccount } from './accounts'
 import { syncWallet } from './sync'
@@ -32,7 +37,10 @@ export async function discoverAccounts(
   restoreActiveAccountId?: number
 ): Promise<number> {
   const wocClient = createWocClient()
-  let found = 0
+
+  // Phase 1: Lightweight discovery (just check addresses for activity)
+  // No syncing here — avoids rate limiting between checks
+  const discovered: { index: number; keys: WalletKeys }[] = []
 
   for (let i = 1; i <= MAX_ACCOUNT_DISCOVERY; i++) {
     const keys = await deriveWalletKeysForAccount(mnemonic, i)
@@ -46,18 +54,41 @@ export async function discoverAccounts(
     const walletHasActivity = walletResult.success && walletResult.data.length > 0
     const ordHasActivity = ordResult.success && ordResult.data.length > 0
 
-    if (!walletHasActivity && !ordHasActivity) {
-      break // Gap found — stop discovery
+    if (walletHasActivity || ordHasActivity) {
+      discovered.push({ index: i, keys })
+      continue
     }
 
-    // This account has activity — create it and sync its transaction history
+    // Only gap-detect on successful empty responses, not API failures
+    if (walletResult.success && ordResult.success) {
+      break // True gap — both checked successfully with no activity
+    }
+
+    // API failure (likely rate limiting) — wait and retry once
+    accountLogger.warn('API failure during discovery, retrying after delay', { accountIndex: i })
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    const [retryW, retryO] = await Promise.all([
+      wocClient.getTransactionHistorySafe(keys.walletAddress),
+      wocClient.getTransactionHistorySafe(keys.ordAddress)
+    ])
+
+    if ((retryW.success && retryW.data.length > 0) || (retryO.success && retryO.data.length > 0)) {
+      discovered.push({ index: i, keys })
+    } else {
+      break
+    }
+  }
+
+  // Phase 2: Create accounts and sync (heavy API calls isolated from discovery)
+  let found = 0
+  for (const { index, keys } of discovered) {
     try {
-      const accountId = await createAccount(`Account ${i + 1}`, keys, password, true)
+      const accountId = await createAccount(`Account ${index + 1}`, keys, password, true)
       await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
       found++
-      accountLogger.info('Discovered and synced account', { accountIndex: i, accountId, name: `Account ${i + 1}` })
+      accountLogger.info('Discovered and synced account', { accountIndex: index, accountId, name: `Account ${index + 1}` })
     } catch (err) {
-      accountLogger.error('Failed to create discovered account', err, { accountIndex: i })
+      accountLogger.error('Failed to create discovered account', err, { accountIndex: index })
       break // Don't continue if DB write fails
     }
   }

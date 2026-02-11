@@ -132,21 +132,48 @@ describe('discoverAccounts', () => {
     expect(createAccount).toHaveBeenCalledWith('Account 3', makeMockKeys(2), 'password', true)
   })
 
-  it('treats API errors as no activity (stops discovery)', async () => {
+  it('retries on API failure and stops only if retry also fails', async () => {
+    // First attempt: API failure
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValueOnce({ success: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } })
+      .mockResolvedValueOnce({ success: true, data: [] })
+      // Retry after delay: also no activity
+      .mockResolvedValueOnce({ success: true, data: [] })
       .mockResolvedValueOnce({ success: true, data: [] })
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(0)
     expect(createAccount).not.toHaveBeenCalled()
+    // Should have checked 4 times (2 initial + 2 retry)
+    expect(mockWocClient.getTransactionHistorySafe).toHaveBeenCalledTimes(4)
+  })
+
+  it('discovers account on retry after initial API failure', async () => {
+    // First attempt: API failure
+    mockWocClient.getTransactionHistorySafe
+      .mockResolvedValueOnce({ success: false, error: { code: 'RATE_LIMITED', message: '429' } })
+      .mockResolvedValueOnce({ success: false, error: { code: 'RATE_LIMITED', message: '429' } })
+      // Retry: has activity
+      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'abc', height: 850000 }] })
+      .mockResolvedValueOnce({ success: true, data: [] })
+      // Account 2: no activity (gap)
+      .mockResolvedValueOnce({ success: true, data: [] })
+      .mockResolvedValueOnce({ success: true, data: [] })
+
+    const found = await discoverAccounts('test mnemonic', 'password')
+
+    expect(found).toBe(1)
+    expect(createAccount).toHaveBeenCalledTimes(1)
   })
 
   it('stops on createAccount failure', async () => {
     // Account 1: has activity
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'a', height: 1 }] })
+      .mockResolvedValueOnce({ success: true, data: [] })
+      // Account 2: no activity (gap — ends phase 1)
+      .mockResolvedValueOnce({ success: true, data: [] })
       .mockResolvedValueOnce({ success: true, data: [] })
 
     vi.mocked(createAccount).mockRejectedValueOnce(new Error('DB write failed'))
