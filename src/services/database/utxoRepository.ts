@@ -85,6 +85,8 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
   if (existing.length > 0) {
     const ex = existing[0]!
     const spendableValue = utxo.spendable ? 1 : 0
+    // Always update account_id when caller provides one — fixes UTXOs stuck under wrong account
+    const accId = accountId || 1
 
     // CRITICAL: If we're re-syncing a UTXO that exists on-chain, it's NOT spent!
     // Always clear spent_at and ensure spendable is correct when adding a UTXO
@@ -93,22 +95,24 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
     // Case 1: Existing is 'derived' - keep derived, but ensure it's spendable and unspent
     if (ex.basket === 'derived') {
       // ALWAYS reset spending state when a UTXO is confirmed on-chain — it's definitively unspent
-      dbLogger.debug(`[DB] Updating derived UTXO ${utxo.txid.slice(0,8)}:${utxo.vout} - clearing spent/pending state, spendable=${spendableValue}`)
+      dbLogger.debug(`[DB] Updating derived UTXO ${utxo.txid.slice(0,8)}:${utxo.vout} - clearing spent/pending state, spendable=${spendableValue}, account=${accId}`)
       await database.execute(
         `UPDATE utxos SET address = COALESCE($1, address), spendable = $2, spent_at = NULL,
-         spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL WHERE id = $3`,
-        [utxo.address, spendableValue, ex.id]
+         spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL,
+         account_id = $3 WHERE id = $4`,
+        [utxo.address, spendableValue, accId, ex.id]
       )
       return ex.id
     }
 
     // Case 2: New is 'derived', existing is not - UPGRADE to derived
     if (utxo.basket === 'derived') {
-      dbLogger.debug(`[DB] Upgrading ${utxo.txid.slice(0,8)}:${utxo.vout} to derived, spendable=${spendableValue}`)
+      dbLogger.debug(`[DB] Upgrading ${utxo.txid.slice(0,8)}:${utxo.vout} to derived, spendable=${spendableValue}, account=${accId}`)
       await database.execute(
         `UPDATE utxos SET basket = $1, address = $2, locking_script = $3, spendable = $4, spent_at = NULL,
-         spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL WHERE id = $5`,
-        ['derived', utxo.address, utxo.lockingScript, spendableValue, ex.id]
+         spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL,
+         account_id = $5 WHERE id = $6`,
+        ['derived', utxo.address, utxo.lockingScript, spendableValue, accId, ex.id]
       )
       return ex.id
     }
@@ -117,8 +121,9 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
     // ALWAYS reset spending state when a UTXO is confirmed on-chain — it's definitively unspent
     await database.execute(
       `UPDATE utxos SET address = COALESCE($1, address), spendable = $2, spent_at = NULL,
-       spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL WHERE id = $3`,
-      [utxo.address, spendableValue, ex.id]
+       spending_status = 'unspent', pending_spending_txid = NULL, pending_since = NULL,
+       account_id = $3 WHERE id = $4`,
+      [utxo.address, spendableValue, accId, ex.id]
     )
     return ex.id
   }
