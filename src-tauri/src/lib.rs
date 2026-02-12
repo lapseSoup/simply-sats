@@ -436,11 +436,28 @@ async fn get_session_token(
 }
 
 // Command to generate a CSRF nonce for state-changing operations
+// Rate-limited: rejects if outstanding (unexpired) nonces exceed 80% of pool capacity
 #[tauri::command]
 async fn generate_csrf_nonce(
     session_state: tauri::State<'_, SharedSessionState>,
 ) -> Result<String, String> {
-    let session = session_state.lock().await;
+    let mut session = session_state.lock().await;
+    // Clean up expired nonces before checking capacity
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let expired: Vec<String> = session.nonce_timestamps.iter()
+        .filter(|(_, ts)| now > *ts + NONCE_EXPIRY_SECS)
+        .map(|(n, _)| n.clone())
+        .collect();
+    for nonce in &expired {
+        session.used_nonces.remove(nonce);
+    }
+    session.nonce_timestamps.retain(|(_, ts)| now <= *ts + NONCE_EXPIRY_SECS);
+    if session.nonce_timestamps.len() >= MAX_USED_NONCES * 4 / 5 {
+        return Err("Too many outstanding nonces — try again later".into());
+    }
     Ok(session.generate_nonce())
 }
 

@@ -56,9 +56,12 @@ export function SendModal({ onClose }: SendModalProps) {
   const sendSats = Number.isNaN(rawSendSats) ? 0 : rawSendSats
   const availableSats = balance
 
+  // Use coin-controlled UTXOs when selected, otherwise full UTXO set
+  const effectiveUtxos = selectedUtxos ?? utxos
+
   // Calculate number of inputs (fallback if no UTXOs available yet)
-  const numInputs = utxos.length > 0 ? utxos.length : Math.max(1, Math.ceil(balance / 10000))
-  const totalUtxoValue = utxos.length > 0 ? utxos.reduce((sum, u) => sum + u.satoshis, 0) : balance
+  const numInputs = effectiveUtxos.length > 0 ? effectiveUtxos.length : Math.max(1, Math.ceil(balance / 10000))
+  const totalUtxoValue = effectiveUtxos.length > 0 ? effectiveUtxos.reduce((sum, u) => sum + u.satoshis, 0) : balance
 
   // Calculate fee using domain layer functions with fee rate from settings
   const feeCalc = useMemo(() => {
@@ -70,8 +73,8 @@ export function SendModal({ onClose }: SendModalProps) {
     let calcInputCount = 0
     let calcOutputCount = 0
 
-    if (utxos.length > 0) {
-      const feeInfo = calculateExactFee(sendSats, utxos, feeRate)
+    if (effectiveUtxos.length > 0) {
+      const feeInfo = calculateExactFee(sendSats, effectiveUtxos, feeRate)
       calcFee = feeInfo.fee
       calcInputCount = feeInfo.inputCount
       calcOutputCount = feeInfo.outputCount
@@ -87,17 +90,17 @@ export function SendModal({ onClose }: SendModalProps) {
     const calcTxSize = TX_OVERHEAD + (calcInputCount * P2PKH_INPUT_SIZE) + (calcOutputCount * P2PKH_OUTPUT_SIZE)
 
     return { fee: calcFee, inputCount: calcInputCount, outputCount: calcOutputCount, txSize: calcTxSize }
-  }, [sendSats, utxos, feeRate, totalUtxoValue, numInputs])
+  }, [sendSats, effectiveUtxos, feeRate, totalUtxoValue, numInputs])
 
   const { fee, inputCount, outputCount, txSize } = feeCalc
 
   // Calculate max sendable using domain layer function with current fee rate
   const maxSendResult = useMemo(() => {
-    if (utxos.length > 0) {
-      return calculateMaxSend(utxos, feeRate)
+    if (effectiveUtxos.length > 0) {
+      return calculateMaxSend(effectiveUtxos, feeRate)
     }
     return { maxSats: Math.max(0, totalUtxoValue - calculateTxFee(numInputs, 1, feeRate)), fee: 0, numInputs }
-  }, [utxos, feeRate, totalUtxoValue, numInputs])
+  }, [effectiveUtxos, feeRate, totalUtxoValue, numInputs])
 
   const maxSendSats = maxSendResult.maxSats
 

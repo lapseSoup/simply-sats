@@ -13,7 +13,7 @@
 
 ## Fix Status (2026-02-11)
 
-**39/51 findings fixed.** Verification: 0 type errors, 0 lint errors, 821/821 tests passing, Rust cargo check clean.
+**42/51 findings fixed.** Verification: 0 type errors, 0 lint errors, 821/821 tests passing, Rust cargo check clean.
 
 ### Sprint 1 — Transaction Safety (7 fixed)
 - **B1** FIXED: Rust `calculate_change_and_fee` returns `Result`, uses `checked_sub`
@@ -63,20 +63,28 @@
 - Cross-account guards in `SyncContext`: require valid `activeAccountId` before data operations
 - Unlock transaction history marks source locks as unlocked in DB
 
+### Sprint 6 — Final Fixes (3 fixed)
+- **S12** FIXED: Nonce generation rate-limited — rejects when outstanding nonces exceed 80% capacity
+- **A3** FIXED: SendModal fee calculation now uses coin-controlled UTXOs when selected
+- **Q3** FIXED: UTXO tag insertion logs non-duplicate DB errors instead of silently ignoring
+
 ### Investigation Notes
 - **S9** NOT A BUG: `MNEMONIC_AUTO_CLEAR_MS` is used in `App.tsx` (auto-clears mnemonic from backup UI)
 - **S3** ALREADY OK: New passwords use `DEFAULT_PASSWORD_REQUIREMENTS` (16+ chars, complexity). Legacy is for backward compat only.
 - **B10** OK: Consolidation `vout: 0` is correct — consolidation produces exactly one P2PKH output
 - **B16** OK: Block height comparison `<` is correct — unlock at block N means "at or after block N"
+- **A2** OK: Tauri command timeout IS handled — sync lock released in `finally` block at call site
+- **Q1** OK: SQL label search uses generated aliases, not user input — safe against injection
+- **Q2** OK: Missing FK on `transaction_labels` was intentionally removed in migration 013
 
-### Deferred (12 remaining)
-- **S5** (rate limiter encryption): Requires keychain integration. Medium risk — attacker needs file system access.
+### Deferred (9 remaining)
+- **S5** (rate limiter encryption): Requires keychain integration. Medium risk — attacker needs file system access. PBKDF2 100k iterations is the primary defense.
 - **S7** (keys in React state): Major refactor to move all key ops to Rust. Tracked for v0.2.0.
-- **S10** (CryptoKey refresh): Low priority — key is derived per-session.
-- **S12** (CSRF nonce rate limit): Already covered by global rate limiter.
-- **B13** (calculateTxAmount locking scripts): Complex refactor of tx amount calculation.
-- **A1-A7**: Architecture items requiring significant refactoring — tracked in `tasks/todo.md`.
-- **Q1-Q4**: Quality items — tracked in `tasks/todo.md`.
+- **S10** (CryptoKey refresh): Low priority — key is in-memory only, regenerated each app launch.
+- **B13** (calculateTxAmount locking scripts): Works correctly, uses less readable pattern. Refactor for clarity tracked.
+- **A1** (fee rate consistency): Would require passing fee rate as parameter through all layers.
+- **A4-A7**: Architecture items (send mutex, frontend trust, session isolation, structured Rust logging).
+- **Q4** (API versioning): Would break existing SDK clients — planned for v2.
 
 ---
 

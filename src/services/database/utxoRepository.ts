@@ -147,10 +147,17 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
   // Add tags if provided
   if (utxo.tags && utxo.tags.length > 0) {
     for (const tag of utxo.tags) {
-      await database.execute(
-        'INSERT OR IGNORE INTO utxo_tags (utxo_id, tag) VALUES ($1, $2)',
-        [utxoId, tag]
-      )
+      try {
+        await database.execute(
+          'INSERT INTO utxo_tags (utxo_id, tag) VALUES ($1, $2)',
+          [utxoId, tag]
+        )
+      } catch (error) {
+        const msg = String(error)
+        if (!msg.includes('UNIQUE') && !msg.includes('duplicate')) {
+          dbLogger.warn('[DB] Failed to insert UTXO tag', { utxoId, tag, error: msg })
+        }
+      }
     }
   }
 
