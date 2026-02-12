@@ -11,6 +11,7 @@ mod brc100_signing;
 mod crypto;
 mod http_server;
 mod key_derivation;
+mod key_store;
 mod rate_limiter;
 mod secure_storage;
 mod transaction;
@@ -42,6 +43,7 @@ pub struct SessionState {
     pub csrf_secret: String,
     pub used_nonces: HashSet<String>,
     pub nonce_timestamps: Vec<(String, u64)>,
+    pub account_id: Option<u32>,
 }
 
 impl SessionState {
@@ -73,6 +75,7 @@ impl SessionState {
             csrf_secret,
             used_nonces: HashSet::new(),
             nonce_timestamps: Vec::new(),
+            account_id: None,
         }
     }
 
@@ -213,14 +216,14 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
 
     // Ensure the directory exists
     if let Err(e) = std::fs::create_dir_all(app_data_dir) {
-        eprintln!("Failed to create app data dir: {}", e);
+        log::error!("Failed to create app data dir: {}", e);
         return;
     }
 
     let conn = match rusqlite::Connection::open(&db_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Failed to create database: {}", e);
+            log::error!("Failed to create database: {}", e);
             return;
         }
     };
@@ -228,7 +231,7 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
     // Execute the consolidated schema
     let schema = include_str!("../migrations/fresh_install_schema.sql");
     if let Err(e) = conn.execute_batch(schema) {
-        eprintln!("Failed to execute schema: {}", e);
+        log::error!("Failed to execute schema: {}", e);
         // Clean up the broken DB file
         let _ = std::fs::remove_file(&db_path);
         return;
@@ -262,7 +265,7 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
             "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (?1, ?2, 1, ?3, 0)",
             rusqlite::params![version, description, checksum],
         ) {
-            eprintln!("Failed to insert migration {}: {}", version, e);
+            log::error!("Failed to insert migration {}: {}", version, e);
         }
     }
 }
@@ -435,6 +438,22 @@ async fn get_session_token(
     Ok(session.token.clone())
 }
 
+// Command to rotate session for a specific account (call on account switch)
+// Rotates token, clears all nonces, sets account_id
+#[tauri::command]
+async fn rotate_session_for_account(
+    session_state: tauri::State<'_, SharedSessionState>,
+    account_id: u32,
+) -> Result<String, String> {
+    let mut session = session_state.lock().await;
+    let new_token = session.rotate_token();
+    session.used_nonces.clear();
+    session.nonce_timestamps.clear();
+    session.account_id = Some(account_id);
+    log::info!("Session rotated for account {}", account_id);
+    Ok(new_token)
+}
+
 // Command to generate a CSRF nonce for state-changing operations
 // Rate-limited: rejects if outstanding (unexpired) nonces exceed 80% of pool capacity
 #[tauri::command]
@@ -463,6 +482,10 @@ async fn generate_csrf_nonce(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize structured logging (RUST_LOG env var controls level, default: info)
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .init();
+
     // Pre-initialize database for fresh installs BEFORE Tauri builder runs.
     // Must happen before tauri_plugin_sql plugin init, which runs migrations.
     // Uses platform-specific app data directory since Tauri isn't initialized yet.
@@ -476,6 +499,9 @@ pub fn run() {
     // Generate session token for HTTP server authentication
     let session_state: SharedSessionState = Arc::new(Mutex::new(SessionState::new()));
     let session_state_for_server = session_state.clone();
+
+    // Key store — holds WIFs in Rust-only memory (never exposed to JS)
+    let key_store: key_store::SharedKeyStore = Arc::new(Mutex::new(key_store::KeyStoreInner::new()));
 
     // Rate limiter state — initialized empty, loaded from disk in setup()
     let rate_limit_state: SharedRateLimitState = Arc::new(Mutex::new(RateLimitState::new()));
@@ -493,10 +519,12 @@ pub fn run() {
         .manage(brc100_state)
         .manage(session_state)
         .manage(rate_limit_state)
+        .manage(key_store)
         .invoke_handler(tauri::generate_handler![
             respond_to_brc100,
             get_session_token,
             generate_csrf_nonce,
+            rotate_session_for_account,
             check_unlock_rate_limit,
             record_failed_unlock,
             record_successful_unlock,
@@ -521,7 +549,20 @@ pub fn run() {
             brc100_signing::verify_signature,
             brc100_signing::verify_data_signature,
             brc100_signing::encrypt_ecies,
-            brc100_signing::decrypt_ecies
+            brc100_signing::decrypt_ecies,
+            key_store::store_keys,
+            key_store::store_keys_direct,
+            key_store::clear_keys,
+            key_store::get_public_keys,
+            key_store::has_keys,
+            key_store::get_mnemonic_once,
+            key_store::sign_message_from_store,
+            key_store::sign_data_from_store,
+            key_store::encrypt_ecies_from_store,
+            key_store::decrypt_ecies_from_store,
+            key_store::build_p2pkh_tx_from_store,
+            key_store::build_multi_key_p2pkh_tx_from_store,
+            key_store::build_consolidation_tx_from_store
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -541,7 +582,7 @@ pub fn run() {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
                     if let Err(e) = http_server::start_server(app_handle, brc100_state, session_state).await {
-                        eprintln!("HTTP server error: {}", e);
+                        log::error!("HTTP server error: {}", e);
                     }
                 });
             });

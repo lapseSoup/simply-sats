@@ -42,6 +42,8 @@ zeroize = "1.8.2"
 governor = "0.6"
 subtle = "2.5"  # Constant-time comparison for security-sensitive operations
 url = "2"       # URL parsing for origin extraction
+log = "0.4"
+env_logger = "0.11"
 rusqlite = { version = "0.31", features = ["bundled"] }  # Pre-init database for fresh installs
 dirs = "5"  # Platform-specific directory paths for pre-init
 

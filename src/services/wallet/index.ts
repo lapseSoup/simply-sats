@@ -7,6 +7,7 @@
 export type {
   WalletType,
   WalletKeys,
+  PublicWalletKeys,
   UTXO,
   ExtendedUTXO,
   WocUtxo,

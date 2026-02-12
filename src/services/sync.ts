@@ -234,6 +234,36 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 }
 
 /**
+ * Check if a transaction output belongs to a specific address.
+ * Prefers the `addresses` array from WoC (faster, clearer), falls back to script hex comparison.
+ */
+function isOurOutput(
+  vout: { scriptPubKey: { hex: string; addresses?: string[] } },
+  address: string,
+  lockingScriptHex: string
+): boolean {
+  if (vout.scriptPubKey.addresses?.length) {
+    return vout.scriptPubKey.addresses.includes(address)
+  }
+  return vout.scriptPubKey.hex === lockingScriptHex
+}
+
+/**
+ * Check if a transaction output belongs to any of our wallet addresses.
+ * Prefers the `addresses` array, falls back to script hex comparison.
+ */
+function isOurOutputMulti(
+  vout: { scriptPubKey: { hex: string; addresses?: string[] } },
+  addressSet: Set<string>,
+  lockingScriptSet: Set<string>
+): boolean {
+  if (vout.scriptPubKey.addresses?.length) {
+    return vout.scriptPubKey.addresses.some(a => addressSet.has(a))
+  }
+  return lockingScriptSet.has(vout.scriptPubKey.hex)
+}
+
+/**
  * Calculate the net amount change for an address from a transaction
  * Positive = received, Negative = sent (including fee)
  *
@@ -255,11 +285,13 @@ async function calculateTxAmount(
   const primaryLockingScript = getLockingScript(primaryAddress)
   const allLockingScripts = new Set(allWalletAddresses.map(a => getLockingScript(a)))
   const wocClient = getWocClient()
+  const allAddressSet = new Set(allWalletAddresses)
   let received = 0
 
   // Sum outputs going TO the primary address (the one whose history we're viewing)
+  // Prefer address matching (faster, clearer) with script hex fallback
   for (const vout of tx.vout) {
-    if (vout.scriptPubKey.hex === primaryLockingScript) {
+    if (isOurOutput(vout, primaryAddress, primaryLockingScript)) {
       received += Math.round(vout.value * 1e8) // Convert BSV to sats
     }
   }
@@ -281,7 +313,7 @@ async function calculateTxAmount(
         const prevTx = await wocClient.getTransactionDetails(vin.txid)
         if (prevTx?.vout?.[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]!
-          if (allLockingScripts.has(prevOutput.scriptPubKey.hex)) {
+          if (isOurOutputMulti(prevOutput, allAddressSet, allLockingScripts)) {
             spent += Math.round(prevOutput.value * 100000000)
           }
         }

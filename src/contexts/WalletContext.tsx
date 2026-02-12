@@ -79,6 +79,7 @@ import {
   clearAllSimplySatsStorage
 } from '../services/secureStorage'
 import { audit } from '../services/auditLog'
+import { invoke } from '@tauri-apps/api/core'
 
 // Re-export types for backward compatibility
 export type { TxHistoryItem, BasketBalances } from './SyncContext'
@@ -299,6 +300,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setWalletState(null)
     setWalletKeys(null)
     setSessionPassword(null) // Clear session password on lock
+    // Clear keys from Rust key store
+    invoke('clear_keys').catch(e => {
+      walletLogger.warn('Failed to clear Rust key store', { error: String(e) })
+    })
     // Audit log wallet lock
     audit.walletLocked(activeAccountId ?? undefined)
   }, [activeAccountId])
@@ -374,6 +379,29 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setSessionPassword(password) // Store password for session operations
         walletLogger.debug('Session password stored for account switching')
         resetInactivityTimer()
+        // Store keys in Rust key store (WIFs stay in Rust memory)
+        try {
+          await invoke('store_keys_direct', {
+            walletWif: keys.walletWif,
+            ordWif: keys.ordWif,
+            identityWif: keys.identityWif,
+            walletAddress: keys.walletAddress,
+            walletPubKey: keys.walletPubKey,
+            ordAddress: keys.ordAddress,
+            ordPubKey: keys.ordPubKey,
+            identityAddress: keys.identityAddress,
+            identityPubKey: keys.identityPubKey,
+            mnemonic: keys.mnemonic
+          })
+        } catch (e) {
+          walletLogger.warn('Failed to store keys in Rust key store', { error: String(e) })
+        }
+        // Rotate session for this account (isolates BRC-100 sessions per account)
+        try {
+          await invoke('rotate_session_for_account', { accountId: account.id })
+        } catch (e) {
+          walletLogger.warn('Failed to rotate session on unlock', { error: String(e) })
+        }
         // Refresh accounts to ensure state is in sync
         await refreshAccounts()
         walletLogger.info('Wallet unlocked successfully')
@@ -440,6 +468,31 @@ export function WalletProvider({ children }: WalletProviderProps) {
         resetSync()
         setWallet(keys)
         setIsLocked(false)
+
+        // Store keys in Rust key store for new account
+        try {
+          await invoke('store_keys_direct', {
+            walletWif: keys.walletWif,
+            ordWif: keys.ordWif,
+            identityWif: keys.identityWif,
+            walletAddress: keys.walletAddress,
+            walletPubKey: keys.walletPubKey,
+            ordAddress: keys.ordAddress,
+            ordPubKey: keys.ordPubKey,
+            identityAddress: keys.identityAddress,
+            identityPubKey: keys.identityPubKey,
+            mnemonic: keys.mnemonic
+          })
+        } catch (e) {
+          walletLogger.warn('Failed to store keys in Rust key store', { error: String(e) })
+        }
+
+        // Rotate session token for new account (isolates BRC-100 sessions per account)
+        try {
+          await invoke('rotate_session_for_account', { accountId })
+        } catch (e) {
+          walletLogger.warn('Failed to rotate session for account', { accountId, error: String(e) })
+        }
 
         // Preload locks from DB instantly so they appear before the full sync cycle
         // Use version guard to prevent stale data from overwriting if user switches accounts rapidly

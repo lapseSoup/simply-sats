@@ -20,6 +20,21 @@ export interface WalletKeys {
   identityPubKey: string
 }
 
+/**
+ * Public-only wallet keys — returned from Rust key store.
+ * Contains addresses and public keys but NO private keys or mnemonic.
+ * Use _from_store Tauri commands for operations that need private keys.
+ */
+export interface PublicWalletKeys {
+  walletType: string
+  walletAddress: string
+  walletPubKey: string
+  ordAddress: string
+  ordPubKey: string
+  identityAddress: string
+  identityPubKey: string
+}
+
 export interface UTXO {
   txid: string
   vout: number

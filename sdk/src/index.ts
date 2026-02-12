@@ -16,6 +16,8 @@ export interface SimplySatsConfig {
   origin?: string
   /** Session token for authentication (obtained from Simply Sats wallet) */
   sessionToken?: string
+  /** API version prefix (default: 'v1'). Set to '' for legacy unversioned routes. */
+  apiVersion?: string
 }
 
 export interface LockedUTXO {
@@ -115,12 +117,14 @@ export class SimplySats {
   private timeout: number
   private origin: string
   private sessionToken: string | null
+  private apiVersion: string
 
   constructor(config: SimplySatsConfig = {}) {
     this.baseUrl = config.baseUrl || 'http://127.0.0.1:3322'
     this.timeout = config.timeout || 120000
     this.origin = config.origin || 'sdk'
     this.sessionToken = config.sessionToken || null
+    this.apiVersion = config.apiVersion ?? 'v1'
   }
 
   /**
@@ -170,7 +174,8 @@ export class SimplySats {
         headers['X-Simply-Sats-Nonce'] = nonce
       }
 
-      const response = await fetch(`${this.baseUrl}/${method}`, {
+      const urlPrefix = this.apiVersion ? `${this.baseUrl}/${this.apiVersion}` : this.baseUrl
+      const response = await fetch(`${urlPrefix}/${method}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(params),
@@ -183,6 +188,28 @@ export class SimplySats {
       const newToken = response.headers.get('X-Simply-Sats-New-Token')
       if (newToken) {
         this.sessionToken = newToken
+      }
+
+      // Verify response signature if present (non-breaking — only warns on mismatch)
+      const signature = response.headers.get('X-Simply-Sats-Signature')
+      if (signature && this.sessionToken && typeof globalThis.crypto?.subtle !== 'undefined') {
+        try {
+          const key = await globalThis.crypto.subtle.importKey(
+            'raw',
+            new TextEncoder().encode(this.sessionToken),
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['verify']
+          )
+          const bodyBytes = new TextEncoder().encode(JSON.stringify(data))
+          const sigBytes = new Uint8Array(signature.match(/.{2}/g)!.map(b => parseInt(b, 16)))
+          const valid = await globalThis.crypto.subtle.verify('HMAC', key, sigBytes, bodyBytes)
+          if (!valid) {
+            console.warn('[SimplySats SDK] Response signature verification failed')
+          }
+        } catch {
+          // Signature verification is optional — don't break on failures
+        }
       }
 
       // Check for BRC-100 error format

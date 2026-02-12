@@ -33,12 +33,25 @@ const getCrypto = () => globalThis.crypto
 
 // Session key cache (in-memory only, never persisted)
 let sessionKey: CryptoKey | null = null
+let sessionKeyCreatedAt: number = 0
+
+// CryptoKey TTL: 6 hours — forces periodic key rotation
+const SESSION_KEY_TTL_MS = 6 * 60 * 60 * 1000
 
 /**
  * Get or create session encryption key
  * Key is kept in-memory only — never persisted to sessionStorage (XSS mitigation)
+ * Automatically rotates after TTL expiry, re-encrypting all sensitive data
  */
 async function getSessionKey(): Promise<CryptoKey> {
+  const now = Date.now()
+
+  // Check if existing key has expired
+  if (sessionKey && sessionKeyCreatedAt > 0 && now - sessionKeyCreatedAt >= SESSION_KEY_TTL_MS) {
+    walletLogger.info('Session CryptoKey TTL expired — rotating key')
+    await rotateSessionKey()
+  }
+
   if (sessionKey) {
     return sessionKey
   }
@@ -49,15 +62,60 @@ async function getSessionKey(): Promise<CryptoKey> {
     false, // non-extractable
     ['encrypt', 'decrypt']
   )
+  sessionKeyCreatedAt = now
 
   return sessionKey
 }
 
 /**
- * Encrypt data with session key
+ * Rotate the session encryption key: decrypt all sensitive values with old key,
+ * generate new key, re-encrypt with new key.
  */
-async function encryptData(data: string): Promise<string> {
-  const key = await getSessionKey()
+async function rotateSessionKey(): Promise<void> {
+  const oldKey = sessionKey
+  if (!oldKey) return
+
+  // Read all encrypted values with old key
+  const decryptedValues: Map<string, string> = new Map()
+  for (const key of SENSITIVE_KEYS) {
+    const fullKey = `${STORAGE_PREFIX}${key}`
+    const raw = localStorage.getItem(fullKey)
+    if (raw && raw.startsWith('enc:')) {
+      try {
+        const plaintext = await decryptWithKey(raw.slice(4), oldKey)
+        decryptedValues.set(key, plaintext)
+      } catch (e) {
+        walletLogger.warn('Failed to decrypt during key rotation', { key, error: e })
+      }
+    }
+  }
+
+  // Generate new key
+  sessionKey = await getCrypto().subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  )
+  sessionKeyCreatedAt = Date.now()
+
+  // Re-encrypt with new key
+  for (const [key, value] of decryptedValues) {
+    try {
+      const encrypted = await encryptWithKey(value, sessionKey)
+      const fullKey = `${STORAGE_PREFIX}${key}`
+      localStorage.setItem(fullKey, `enc:${encrypted}`)
+    } catch (e) {
+      walletLogger.error('Failed to re-encrypt during key rotation', { key, error: e })
+    }
+  }
+
+  walletLogger.info('Session CryptoKey rotated successfully', { keysRotated: decryptedValues.size })
+}
+
+/**
+ * Encrypt data with an explicit CryptoKey
+ */
+async function encryptWithKey(data: string, key: CryptoKey): Promise<string> {
   const iv = getCrypto().getRandomValues(new Uint8Array(12))
   const encoded = new TextEncoder().encode(data)
 
@@ -81,11 +139,9 @@ async function encryptData(data: string): Promise<string> {
 }
 
 /**
- * Decrypt data with session key
+ * Decrypt data with an explicit CryptoKey
  */
-async function decryptData(encrypted: string): Promise<string> {
-  const key = await getSessionKey()
-
+async function decryptWithKey(encrypted: string, key: CryptoKey): Promise<string> {
   // Decode base64
   const binary = atob(encrypted)
   const combined = new Uint8Array(binary.length)
@@ -104,6 +160,22 @@ async function decryptData(encrypted: string): Promise<string> {
   )
 
   return new TextDecoder().decode(decrypted)
+}
+
+/**
+ * Encrypt data with session key
+ */
+async function encryptData(data: string): Promise<string> {
+  const key = await getSessionKey()
+  return encryptWithKey(data, key)
+}
+
+/**
+ * Decrypt data with session key
+ */
+async function decryptData(encrypted: string): Promise<string> {
+  const key = await getSessionKey()
+  return decryptWithKey(encrypted, key)
 }
 
 /**
@@ -221,6 +293,7 @@ export async function migrateToSecureStorage(): Promise<void> {
  */
 export function clearSessionKey(): void {
   sessionKey = null
+  sessionKeyCreatedAt = 0
 }
 
 /**
@@ -240,6 +313,7 @@ export function clearAllSimplySatsStorage(): void {
 
   // Clear session key from memory
   sessionKey = null
+  sessionKeyCreatedAt = 0
 
   walletLogger.info('Cleared all simply_sats_ storage', { keysCleared: keysToRemove.length })
 }

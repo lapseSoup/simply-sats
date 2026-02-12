@@ -11,6 +11,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreExt;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Static integrity key — not secret, but raises the bar against casual tampering
+const INTEGRITY_KEY: &[u8] = b"SimplySats-RateLimit-Integrity-K";
 
 /// Rate limit configuration constants
 const MAX_ATTEMPTS: u32 = 5;
@@ -122,19 +129,52 @@ impl RateLimitState {
 const STORE_FILENAME: &str = "rate_limit.json";
 const STORE_KEY: &str = "rate_limit_state";
 
-/// Save rate limit state to persistent store
+/// Wrapper for persisted state with HMAC integrity check
+#[derive(Serialize, Deserialize)]
+struct PersistedRateLimitState {
+    state: RateLimitState,
+    hmac: String,
+}
+
+/// Compute HMAC-SHA256 over serialized state JSON
+fn compute_state_hmac(state: &RateLimitState) -> String {
+    let json = serde_json::to_string(state).unwrap_or_default();
+    let mut mac = HmacSha256::new_from_slice(INTEGRITY_KEY)
+        .expect("HMAC can take key of any size");
+    mac.update(json.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// Save rate limit state to persistent store with HMAC integrity
 fn persist_state(app: &tauri::AppHandle, state: &RateLimitState) {
     if let Ok(store) = app.store(STORE_FILENAME) {
-        let value = serde_json::to_value(state).unwrap_or_default();
+        let hmac = compute_state_hmac(state);
+        let wrapper = PersistedRateLimitState {
+            state: state.clone(),
+            hmac,
+        };
+        let value = serde_json::to_value(wrapper).unwrap_or_default();
         let _ = store.set(STORE_KEY, value);
     }
 }
 
-/// Load rate limit state from persistent store
+/// Load rate limit state from persistent store, verifying HMAC integrity
 pub fn load_persisted_state(app: &tauri::AppHandle) -> RateLimitState {
     if let Ok(store) = app.store(STORE_FILENAME) {
         if let Some(value) = store.get(STORE_KEY) {
+            // Try new format (with HMAC)
+            if let Ok(wrapper) = serde_json::from_value::<PersistedRateLimitState>(value.clone()) {
+                let expected_hmac = compute_state_hmac(&wrapper.state);
+                if wrapper.hmac == expected_hmac {
+                    return wrapper.state;
+                }
+                log::warn!("[Security] Rate limit state HMAC mismatch — resetting to fresh state");
+                return RateLimitState::new();
+            }
+            // Legacy migration: accept old format without HMAC, re-persist with HMAC on next save
             if let Ok(state) = serde_json::from_value::<RateLimitState>(value.clone()) {
+                log::info!("Migrating legacy rate limit state to HMAC-protected format");
+                persist_state(app, &state);
                 return state;
             }
         }
@@ -181,10 +221,10 @@ pub async fn record_failed_unlock(
     let (is_locked, lockout_ms, attempts_remaining) = rate_limit.record_failed();
 
     if is_locked {
-        eprintln!("[Security] Unlock locked out due to {} failed attempts, lockout: {}ms",
+        log::warn!("[Security] Unlock locked out due to {} failed attempts, lockout: {}ms",
                   rate_limit.attempts, lockout_ms);
     } else {
-        eprintln!("[Security] Failed unlock attempt {}/{}",
+        log::info!("[Security] Failed unlock attempt {}/{}",
                   rate_limit.attempts, MAX_ATTEMPTS);
     }
 

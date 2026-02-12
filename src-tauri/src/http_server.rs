@@ -14,7 +14,11 @@ use governor::{Quota, RateLimiter};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use crate::{SharedBRC100State, SharedSessionState};
+
+type HmacSha256 = Hmac<Sha256>;
 
 const SESSION_TOKEN_HEADER: &str = "X-Simply-Sats-Token";
 const CSRF_NONCE_HEADER: &str = "X-Simply-Sats-Nonce";
@@ -116,7 +120,7 @@ async fn validate_host_header(
             Ok(next.run(request).await)
         }
         _ => {
-            eprintln!("[Security] Rejected request: invalid Host header: {:?}", host);
+            log::warn!("[Security] Rejected request: invalid Host header: {:?}", host);
             Err(StatusCode::FORBIDDEN)
         }
     }
@@ -162,17 +166,17 @@ async fn validate_session_token(
                         Ok(response)
                     },
                     Err(_) => {
-                        eprintln!("[Rate Limit] Request to {} exceeded rate limit", request.uri().path());
+                        log::warn!("[Rate Limit] Request to {} exceeded rate limit", request.uri().path());
                         Err(StatusCode::TOO_MANY_REQUESTS)
                     }
                 }
             } else {
-                eprintln!("Rejected request to {}: invalid session token", request.uri().path());
+                log::warn!("Rejected request to {}: invalid session token", request.uri().path());
                 Err(StatusCode::UNAUTHORIZED)
             }
         }
         None => {
-            eprintln!("Rejected request to {}: missing session token", request.uri().path());
+            log::warn!("Rejected request to {}: missing session token", request.uri().path());
             Err(StatusCode::UNAUTHORIZED)
         }
     }
@@ -209,6 +213,10 @@ pub async fn start_server(
             axum::http::header::ACCEPT,
             axum::http::HeaderName::from_static("x-simply-sats-token"),
             axum::http::HeaderName::from_static("x-simply-sats-nonce"),
+        ])
+        .expose_headers([
+            axum::http::HeaderName::from_static("x-simply-sats-new-token"),
+            axum::http::HeaderName::from_static("x-simply-sats-signature"),
         ]);
 
     // Security response headers middleware
@@ -221,22 +229,60 @@ pub async fn start_server(
         response
     });
 
+    // Response HMAC signing middleware — signs response body with session token
+    let sign_state = state.clone();
+    let response_signing = axum::middleware::from_fn(move |request: Request<Body>, next: Next| {
+        let sign_state = sign_state.clone();
+        async move {
+            let response = next.run(request).await;
+            let (mut parts, body) = response.into_parts();
+
+            // Read the response body
+            match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
+                Ok(body_bytes) => {
+                    // Compute HMAC-SHA256 using session token as key
+                    let session = sign_state.session_state.lock().await;
+                    let mut mac = HmacSha256::new_from_slice(session.token.as_bytes())
+                        .expect("HMAC can take key of any size");
+                    mac.update(&body_bytes);
+                    let signature = hex::encode(mac.finalize().into_bytes());
+                    drop(session);
+
+                    if let Ok(hv) = HeaderValue::from_str(&signature) {
+                        parts.headers.insert("X-Simply-Sats-Signature", hv);
+                    }
+
+                    Response::from_parts(parts, Body::from(body_bytes))
+                }
+                Err(_) => {
+                    // If body can't be read, return as-is without signature
+                    Response::from_parts(parts, Body::empty())
+                }
+            }
+        }
+    });
+
     // REST-style routes matching HTTPWalletJSON substrate format from @bsv/sdk
-    let app = Router::new()
+    let v1_routes = Router::new()
         .route("/getVersion", post(handle_get_version))
         .route("/getNetwork", post(handle_get_network))
         .route("/isAuthenticated", post(handle_is_authenticated))
         .route("/waitForAuthentication", post(handle_wait_for_authentication))
         .route("/getHeight", post(handle_get_height))
-        .route("/getNonce", post(handle_get_nonce))  // CSRF nonce generation
+        .route("/getNonce", post(handle_get_nonce))
         .route("/getPublicKey", post(handle_get_public_key))
         .route("/createSignature", post(handle_create_signature))
         .route("/createAction", post(handle_create_action))
         .route("/listOutputs", post(handle_list_outputs))
-        // Simply Sats native locking (OP_PUSH_TX timelock)
         .route("/lockBSV", post(handle_lock_bsv))
         .route("/unlockBSV", post(handle_unlock_bsv))
-        .route("/listLocks", post(handle_list_locks))
+        .route("/listLocks", post(handle_list_locks));
+
+    // Legacy routes at root (backward compat) + versioned routes under /v1
+    let app = Router::new()
+        .merge(v1_routes.clone())
+        .nest("/v1", v1_routes)
+        .layer(response_signing)
         .layer(middleware::from_fn_with_state(state.clone(), validate_session_token))
         .layer(middleware::from_fn(validate_host_header))
         .layer(security_headers)
@@ -244,7 +290,7 @@ pub async fn start_server(
         .with_state(state);
 
     let addr = format!("127.0.0.1:{}", PORT);
-    println!("Starting BRC-100 HTTP-JSON server on http://{}", addr);
+    log::info!("Starting BRC-100 HTTP-JSON server on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
@@ -253,8 +299,7 @@ pub async fn start_server(
 }
 
 async fn handle_get_version(Json(_args): Json<EmptyArgs>) -> Json<VersionResponse> {
-    #[cfg(debug_assertions)]
-    println!("getVersion request");
+    log::debug!("getVersion request");
     Json(VersionResponse {
         version: "0.1.0".to_string(),
     })
@@ -270,8 +315,7 @@ async fn handle_get_nonce(
     State(state): State<AppState>,
     Json(_args): Json<EmptyArgs>,
 ) -> Json<NonceResponse> {
-    #[cfg(debug_assertions)]
-    println!("getNonce request");
+    log::debug!("getNonce request");
     let session = state.session_state.lock().await;
     Json(NonceResponse {
         nonce: session.generate_nonce(),
@@ -279,24 +323,21 @@ async fn handle_get_nonce(
 }
 
 async fn handle_get_network(Json(_args): Json<EmptyArgs>) -> Json<NetworkResponse> {
-    #[cfg(debug_assertions)]
-    println!("getNetwork request");
+    log::debug!("getNetwork request");
     Json(NetworkResponse {
         network: "mainnet".to_string(),
     })
 }
 
 async fn handle_is_authenticated(Json(_args): Json<EmptyArgs>) -> Json<AuthResponse> {
-    #[cfg(debug_assertions)]
-    println!("isAuthenticated request");
+    log::debug!("isAuthenticated request");
     Json(AuthResponse {
         authenticated: true,
     })
 }
 
 async fn handle_wait_for_authentication(Json(_args): Json<EmptyArgs>) -> Json<AuthResponse> {
-    #[cfg(debug_assertions)]
-    println!("waitForAuthentication request");
+    log::debug!("waitForAuthentication request");
     // Simply Sats is always authenticated when wallet is loaded
     Json(AuthResponse {
         authenticated: true,
@@ -304,8 +345,7 @@ async fn handle_wait_for_authentication(Json(_args): Json<EmptyArgs>) -> Json<Au
 }
 
 async fn handle_get_height(Json(_args): Json<EmptyArgs>) -> Json<HeightResponse> {
-    #[cfg(debug_assertions)]
-    println!("getHeight request");
+    log::debug!("getHeight request");
 
     // Fetch real block height from WhatsOnChain
     let height = match fetch_block_height().await {
@@ -321,7 +361,7 @@ async fn handle_get_height(Json(_args): Json<EmptyArgs>) -> Json<HeightResponse>
             let genesis_time: u64 = 1231006505; // Jan 3, 2009
             let avg_block_time: u64 = 600; // 10 minutes in seconds
             let estimated = ((now - genesis_time) / avg_block_time) as u32;
-            eprintln!("Failed to fetch block height: {}, using estimated: {}", e, estimated);
+            log::warn!("Failed to fetch block height: {}, using estimated: {}", e, estimated);
             estimated
         }
     };
@@ -366,8 +406,7 @@ async fn handle_get_public_key(
         Err(_) => GetPublicKeyArgs::default(),
     };
 
-    #[cfg(debug_assertions)]
-    println!("getPublicKey request: {:?}", args);
+    log::debug!("getPublicKey request: {:?}", args);
     forward_to_frontend(state, "getPublicKey", serde_json::json!({
         "identityKey": args.identity_key.unwrap_or(false),
     }), origin).await
@@ -384,7 +423,7 @@ fn extract_origin(request: &Request<Body>) -> Option<String> {
             match url::Url::parse(s) {
                 Ok(url) => Some(format!("{}://{}", url.scheme(), url.host_str().unwrap_or("unknown"))),
                 Err(_) => {
-                    eprintln!("Rejected unparseable origin header: {}", s);
+                    log::warn!("Rejected unparseable origin header: {}", s);
                     None
                 }
             }
@@ -396,7 +435,7 @@ fn validate_origin(origin: &Option<String>) -> Result<(), Response> {
     match origin {
         Some(ref o) if ALLOWED_ORIGINS.iter().any(|allowed| o == *allowed) => Ok(()),
         Some(ref o) => {
-            eprintln!("[Security] Rejected request: origin not in whitelist: {}", o);
+            log::warn!("[Security] Rejected request: origin not in whitelist: {}", o);
             Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
                 "isError": true,
                 "code": -32002,
@@ -404,7 +443,7 @@ fn validate_origin(origin: &Option<String>) -> Result<(), Response> {
             }))).into_response())
         }
         None => {
-            eprintln!("[Security] Rejected request: missing Origin header");
+            log::warn!("[Security] Rejected request: missing Origin header");
             Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
                 "isError": true,
                 "code": -32002,
@@ -430,7 +469,7 @@ async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), R
             if session.validate_nonce(&nonce_str) {
                 Ok(())
             } else {
-                eprintln!("Invalid or expired CSRF nonce");
+                log::warn!("Invalid or expired CSRF nonce");
                 Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
                     "isError": true,
                     "code": -32001,
@@ -439,7 +478,7 @@ async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), R
             }
         }
         None => {
-            eprintln!("Missing CSRF nonce header");
+            log::warn!("Missing CSRF nonce header");
             Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
                 "isError": true,
                 "code": -32001,
@@ -486,8 +525,7 @@ async fn handle_create_signature(
         }))).into_response(),
     };
 
-    #[cfg(debug_assertions)]
-    println!("createSignature request: {:?}", args);
+    log::debug!("createSignature request: {:?}", args);
     forward_to_frontend_with_rotation(state, "createSignature", args, origin).await
 }
 
@@ -526,8 +564,7 @@ async fn handle_create_action(
         }))).into_response(),
     };
 
-    #[cfg(debug_assertions)]
-    println!("createAction request: {:?}", args);
+    log::debug!("createAction request: {:?}", args);
     forward_to_frontend_with_rotation(state, "createAction", args, origin).await
 }
 
@@ -566,8 +603,7 @@ async fn handle_list_outputs(
         }))).into_response(),
     };
 
-    #[cfg(debug_assertions)]
-    println!("listOutputs request: {:?}", args);
+    log::debug!("listOutputs request: {:?}", args);
     forward_to_frontend(state, "listOutputs", args, origin).await
 }
 
@@ -606,8 +642,7 @@ async fn handle_lock_bsv(
         }))).into_response(),
     };
 
-    #[cfg(debug_assertions)]
-    println!("lockBSV request: {:?}", args);
+    log::debug!("lockBSV request: {:?}", args);
     forward_to_frontend_with_rotation(state, "lockBSV", args, origin).await
 }
 
@@ -646,8 +681,7 @@ async fn handle_unlock_bsv(
         }))).into_response(),
     };
 
-    #[cfg(debug_assertions)]
-    println!("unlockBSV request: {:?}", args);
+    log::debug!("unlockBSV request: {:?}", args);
     forward_to_frontend_with_rotation(state, "unlockBSV", args, origin).await
 }
 
@@ -686,8 +720,7 @@ async fn handle_list_locks(
         }))).into_response(),
     };
 
-    #[cfg(debug_assertions)]
-    println!("listLocks request: {:?}", args);
+    log::debug!("listLocks request: {:?}", args);
     forward_to_frontend(state, "listLocks", args, origin).await
 }
 
@@ -727,15 +760,22 @@ async fn forward_to_frontend_impl(
     // Use actual origin from request, default to "unknown" if not provided
     let request_origin = origin.unwrap_or_else(|| "unknown".to_string());
 
+    // Include account_id from session state for account-scoped request handling
+    let account_id = {
+        let session = state.session_state.lock().await;
+        session.account_id
+    };
+
     let frontend_request = serde_json::json!({
         "id": internal_id,
         "method": method,
         "params": args,
-        "origin": request_origin
+        "origin": request_origin,
+        "accountId": account_id
     });
 
     if let Err(e) = state.app_handle.emit("brc100-request", frontend_request) {
-        eprintln!("Failed to emit brc100-request event: {}", e);
+        log::error!("Failed to emit brc100-request event: {}", e);
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
             "isError": true,
             "code": -32000,

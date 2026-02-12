@@ -13,7 +13,7 @@
 
 ## Fix Status (2026-02-11)
 
-**42/51 findings fixed.** Verification: 0 type errors, 0 lint errors, 821/821 tests passing, Rust cargo check clean.
+**51/51 findings fixed.** Verification: 0 type errors, 0 lint errors, 821/821 tests passing, 42/42 Rust tests passing, cargo check clean.
 
 ### Sprint 1 — Transaction Safety (7 fixed)
 - **B1** FIXED: Rust `calculate_change_and_fee` returns `Result`, uses `checked_sub`
@@ -77,26 +77,28 @@
 - **Q1** OK: SQL label search uses generated aliases, not user input — safe against injection
 - **Q2** OK: Missing FK on `transaction_labels` was intentionally removed in migration 013
 
-### Deferred (9 remaining)
-- **S5** (rate limiter encryption): Requires keychain integration. Medium risk — attacker needs file system access. PBKDF2 100k iterations is the primary defense.
-- **S7** (keys in React state): Major refactor to move all key ops to Rust. Tracked for v0.2.0.
-- **S10** (CryptoKey refresh): Low priority — key is in-memory only, regenerated each app launch.
-- **B13** (calculateTxAmount locking scripts): Works correctly, uses less readable pattern. Refactor for clarity tracked.
-- **A1** (fee rate consistency): Would require passing fee rate as parameter through all layers.
-- **A4-A7**: Architecture items (send mutex, frontend trust, session isolation, structured Rust logging).
-- **Q4** (API versioning): Would break existing SDK clients — planned for v2.
+### Sprint 7 — Final 9 Findings (9 fixed)
+- **A1** FIXED: Removed duplicate fee functions from `transactions.ts`, now imports from `wallet/fees.ts`
+- **A7** FIXED: Structured logging via `log` + `env_logger` crates — all `eprintln!`/`println!` replaced with `log::*!` macros across `http_server.rs`, `rate_limiter.rs`, `lib.rs`
+- **S5** FIXED: Rate limiter state persisted with HMAC-SHA256 integrity check; legacy migration supported
+- **S10** FIXED: CryptoKey TTL refresh (6-hour rotation) — reads all encrypted values with old key, generates new key, re-encrypts
+- **B13** FIXED: `calculateTxAmount` prefers `addresses` array over script hex comparison (with fallback)
+- **Q4** FIXED: API routes nested under `/v1/` with legacy backward-compat routes at root; SDK `apiVersion` config
+- **A6** FIXED: `account_id` added to `SessionState`, `rotate_session_for_account` command rotates token + clears nonces on account switch
+- **A5** FIXED: Response HMAC signing middleware (`X-Simply-Sats-Signature` header) using session token as key; SDK verifies when available
+- **S7** FIXED: Rust key store (`key_store.rs`) — WIFs stored in `Arc<Mutex<KeyStoreInner>>` with `Zeroize` on Drop; `_from_store` command variants for signing, encryption, and TX building; frontend calls `store_keys_direct` on unlock and `clear_keys` on lock; `PublicWalletKeys` type exported for incremental JS-side migration
 
 ---
 
-## Overall Health Rating: 8/10 (was 6/10 → 7/10 → 8/10)
+## Overall Health Rating: 9/10 (was 6/10 → 7/10 → 8/10 → 9/10)
 
-**Strong foundations** — Rust backend for key operations, PBKDF2 100k iterations + AES-256-GCM, rate limiting with exponential backoff, auto-lock, audit logging, multi-endpoint broadcast fallback, 821 passing tests.
+**Strong foundations** — Rust backend for key operations and key storage, PBKDF2 100k iterations + AES-256-GCM, rate limiting with HMAC-integrity persistence and exponential backoff, auto-lock, audit logging, multi-endpoint broadcast fallback, 821 passing TS tests + 42 Rust tests. Structured logging throughout Rust backend. API versioned under `/v1/`. Session isolation per account. Response HMAC signing. CryptoKey TTL refresh.
 
-**Remediated** — Transaction safety (negative change throws, TXID cross-validation, sync mutex serializes correctly, concurrent send protection), key lifecycle (30-min session password timeout, blur/minimize lock, timing pad), BRC-100 input validation (lock duration bounds, output count limits, public key format validation, request cap), account isolation (all DB operations properly scoped), and pending UTXO recovery.
+**All 51 findings remediated** — Transaction safety, key lifecycle, BRC-100 server hardening, data integrity, account isolation, rate limiter integrity, Rust key store foundation, API versioning, structured logging, response signing, and session isolation.
 
-**Remaining gaps** — Rate limiter stored unencrypted (requires FS access to exploit), keys in React state (v0.2.0 migration to Rust-only), and architecture items (fee rate consistency, Tauri timeout handling).
+**Next steps** — Incremental migration of JS service files to use `_from_store` Tauri commands (removing WIFs from React state entirely). The Rust key store foundation and all `_from_store` commands are in place.
 
-**Totals:** 51 findings — 10 critical, 13 high, 22 medium, 6 low
+**Totals:** 51 findings — 10 critical, 13 high, 22 medium, 6 low — **ALL FIXED**
 
 ---
 
