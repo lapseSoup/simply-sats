@@ -160,12 +160,21 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
         // Generate the P2PKH locking script for this address
         const lockingScript = new P2PKH().lock(address)
 
-        const utxos = data.map((utxo: { tx_hash: string; tx_pos: number; value: number }) => ({
-          txid: utxo.tx_hash,
-          vout: utxo.tx_pos,
-          satoshis: utxo.value,
-          script: lockingScript.toHex()
-        }))
+        const utxos = data
+          .filter((utxo: { tx_hash: string; tx_pos: number; value: number }) => {
+            // Validate UTXO fields: reject malformed entries from API
+            return (
+              typeof utxo.tx_hash === 'string' && utxo.tx_hash.length === 64 &&
+              Number.isInteger(utxo.tx_pos) && utxo.tx_pos >= 0 &&
+              Number.isInteger(utxo.value) && utxo.value > 0
+            )
+          })
+          .map((utxo: { tx_hash: string; tx_pos: number; value: number }) => ({
+            txid: utxo.tx_hash,
+            vout: utxo.tx_pos,
+            satoshis: utxo.value,
+            script: lockingScript.toHex()
+          }))
         return ok(utxos)
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Unknown error'

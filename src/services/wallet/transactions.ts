@@ -54,6 +54,13 @@ export async function broadcastTransaction(txOrHex: Transaction | string): Promi
       walletLogger.info('WhatsOnChain broadcast successful')
       // WoC returns the txid as response text; fall back to local computation
       const responseTxid = (await response.text()).trim().replace(/"/g, '')
+      // Cross-validate: if both local and broadcaster TXIDs are available, they must match
+      if (responseTxid && txid && responseTxid !== txid) {
+        walletLogger.error('TXID mismatch between broadcaster and local computation', {
+          broadcasterTxid: responseTxid,
+          localTxid: txid
+        })
+      }
       return responseTxid || txid || ''
     }
 

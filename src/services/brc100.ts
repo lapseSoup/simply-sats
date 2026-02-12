@@ -322,7 +322,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
         const satoshis = params.satoshis
         const blocks = params.blocks
 
-        if (!satoshis || satoshis <= 0) {
+        if (!satoshis || satoshis <= 0 || !Number.isFinite(satoshis) || satoshis > 21_000_000_00_000_000) {
           await invoke('respond_to_brc100', {
             requestId: request.id,
             response: { error: { code: -32602, message: 'Invalid satoshis amount' } }
@@ -330,10 +330,10 @@ export async function setupHttpServerListener(): Promise<() => void> {
           return
         }
 
-        if (!blocks || blocks <= 0) {
+        if (!blocks || blocks <= 0 || !Number.isInteger(blocks) || blocks > 210_000) {
           await invoke('respond_to_brc100', {
             requestId: request.id,
-            response: { error: { code: -32602, message: 'Invalid blocks duration' } }
+            response: { error: { code: -32602, message: 'Invalid blocks duration (must be 1-210000)' } }
           })
           return
         }
@@ -1192,6 +1192,11 @@ async function buildAndBroadcastAction(
   const utxos = await getUTXOs(fromAddress)
   if (utxos.length === 0) {
     throw new Error('No UTXOs available')
+  }
+
+  // Validate output count to prevent excessive transaction size
+  if (actionRequest.outputs.length === 0 || actionRequest.outputs.length > 100) {
+    throw new Error(`Invalid output count: ${actionRequest.outputs.length} (must be 1-100)`)
   }
 
   // Calculate total output amount

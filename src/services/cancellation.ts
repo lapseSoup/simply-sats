@@ -93,42 +93,34 @@ let syncController: CancellationController | null = null
 
 /**
  * Sync mutex to prevent database race conditions
- * Ensures only one sync operation runs at a time
+ * Ensures only one sync/send operation runs at a time.
+ * Uses a promise chain to properly serialize all contenders (not just 2).
  */
 class SyncMutex {
-  private locked = false
-  private currentSyncPromise: Promise<void> | null = null
-  private resolveCurrentSync: (() => void) | null = null
+  private _tail: Promise<void> = Promise.resolve()
+  private _locked = false
 
   /**
-   * Acquire the mutex. If locked, waits for current sync to complete.
-   * Returns a release function that must be called when sync is done.
+   * Acquire the mutex. Queues behind all prior holders.
+   * Returns a release function that must be called when done.
    */
   async acquire(): Promise<() => void> {
-    // If there's a sync in progress, wait for it to complete
-    if (this.locked && this.currentSyncPromise) {
-      await this.currentSyncPromise
-    }
-
-    this.locked = true
-    this.currentSyncPromise = new Promise(resolve => {
-      this.resolveCurrentSync = resolve
+    let release: () => void
+    const prev = this._tail
+    this._tail = new Promise<void>(resolve => {
+      release = () => {
+        this._locked = false
+        resolve()
+      }
     })
-
-    return () => this.release()
-  }
-
-  private release(): void {
-    this.locked = false
-    if (this.resolveCurrentSync) {
-      this.resolveCurrentSync()
-      this.resolveCurrentSync = null
-      this.currentSyncPromise = null
-    }
+    // Wait for the previous holder to release
+    await prev
+    this._locked = true
+    return release!
   }
 
   get isLocked(): boolean {
-    return this.locked
+    return this._locked
   }
 }
 

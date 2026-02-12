@@ -162,6 +162,10 @@ export function calculateChangeAndFee(
   const fee = calculateTxFee(numInputs, numOutputs, feeRate)
   const change = totalInput - satoshis - fee
 
+  if (change < 0) {
+    throw new Error(`Insufficient funds: need ${satoshis + fee} sats (${satoshis} + ${fee} fee), have ${totalInput}`)
+  }
+
   return { fee, change, numOutputs }
 }
 

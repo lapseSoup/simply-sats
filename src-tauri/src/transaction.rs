@@ -91,13 +91,16 @@ fn calculate_change_and_fee(
     satoshis: u64,
     num_inputs: usize,
     fee_rate: f64,
-) -> (u64, u64, usize) {
+) -> Result<(u64, u64, usize), String> {
     let prelim_change = total_input.saturating_sub(satoshis);
     let will_have_change = prelim_change > 100;
     let num_outputs = if will_have_change { 2 } else { 1 };
     let fee = calculate_tx_fee(num_inputs, num_outputs, fee_rate);
-    let change = total_input.saturating_sub(satoshis).saturating_sub(fee);
-    (fee, change, num_outputs)
+    let change = total_input
+        .checked_sub(satoshis)
+        .and_then(|v| v.checked_sub(fee))
+        .ok_or_else(|| format!("Insufficient funds: need {} + {} fee, have {}", satoshis, fee, total_input))?;
+    Ok((fee, change, num_outputs))
 }
 
 // ---------------------------------------------------------------------------
@@ -399,11 +402,7 @@ pub fn build_p2pkh_tx(
     let from_locking_script = p2pkh_locking_script(&pkh);
 
     let (fee, change, _num_outputs) =
-        calculate_change_and_fee(total_input, satoshis, selected_utxos.len(), fee_rate);
-
-    if total_input < satoshis + fee {
-        return Err(format!("Insufficient funds (need {} sats for fee)", fee));
-    }
+        calculate_change_and_fee(total_input, satoshis, selected_utxos.len(), fee_rate)?;
 
     // Build outputs
     let to_locking_script = locking_script_from_address(&to_address)?;
@@ -485,11 +484,7 @@ pub fn build_multi_key_p2pkh_tx(
     let change_address = address_from_pubkey(&secp, &change_sk);
 
     let (fee, change, _num_outputs) =
-        calculate_change_and_fee(total_input, satoshis, selected_utxos.len(), fee_rate);
-
-    if total_input < satoshis + fee {
-        return Err(format!("Insufficient funds (need {} sats for fee)", fee));
-    }
+        calculate_change_and_fee(total_input, satoshis, selected_utxos.len(), fee_rate)?;
 
     // Build outputs
     let to_locking_script = locking_script_from_address(&to_address)?;
@@ -583,7 +578,7 @@ pub fn build_consolidation_tx(
 
     let total_input: u64 = utxos.iter().map(|u| u.satoshis).sum();
     let fee = calculate_tx_fee(utxos.len(), 1, fee_rate);
-    let output_sats = total_input.saturating_sub(fee);
+    let output_sats = total_input.checked_sub(fee).unwrap_or(0);
 
     if output_sats == 0 {
         return Err(format!(

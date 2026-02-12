@@ -66,10 +66,9 @@ describe('Transaction Builder', () => {
       expect(result.numOutputs).toBe(1)
     })
 
-    it('should return negative change when insufficient funds for fee', () => {
+    it('should throw when insufficient funds for fee', () => {
       // totalInput barely covers satoshis, no room for fee
-      const result = calculateChangeAndFee(1000, 1000, 1, DEFAULT_FEE_RATE)
-      expect(result.change).toBeLessThan(0)
+      expect(() => calculateChangeAndFee(1000, 1000, 1, DEFAULT_FEE_RATE)).toThrow('Insufficient funds')
     })
 
     it('should calculate correct fee based on inputs and outputs', () => {

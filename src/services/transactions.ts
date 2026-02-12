@@ -15,10 +15,11 @@ import {
   rollbackPendingSpend,
   BASKETS
 } from './sync'
-import { getDerivedAddresses } from './database'
 import { TIMEOUTS } from './config'
 import { BroadcastError, AppError, ErrorCodes } from './errors'
 import { walletLogger } from './logger'
+import { acquireSyncLock } from './cancellation'
+import { getDerivedAddresses, withTransaction } from './database'
 
 // Default fee rate: 0.1 sat/byte (100 sat/KB) - reliable confirmation
 const DEFAULT_FEE_RATE = 0.1
@@ -29,13 +30,18 @@ const P2PKH_OUTPUT_SIZE = 34  // value 8 + scriptlen 1 + script 25
 const TX_OVERHEAD = 10        // version 4 + locktime 4 + input count ~1 + output count ~1
 
 /**
- * Get the current fee rate from settings or use default
+ * Get the current fee rate from settings or use default.
+ * Clamped to valid range to prevent transaction malfunction.
  */
 export function getFeeRate(): number {
+  const MIN_RATE = 0.01
+  const MAX_RATE = 1.0
   const stored = localStorage.getItem('simply_sats_fee_rate')
   if (stored) {
     const rate = parseFloat(stored)
-    if (!isNaN(rate) && rate > 0) return rate
+    if (!isNaN(rate) && rate > 0) {
+      return Math.max(MIN_RATE, Math.min(MAX_RATE, rate))
+    }
   }
   return DEFAULT_FEE_RATE
 }
@@ -240,9 +246,24 @@ export async function broadcastTransaction(tx: Transaction): Promise<string> {
 }
 
 /**
- * Build and sign a simple P2PKH transaction
+ * @deprecated Use src/services/wallet/transactions.ts sendBSV instead (has atomic DB + sync lock)
  */
 export async function sendBSV(
+  wif: string,
+  toAddress: string,
+  satoshis: number,
+  utxos: UTXO[],
+  accountId?: number
+): Promise<string> {
+  const releaseLock = await acquireSyncLock()
+  try {
+    return await _sendBSVInner(wif, toAddress, satoshis, utxos, accountId)
+  } finally {
+    releaseLock()
+  }
+}
+
+async function _sendBSVInner(
   wif: string,
   toAddress: string,
   satoshis: number,
@@ -349,18 +370,19 @@ export async function sendBSV(
     throw broadcastError
   }
 
-  // Track transaction locally
+  // Track transaction locally — atomic to prevent partial state
   try {
-    await recordSentTransaction(
-      txid,
-      tx.toHex(),
-      `Sent ${satoshis} sats to ${toAddress}`,
-      ['send'],
-      -(satoshis + fee),  // Negative = money out, includes fee
-      accountId
-    )
-    // Confirm UTXOs as spent (updates from pending -> spent)
-    await confirmUtxosSpent(utxosToSpend, txid)
+    await withTransaction(async () => {
+      await recordSentTransaction(
+        txid,
+        tx.toHex(),
+        `Sent ${satoshis} sats to ${toAddress}`,
+        ['send'],
+        -(satoshis + fee),  // Negative = money out, includes fee
+        accountId
+      )
+      await confirmUtxosSpent(utxosToSpend, txid)
+    })
   } catch (error) {
     walletLogger.warn('Failed to track transaction locally', undefined, error instanceof Error ? error : undefined)
   }
@@ -416,9 +438,24 @@ export async function getAllSpendableUTXOs(walletWif: string): Promise<ExtendedU
 }
 
 /**
- * Send BSV using UTXOs from multiple addresses/keys
+ * @deprecated Use src/services/wallet/transactions.ts sendBSVMultiKey instead (has atomic DB + sync lock)
  */
 export async function sendBSVMultiKey(
+  changeWif: string,
+  toAddress: string,
+  satoshis: number,
+  utxos: ExtendedUTXO[],
+  accountId?: number
+): Promise<string> {
+  const releaseLock = await acquireSyncLock()
+  try {
+    return await _sendBSVMultiKeyInner(changeWif, toAddress, satoshis, utxos, accountId)
+  } finally {
+    releaseLock()
+  }
+}
+
+async function _sendBSVMultiKeyInner(
   changeWif: string,
   toAddress: string,
   satoshis: number,
@@ -524,18 +561,19 @@ export async function sendBSVMultiKey(
     throw broadcastError
   }
 
-  // Track transaction locally
+  // Track transaction locally — atomic to prevent partial state
   try {
-    await recordSentTransaction(
-      txid,
-      tx.toHex(),
-      `Sent ${satoshis} sats to ${toAddress}`,
-      ['send'],
-      -(satoshis + fee),  // Negative = money out, includes fee
-      accountId
-    )
-    // Confirm UTXOs as spent (updates from pending -> spent)
-    await confirmUtxosSpent(utxosToSpend, txid)
+    await withTransaction(async () => {
+      await recordSentTransaction(
+        txid,
+        tx.toHex(),
+        `Sent ${satoshis} sats to ${toAddress}`,
+        ['send'],
+        -(satoshis + fee),  // Negative = money out, includes fee
+        accountId
+      )
+      await confirmUtxosSpent(utxosToSpend, txid)
+    })
   } catch (error) {
     walletLogger.warn('Failed to track transaction locally', undefined, error instanceof Error ? error : undefined)
   }

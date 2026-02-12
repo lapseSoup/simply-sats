@@ -288,9 +288,37 @@ export function WalletProvider({ children }: WalletProviderProps) {
     audit.walletLocked(activeAccountId ?? undefined)
   }, [activeAccountId])
 
+  // Lock wallet when app is hidden for extended period (prevents leaving keys in memory)
+  useEffect(() => {
+    if (!wallet || isLocked) return
+
+    const HIDDEN_LOCK_DELAY_MS = 60_000 // 60 seconds
+    let hiddenTimer: ReturnType<typeof setTimeout> | null = null
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        hiddenTimer = setTimeout(() => {
+          walletLogger.info('Locking wallet — app hidden for extended period')
+          lockWallet()
+        }, HIDDEN_LOCK_DELAY_MS)
+      } else {
+        if (hiddenTimer) {
+          clearTimeout(hiddenTimer)
+          hiddenTimer = null
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (hiddenTimer) clearTimeout(hiddenTimer)
+    }
+  }, [wallet, isLocked, lockWallet])
+
   // Unlock wallet with password (with rate limiting)
   // Uses constant-time padding to prevent timing side-channel attacks
-  const UNLOCK_MIN_TIME_MS = 300
+  const UNLOCK_MIN_TIME_MS = 500
   const unlockWallet = useCallback(async (password: string): Promise<boolean> => {
     const startTime = performance.now()
 
@@ -692,6 +720,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     const version = fetchVersionRef.current
     // Use ref for always-current account ID (avoids stale closure after account switch)
     const currentAccountId = activeAccountIdRef.current
+    // Guard: don't fetch data without a valid account ID (prevents cross-account data leaks)
+    if (!currentAccountId) return
 
     await syncFetchData(
       wallet,

@@ -374,9 +374,11 @@ describe('Wallet Service', () => {
 
     describe('getUTXOs', () => {
       it('should fetch and format UTXOs', async () => {
+        const txid1 = 'a'.repeat(64)
+        const txid2 = 'b'.repeat(64)
         const mockUtxos = [
-          { tx_hash: 'abc123', tx_pos: 0, value: 10000 },
-          { tx_hash: 'def456', tx_pos: 1, value: 5000 }
+          { tx_hash: txid1, tx_pos: 0, value: 10000 },
+          { tx_hash: txid2, tx_pos: 1, value: 5000 }
         ]
         vi.mocked(fetch).mockResolvedValueOnce({
           ok: true,
@@ -386,7 +388,7 @@ describe('Wallet Service', () => {
         const utxos = await getUTXOs('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')
 
         expect(utxos).toHaveLength(2)
-        expect(utxos[0]!.txid).toBe('abc123')
+        expect(utxos[0]!.txid).toBe(txid1)
         expect(utxos[0]!.vout).toBe(0)
         expect(utxos[0]!.satoshis).toBe(10000)
         expect(utxos[0]!.script).toBeDefined()

@@ -27,15 +27,19 @@ const RATE_LIMIT_PER_MINUTE: u32 = 60;
 // Type alias for the rate limiter
 type SharedRateLimiter = Arc<RateLimiter<governor::state::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>;
 
-// Allowed hosts for DNS rebinding protection
+// Allowed hosts for DNS rebinding protection (matched case-insensitively)
 const ALLOWED_HOSTS: &[&str] = &[
     "127.0.0.1",
     "localhost",
     "127.0.0.1:3322",
     "localhost:3322",
+    "[::1]",
+    "[::1]:3322",
 ];
 
-// Allowed origins for CORS - localhost, Tauri webview, and integrated apps
+// Allowed origins for CORS - Tauri webview and integrated apps
+// Dev server ports (1420, 3000, 3001) only included in debug builds
+#[cfg(debug_assertions)]
 const ALLOWED_ORIGINS: &[&str] = &[
     "http://localhost",
     "http://localhost:1420",      // Vite dev server
@@ -43,8 +47,16 @@ const ALLOWED_ORIGINS: &[&str] = &[
     "http://localhost:3001",      // Next.js alternate port
     "http://127.0.0.1",
     "http://127.0.0.1:1420",
-    "http://127.0.0.1:3000",      // Next.js dev server (Wrootz)
-    "http://127.0.0.1:3001",      // Next.js alternate port
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "tauri://localhost",          // Tauri webview on macOS/Linux
+    "https://tauri.localhost",    // Tauri webview on Windows
+];
+
+#[cfg(not(debug_assertions))]
+const ALLOWED_ORIGINS: &[&str] = &[
+    "http://localhost",
+    "http://127.0.0.1",
     "tauri://localhost",          // Tauri webview on macOS/Linux
     "https://tauri.localhost",    // Tauri webview on Windows
 ];
@@ -100,7 +112,7 @@ async fn validate_host_header(
         .and_then(|v| v.to_str().ok());
 
     match host {
-        Some(h) if ALLOWED_HOSTS.iter().any(|allowed| h == *allowed) => {
+        Some(h) if ALLOWED_HOSTS.iter().any(|allowed| h.eq_ignore_ascii_case(allowed)) => {
             Ok(next.run(request).await)
         }
         _ => {
@@ -116,11 +128,6 @@ async fn validate_session_token(
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Allow getVersion without token for connection testing
-    if request.uri().path() == "/getVersion" {
-        return Ok(next.run(request).await);
-    }
-
     let token_header = request
         .headers()
         .get(SESSION_TOKEN_HEADER)
@@ -135,13 +142,25 @@ async fn validate_session_token(
             let session_bytes = session.token.as_bytes();
             let is_valid = token_bytes.len() == session_bytes.len()
                 && token_bytes.ct_eq(session_bytes).into();
+            let is_expired = session.is_token_expired();
 
             drop(session);
 
             if is_valid {
                 // Apply rate limiting after authentication
                 match state.rate_limiter.check() {
-                    Ok(_) => Ok(next.run(request).await),
+                    Ok(_) => {
+                        let mut response = next.run(request).await;
+                        // Auto-rotate expired tokens — include new token in response header
+                        if is_expired {
+                            let mut session = state.session_state.lock().await;
+                            let new_token = session.rotate_token();
+                            if let Ok(hv) = HeaderValue::from_str(&new_token) {
+                                response.headers_mut().insert("X-Simply-Sats-New-Token", hv);
+                            }
+                        }
+                        Ok(response)
+                    },
                     Err(_) => {
                         eprintln!("[Rate Limit] Request to {} exceeded rate limit", request.uri().path());
                         Err(StatusCode::TOO_MANY_REQUESTS)
@@ -192,6 +211,16 @@ pub async fn start_server(
             axum::http::HeaderName::from_static("x-simply-sats-nonce"),
         ]);
 
+    // Security response headers middleware
+    let security_headers = axum::middleware::from_fn(|request: Request<Body>, next: Next| async move {
+        let mut response = next.run(request).await;
+        let headers = response.headers_mut();
+        headers.insert("X-Content-Type-Options", HeaderValue::from_static("nosniff"));
+        headers.insert("X-Frame-Options", HeaderValue::from_static("DENY"));
+        headers.insert("Cache-Control", HeaderValue::from_static("no-store"));
+        response
+    });
+
     // REST-style routes matching HTTPWalletJSON substrate format from @bsv/sdk
     let app = Router::new()
         .route("/getVersion", post(handle_get_version))
@@ -210,6 +239,7 @@ pub async fn start_server(
         .route("/listLocks", post(handle_list_locks))
         .layer(middleware::from_fn_with_state(state.clone(), validate_session_token))
         .layer(middleware::from_fn(validate_host_header))
+        .layer(security_headers)
         .layer(cors)
         .with_state(state);
 
@@ -361,6 +391,29 @@ fn extract_origin(request: &Request<Body>) -> Option<String> {
         })
 }
 
+/// Validate that the request origin is in the allowed list (for state-changing operations)
+fn validate_origin(origin: &Option<String>) -> Result<(), Response> {
+    match origin {
+        Some(ref o) if ALLOWED_ORIGINS.iter().any(|allowed| o == *allowed) => Ok(()),
+        Some(ref o) => {
+            eprintln!("[Security] Rejected request: origin not in whitelist: {}", o);
+            Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
+                "isError": true,
+                "code": -32002,
+                "message": "Origin not allowed"
+            }))).into_response())
+        }
+        None => {
+            eprintln!("[Security] Rejected request: missing Origin header");
+            Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
+                "isError": true,
+                "code": -32002,
+                "message": "Missing Origin header"
+            }))).into_response())
+        }
+    }
+}
+
 /// Extract CSRF nonce from request headers
 fn extract_nonce(request: &Request<Body>) -> Option<String> {
     request.headers()
@@ -404,6 +457,11 @@ async fn handle_create_signature(
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
 
+    // Validate origin for this state-changing operation
+    if let Err(err) = validate_origin(&origin) {
+        return err;
+    }
+
     // Validate CSRF nonce for this state-changing operation
     if let Err(err) = validate_nonce(&state, nonce).await {
         return err;
@@ -440,6 +498,11 @@ async fn handle_create_action(
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
 
+    // Validate origin for this state-changing operation
+    if let Err(err) = validate_origin(&origin) {
+        return err;
+    }
+
     // Validate CSRF nonce for this state-changing operation
     if let Err(err) = validate_nonce(&state, nonce).await {
         return err;
@@ -474,6 +537,11 @@ async fn handle_list_outputs(
 ) -> Response {
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
+
+    // Validate origin — read endpoints can leak sensitive UTXO data
+    if let Err(err) = validate_origin(&origin) {
+        return err;
+    }
 
     // Validate CSRF nonce — read endpoints can still leak sensitive data
     if let Err(err) = validate_nonce(&state, nonce).await {
@@ -510,6 +578,11 @@ async fn handle_lock_bsv(
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
 
+    // Validate origin for this state-changing operation
+    if let Err(err) = validate_origin(&origin) {
+        return err;
+    }
+
     // Validate CSRF nonce for this state-changing operation
     if let Err(err) = validate_nonce(&state, nonce).await {
         return err;
@@ -545,6 +618,11 @@ async fn handle_unlock_bsv(
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
 
+    // Validate origin for this state-changing operation
+    if let Err(err) = validate_origin(&origin) {
+        return err;
+    }
+
     // Validate CSRF nonce for this state-changing operation
     if let Err(err) = validate_nonce(&state, nonce).await {
         return err;
@@ -579,6 +657,11 @@ async fn handle_list_locks(
 ) -> Response {
     let origin = extract_origin(&request);
     let nonce = extract_nonce(&request);
+
+    // Validate origin — read endpoints can leak sensitive lock data
+    if let Err(err) = validate_origin(&origin) {
+        return err;
+    }
 
     // Validate CSRF nonce — read endpoints can still leak sensitive data
     if let Err(err) = validate_nonce(&state, nonce).await {

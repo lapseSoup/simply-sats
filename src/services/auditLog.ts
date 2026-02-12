@@ -42,18 +42,34 @@ async function getDb(): Promise<Database> {
 /** Maximum serialized size for audit log details (10 KB) */
 const MAX_DETAILS_SIZE = 10240
 
+/** Fields that must never appear in audit logs (case-insensitive) */
+const REDACTED_FIELDS = new Set([
+  'password', 'wif', 'mnemonic', 'privatekey', 'secret', 'seed',
+  'passphrase', 'privkey', 'sessionpassword', 'token', 'key'
+])
+
 /**
  * Sanitize details object for audit logging.
- * Prevents unbounded data from being stored in the database.
+ * Redacts sensitive fields and prevents unbounded data from being stored.
  */
 function sanitizeDetails(details: Record<string, unknown>): string | null {
   try {
-    const json = JSON.stringify(details)
+    // Redact sensitive fields before serialization
+    const redacted: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(details)) {
+      if (REDACTED_FIELDS.has(key.toLowerCase())) {
+        redacted[key] = '[REDACTED]'
+      } else {
+        redacted[key] = value
+      }
+    }
+
+    const json = JSON.stringify(redacted)
     if (json.length > MAX_DETAILS_SIZE) {
       walletLogger.warn('Audit log details truncated', { originalSize: json.length })
       // Keep only known safe keys, drop the rest
       const safe: Record<string, unknown> = {}
-      for (const [key, value] of Object.entries(details)) {
+      for (const [key, value] of Object.entries(redacted)) {
         const valStr = JSON.stringify(value)
         if (typeof key === 'string' && key.length <= 64 && valStr.length <= 1024) {
           safe[key] = value

@@ -8,19 +8,13 @@
 import type { WalletKeys } from './wallet'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData } from './crypto'
 import { walletLogger } from './logger'
+import { SECURITY } from '../config'
 
 // Storage key in localStorage
 const STORAGE_KEY = 'simply_sats_wallet'
 
-/**
- * Save wallet keys with proper AES-GCM encryption
- *
- * @param keys - Wallet keys to save
- * @param password - Password for encryption
- */
-// Minimum password length - 12 characters for security
-// A 4-character password can be brute-forced in seconds
-const MIN_PASSWORD_LENGTH = 12
+// Minimum password length — sourced from centralized config (14 chars)
+const MIN_PASSWORD_LENGTH = SECURITY.MIN_PASSWORD_LENGTH
 
 export async function saveWallet(keys: WalletKeys, password: string): Promise<void> {
   if (!password || password.length < MIN_PASSWORD_LENGTH) {

@@ -118,18 +118,20 @@ describe('WocClient', () => {
   })
 
   describe('getUtxos', () => {
+    const validTxid = 'a'.repeat(64) // Valid 64-char hex txid
+
     it('should fetch UTXOs for address', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve([
-          { tx_hash: 'abc123', tx_pos: 0, value: 10000 }
+          { tx_hash: validTxid, tx_pos: 0, value: 10000 }
         ])
       })
 
       const utxos = await client.getUtxos('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')
 
       expect(utxos).toHaveLength(1)
-      expect(utxos[0]!.txid).toBe('abc123')
+      expect(utxos[0]!.txid).toBe(validTxid)
       expect(utxos[0]!.vout).toBe(0)
       expect(utxos[0]!.satoshis).toBe(10000)
       expect(utxos[0]!.script).toBeTruthy() // Should have a locking script

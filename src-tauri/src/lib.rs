@@ -32,9 +32,13 @@ use secure_storage::{
 const NONCE_EXPIRY_SECS: u64 = 300; // 5 minutes
 const MAX_USED_NONCES: usize = 1000; // Prevent memory exhaustion
 
+// Session token TTL: 1 hour — forces periodic rotation even without state-changing ops
+const SESSION_TOKEN_TTL_SECS: u64 = 3600;
+
 // Session state for HTTP server authentication
 pub struct SessionState {
     pub token: String,
+    pub token_created_at: u64,
     pub csrf_secret: String,
     pub used_nonces: HashSet<String>,
     pub nonce_timestamps: Vec<(String, u64)>,
@@ -42,6 +46,11 @@ pub struct SessionState {
 
 impl SessionState {
     pub fn new() -> Self {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
         // Generate 48-character alphanumeric token using CSPRNG
         // 62 possible chars (a-z, A-Z, 0-9) = ~5.95 bits per char
         // 48 chars = ~286 bits of entropy (exceeds 256-bit security)
@@ -60,20 +69,34 @@ impl SessionState {
 
         Self {
             token,
+            token_created_at: now,
             csrf_secret,
             used_nonces: HashSet::new(),
             nonce_timestamps: Vec::new(),
         }
     }
 
-    /// Rotate the session token (call after state-changing operations)
+    /// Rotate the session token (call after state-changing operations or TTL expiry)
     pub fn rotate_token(&mut self) -> String {
         self.token = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(48)
             .map(char::from)
             .collect();
+        self.token_created_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         self.token.clone()
+    }
+
+    /// Check if the session token has expired
+    pub fn is_token_expired(&self) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now > self.token_created_at + SESSION_TOKEN_TTL_SECS
     }
 
     /// Generate a new CSRF nonce

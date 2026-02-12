@@ -72,13 +72,16 @@ export async function fetchDynamicFeeRate(): Promise<number> {
 /**
  * Get the current fee rate
  * Prefers user-set rate, then cached dynamic rate, then default
+ * Always clamped to [MIN_FEE_RATE, MAX_FEE_RATE] for safety
  */
 export function getFeeRate(): number {
   // Check for user override first
   const stored = localStorage.getItem('simply_sats_fee_rate')
   if (stored) {
     const rate = parseFloat(stored)
-    if (!isNaN(rate) && rate > 0) return rate
+    if (!isNaN(rate) && rate > 0) {
+      return Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, rate))
+    }
   }
 
   // Use cached dynamic rate if available
