@@ -4,7 +4,7 @@
  * CRUD operations for UTXOs and pending spend management.
  */
 
-import { getDatabase } from './connection'
+import { getDatabase, withTransaction } from './connection'
 import { dbLogger } from '../logger'
 import type { UTXO } from './types'
 import type {
@@ -86,7 +86,7 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
     const ex = existing[0]!
     const spendableValue = utxo.spendable ? 1 : 0
     // Always update account_id when caller provides one — fixes UTXOs stuck under wrong account
-    const accId = accountId || 1
+    const accId = accountId ?? 1
 
     // CRITICAL: If we're re-syncing a UTXO that exists on-chain, it's NOT spent!
     // Always clear spent_at and ensure spendable is correct when adding a UTXO
@@ -129,7 +129,7 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
   }
 
   // UTXO doesn't exist - INSERT it
-  const accId = accountId || 1 // Default to account 1 for backwards compatibility
+  const accId = accountId ?? 1 // Default to account 1 for backwards compatibility
   dbLogger.debug(`[DB] INSERT: ${utxo.txid.slice(0,8)}:${utxo.vout} ${utxo.satoshis}sats basket=${utxo.basket} spendable=${utxo.spendable} account=${accId}`)
   const result = await database.execute(
     `INSERT INTO utxos (txid, vout, satoshis, locking_script, address, basket, spendable, created_at, account_id)
@@ -276,13 +276,20 @@ export async function getSpendableUTXOsByAddress(address: string): Promise<UTXO[
 /**
  * Mark a UTXO as spent
  */
-export async function markUTXOSpent(txid: string, vout: number, spentTxid: string): Promise<void> {
+export async function markUTXOSpent(txid: string, vout: number, spentTxid: string, accountId?: number): Promise<void> {
   const database = getDatabase()
 
-  await database.execute(
-    'UPDATE utxos SET spent_at = $1, spent_txid = $2, spending_status = $3 WHERE txid = $4 AND vout = $5',
-    [Date.now(), spentTxid, 'spent', txid, vout]
-  )
+  if (accountId !== undefined) {
+    await database.execute(
+      'UPDATE utxos SET spent_at = $1, spent_txid = $2, spending_status = $3 WHERE txid = $4 AND vout = $5 AND account_id = $6',
+      [Date.now(), spentTxid, 'spent', txid, vout, accountId]
+    )
+  } else {
+    await database.execute(
+      'UPDATE utxos SET spent_at = $1, spent_txid = $2, spending_status = $3 WHERE txid = $4 AND vout = $5',
+      [Date.now(), spentTxid, 'spent', txid, vout]
+    )
+  }
 }
 
 // ============================================
@@ -494,34 +501,54 @@ export async function getAllUTXOs(accountId?: number): Promise<UTXO[]> {
 export async function toggleUtxoFrozen(
   txid: string,
   vout: number,
-  frozen: boolean
+  frozen: boolean,
+  accountId?: number
 ): Promise<void> {
   const database = getDatabase()
   const spendable = frozen ? 0 : 1
 
   dbLogger.debug(`[DB] Setting UTXO ${txid.slice(0, 8)}:${vout} frozen=${frozen} (spendable=${spendable})`)
 
-  await database.execute(
-    'UPDATE utxos SET spendable = $1 WHERE txid = $2 AND vout = $3',
-    [spendable, txid, vout]
-  )
+  if (accountId !== undefined) {
+    await database.execute(
+      'UPDATE utxos SET spendable = $1 WHERE txid = $2 AND vout = $3 AND account_id = $4',
+      [spendable, txid, vout, accountId]
+    )
+  } else {
+    await database.execute(
+      'UPDATE utxos SET spendable = $1 WHERE txid = $2 AND vout = $3',
+      [spendable, txid, vout]
+    )
+  }
 }
 
 /**
  * Repair UTXOs - fix any broken spendable flags
  * Call this to fix UTXOs that should be spendable but aren't
  */
-export async function repairUTXOs(): Promise<number> {
+export async function repairUTXOs(accountId?: number): Promise<number> {
   const database = getDatabase()
 
   // Find UTXOs that are not in the locks basket but have spendable=0 and no spent_at
   // These are likely broken from previous bugs
-  const result = await database.execute(
-    `UPDATE utxos SET spendable = 1
-     WHERE spendable = 0
-     AND spent_at IS NULL
-     AND basket != 'locks'`
-  )
+  let result
+  if (accountId !== undefined) {
+    result = await database.execute(
+      `UPDATE utxos SET spendable = 1
+       WHERE spendable = 0
+       AND spent_at IS NULL
+       AND basket != 'locks'
+       AND account_id = $1`,
+      [accountId]
+    )
+  } else {
+    result = await database.execute(
+      `UPDATE utxos SET spendable = 1
+       WHERE spendable = 0
+       AND spent_at IS NULL
+       AND basket != 'locks'`
+    )
+  }
 
   const fixed = result.rowsAffected || 0
   if (fixed > 0) {
@@ -555,51 +582,53 @@ export async function clearUtxosForAccount(accountId: number): Promise<void> {
 export async function reassignAccountData(targetAccountId: number): Promise<number> {
   if (targetAccountId === 1) return 0 // Nothing to reassign
 
-  const database = getDatabase()
-  let totalFixed = 0
+  return withTransaction(async () => {
+    const database = getDatabase()
+    let totalFixed = 0
 
-  // Reassign UTXOs
-  const utxoResult = await database.execute(
-    'UPDATE utxos SET account_id = $1 WHERE account_id = 1',
-    [targetAccountId]
-  )
-  const utxoFixed = utxoResult.rowsAffected || 0
-  totalFixed += utxoFixed
-
-  // Reassign transactions
-  const txResult = await database.execute(
-    'UPDATE transactions SET account_id = $1 WHERE account_id = 1',
-    [targetAccountId]
-  )
-  const txFixed = txResult.rowsAffected || 0
-  totalFixed += txFixed
-
-  // Reassign locks
-  const lockResult = await database.execute(
-    'UPDATE locks SET account_id = $1 WHERE account_id = 1',
-    [targetAccountId]
-  )
-  const lockFixed = lockResult.rowsAffected || 0
-  totalFixed += lockFixed
-
-  // Reassign ordinal cache
-  try {
-    const ordResult = await database.execute(
-      'UPDATE ordinal_cache SET account_id = $1 WHERE account_id = 1',
+    // Reassign UTXOs
+    const utxoResult = await database.execute(
+      'UPDATE utxos SET account_id = $1 WHERE account_id = 1',
       [targetAccountId]
     )
-    const ordFixed = ordResult.rowsAffected || 0
-    totalFixed += ordFixed
-    if (ordFixed > 0) dbLogger.info(`[DB] Reassigned ${ordFixed} ordinal cache entries`)
-  } catch {
-    // ordinal_cache table may not exist yet
-  }
+    const utxoFixed = utxoResult.rowsAffected || 0
+    totalFixed += utxoFixed
 
-  if (totalFixed > 0) {
-    dbLogger.info(`[DB] Reassigned ${totalFixed} records from account_id=1 to account_id=${targetAccountId}`, {
-      utxos: utxoFixed, transactions: txFixed, locks: lockFixed
-    })
-  }
+    // Reassign transactions
+    const txResult = await database.execute(
+      'UPDATE transactions SET account_id = $1 WHERE account_id = 1',
+      [targetAccountId]
+    )
+    const txFixed = txResult.rowsAffected || 0
+    totalFixed += txFixed
 
-  return totalFixed
+    // Reassign locks
+    const lockResult = await database.execute(
+      'UPDATE locks SET account_id = $1 WHERE account_id = 1',
+      [targetAccountId]
+    )
+    const lockFixed = lockResult.rowsAffected || 0
+    totalFixed += lockFixed
+
+    // Reassign ordinal cache
+    try {
+      const ordResult = await database.execute(
+        'UPDATE ordinal_cache SET account_id = $1 WHERE account_id = 1',
+        [targetAccountId]
+      )
+      const ordFixed = ordResult.rowsAffected || 0
+      totalFixed += ordFixed
+      if (ordFixed > 0) dbLogger.info(`[DB] Reassigned ${ordFixed} ordinal cache entries`)
+    } catch {
+      // ordinal_cache table may not exist yet
+    }
+
+    if (totalFixed > 0) {
+      dbLogger.info(`[DB] Reassigned ${totalFixed} records from account_id=1 to account_id=${targetAccountId}`, {
+        utxos: utxoFixed, transactions: txFixed, locks: lockFixed
+      })
+    }
+
+    return totalFixed
+  })
 }

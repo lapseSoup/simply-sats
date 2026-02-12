@@ -1004,6 +1004,12 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
           break
         }
 
+        // Validate public key format (compressed: 66 hex chars starting with 02/03, uncompressed: 130 hex chars starting with 04)
+        if (!/^(02|03)[0-9a-fA-F]{64}$/.test(recipientPubKey) && !/^04[0-9a-fA-F]{128}$/.test(recipientPubKey)) {
+          response.error = { code: -32602, message: 'Invalid public key format' }
+          break
+        }
+
         try {
           // Derive shared secret using ECDH
           const senderPrivKey = PrivateKey.fromWif(keys.identityWif)

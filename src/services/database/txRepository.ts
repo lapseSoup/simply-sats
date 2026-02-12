@@ -15,7 +15,7 @@ import type { TransactionRow, SqlParams } from '../database-types'
  */
 export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: number): Promise<string> {
   const database = getDatabase()
-  const accId = accountId || 1
+  const accId = accountId ?? 1
 
   // Use INSERT OR IGNORE to not overwrite existing transactions
   await database.execute(
@@ -62,7 +62,7 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: nu
  */
 export async function upsertTransaction(tx: Omit<Transaction, 'id'>, accountId?: number): Promise<string> {
   const database = getDatabase()
-  const accId = accountId || 1
+  const accId = accountId ?? 1
 
   // First try to insert
   await database.execute(
@@ -170,7 +170,7 @@ export async function getAllTransactions(limit = 30, accountId?: number): Promis
  */
 export async function updateTransactionAmount(txid: string, amount: number, accountId?: number): Promise<void> {
   const database = getDatabase()
-  const accId = accountId || 1
+  const accId = accountId ?? 1
 
   await database.execute(
     'UPDATE transactions SET amount = $1 WHERE txid = $2 AND account_id = $3',
@@ -226,7 +226,7 @@ export async function updateTransactionStatus(
   accountId?: number
 ): Promise<void> {
   const database = getDatabase()
-  const accId = accountId || 1
+  const accId = accountId ?? 1
 
   await database.execute(
     'UPDATE transactions SET status = $1, confirmed_at = $2, block_height = $3 WHERE txid = $4 AND account_id = $5',

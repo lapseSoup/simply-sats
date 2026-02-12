@@ -7,6 +7,9 @@
 
 import type { BRC100Request, BRC100Response } from './types'
 
+/** Maximum number of pending BRC-100 requests to prevent resource exhaustion */
+const MAX_PENDING_REQUESTS = 100
+
 interface PendingRequest {
   request: BRC100Request
   resolve: (response: BRC100Response) => void
@@ -53,6 +56,11 @@ export class RequestManager {
     resolve: (response: BRC100Response) => void,
     reject: (error: Error) => void
   ): void {
+    if (this.pending.size >= MAX_PENDING_REQUESTS) {
+      reject(new Error('Too many pending requests'))
+      return
+    }
+
     this.pending.set(id, {
       request,
       resolve,

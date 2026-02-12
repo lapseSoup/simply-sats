@@ -105,16 +105,25 @@ export async function markLockUnlocked(lockId: number): Promise<void> {
 /**
  * Mark a lock as unlocked by its UTXO txid and vout
  */
-export async function markLockUnlockedByTxid(txid: string, vout: number): Promise<void> {
+export async function markLockUnlockedByTxid(txid: string, vout: number, accountId?: number): Promise<void> {
   const database = getDatabase()
 
   // Find the lock by joining with utxos table
-  await database.execute(
-    `UPDATE locks SET unlocked_at = $1
-     WHERE utxo_id IN (SELECT id FROM utxos WHERE txid = $2 AND vout = $3)
-     AND unlocked_at IS NULL`,
-    [Date.now(), txid, vout]
-  )
+  if (accountId !== undefined) {
+    await database.execute(
+      `UPDATE locks SET unlocked_at = $1
+       WHERE utxo_id IN (SELECT id FROM utxos WHERE txid = $2 AND vout = $3 AND account_id = $4)
+       AND unlocked_at IS NULL`,
+      [Date.now(), txid, vout, accountId]
+    )
+  } else {
+    await database.execute(
+      `UPDATE locks SET unlocked_at = $1
+       WHERE utxo_id IN (SELECT id FROM utxos WHERE txid = $2 AND vout = $3)
+       AND unlocked_at IS NULL`,
+      [Date.now(), txid, vout]
+    )
+  }
   dbLogger.debug(`[DB] Marked lock as unlocked: ${txid}:${vout}`)
 }
 
@@ -136,10 +145,15 @@ export async function updateLockBlock(txid: string, vout: number, lockBlock: num
 /**
  * Get all locks for export
  */
-export async function getAllLocks(): Promise<Lock[]> {
+export async function getAllLocks(accountId?: number): Promise<Lock[]> {
   const database = getDatabase()
 
-  const rows = await database.select<LockRow[]>('SELECT * FROM locks')
+  let rows: LockRow[]
+  if (accountId !== undefined) {
+    rows = await database.select<LockRow[]>('SELECT * FROM locks WHERE account_id = $1', [accountId])
+  } else {
+    rows = await database.select<LockRow[]>('SELECT * FROM locks')
+  }
 
   return rows.map(row => ({
     id: row.id,

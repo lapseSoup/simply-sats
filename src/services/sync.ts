@@ -26,7 +26,8 @@ import {
   type UTXO as DBUtxo,
   getTransactionLabels,
   updateTransactionLabels,
-  addLockIfNotExists
+  addLockIfNotExists,
+  markLockUnlockedByTxid
 } from './database'
 import { RATE_LIMITS } from './config'
 import { getWocClient, type WocTransaction } from '../infrastructure/api/wocClient'
@@ -156,6 +157,16 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
     currentUtxoKeys.add(`${u.txid}:${u.vout}`)
   }
 
+  // Guard: If WoC returns zero UTXOs but we have local UTXOs for this address,
+  // this is likely an API issue (rate limit, temporary outage) rather than all
+  // UTXOs genuinely being spent. Skip spend-marking to prevent data loss.
+  if (wocUtxos.length === 0 && existingMap.size > 0) {
+    syncLogger.warn(
+      `[SYNC #${syncId}] WoC returned 0 UTXOs but ${existingMap.size} exist locally for ${address.slice(0, 12)}... — skipping spend-marking`
+    )
+    return { address, basket, newUtxos: 0, spentUtxos: 0, totalBalance: 0 }
+  }
+
   let newUtxos = 0
   let spentUtxos = 0
   let totalBalance = 0
@@ -167,7 +178,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
     if (!existingMap.has(key)) {
       // New UTXO - add to database with address and account ID
-      syncLogger.debug(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats (account=${accountId || 1})`)
+      syncLogger.debug(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats (account=${accountId ?? 1})`)
       try {
         await addUTXO({
           txid: wocUtxo.txid,
@@ -202,7 +213,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
       }
       // UTXO no longer exists at this address - mark as spent
       syncLogger.debug(`[SYNC] Marking spent: ${key}`)
-      await markUTXOSpent(utxo.txid, utxo.vout, 'unknown')
+      await markUTXOSpent(utxo.txid, utxo.vout, 'unknown', accountId)
       spentUtxos++
     }
   }
@@ -377,6 +388,14 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
           const totalOutput = txDetails.vout.reduce((sum, v) => sum + Math.round(v.value * 1e8), 0)
           txDescription = `Unlocked ${totalOutput.toLocaleString()} sats`
           txLabel = 'unlock'
+          // Mark the source lock(s) as unlocked in DB (prevents stale lock flash on restore)
+          for (const vin of txDetails.vin) {
+            if (vin.txid && vin.vout !== undefined) {
+              try {
+                await markLockUnlockedByTxid(vin.txid, vin.vout, accountId)
+              } catch (_e) { /* best-effort — lock may not exist in DB yet */ }
+            }
+          }
         }
       }
     }
@@ -420,7 +439,7 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
     }
   }
 
-  syncLogger.debug(`[TX HISTORY] Synced ${newTxCount} transactions for ${address.slice(0,12)}... (account=${accountId || 1})`)
+  syncLogger.debug(`[TX HISTORY] Synced ${newTxCount} transactions for ${address.slice(0,12)}... (account=${accountId ?? 1})`)
   return newTxCount
 }
 
@@ -493,6 +512,18 @@ export async function syncWallet(
   const token = startNewSync()
 
   try {
+    // Recover any UTXOs stuck in 'pending' state for more than 5 minutes
+    // These can occur when a broadcast fails after marking UTXOs as pending
+    try {
+      const stuckUtxos = await getPendingUtxos(5 * 60 * 1000)
+      if (stuckUtxos.length > 0) {
+        syncLogger.warn(`[SYNC] Found ${stuckUtxos.length} stuck pending UTXOs — rolling back`)
+        await rollbackPendingSpend(stuckUtxos.map(u => ({ txid: u.txid, vout: u.vout })))
+      }
+    } catch (error) {
+      syncLogger.warn('[SYNC] Failed to recover pending UTXOs', { error: String(error) })
+    }
+
     // Sync derived addresses FIRST (most important for correct balance)
     const derivedAddresses = await getDerivedAddressesFromDB(accountId)
     syncLogger.debug(`[SYNC] Found ${derivedAddresses.length} derived addresses in database`)
@@ -535,7 +566,7 @@ export async function syncWallet(
     const txHistoryAddresses = [walletAddress, ...derivedAddresses.map(d => d.address)]
     // All wallet addresses for accurate input matching in calculateTxAmount
     const allWalletAddresses = [walletAddress, ordAddress, identityAddress, ...derivedAddresses.map(d => d.address)]
-    syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses (account=${accountId || 1})`)
+    syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses (account=${accountId ?? 1})`)
 
     for (const addr of txHistoryAddresses) {
       if (token.isCancelled) break
@@ -656,10 +687,11 @@ export async function recordSentTransaction(
  */
 export async function markUtxosSpent(
   utxos: { txid: string; vout: number }[],
-  spendingTxid: string
+  spendingTxid: string,
+  accountId?: number
 ): Promise<void> {
   for (const utxo of utxos) {
-    await markUTXOSpent(utxo.txid, utxo.vout, spendingTxid)
+    await markUTXOSpent(utxo.txid, utxo.vout, spendingTxid, accountId)
   }
 }
 

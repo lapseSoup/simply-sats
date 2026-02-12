@@ -259,6 +259,21 @@ export function WalletProvider({ children }: WalletProviderProps) {
     walletLogger.debug('Session password state changed', { hasPassword: !!sessionPassword })
   }, [sessionPassword])
 
+  // Independent session password timeout — clears password after 30 minutes of inactivity
+  // This is a safety net independent of auto-lock to ensure the session password
+  // doesn't persist indefinitely if auto-lock is disabled or set to a long duration.
+  useEffect(() => {
+    if (!sessionPassword) return
+
+    const SESSION_PASSWORD_TTL_MS = 30 * 60 * 1000 // 30 minutes
+    const timer = setTimeout(() => {
+      walletLogger.info('Session password cleared — independent timeout reached (30 min)')
+      setSessionPassword(null)
+    }, SESSION_PASSWORD_TTL_MS)
+
+    return () => clearTimeout(timer)
+  }, [sessionPassword])
+
   // Get network state from NetworkContext
   const { networkInfo, syncing, usdPrice } = useNetwork()
 
@@ -505,11 +520,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
     }
   }, [accountsSwitchAccount, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, sessionPassword])
 
-  // Create a new account - wraps AccountsContext to also set wallet state
-  // Create a new account using session password
+  // Create a new account using session password (capped at 10 accounts)
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     if (!sessionPassword) {
       walletLogger.error('Cannot create account - no session password available')
+      return false
+    }
+    if (accounts.length >= 10) {
+      walletLogger.warn('Account creation blocked - maximum 10 accounts reached')
       return false
     }
     const keys = await accountsCreateNewAccount(name, sessionPassword)
@@ -519,7 +537,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       return true
     }
     return false
-  }, [accountsCreateNewAccount, setWallet, sessionPassword])
+  }, [accountsCreateNewAccount, setWallet, sessionPassword, accounts.length])
 
   // Import account from external mnemonic using session password
   const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {

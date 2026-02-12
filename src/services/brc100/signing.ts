@@ -57,8 +57,11 @@ export async function signData(
     case 'ordinals':
       wif = keys.ordWif
       break
-    default:
+    case 'identity':
       wif = keys.identityWif
+      break
+    default:
+      throw new Error(`Invalid keyType: ${keyType as string}`)
   }
 
   if (isTauri()) {

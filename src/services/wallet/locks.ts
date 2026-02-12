@@ -417,7 +417,7 @@ export async function unlockBSV(
 
   // Mark the lock as unlocked in the database
   try {
-    await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout)
+    await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout, accountId)
     walletLogger.info('Marked lock as unlocked', { txid: lockedUtxo.txid, vout: lockedUtxo.vout })
   } catch (error) {
     walletLogger.warn('Failed to mark lock as unlocked in database', { error: String(error) })

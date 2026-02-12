@@ -147,6 +147,12 @@ fn derive_keypair(seed: &[u8], path: &str) -> Result<KeyPair, String> {
 
 /// Parse and validate a mnemonic, returning the 64-byte BIP-39 seed.
 fn mnemonic_to_seed(mnemonic_str: &str) -> Result<Vec<u8>, String> {
+    // Validate word count before parsing (BIP-39 allows 12, 15, 18, 21, 24)
+    let word_count = mnemonic_str.split_whitespace().count();
+    if !matches!(word_count, 12 | 15 | 18 | 21 | 24) {
+        return Err(format!("Invalid mnemonic: expected 12, 15, 18, 21, or 24 words, got {}", word_count));
+    }
+
     let mn: Mnemonic = mnemonic_str
         .parse()
         .map_err(|e| format!("Invalid mnemonic: {}", e))?;

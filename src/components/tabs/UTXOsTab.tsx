@@ -194,14 +194,14 @@ export function UTXOsTab() {
   // Toggle freeze handler
   const handleToggleFreeze = useCallback(async (utxo: DatabaseUTXO) => {
     try {
-      await toggleUtxoFrozen(utxo.txid, utxo.vout, utxo.spendable) // Toggle: if spendable, freeze it
+      await toggleUtxoFrozen(utxo.txid, utxo.vout, utxo.spendable, activeAccountId ?? undefined) // Toggle: if spendable, freeze it
       await loadAllUtxos() // Refresh
       await fetchData() // Also refresh wallet context
       uiLogger.info(`UTXO ${utxo.spendable ? 'frozen' : 'unfrozen'}: ${utxo.txid.slice(0, 8)}`)
     } catch (e) {
       uiLogger.error('Failed to toggle UTXO freeze', e)
     }
-  }, [fetchData, loadAllUtxos])
+  }, [fetchData, loadAllUtxos, activeAccountId])
 
   // Consolidate handler - opens the modal
   const handleConsolidate = useCallback(() => {

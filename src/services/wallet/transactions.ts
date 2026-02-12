@@ -257,8 +257,14 @@ async function recordTransactionResult(
           }, accountId)
           walletLogger.debug('Change UTXO tracked', { txid, change })
         } catch (error) {
-          // Non-fatal within transaction: change UTXO may already exist (duplicate key)
-          walletLogger.warn('Failed to track change UTXO (will recover on next sync)', { error: String(error) })
+          const msg = String(error)
+          if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
+            // Duplicate key is expected if UTXO was already synced — non-fatal
+            walletLogger.debug('Change UTXO already exists (duplicate key)', { txid, change })
+          } else {
+            // Unexpected DB error — re-throw so the outer withTransaction() can handle it
+            throw error
+          }
         }
       }
     })
@@ -416,7 +422,12 @@ export async function consolidateUtxos(
         await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
         walletLogger.debug('Consolidated UTXO tracked', { txid, outputSats })
       } catch (error) {
-        walletLogger.warn('Failed to track consolidated UTXO (will recover on next sync)', { error: String(error) })
+        const msg = String(error)
+        if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
+          walletLogger.debug('Consolidated UTXO already exists (duplicate key)', { txid, outputSats })
+        } else {
+          throw error
+        }
       }
     })
     walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })

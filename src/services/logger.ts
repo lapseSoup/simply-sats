@@ -298,10 +298,11 @@ class ChildLogger {
 }
 
 // Create and export singleton instance
+// SECURITY: enableStorage must NEVER be true in production — logs may contain sensitive data
 export const logger = new Logger({
   minLevel: import.meta.env.DEV ? 'debug' : 'info',
   enableConsole: true,
-  enableStorage: false // Enable for debugging: true
+  enableStorage: import.meta.env.DEV ? false : false // Only enable in dev for debugging
 })
 
 // Export class for custom instances

@@ -160,12 +160,13 @@ export function SyncProvider({ children }: SyncProviderProps) {
       }
 
       syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })
+      const accountId = activeAccountId || undefined
       if (isRestore) {
         await restoreFromBlockchain(
           wallet.walletAddress,
           wallet.ordAddress,
           wallet.identityAddress,
-          activeAccountId || undefined,
+          accountId,
           wallet.walletPubKey
         )
       } else {
@@ -173,7 +174,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
           wallet.walletAddress,
           wallet.ordAddress,
           wallet.identityAddress,
-          activeAccountId || undefined,
+          accountId,
           wallet.walletPubKey
         )
       }
@@ -183,11 +184,11 @@ export function SyncProvider({ children }: SyncProviderProps) {
       // Update basket balances from database (scoped to account)
       try {
         const [defaultBal, ordBal, idBal, lockBal, derivedBal] = await Promise.all([
-          getBalanceFromDatabase('default', activeAccountId || undefined),
-          getBalanceFromDatabase('ordinals', activeAccountId || undefined),
-          getBalanceFromDatabase('identity', activeAccountId || undefined),
-          getBalanceFromDatabase('locks', activeAccountId || undefined),
-          getBalanceFromDatabase('derived', activeAccountId || undefined)
+          getBalanceFromDatabase('default', accountId),
+          getBalanceFromDatabase('ordinals', accountId),
+          getBalanceFromDatabase('identity', accountId),
+          getBalanceFromDatabase('locks', accountId),
+          getBalanceFromDatabase('derived', accountId)
         ])
 
         setBasketBalances({
@@ -220,6 +221,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
     knownUnlockedLocks: Set<string>,
     onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void
   ) => {
+    // Guard: require a valid account ID to prevent cross-account data leaks
+    if (!activeAccountId) return
+
     syncLogger.debug('Fetching data (database-first approach)...', {
       activeAccountId,
       walletAddress: wallet.walletAddress.slice(0, 12) + '...'
@@ -227,8 +231,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
     try {
       const [defaultBal, derivedBal] = await Promise.all([
-        getBalanceFromDatabase('default', activeAccountId || undefined),
-        getBalanceFromDatabase('derived', activeAccountId || undefined)
+        getBalanceFromDatabase('default', activeAccountId),
+        getBalanceFromDatabase('derived', activeAccountId)
       ])
       const totalBalance = defaultBal + derivedBal
       setBalance(totalBalance)
@@ -255,7 +259,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       }
 
       // Get transaction history from DATABASE (scoped to account)
-      const dbTxs = await getAllTransactions(30, activeAccountId || undefined)
+      const dbTxs = await getAllTransactions(30, activeAccountId)
       const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
         tx_hash: tx.txid,
         height: tx.blockHeight || 0,
@@ -276,7 +280,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       // Load locks from database instantly so they appear before blockchain detection
       let preloadedLocks: import('../services/wallet').LockedUTXO[] = []
       try {
-        const dbLocks = await getLocksFromDB(0, activeAccountId || undefined)
+        const dbLocks = await getLocksFromDB(0, activeAccountId)
         preloadedLocks = dbLocks.map(lock => ({
           txid: lock.utxo.txid,
           vout: lock.utxo.vout,
@@ -297,7 +301,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
       // Get ordinals - first from database (already synced), then supplement with API calls
       try {
-        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId || undefined)
+        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
         syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length, accountId: activeAccountId })
 
         // Display DB ordinals immediately (before slow API calls)
@@ -306,7 +310,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         }
 
         // Load cached content from DB for instant previews
-        const cachedOrdinals = await getCachedOrdinals(activeAccountId || undefined)
+        const cachedOrdinals = await getCachedOrdinals(activeAccountId)
         const newCache = new Map<string, OrdinalContentEntry>()
         for (const cached of cachedOrdinals) {
           // Load actual content for ordinals that have it cached
@@ -322,7 +326,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         }
 
         // Get derived addresses (scoped to active account)
-        const derivedAddrs = await getDerivedAddresses(activeAccountId || undefined)
+        const derivedAddrs = await getDerivedAddresses(activeAccountId)
 
         // Fetch from all addresses in parallel
         const ordinalResults = await Promise.allSettled([
@@ -417,6 +421,9 @@ async function cacheOrdinalsInBackground(
   contentCacheRef: React.MutableRefObject<Map<string, OrdinalContentEntry>>,
   setOrdinalContentCache: React.Dispatch<React.SetStateAction<Map<string, OrdinalContentEntry>>>
 ): Promise<void> {
+  // Guard: don't cache ordinals without a valid account ID (prevents cross-account contamination)
+  if (!activeAccountId) return
+
   try {
     // 1. Save metadata to DB
     const now = Date.now()
@@ -428,7 +435,7 @@ async function cacheOrdinalsInBackground(
         satoshis: ord.satoshis,
         contentType: ord.contentType,
         contentHash: ord.content,
-        accountId: activeAccountId || undefined,
+        accountId: activeAccountId,
         fetchedAt: now
       }
       await upsertOrdinalCache(cached)

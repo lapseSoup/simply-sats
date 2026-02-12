@@ -37,10 +37,15 @@ export async function updateSyncState(address: string, height: number): Promise<
 /**
  * Get all sync states for export
  */
-export async function getAllSyncStates(): Promise<{ address: string; height: number; syncedAt: number }[]> {
+export async function getAllSyncStates(accountId?: number): Promise<{ address: string; height: number; syncedAt: number }[]> {
   const database = getDatabase()
 
-  const rows = await database.select<SyncStateRow[]>('SELECT * FROM sync_state')
+  let rows: SyncStateRow[]
+  if (accountId !== undefined) {
+    rows = await database.select<SyncStateRow[]>('SELECT * FROM sync_state WHERE account_id = $1', [accountId])
+  } else {
+    rows = await database.select<SyncStateRow[]>('SELECT * FROM sync_state')
+  }
 
   return rows.map(row => ({
     address: row.address,

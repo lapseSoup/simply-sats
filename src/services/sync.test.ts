@@ -306,9 +306,9 @@ describe('Sync Service', () => {
       await markUtxosSpent(utxos, 'spending_txid')
 
       expect(dbMarkUTXOSpent).toHaveBeenCalledTimes(3)
-      expect(dbMarkUTXOSpent).toHaveBeenCalledWith('tx1', 0, 'spending_txid')
-      expect(dbMarkUTXOSpent).toHaveBeenCalledWith('tx2', 1, 'spending_txid')
-      expect(dbMarkUTXOSpent).toHaveBeenCalledWith('tx3', 2, 'spending_txid')
+      expect(dbMarkUTXOSpent).toHaveBeenCalledWith('tx1', 0, 'spending_txid', undefined)
+      expect(dbMarkUTXOSpent).toHaveBeenCalledWith('tx2', 1, 'spending_txid', undefined)
+      expect(dbMarkUTXOSpent).toHaveBeenCalledWith('tx3', 2, 'spending_txid', undefined)
     })
 
     it('should handle empty array', async () => {

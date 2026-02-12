@@ -25,6 +25,7 @@ import {
   isOneSatOutput,
   formatOrdinalOrigin
 } from '../../domain/ordinals'
+import { getDatabase } from '../database'
 
 // Create a child logger for ordinals-specific logging
 const ordLogger = walletLogger
@@ -282,21 +283,20 @@ export async function transferOrdinal(
     sequence: 0xffffffff
   })
 
-  // Calculate fee for the transaction
-  // 1 ordinal input + funding inputs, 1 ordinal output + possibly change output
-  const numFundingInputs = Math.min(fundingUtxos.length, 2) // Usually 1-2 inputs enough
-  const estimatedFee = calculateTxFee(1 + numFundingInputs, 2)
-
-  // Select funding UTXOs
+  // Select funding UTXOs first, then calculate fee with actual input count
   const fundingToUse: UTXO[] = []
   let totalFunding = 0
 
+  // Use preliminary estimate for selection loop
+  const prelimFee = calculateTxFee(1 + Math.min(fundingUtxos.length, 2), 2)
   for (const utxo of fundingUtxos) {
     fundingToUse.push(utxo)
     totalFunding += utxo.satoshis
-
-    if (totalFunding >= estimatedFee + 100) break
+    if (totalFunding >= prelimFee + 100) break
   }
+
+  // Recalculate fee with actual input count
+  const estimatedFee = calculateTxFee(1 + fundingToUse.length, 2)
 
   if (totalFunding < estimatedFee) {
     throw new Error(`Insufficient funds for fee (need ~${estimatedFee} sats)`)
@@ -348,6 +348,20 @@ export async function transferOrdinal(
 
   // Compute txid before broadcast for pending marking
   const pendingTxid = tx.id('hex')
+
+  // Verify ordinal UTXO is still unspent before transfer
+  const db = getDatabase()
+  const utxoCheck = await db.select<{ spending_status: string | null; spent_at: number | null }[]>(
+    'SELECT spending_status, spent_at FROM utxos WHERE txid = $1 AND vout = $2',
+    [ordinalUtxo.txid, ordinalUtxo.vout]
+  )
+  if (utxoCheck.length === 0) {
+    throw new Error('Ordinal UTXO not found in database')
+  }
+  const utxoState = utxoCheck[0]!
+  if (utxoState.spent_at !== null || (utxoState.spending_status !== null && utxoState.spending_status !== 'unspent')) {
+    throw new Error('Ordinal UTXO is no longer spendable — it may have been spent or is pending in another transaction')
+  }
 
   // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
   try {
