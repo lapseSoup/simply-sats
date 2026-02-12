@@ -27,6 +27,7 @@ import {
   Moon
 } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
+import { useConnectedApps } from '../../contexts/ConnectedAppsContext'
 import { useUI } from '../../contexts/UIContext'
 import { UTXOsTab } from '../tabs/UTXOsTab'
 
@@ -55,11 +56,6 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     wallet,
     feeRateKB,
     setFeeRate,
-    connectedApps,
-    trustedOrigins,
-    addTrustedOrigin,
-    removeTrustedOrigin,
-    disconnectApp,
     handleDeleteWallet,
     performSync,
     fetchData,
@@ -69,6 +65,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setAutoLockMinutes,
     lockWallet
   } = useWallet()
+  const {
+    connectedApps,
+    trustedOrigins,
+    addTrustedOrigin,
+    removeTrustedOrigin,
+    disconnectApp
+  } = useConnectedApps()
   const { copyToClipboard, showToast, theme, toggleTheme } = useUI()
 
   // Local state for various input forms

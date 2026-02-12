@@ -9,10 +9,7 @@
  * @module domain/repositories
  */
 
-import type { UTXO, Ordinal, LockedUTXO } from '../../services/wallet'
-import type { Contact } from '../../services/database'
-import type { Account } from '../../services/accounts'
-import type { TokenBalance } from '../../services/tokens'
+import type { UTXO, Ordinal, LockedUTXO, Contact, Account, TokenBalance } from '../types'
 
 // ============================================
 // Transaction Repository

@@ -1,9 +1,9 @@
-import { useState, useCallback, useMemo, memo, useEffect } from 'react'
+import { useState, useCallback, useMemo, memo } from 'react'
 import { Flame, Snowflake, Clock, Lightbulb, ArrowUp, ArrowDown } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { toggleUtxoFrozen, getAllUTXOs } from '../../services/database'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
+import { useUtxoManagement } from '../../hooks/useUtxoManagement'
 import { ConsolidateModal } from '../modals/ConsolidateModal'
 import { uiLogger } from '../../services/logger'
 import { FEATURES, WALLET } from '../../config'
@@ -82,27 +82,16 @@ export function UTXOsTab() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [filterBasket, setFilterBasket] = useState<string>('all')
   const [showFrozen, setShowFrozen] = useState(true)
-  const [allUtxos, setAllUtxos] = useState<DatabaseUTXO[]>([])
-  const [loadingAll, setLoadingAll] = useState(true) // Start as loading
   const [consolidateUtxos, setConsolidateUtxos] = useState<DatabaseUTXO[] | null>(null)
 
-  // Load all UTXOs including locked ones for the active account
-  const loadAllUtxos = useCallback(async () => {
-    setLoadingAll(true)
-    try {
-      const all = await getAllUTXOs(activeAccountId ?? undefined)
-      setAllUtxos(all.filter(u => !u.spentAt)) // Only show unspent
-    } catch (e) {
-      uiLogger.error('Failed to load all UTXOs', e)
-    } finally {
-      setLoadingAll(false)
-    }
-  }, [activeAccountId])
+  // Unspent UTXO filter (stable reference)
+  const unspentFilter = useCallback((u: DatabaseUTXO) => !u.spentAt, [])
 
-  // Load UTXOs on mount
-  useEffect(() => {
-    loadAllUtxos()
-  }, [loadAllUtxos])
+  // Load all UTXOs via hook (routes through service layer)
+  const { utxos: allUtxos, loading: loadingAll, reload: loadAllUtxos, toggleFreeze } = useUtxoManagement({
+    accountId: activeAccountId ?? undefined,
+    filter: unspentFilter
+  })
 
   // Use allUtxos from database
   const displayUtxos = allUtxos
@@ -191,17 +180,12 @@ export function UTXOsTab() {
     }
   }, [filteredUtxos, selectedUtxos.size])
 
-  // Toggle freeze handler
+  // Toggle freeze handler — routes through useUtxoManagement hook
   const handleToggleFreeze = useCallback(async (utxo: DatabaseUTXO) => {
-    try {
-      await toggleUtxoFrozen(utxo.txid, utxo.vout, utxo.spendable, activeAccountId ?? undefined) // Toggle: if spendable, freeze it
-      await loadAllUtxos() // Refresh
-      await fetchData() // Also refresh wallet context
-      uiLogger.info(`UTXO ${utxo.spendable ? 'frozen' : 'unfrozen'}: ${utxo.txid.slice(0, 8)}`)
-    } catch (e) {
-      uiLogger.error('Failed to toggle UTXO freeze', e)
-    }
-  }, [fetchData, loadAllUtxos, activeAccountId])
+    await toggleFreeze(utxo.txid, utxo.vout, utxo.spendable)
+    await fetchData() // Also refresh wallet context
+    uiLogger.info(`UTXO ${utxo.spendable ? 'frozen' : 'unfrozen'}: ${utxo.txid.slice(0, 8)}`)
+  }, [fetchData, toggleFreeze])
 
   // Consolidate handler - opens the modal
   const handleConsolidate = useCallback(() => {

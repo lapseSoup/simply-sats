@@ -112,6 +112,7 @@ export interface WalletKeys {
   identityWif: string
   identityAddress: string
   identityPubKey: string
+  accountIndex?: number
 }
 
 export interface KeyPair {
@@ -278,6 +279,42 @@ export interface MaxSendResult {
   maxSats: number
   fee: number
   numInputs: number
+}
+
+// ============================================
+// Contact Types
+// ============================================
+
+export interface Contact {
+  id?: number
+  pubkey: string
+  label: string
+  createdAt: number
+}
+
+// ============================================
+// GorillaPool API Response Types
+// (Used by domain/ordinals/parsing for mapping external data)
+// ============================================
+
+export interface GpOrdinalOrigin {
+  outpoint?: string
+  data?: {
+    insc?: {
+      file?: {
+        type?: string
+        hash?: string
+      }
+    }
+  }
+}
+
+export interface GpOrdinalItem {
+  txid: string
+  vout: number
+  satoshis?: number
+  outpoint?: string
+  origin?: GpOrdinalOrigin
 }
 
 // ============================================

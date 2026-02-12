@@ -57,7 +57,10 @@ export function SendModal({ onClose }: SendModalProps) {
   const availableSats = balance
 
   // Use coin-controlled UTXOs when selected, otherwise full UTXO set
-  const effectiveUtxos = selectedUtxos ?? utxos
+  // Map DatabaseUTXO (lockingScript) to wallet UTXO (script) for fee calculation
+  const effectiveUtxos = selectedUtxos
+    ? selectedUtxos.map(u => ({ txid: u.txid, vout: u.vout, satoshis: u.satoshis, script: u.lockingScript }))
+    : utxos
 
   // Calculate number of inputs (fallback if no UTXOs available yet)
   const numInputs = effectiveUtxos.length > 0 ? effectiveUtxos.length : Math.max(1, Math.ceil(balance / 10000))

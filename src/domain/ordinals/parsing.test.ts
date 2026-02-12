@@ -14,7 +14,7 @@ import {
   PKH_HEX_LENGTH,
   ONE_SAT_VALUE_BSV
 } from './parsing'
-import type { GpOrdinalItem } from '../../services/wallet/types'
+import type { GpOrdinalItem } from '../types'
 
 describe('Ordinal Parsing', () => {
   describe('mapGpItemToOrdinal', () => {

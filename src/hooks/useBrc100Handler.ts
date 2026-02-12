@@ -10,6 +10,7 @@ import {
 import { setupDeepLinkListener } from '../services/deeplink'
 import type { WalletKeys } from '../services/wallet'
 import { brc100Logger } from '../services/logger'
+import { useConnectedApps } from '../contexts/ConnectedAppsContext'
 
 interface UseBrc100HandlerOptions {
   wallet: WalletKeys | null
@@ -18,7 +19,6 @@ interface UseBrc100HandlerOptions {
 
 interface UseBrc100HandlerReturn {
   brc100Request: BRC100Request | null
-  localConnectedApps: string[]
   handleApprove: () => void
   handleReject: () => void
   clearRequest: () => void
@@ -34,18 +34,13 @@ export function useBrc100Handler({
   onRequestReceived
 }: UseBrc100HandlerOptions): UseBrc100HandlerReturn {
   const [brc100Request, setBrc100Request] = useState<BRC100Request | null>(null)
-  const [localConnectedApps, setLocalConnectedApps] = useState<string[]>(() => {
-    return JSON.parse(localStorage.getItem('simply_sats_connected_apps') || '[]')
-  })
+  const { connectedApps, connectApp, isTrustedOrigin } = useConnectedApps()
 
   // Set up BRC-100 request handler
   useEffect(() => {
     const handleIncomingRequest = async (request: BRC100Request) => {
       // Check if this is from a trusted origin (auto-approve)
-      const savedTrustedOrigins = JSON.parse(
-        localStorage.getItem('simply_sats_trusted_origins') || '[]'
-      )
-      const isTrusted = request.origin && savedTrustedOrigins.includes(request.origin)
+      const isTrusted = request.origin && isTrustedOrigin(request.origin)
 
       if (isTrusted && wallet) {
         brc100Logger.info(`Auto-approving request from trusted origin: ${request.origin}`)
@@ -81,20 +76,18 @@ export function useBrc100Handler({
       if (unlistenDeepLink) unlistenDeepLink()
       if (unlistenHttp) unlistenHttp()
     }
-  }, [wallet, onRequestReceived])
+  }, [wallet, onRequestReceived, isTrustedOrigin])
 
   const handleApprove = useCallback(() => {
     if (!brc100Request || !wallet) return
 
-    if (brc100Request.origin && !localConnectedApps.includes(brc100Request.origin)) {
-      const newConnectedApps = [...localConnectedApps, brc100Request.origin]
-      setLocalConnectedApps(newConnectedApps)
-      localStorage.setItem('simply_sats_connected_apps', JSON.stringify(newConnectedApps))
+    if (brc100Request.origin && !connectedApps.includes(brc100Request.origin)) {
+      connectApp(brc100Request.origin)
     }
 
     approveRequest(brc100Request.id, wallet)
     setBrc100Request(null)
-  }, [brc100Request, wallet, localConnectedApps])
+  }, [brc100Request, wallet, connectedApps, connectApp])
 
   const handleReject = useCallback(() => {
     if (!brc100Request) return
@@ -108,7 +101,6 @@ export function useBrc100Handler({
 
   return {
     brc100Request,
-    localConnectedApps,
     handleApprove,
     handleReject,
     clearRequest

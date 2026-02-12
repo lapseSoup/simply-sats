@@ -6,18 +6,13 @@
 
 import type { WalletKeys } from '../wallet'
 import type { CreateActionRequest } from './types'
+import { getWocClient } from '../../infrastructure/api/wocClient'
 
 /**
  * Get current block height from WhatsOnChain
  */
 export async function getBlockHeight(): Promise<number> {
-  try {
-    const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/chain/info')
-    const data = await response.json()
-    return data.blocks
-  } catch {
-    return 0
-  }
+  return getWocClient().getBlockHeight()
 }
 
 /**

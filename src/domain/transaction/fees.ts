@@ -47,6 +47,14 @@ export const MIN_FEE_RATE = 0.01
 export const MAX_FEE_RATE = 1.0
 
 /**
+ * Dust threshold for change outputs in satoshis.
+ * Change outputs below this value are not worth creating
+ * because the cost to spend them exceeds their value.
+ * Must match DUST_THRESHOLD in src-tauri/src/transaction.rs.
+ */
+export const DUST_THRESHOLD = 100
+
+/**
  * Calculate the varint size for a given value.
  *
  * Variable-length integers (varints) are used in the Bitcoin protocol
@@ -233,15 +241,14 @@ export function calculateExactFee(
     return { fee: 0, inputCount: inputsToUse.length, outputCount: 0, totalInput, canSend: false }
   }
 
-  // Determine if change output exists by matching the builder's logic:
-  // compute fee assuming 2 outputs, check if change is positive
+  // Determine if change output exists — mirrors Rust transaction builder logic:
+  // check if preliminary change (before fee) exceeds DUST_THRESHOLD
   const numInputs = inputsToUse.length
-  const feeWith2Outputs = calculateTxFee(numInputs, 2, feeRate)
-  const changeWith2Outputs = totalInput - satoshis - feeWith2Outputs
-  const willHaveChange = changeWith2Outputs > 0
+  const prelimChange = totalInput - satoshis
+  const willHaveChange = prelimChange > DUST_THRESHOLD
 
   const numOutputs = willHaveChange ? 2 : 1
-  const fee = willHaveChange ? feeWith2Outputs : calculateTxFee(numInputs, 1, feeRate)
+  const fee = calculateTxFee(numInputs, numOutputs, feeRate)
 
   const change = totalInput - satoshis - fee
   const canSend = change >= 0

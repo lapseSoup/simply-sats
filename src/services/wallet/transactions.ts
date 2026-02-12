@@ -29,149 +29,17 @@ import { getDerivedAddresses, withTransaction, addUTXO } from '../database'
 import { walletLogger } from '../logger'
 import { resetInactivityTimer } from '../autoLock'
 import { acquireSyncLock } from '../cancellation'
+import { broadcastTransaction as infraBroadcast } from '../../infrastructure/api/broadcastService'
 
 /**
  * Broadcast a signed transaction - try multiple endpoints for non-standard scripts.
  * Accepts either a Transaction object or a raw hex string.
+ * Delegates to the infrastructure broadcastService for the actual cascade.
  */
 export async function broadcastTransaction(txOrHex: Transaction | string): Promise<string> {
   const txhex = typeof txOrHex === 'string' ? txOrHex : txOrHex.toHex()
-  const txid = typeof txOrHex === 'string' ? undefined : txOrHex.id('hex')
-  walletLogger.debug('Broadcasting transaction', { txhex: txhex.slice(0, 100) + '...' })
-
-  const errors: string[] = []
-
-  // Try WhatsOnChain first
-  try {
-    walletLogger.debug('Trying WhatsOnChain broadcast')
-    const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ txhex })
-    })
-
-    if (response.ok) {
-      walletLogger.info('WhatsOnChain broadcast successful')
-      // WoC returns the txid as response text; fall back to local computation
-      const responseTxid = (await response.text()).trim().replace(/"/g, '')
-      // Cross-validate: if both local and broadcaster TXIDs are available, they must match
-      if (responseTxid && txid && responseTxid !== txid) {
-        walletLogger.error('TXID mismatch between broadcaster and local computation', {
-          broadcasterTxid: responseTxid,
-          localTxid: txid
-        })
-      }
-      return responseTxid || txid || ''
-    }
-
-    const errorText = await response.text()
-    walletLogger.warn('WoC broadcast failed', { error: errorText })
-    errors.push(`WoC: ${errorText}`)
-  } catch (error) {
-    walletLogger.warn('WoC error', { error: String(error) })
-    errors.push(`WoC: ${error}`)
-  }
-
-  // Try GorillaPool ARC with skipScriptFlags in JSON body to bypass DISCOURAGE_UPGRADABLE_NOPS policy
-  try {
-    walletLogger.debug('Trying GorillaPool ARC with skipScriptFlags')
-    const arcResponse = await fetch('https://arc.gorillapool.io/v1/tx', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-SkipScriptFlags': 'DISCOURAGE_UPGRADABLE_NOPS'
-      },
-      body: JSON.stringify({
-        rawTx: txhex,
-        skipScriptFlags: ['DISCOURAGE_UPGRADABLE_NOPS']
-      })
-    })
-
-    const arcResult = await arcResponse.json()
-    walletLogger.debug('GorillaPool ARC response', { txStatus: arcResult.txStatus, txid: arcResult.txid })
-
-    // ARC returns status 200 even for errors, check txStatus
-    // Only accept confirmed statuses - do not accept ambiguous responses
-    if (arcResult.txid && (arcResult.txStatus === 'SEEN_ON_NETWORK' || arcResult.txStatus === 'ACCEPTED')) {
-      walletLogger.info('ARC broadcast successful', { txid: arcResult.txid })
-      return arcResult.txid
-    } else {
-      const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
-      walletLogger.warn('ARC rejected transaction', { error: errorMsg })
-      errors.push(`ARC: ${errorMsg}`)
-    }
-  } catch (error) {
-    walletLogger.warn('GorillaPool ARC error', { error: String(error) })
-    errors.push(`ARC: ${error}`)
-  }
-
-  // Try ARC with plain text format but with skipscriptflags header
-  try {
-    walletLogger.debug('Trying GorillaPool ARC (plain text)')
-    const arcResponse2 = await fetch('https://arc.gorillapool.io/v1/tx', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain',
-        'X-SkipScriptFlags': 'DISCOURAGE_UPGRADABLE_NOPS'
-      },
-      body: txhex
-    })
-
-    const arcResult2 = await arcResponse2.json()
-    walletLogger.debug('GorillaPool ARC (plain) response', { txStatus: arcResult2.txStatus, txid: arcResult2.txid })
-
-    // Only accept confirmed statuses - do not accept ambiguous responses
-    if (arcResult2.txid && (arcResult2.txStatus === 'SEEN_ON_NETWORK' || arcResult2.txStatus === 'ACCEPTED')) {
-      walletLogger.info('ARC broadcast successful', { txid: arcResult2.txid })
-      return arcResult2.txid
-    } else {
-      const errorMsg = arcResult2.detail || arcResult2.extraInfo || arcResult2.title || 'Unknown ARC error'
-      walletLogger.warn('ARC (plain) rejected transaction', { error: errorMsg })
-      errors.push(`ARC2: ${errorMsg}`)
-    }
-  } catch (error) {
-    walletLogger.warn('GorillaPool ARC (plain) error', { error: String(error) })
-    errors.push(`ARC2: ${error}`)
-  }
-
-  // Try GorillaPool mAPI as fallback
-  try {
-    walletLogger.debug('Trying GorillaPool mAPI')
-    const mapiResponse = await fetch('https://mapi.gorillapool.io/mapi/tx', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ rawtx: txhex })
-    })
-
-    const result = await mapiResponse.json()
-    walletLogger.debug('GorillaPool mAPI response received')
-
-    // mAPI wraps response in payload
-    if (result.payload) {
-      const payload = typeof result.payload === 'string' ? JSON.parse(result.payload) : result.payload
-      walletLogger.debug('mAPI payload', { returnResult: payload.returnResult, txid: payload.txid })
-
-      // Check for success - returnResult must be "success"
-      if (payload.returnResult === 'success' && payload.txid) {
-        walletLogger.info('mAPI broadcast successful', { txid: payload.txid })
-        return payload.txid
-      } else {
-        // Failed - extract error message
-        const errorMsg = payload.resultDescription || payload.returnResult || 'Unknown mAPI error'
-        walletLogger.warn('mAPI rejected transaction', { error: errorMsg })
-        errors.push(`mAPI: ${errorMsg}`)
-      }
-    } else {
-      errors.push(`mAPI: No payload in response`)
-    }
-  } catch (error) {
-    walletLogger.warn('mAPI error', { error: String(error) })
-    errors.push(`mAPI: ${error}`)
-  }
-
-  throw new Error(`Failed to broadcast: ${errors.join(' | ')}`)
+  const localTxid = typeof txOrHex === 'string' ? undefined : txOrHex.id('hex')
+  return infraBroadcast(txhex, localTxid)
 }
 
 /**

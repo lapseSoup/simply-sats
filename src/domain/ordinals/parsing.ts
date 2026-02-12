@@ -12,8 +12,7 @@
  * @module domain/ordinals/parsing
  */
 
-import type { Ordinal } from '../types'
-import type { GpOrdinalItem } from '../../services/wallet/types'
+import type { Ordinal, GpOrdinalItem } from '../types'
 
 // ============================================
 // Constants

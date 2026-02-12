@@ -15,90 +15,18 @@ import {
   rollbackPendingSpend,
   BASKETS
 } from './sync'
-import { TIMEOUTS } from './config'
-import { BroadcastError, AppError, ErrorCodes } from './errors'
+import { AppError, ErrorCodes } from './errors'
 import { walletLogger } from './logger'
 import { acquireSyncLock } from './cancellation'
 import { getDerivedAddresses, withTransaction } from './database'
 import { calculateTxFee } from './wallet/fees'
+import { broadcastTransaction as infraBroadcast } from '../infrastructure/api/broadcastService'
 
 /**
- * Broadcast a signed transaction - try multiple endpoints for non-standard scripts
+ * Broadcast a signed transaction - delegates to infrastructure broadcastService.
  */
 export async function broadcastTransaction(tx: Transaction): Promise<string> {
-  const txhex = tx.toHex()
-  walletLogger.info('Broadcasting transaction', { txhexPreview: txhex.substring(0, 100) })
-
-  const errors: string[] = []
-
-  // Try WhatsOnChain first
-  try {
-    walletLogger.debug('Trying WhatsOnChain...')
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUTS.broadcast)
-
-    const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ txhex }),
-      signal: controller.signal
-    })
-
-    clearTimeout(timeoutId)
-
-    if (response.ok) {
-      walletLogger.info('WhatsOnChain broadcast successful')
-      return tx.id('hex')
-    }
-
-    const errorText = await response.text()
-    walletLogger.warn('WoC broadcast failed', { error: errorText })
-    errors.push(`WoC: ${errorText}`)
-  } catch (error) {
-    walletLogger.warn('WoC error', undefined, error instanceof Error ? error : undefined)
-    errors.push(`WoC: ${error}`)
-  }
-
-  // Try GorillaPool ARC
-  try {
-    walletLogger.debug('Trying GorillaPool ARC...')
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUTS.broadcast)
-
-    const arcResponse = await fetch('https://arc.gorillapool.io/v1/tx', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-SkipScriptFlags': 'DISCOURAGE_UPGRADABLE_NOPS'
-      },
-      body: JSON.stringify({
-        rawTx: txhex,
-        skipScriptFlags: ['DISCOURAGE_UPGRADABLE_NOPS']
-      }),
-      signal: controller.signal
-    })
-
-    clearTimeout(timeoutId)
-
-    const arcResult = await arcResponse.json()
-
-    if (arcResult.txid && (arcResult.txStatus === 'SEEN_ON_NETWORK' || arcResult.txStatus === 'ACCEPTED')) {
-      walletLogger.info('ARC broadcast successful', { txid: arcResult.txid })
-      return arcResult.txid
-    } else if (arcResult.txid && !arcResult.detail) {
-      walletLogger.info('ARC broadcast possibly successful', { txid: arcResult.txid })
-      return arcResult.txid
-    } else {
-      const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
-      walletLogger.warn('ARC rejected transaction', { error: errorMsg })
-      errors.push(`ARC: ${errorMsg}`)
-    }
-  } catch (error) {
-    walletLogger.warn('GorillaPool ARC error', undefined, error instanceof Error ? error : undefined)
-    errors.push(`ARC: ${error}`)
-  }
-
-  throw new BroadcastError(`Failed to broadcast: ${errors.join(' | ')}`)
+  return infraBroadcast(tx.toHex(), tx.id('hex'))
 }
 
 /**

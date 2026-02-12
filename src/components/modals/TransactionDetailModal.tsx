@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { getTransactionLabels, updateTransactionLabels, getTransactionByTxid, getTopLabels } from '../../services/database'
+import { getTransactionByTxid } from '../../services/database'
 import { useWallet } from '../../contexts/WalletContext'
 import { getWocClient } from '../../infrastructure/api/wocClient'
-import { uiLogger } from '../../services/logger'
+import { useTransactionLabels } from '../../hooks/useTransactionLabels'
 import { Modal } from '../shared/Modal'
 
 // Default label suggestions (always shown as fallback)
@@ -65,33 +65,34 @@ export function TransactionDetailModal({
 }: TransactionDetailModalProps) {
   const { copyToClipboard, showToast, formatUSD, displayInSats, formatBSVShort } = useUI()
   const { activeAccountId } = useWallet()
-  const [labels, setLabels] = useState<string[]>([])
+
+  // Labels via hook (handles loading, optimistic updates, suggestions)
+  const { labels, suggestedLabels: hookSuggestions, loading: labelsLoading, addLabel, removeLabel } = useTransactionLabels({
+    txid: transaction.tx_hash,
+    accountId: activeAccountId || undefined,
+    suggestedCount: 3
+  })
+
+  // Merge hook suggestions with defaults
+  const suggestedLabels = useMemo(() => {
+    const merged = [...hookSuggestions]
+    for (const def of DEFAULT_LABELS) {
+      if (!merged.includes(def)) merged.push(def)
+    }
+    return merged
+  }, [hookSuggestions])
+
   const [newLabel, setNewLabel] = useState('')
-  const [loading, setLoading] = useState(true)
   const [fee, setFee] = useState<number | null>(null)
   const [recipientAddress, setRecipientAddress] = useState<string | null>(null)
-  const [suggestedLabels, setSuggestedLabels] = useState<string[]>(DEFAULT_LABELS)
 
-  // Load labels, DB record, and compute fee on mount
+  // Load fee and address data (labels handled by hook)
   useEffect(() => {
-    const loadData = async () => {
+    const loadFeeData = async () => {
       try {
         const accId = activeAccountId || 1
-        const [existingLabels, dbRecord, topLabels] = await Promise.all([
-          getTransactionLabels(transaction.tx_hash, accId),
-          getTransactionByTxid(transaction.tx_hash, accId),
-          getTopLabels(3, accId)
-        ])
-        setLabels(existingLabels)
+        const dbRecord = await getTransactionByTxid(transaction.tx_hash, accId)
 
-        // Merge: top used labels first, then defaults (deduplicated)
-        const merged = [...topLabels]
-        for (const def of DEFAULT_LABELS) {
-          if (!merged.includes(def)) merged.push(def)
-        }
-        setSuggestedLabels(merged)
-
-        // Try fast path: description-based fee
         const effectiveAmount = transaction.amount ?? dbRecord?.amount
         const effectiveDescription = transaction.description ?? dbRecord?.description
 
@@ -108,13 +109,11 @@ export function TransactionDetailModal({
           const blockchainFee = await computeFeeFromBlockchain(transaction.tx_hash)
           if (blockchainFee !== null) setFee(blockchainFee)
         }
-      } catch (e) {
-        uiLogger.warn('Failed to load transaction data', { error: String(e) })
-      } finally {
-        setLoading(false)
+      } catch {
+        // Fee data is non-critical
       }
     }
-    loadData()
+    loadFeeData()
   }, [transaction.tx_hash, transaction.amount, transaction.description, activeAccountId])
 
   const openOnWoC = () => {
@@ -122,36 +121,23 @@ export function TransactionDetailModal({
   }
 
   const handleAddLabel = async (label: string) => {
-    const trimmedLabel = label.trim().toLowerCase()
-    if (!trimmedLabel || labels.includes(trimmedLabel)) return
-
-    const newLabels = [...labels, trimmedLabel]
-    setLabels(newLabels)
+    const trimmed = label.trim().toLowerCase()
+    if (!trimmed || labels.includes(trimmed)) return
     setNewLabel('')
-
-    try {
-      await updateTransactionLabels(transaction.tx_hash, newLabels, activeAccountId || undefined)
+    const success = await addLabel(trimmed)
+    if (success) {
       onLabelsUpdated?.()
-    } catch (e) {
-      uiLogger.error('Failed to update labels', e)
+    } else {
       showToast('Failed to save label')
-      // Revert on error
-      setLabels(labels)
     }
   }
 
   const handleRemoveLabel = async (labelToRemove: string) => {
-    const newLabels = labels.filter(l => l !== labelToRemove)
-    setLabels(newLabels)
-
-    try {
-      await updateTransactionLabels(transaction.tx_hash, newLabels, activeAccountId || undefined)
+    const success = await removeLabel(labelToRemove)
+    if (success) {
       onLabelsUpdated?.()
-    } catch (e) {
-      uiLogger.error('Failed to remove label', e)
+    } else {
       showToast('Failed to remove label')
-      // Revert on error
-      setLabels([...labels])
     }
   }
 
@@ -235,7 +221,7 @@ export function TransactionDetailModal({
         <div className="tx-labels-section">
           <div className="tx-labels-header">Labels</div>
 
-          {loading ? (
+          {labelsLoading ? (
             <div className="tx-labels-loading">Loading...</div>
           ) : (
             <>

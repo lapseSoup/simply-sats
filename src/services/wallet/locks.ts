@@ -23,6 +23,7 @@ import {
 import type { UTXO, LockedUTXO } from './types'
 import { calculateLockFee, feeFromBytes } from './fees'
 import { broadcastTransaction } from './transactions'
+import { getWocClient } from '../../infrastructure/api/wocClient'
 import { getTransactionHistory, getTransactionDetails } from './balance'
 import {
   recordSentTransaction,
@@ -70,8 +71,8 @@ function createWrootzOpReturn(action: string, data: string): LockingScript {
   const toBytes = (str: string): number[] => Array.from(new TextEncoder().encode(str))
 
   const scriptBytes: number[] = [
-    0x6a, // OP_RETURN
     0x00, // OP_FALSE
+    0x6a, // OP_RETURN
     ...pushData(toBytes('wrootz')),
     ...pushData(toBytes(action)),
     ...pushData(toBytes(data))
@@ -430,15 +431,12 @@ export async function unlockBSV(
  * Get current block height from WhatsOnChain
  */
 export async function getCurrentBlockHeight(): Promise<number> {
-  try {
-    const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/chain/info')
-    if (!response.ok) throw new Error('Failed to fetch block height')
-    const data = await response.json()
-    return data.blocks
-  } catch (error) {
-    walletLogger.error('Error fetching block height', error)
-    throw error
+  const result = await getWocClient().getBlockHeightSafe()
+  if (!result.success) {
+    walletLogger.error('Error fetching block height', result.error)
+    throw new Error(result.error.message)
   }
+  return result.data
 }
 
 /**
@@ -541,45 +539,36 @@ export async function generateUnlockTxHex(
  * Check if a UTXO is still unspent
  */
 async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
+  const woc = getWocClient()
+
   try {
     // Primary check: the direct spent endpoint (faster and more reliable)
-    const spentResponse = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/${vout}/spent`)
+    const spentResult = await woc.isOutputSpentSafe(txid, vout)
 
-    // 200 OK means we got spending info = it's spent
-    if (spentResponse.ok) {
-      const spentData = await spentResponse.json()
-      if (spentData && spentData.txid) {
-        walletLogger.debug('UTXO has been spent', { txid, vout, spendingTxid: spentData.txid })
+    if (spentResult.success) {
+      if (spentResult.data !== null) {
+        walletLogger.debug('UTXO has been spent', { txid, vout, spendingTxid: spentResult.data })
         return false
       }
-    }
-
-    // 404 means no spending tx found = still unspent
-    if (spentResponse.status === 404) {
+      // null means unspent
       return true
     }
 
-    // For rate limiting (429) or other errors, fall back to tx lookup
-    if (spentResponse.status === 429) {
-      walletLogger.debug('Rate limited checking UTXO, trying tx endpoint', { txid, vout })
+    // API error — fall back to full tx lookup
+    walletLogger.debug('Spent check failed, trying tx details', { txid, vout, error: spentResult.error.message })
+    if (spentResult.error.status === 429) {
       await new Promise(resolve => setTimeout(resolve, 500))
     }
 
     // Fallback: Check the full transaction
-    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/${txid}`)
-    if (!response.ok) {
-      walletLogger.debug('Could not fetch tx', { txid, status: response.status })
-      if (response.status === 429) {
-        walletLogger.debug('Rate limited on fallback, conservatively treating as unspent')
-        return true
-      }
-      return true
+    const txResult = await woc.getTransactionDetailsSafe(txid)
+    if (!txResult.success) {
+      walletLogger.debug('Could not fetch tx', { txid, error: txResult.error.message })
+      return true // Assume unspent on error
     }
 
-    const txData = await response.json()
-    const output = txData.vout?.[vout]
-
-    if (output?.spent) {
+    const output = txResult.data.vout?.[vout]
+    if (output && 'spent' in output && output.spent) {
       return false
     }
 

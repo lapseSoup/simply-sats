@@ -1,9 +1,8 @@
-import { useState, useMemo, memo, useEffect, useCallback } from 'react'
+import { useState, useMemo, memo, useCallback } from 'react'
 import { useUI } from '../../contexts/UIContext'
-import { getAllUTXOs } from '../../services/database'
 import { calculateTxFee } from '../../services/wallet'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
-import { uiLogger } from '../../services/logger'
+import { useUtxoManagement } from '../../hooks/useUtxoManagement'
 import { Modal } from '../shared/Modal'
 
 interface CoinControlModalProps {
@@ -57,33 +56,14 @@ const UTXOSelectRow = memo(function UTXOSelectRow({
 export function CoinControlModal({ requiredAmount, onConfirm, onCancel }: CoinControlModalProps) {
   const { formatUSD } = useUI()
 
-  const [utxos, setUtxos] = useState<DatabaseUTXO[]>([])
+  // Load spendable UTXOs via hook
+  const spendableFilter = useCallback(
+    (u: DatabaseUTXO) => u.spendable && !u.spentAt && (u.basket === 'default' || u.basket === 'derived'),
+    []
+  )
+  const { utxos: rawUtxos, loading } = useUtxoManagement({ filter: spendableFilter })
+  const utxos = useMemo(() => [...rawUtxos].sort((a, b) => b.satoshis - a.satoshis), [rawUtxos])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-
-  // Load spendable UTXOs
-  useEffect(() => {
-    const loadUtxos = async () => {
-      setLoading(true)
-      try {
-        const all = await getAllUTXOs()
-        // Only show spendable, unspent UTXOs from default and derived baskets
-        const spendable = all.filter(u =>
-          u.spendable &&
-          !u.spentAt &&
-          (u.basket === 'default' || u.basket === 'derived')
-        )
-        // Sort by amount descending
-        spendable.sort((a, b) => b.satoshis - a.satoshis)
-        setUtxos(spendable)
-      } catch (e) {
-        uiLogger.error('Failed to load UTXOs for coin control', e)
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadUtxos()
-  }, [])
 
   // Toggle UTXO selection
   const handleToggle = useCallback((utxo: DatabaseUTXO) => {

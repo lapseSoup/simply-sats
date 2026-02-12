@@ -5,6 +5,8 @@
 
 import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import type { UTXO, Ordinal, GpOrdinalItem, OrdinalDetails } from './types'
+import { gpOrdinalsApi } from '../../infrastructure/api/clients'
+import { getWocClient } from '../../infrastructure/api/wocClient'
 import { calculateTxFee } from './fees'
 import { broadcastTransaction } from './transactions'
 import { getTransactionHistory, getTransactionDetails } from './balance'
@@ -46,15 +48,15 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
     ordLogger.debug('Fetching ordinals from GorillaPool', { address })
     for (let page = 0; page < MAX_PAGES; page++) {
       const offset = page * PAGE_SIZE
-      const gpResponse = await fetch(`https://ordinals.gorillapool.io/api/txos/address/${address}/unspent?limit=${PAGE_SIZE}&offset=${offset}`)
-      ordLogger.debug('GorillaPool response', { status: gpResponse.status, page, offset })
+      const gpResult = await gpOrdinalsApi.get<GpOrdinalItem[]>(`/api/txos/address/${address}/unspent?limit=${PAGE_SIZE}&offset=${offset}`)
+      ordLogger.debug('GorillaPool response', { ok: gpResult.ok, page, offset })
 
-      if (!gpResponse.ok) {
-        ordLogger.debug('GorillaPool API error, falling back to WhatsOnChain', { status: gpResponse.status })
+      if (!gpResult.ok) {
+        ordLogger.debug('GorillaPool API error, falling back to WhatsOnChain', { error: gpResult.error.message })
         break
       }
 
-      const gpData = await gpResponse.json()
+      const gpData = gpResult.value
       if (!Array.isArray(gpData) || gpData.length === 0) {
         if (page === 0) {
           ordLogger.debug('GorillaPool returned empty array, falling back to WhatsOnChain', { address })
@@ -88,16 +90,13 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
 
     // Fallback: Use WhatsOnChain to get 1-sat UTXOs, then verify each with GorillaPool
     ordLogger.debug('Using WhatsOnChain for ordinals detection')
-    const response = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`)
-    if (!response.ok) {
-      ordLogger.warn('Failed to fetch ordinals from WhatsOnChain', { address, status: response.status })
+    const wocUtxos = await getWocClient().getUtxosSafe(address)
+    if (!wocUtxos.success) {
+      ordLogger.warn('Failed to fetch ordinals from WhatsOnChain', { address, error: wocUtxos.error.message })
       return []
     }
-    const utxos = await response.json()
-    if (!Array.isArray(utxos)) {
-      ordLogger.warn('Unexpected ordinals response from WhatsOnChain', { address, type: typeof utxos })
-      return []
-    }
+    // Map to the format the rest of the code expects
+    const utxos = wocUtxos.data.map(u => ({ tx_hash: u.txid, tx_pos: u.vout, value: u.satoshis }))
     ordLogger.debug('WhatsOnChain returned UTXOs', { address, count: utxos.length })
 
     const ordinals: Ordinal[] = []
@@ -153,13 +152,9 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
  * Get ordinal metadata from 1Sat Ordinals API
  */
 export async function getOrdinalDetails(origin: string): Promise<OrdinalDetails | null> {
-  try {
-    const response = await fetch(`https://ordinals.gorillapool.io/api/inscriptions/${origin}`)
-    if (!response.ok) return null
-    return response.json() as Promise<OrdinalDetails>
-  } catch {
-    return null
-  }
+  const result = await gpOrdinalsApi.get<OrdinalDetails>(`/api/inscriptions/${origin}`)
+  if (!result.ok) return null
+  return result.value
 }
 
 /**

@@ -18,6 +18,8 @@ export interface WalletKeys {
   identityWif: string
   identityAddress: string
   identityPubKey: string
+  /** BIP-44 account index used for key derivation. Added to eliminate WIF transit over IPC. */
+  accountIndex?: number
 }
 
 /**
@@ -105,26 +107,8 @@ export interface WocTransaction {
   blockheight?: number
 }
 
-// GorillaPool Ordinals API response types
-export interface GpOrdinalOrigin {
-  outpoint?: string
-  data?: {
-    insc?: {
-      file?: {
-        type?: string
-        hash?: string
-      }
-    }
-  }
-}
-
-export interface GpOrdinalItem {
-  txid: string
-  vout: number
-  satoshis?: number
-  outpoint?: string
-  origin?: GpOrdinalOrigin
-}
+// GorillaPool Ordinals API response types — canonical source in domain/types.ts
+export type { GpOrdinalOrigin, GpOrdinalItem } from '../../domain/types'
 
 // Backup format types
 export interface ShaulletBackup {

@@ -1,4 +1,5 @@
 import { PrivateKey, P2PKH, Transaction, PublicKey, Hash, SymmetricKey } from '@bsv/sdk'
+import { broadcastTransaction as infraBroadcast } from '../infrastructure/api/broadcastService'
 import { brc100Logger } from './logger'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -536,19 +537,8 @@ export async function createLockTransaction(
 
   await tx.sign()
 
-  // Broadcast
-  const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ txhex: tx.toHex() })
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Failed to broadcast: ${errorText}`)
-  }
-
-  const txid = tx.id('hex')
+  // Broadcast via infrastructure service (cascade: WoC → ARC → mAPI)
+  const txid = await infraBroadcast(tx.toHex(), tx.id('hex'))
 
   // Save UTXO and lock to database
   try {
@@ -991,7 +981,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
       case 'encrypt': {
         // ECIES encryption using counterparty's public key
         const params = getParams<EncryptDecryptParams>(request)
-        const plaintext = params.plaintext ? String.fromCharCode(...params.plaintext) : undefined
+        const plaintext = params.plaintext ? new TextDecoder().decode(new Uint8Array(params.plaintext)) : undefined
         const recipientPubKey = params.counterparty
 
         if (!plaintext) {

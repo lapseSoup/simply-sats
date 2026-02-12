@@ -13,6 +13,7 @@
 
 import { P2PKH } from '@bsv/sdk'
 import { overlayLogger } from './logger'
+import { getWocClient } from '../infrastructure/api/wocClient'
 
 // Known overlay network nodes (can be expanded)
 const KNOWN_OVERLAY_NODES = [
@@ -447,13 +448,10 @@ export async function getBeef(txid: string): Promise<string | null> {
 
   // Fallback to WhatsOnChain for merkle proof
   try {
-    const response = await fetch(
-      `https://api.whatsonchain.com/v1/bsv/main/tx/${txid}/proof`
-    )
-    if (response.ok) {
-      const proof = await response.json()
+    const proofResult = await getWocClient().getTxProofSafe(txid)
+    if (proofResult.success) {
       // Note: This is TSC format, not full BEEF
-      return JSON.stringify(proof)
+      return JSON.stringify(proofResult.data)
     }
   } catch {
     // Ignore
@@ -488,19 +486,12 @@ export async function broadcastWithOverlay(
   // Also broadcast to WhatsOnChain for miners
   let wocResult: { success: boolean; error?: string } = { success: false }
   try {
-    const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ txhex: rawTx })
-    })
-
-    if (response.ok) {
-      const result = await response.text()
-      txid = txid || result.replace(/"/g, '')
+    const broadcastResult = await getWocClient().broadcastTransactionSafe(rawTx)
+    if (broadcastResult.success) {
+      txid = txid || broadcastResult.data
       wocResult = { success: true }
     } else {
-      const errorText = await response.text()
-      wocResult = { success: false, error: errorText }
+      wocResult = { success: false, error: broadcastResult.error.message }
     }
   } catch (error) {
     wocResult = {

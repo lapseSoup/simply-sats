@@ -7,6 +7,7 @@
  */
 
 import { P2PKH } from '@bsv/sdk'
+import type { LockedUTXO } from './wallet/types'
 import {
   addUTXO,
   markUTXOSpent,
@@ -670,6 +671,26 @@ export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEF
 }
 
 /**
+ * Map database lock records to LockedUTXO format.
+ * Used by WalletContext and SyncContext when preloading locks from DB.
+ */
+export function mapDbLocksToLockedUtxos(
+  dbLocks: Awaited<ReturnType<typeof import('./database').getLocks>>,
+  walletPubKey: string
+): LockedUTXO[] {
+  return dbLocks.map(lock => ({
+    txid: lock.utxo.txid,
+    vout: lock.utxo.vout,
+    satoshis: lock.utxo.satoshis,
+    lockingScript: lock.utxo.lockingScript,
+    unlockBlock: lock.unlockBlock,
+    publicKeyHex: walletPubKey,
+    createdAt: lock.createdAt,
+    lockBlock: lock.lockBlock
+  }))
+}
+
+/**
  * Get ordinals from the database (ordinals basket)
  * Returns ordinals that are stored in the database from syncing
  * @param accountId - Account ID to filter by (optional)
@@ -773,5 +794,8 @@ export async function restoreFromBlockchain(
     syncLogger.debug('Results', { results: result.results })
   }
 
-  return result!
+  if (!result) {
+    throw new Error('Wallet restore was cancelled')
+  }
+  return result
 }

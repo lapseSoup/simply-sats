@@ -68,13 +68,9 @@ export interface DerivedAddress {
   accountId?: number
 }
 
-// Contact type - stores sender public keys with labels
-export interface Contact {
-  id?: number
-  pubkey: string
-  label: string
-  createdAt: number
-}
+// Contact type — canonical source in domain/types.ts
+import type { Contact } from '../../domain/types'
+export type { Contact }
 
 // BRC-100 action result for tracking createAction outcomes
 export interface ActionResult {

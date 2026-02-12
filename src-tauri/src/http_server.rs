@@ -488,43 +488,43 @@ async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), R
     }
 }
 
+/// Shared helper: validate origin + nonce + parse JSON body.
+/// Returns (parsed_args, origin) on success, or an error Response.
+async fn validate_and_parse_request(
+    state: &AppState,
+    request: Request<Body>,
+) -> Result<(serde_json::Value, Option<String>), Response> {
+    let origin = extract_origin(&request);
+    let nonce = extract_nonce(&request);
+
+    validate_origin(&origin).map_err(|e| e)?;
+    validate_nonce(state, nonce).await.map_err(|e| e)?;
+
+    let body_bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024).await
+        .map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid request body"
+        }))).into_response())?;
+
+    let args: serde_json::Value = serde_json::from_slice(&body_bytes)
+        .map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32700,
+            "message": "Invalid JSON"
+        }))).into_response())?;
+
+    Ok((args, origin))
+}
+
 async fn handle_create_signature(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    // Extract origin and nonce before consuming the request body
-    let origin = extract_origin(&request);
-    let nonce = extract_nonce(&request);
-
-    // Validate origin for this state-changing operation
-    if let Err(err) = validate_origin(&origin) {
-        return err;
-    }
-
-    // Validate CSRF nonce for this state-changing operation
-    if let Err(err) = validate_nonce(&state, nonce).await {
-        return err;
-    }
-
-    // Parse the body manually since we already borrowed the request
-    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid request body"
-        }))).into_response(),
-    };
-
-    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+    let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid JSON"
-        }))).into_response(),
+        Err(e) => return e,
     };
-
     log::debug!("createSignature request: {:?}", args);
     forward_to_frontend_with_rotation(state, "createSignature", args, origin).await
 }
@@ -533,37 +533,10 @@ async fn handle_create_action(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let origin = extract_origin(&request);
-    let nonce = extract_nonce(&request);
-
-    // Validate origin for this state-changing operation
-    if let Err(err) = validate_origin(&origin) {
-        return err;
-    }
-
-    // Validate CSRF nonce for this state-changing operation
-    if let Err(err) = validate_nonce(&state, nonce).await {
-        return err;
-    }
-
-    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid request body"
-        }))).into_response(),
-    };
-
-    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+    let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid JSON"
-        }))).into_response(),
+        Err(e) => return e,
     };
-
     log::debug!("createAction request: {:?}", args);
     forward_to_frontend_with_rotation(state, "createAction", args, origin).await
 }
@@ -572,37 +545,10 @@ async fn handle_list_outputs(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let origin = extract_origin(&request);
-    let nonce = extract_nonce(&request);
-
-    // Validate origin — read endpoints can leak sensitive UTXO data
-    if let Err(err) = validate_origin(&origin) {
-        return err;
-    }
-
-    // Validate CSRF nonce — read endpoints can still leak sensitive data
-    if let Err(err) = validate_nonce(&state, nonce).await {
-        return err;
-    }
-
-    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid request body"
-        }))).into_response(),
-    };
-
-    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+    let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid JSON"
-        }))).into_response(),
+        Err(e) => return e,
     };
-
     log::debug!("listOutputs request: {:?}", args);
     forward_to_frontend(state, "listOutputs", args, origin).await
 }
@@ -611,37 +557,10 @@ async fn handle_lock_bsv(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let origin = extract_origin(&request);
-    let nonce = extract_nonce(&request);
-
-    // Validate origin for this state-changing operation
-    if let Err(err) = validate_origin(&origin) {
-        return err;
-    }
-
-    // Validate CSRF nonce for this state-changing operation
-    if let Err(err) = validate_nonce(&state, nonce).await {
-        return err;
-    }
-
-    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid request body"
-        }))).into_response(),
-    };
-
-    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+    let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid JSON"
-        }))).into_response(),
+        Err(e) => return e,
     };
-
     log::debug!("lockBSV request: {:?}", args);
     forward_to_frontend_with_rotation(state, "lockBSV", args, origin).await
 }
@@ -650,37 +569,10 @@ async fn handle_unlock_bsv(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let origin = extract_origin(&request);
-    let nonce = extract_nonce(&request);
-
-    // Validate origin for this state-changing operation
-    if let Err(err) = validate_origin(&origin) {
-        return err;
-    }
-
-    // Validate CSRF nonce for this state-changing operation
-    if let Err(err) = validate_nonce(&state, nonce).await {
-        return err;
-    }
-
-    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid request body"
-        }))).into_response(),
-    };
-
-    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+    let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid JSON"
-        }))).into_response(),
+        Err(e) => return e,
     };
-
     log::debug!("unlockBSV request: {:?}", args);
     forward_to_frontend_with_rotation(state, "unlockBSV", args, origin).await
 }
@@ -689,37 +581,10 @@ async fn handle_list_locks(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let origin = extract_origin(&request);
-    let nonce = extract_nonce(&request);
-
-    // Validate origin — read endpoints can leak sensitive lock data
-    if let Err(err) = validate_origin(&origin) {
-        return err;
-    }
-
-    // Validate CSRF nonce — read endpoints can still leak sensitive data
-    if let Err(err) = validate_nonce(&state, nonce).await {
-        return err;
-    }
-
-    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid request body"
-        }))).into_response(),
-    };
-
-    let args: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+    let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid JSON"
-        }))).into_response(),
+        Err(e) => return e,
     };
-
     log::debug!("listLocks request: {:?}", args);
     forward_to_frontend(state, "listLocks", args, origin).await
 }

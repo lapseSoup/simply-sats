@@ -45,7 +45,8 @@ import {
 import {
   getSpendableUtxosFromDatabase,
   getOrdinalsFromDatabase,
-  getBalanceFromDatabase
+  getBalanceFromDatabase,
+  mapDbLocksToLockedUtxos
 } from '../services/sync'
 import {
   type Account,
@@ -63,7 +64,6 @@ import {
   setInactivityLimit,
   minutesToMs
 } from '../services/autoLock'
-import { isValidOrigin, normalizeOrigin } from '../utils/validation'
 import { validatePassword, MIN_PASSWORD_LENGTH } from '../utils/passwordValidation'
 import { walletLogger, uiLogger } from '../services/logger'
 import {
@@ -73,8 +73,6 @@ import {
   formatLockoutTime
 } from '../services/rateLimiter'
 import {
-  secureGetJSON,
-  secureSetJSON,
   migrateToSecureStorage,
   clearAllSimplySatsStorage
 } from '../services/secureStorage'
@@ -131,13 +129,6 @@ interface WalletContextType {
   // Settings
   feeRateKB: number
   setFeeRate: (rate: number) => void
-
-  // Connected apps
-  connectedApps: string[]
-  trustedOrigins: string[]
-  addTrustedOrigin: (origin: string) => boolean
-  removeTrustedOrigin: (origin: string) => void
-  disconnectApp: (origin: string) => void
 
   // Session
   sessionPassword: string | null
@@ -238,6 +229,15 @@ export function WalletProvider({ children }: WalletProviderProps) {
     sendTokenAction
   } = useTokens()
 
+  // Store keys in Rust key store (mnemonic + index only — no WIFs cross IPC)
+  const storeKeysInRust = useCallback(async (mnemonic: string, accountIndex: number) => {
+    try {
+      await invoke('store_keys', { mnemonic, accountIndex })
+    } catch (e) {
+      walletLogger.warn('Failed to store keys in Rust key store', { error: String(e) })
+    }
+  }, [])
+
   // Lock state
   const [isLocked, setIsLocked] = useState(false)
   const [autoLockMinutes, setAutoLockMinutesState] = useState<number>(() => {
@@ -280,11 +280,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Settings
   const [feeRateKB, setFeeRateKBState] = useState<number>(() => getFeeRatePerKB())
-
-  // Connected apps (loaded asynchronously from secure storage)
-  const [connectedApps, setConnectedApps] = useState<string[]>([])
-  const [trustedOrigins, setTrustedOrigins] = useState<string[]>([])
-
 
   // Set wallet and update BRC-100 service
   const setWallet = useCallback((newWallet: WalletKeys | null) => {
@@ -379,23 +374,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setSessionPassword(password) // Store password for session operations
         walletLogger.debug('Session password stored for account switching')
         resetInactivityTimer()
-        // Store keys in Rust key store (WIFs stay in Rust memory)
-        try {
-          await invoke('store_keys_direct', {
-            walletWif: keys.walletWif,
-            ordWif: keys.ordWif,
-            identityWif: keys.identityWif,
-            walletAddress: keys.walletAddress,
-            walletPubKey: keys.walletPubKey,
-            ordAddress: keys.ordAddress,
-            ordPubKey: keys.ordPubKey,
-            identityAddress: keys.identityAddress,
-            identityPubKey: keys.identityPubKey,
-            mnemonic: keys.mnemonic
-          })
-        } catch (e) {
-          walletLogger.warn('Failed to store keys in Rust key store', { error: String(e) })
-        }
+        // Derive and store keys in Rust key store — only mnemonic + index cross IPC (no WIFs)
+        await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
         // Rotate session for this account (isolates BRC-100 sessions per account)
         try {
           await invoke('rotate_session_for_account', { accountId: account.id })
@@ -437,7 +417,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         await new Promise(resolve => setTimeout(resolve, UNLOCK_MIN_TIME_MS - elapsed))
       }
     }
-  }, [activeAccount, getKeysForAccount, refreshAccounts])
+  }, [activeAccount, getKeysForAccount, refreshAccounts, storeKeysInRust])
 
   // Set auto-lock timeout
   const setAutoLockMinutes = useCallback((minutes: number) => {
@@ -469,23 +449,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
         setWallet(keys)
         setIsLocked(false)
 
-        // Store keys in Rust key store for new account
-        try {
-          await invoke('store_keys_direct', {
-            walletWif: keys.walletWif,
-            ordWif: keys.ordWif,
-            identityWif: keys.identityWif,
-            walletAddress: keys.walletAddress,
-            walletPubKey: keys.walletPubKey,
-            ordAddress: keys.ordAddress,
-            ordPubKey: keys.ordPubKey,
-            identityAddress: keys.identityAddress,
-            identityPubKey: keys.identityPubKey,
-            mnemonic: keys.mnemonic
-          })
-        } catch (e) {
-          walletLogger.warn('Failed to store keys in Rust key store', { error: String(e) })
-        }
+        // Derive and store keys in Rust key store — only mnemonic + index cross IPC (no WIFs)
+        await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? ((accountId ?? 1) - 1))
 
         // Rotate session token for new account (isolates BRC-100 sessions per account)
         try {
@@ -503,16 +468,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
           if (fetchVersionRef.current !== preloadVersion) {
             walletLogger.debug('Skipping lock preload — account switch detected during DB query')
           } else if (dbLocks.length > 0) {
-            setLocks(dbLocks.map(lock => ({
-              txid: lock.utxo.txid,
-              vout: lock.utxo.vout,
-              satoshis: lock.utxo.satoshis,
-              lockingScript: lock.utxo.lockingScript,
-              unlockBlock: lock.unlockBlock,
-              publicKeyHex: keys.walletPubKey,
-              createdAt: lock.createdAt,
-              lockBlock: lock.lockBlock
-            })))
+            setLocks(mapDbLocksToLockedUtxos(dbLocks, keys.walletPubKey))
           }
         } catch (_e) {
           // Best-effort: full sync will pick up locks anyway
@@ -522,7 +478,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         try {
           const dbOrdinals = await getOrdinalsFromDatabase(accountId)
           if (fetchVersionRef.current === preloadVersion && dbOrdinals.length > 0) {
-            setOrdinals(dbOrdinals as Ordinal[])
+            setOrdinals(dbOrdinals)
           }
         } catch (_e) {
           // Best-effort: fetchData will load ordinals anyway
@@ -571,7 +527,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       walletLogger.error('Error switching account', e)
       return false
     }
-  }, [accountsSwitchAccount, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, sessionPassword])
+  }, [accountsSwitchAccount, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, sessionPassword, storeKeysInRust])
 
   // Create a new account using session password (capped at 10 accounts)
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
@@ -626,14 +582,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
       // If we deleted the active account, load the new active one
       const active = await getActiveAccount()
       if (active && wallet === null) {
-        const keys = await getKeysForAccount(active, '')
+        const keys = await getKeysForAccount(active, sessionPassword ?? '')
         if (keys) {
           setWallet(keys)
         }
       }
     }
     return success
-  }, [accountsDeleteAccount, wallet, setWallet, getKeysForAccount])
+  }, [accountsDeleteAccount, wallet, setWallet, getKeysForAccount, sessionPassword])
 
 
   // Refresh token balances - wraps TokensContext to pass wallet
@@ -653,17 +609,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         await migrateToSecureStorage()
         if (!mounted) return
 
-        // Load trusted origins from secure storage
-        const savedOrigins = await secureGetJSON<string[]>('trusted_origins')
-        if (savedOrigins && mounted) {
-          setTrustedOrigins(savedOrigins)
-        }
-
-        // Load connected apps from secure storage
-        const savedApps = await secureGetJSON<string[]>('connected_apps')
-        if (savedApps && mounted) {
-          setConnectedApps(savedApps)
-        }
+        // Connected apps state is now managed by ConnectedAppsProvider
 
         await initDatabase()
         if (!mounted) return
@@ -994,8 +940,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setSessionPassword(null)
     resetSync()
     setLocks([])
-    setConnectedApps([])
-    setTrustedOrigins([])
     setContacts([])
     setAutoLockMinutesState(10)
     setFeeRateKBState(50)
@@ -1042,21 +986,24 @@ export function WalletProvider({ children }: WalletProviderProps) {
         address: wallet.walletAddress
       }))
 
-      // Also include derived address UTXOs if available
-      const derivedAddrs = await getDerivedAddresses(activeAccountId || undefined)
-      for (const derived of derivedAddrs) {
-        if (derived.privateKeyWif) {
-          try {
-            const derivedUtxos = await getUTXOs(derived.address)
-            for (const u of derivedUtxos) {
-              extendedUtxos.push({
-                ...u,
-                wif: derived.privateKeyWif,
-                address: derived.address
-              })
+      // Include derived address UTXOs only when NOT in coin control mode.
+      // When user explicitly selects UTXOs, adding extras defeats the purpose.
+      if (!selectedUtxos) {
+        const derivedAddrs = await getDerivedAddresses(activeAccountId || undefined)
+        for (const derived of derivedAddrs) {
+          if (derived.privateKeyWif) {
+            try {
+              const derivedUtxos = await getUTXOs(derived.address)
+              for (const u of derivedUtxos) {
+                extendedUtxos.push({
+                  ...u,
+                  wif: derived.privateKeyWif,
+                  address: derived.address
+                })
+              }
+            } catch (_e) {
+              // Skip if can't get UTXOs for this address
             }
-          } catch (_e) {
-            // Skip if can't get UTXOs for this address
           }
         }
       }
@@ -1195,46 +1142,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setFeeRateFromKB(rate)
   }, [])
 
-  // Trusted origins (using secure storage)
-  const addTrustedOrigin = useCallback((origin: string) => {
-    if (!isValidOrigin(origin)) {
-      walletLogger.warn('Invalid origin format', { origin })
-      return false
-    }
-    const normalized = normalizeOrigin(origin)
-    if (!trustedOrigins.includes(normalized)) {
-      const newOrigins = [...trustedOrigins, normalized]
-      // Save to secure storage (async, fire-and-forget)
-      secureSetJSON('trusted_origins', newOrigins).catch(e => {
-        walletLogger.error('Failed to save trusted origins', e)
-      })
-      setTrustedOrigins(newOrigins)
-      // Audit log origin trusted
-      audit.originTrusted(normalized, activeAccountId ?? undefined)
-    }
-    return true
-  }, [trustedOrigins, activeAccountId])
-
-  const removeTrustedOrigin = useCallback((origin: string) => {
-    const newOrigins = trustedOrigins.filter(o => o !== origin)
-    secureSetJSON('trusted_origins', newOrigins).catch(e => {
-      walletLogger.error('Failed to save trusted origins', e)
-    })
-    setTrustedOrigins(newOrigins)
-    // Audit log origin removed
-    audit.originRemoved(origin, activeAccountId ?? undefined)
-  }, [trustedOrigins, activeAccountId])
-
-  const disconnectApp = useCallback((origin: string) => {
-    const newConnectedApps = connectedApps.filter(app => app !== origin)
-    setConnectedApps(newConnectedApps)
-    secureSetJSON('connected_apps', newConnectedApps).catch(e => {
-      walletLogger.error('Failed to save connected apps', e)
-    })
-    // Audit log app disconnected
-    audit.appDisconnected(origin, activeAccountId ?? undefined)
-  }, [connectedApps, activeAccountId])
-
   const value: WalletContextType = useMemo(() => ({
     // Wallet state
     wallet,
@@ -1283,13 +1190,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     feeRateKB,
     setFeeRate,
 
-    // Connected apps
-    connectedApps,
-    trustedOrigins,
-    addTrustedOrigin,
-    removeTrustedOrigin,
-    disconnectApp,
-
     // Session
     sessionPassword,
     refreshContacts,
@@ -1313,8 +1213,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     switchAccount, createNewAccount, importAccount, deleteAccount, renameAccount, refreshAccounts,
     tokenBalances, refreshTokens, tokensSyncing, isLocked, lockWallet, unlockWallet,
     autoLockMinutes, setAutoLockMinutes, networkInfo, syncing, syncError, loading,
-    feeRateKB, setFeeRate, connectedApps, trustedOrigins, addTrustedOrigin, removeTrustedOrigin,
-    disconnectApp, sessionPassword, refreshContacts, performSync, fetchData, handleCreateWallet,
+    feeRateKB, setFeeRate, sessionPassword, refreshContacts, performSync, fetchData, handleCreateWallet,
     handleRestoreWallet, handleImportJSON, handleDeleteWallet, handleSend, handleLock,
     handleUnlock, handleTransferOrdinal, handleListOrdinal, handleSendToken
   ])

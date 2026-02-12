@@ -108,9 +108,8 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
       const result = await lockBSV(wallet.walletWif, amountSats, unlockBlock, walletUtxos, undefined, currentHeight, activeAccountId ?? undefined)
 
-      // Add the locked UTXO to our list
-      const newLocks = [...locks, result.lockedUtxo]
-      setLocks(newLocks)
+      // Add the locked UTXO to our list (functional updater to avoid stale closure)
+      setLocks(prev => [...prev, result.lockedUtxo])
 
       await onComplete()
       // Audit log lock creation
@@ -119,7 +118,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Lock failed' }
     }
-  }, [networkInfo, locks])
+  }, [networkInfo])
 
   // Unlock a time-locked UTXO
   const handleUnlock = useCallback(async (
@@ -139,8 +138,8 @@ export function LocksProvider({ children }: LocksProviderProps) {
       const lockKey = `${lock.txid}:${lock.vout}`
       addKnownUnlockedLock(lockKey)
 
-      const newLocks = locks.filter(l => l.txid !== lock.txid || l.vout !== lock.vout)
-      setLocks(newLocks)
+      // Functional updater to avoid stale closure
+      setLocks(prev => prev.filter(l => l.txid !== lock.txid || l.vout !== lock.vout))
 
       await onComplete()
       // Audit log lock release
@@ -149,7 +148,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Unlock failed' }
     }
-  }, [networkInfo, locks, addKnownUnlockedLock])
+  }, [networkInfo, addKnownUnlockedLock])
 
   const value: LocksContextType = useMemo(() => ({
     locks,

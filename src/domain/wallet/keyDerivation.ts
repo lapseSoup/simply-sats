@@ -134,7 +134,8 @@ export async function deriveWalletKeys(mnemonic: string): Promise<WalletKeys> {
     ordPubKey: ord.pubKey,
     identityWif: identity.wif,
     identityAddress: identity.address,
-    identityPubKey: identity.pubKey
+    identityPubKey: identity.pubKey,
+    accountIndex: 0
   }
 }
 
@@ -200,7 +201,8 @@ export async function deriveWalletKeysForAccount(mnemonic: string, accountIndex:
     ordPubKey: ord.pubKey,
     identityWif: identity.wif,
     identityAddress: identity.address,
-    identityPubKey: identity.pubKey
+    identityPubKey: identity.pubKey,
+    accountIndex
   }
 }
 

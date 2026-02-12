@@ -10,7 +10,7 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::key_derivation;
 use crate::brc100_signing;
@@ -106,11 +106,14 @@ pub async fn store_keys(
     account_index: Option<u32>,
 ) -> Result<PublicWalletKeys, String> {
     // Derive full keys using existing key_derivation module
+    // Use Zeroizing wrapper for the mnemonic clone to ensure it's cleared after derivation
+    let mnemonic_for_derive = Zeroizing::new(mnemonic.clone());
     let full_keys = if let Some(idx) = account_index {
-        key_derivation::derive_wallet_keys_for_account(mnemonic.clone(), idx)?
+        key_derivation::derive_wallet_keys_for_account((*mnemonic_for_derive).clone(), idx)?
     } else {
-        key_derivation::derive_wallet_keys(mnemonic.clone())?
+        key_derivation::derive_wallet_keys((*mnemonic_for_derive).clone())?
     };
+    drop(mnemonic_for_derive);
 
     let pub_keys = PublicWalletKeys {
         wallet_type: full_keys.wallet_type.clone(),
@@ -227,9 +230,10 @@ pub async fn sign_message_from_store(
     key_type: String,
 ) -> Result<String, String> {
     let store = key_store.lock().await;
-    let wif = store.get_wif(&key_type)?;
+    let wif = Zeroizing::new(store.get_wif(&key_type)?);
     drop(store); // Release lock before signing
-    brc100_signing::sign_message(wif, message)
+    brc100_signing::sign_message((*wif).clone(), message)
+    // wif zeroized on drop
 }
 
 /// Sign raw data using a key from the store
@@ -240,9 +244,9 @@ pub async fn sign_data_from_store(
     key_type: String,
 ) -> Result<String, String> {
     let store = key_store.lock().await;
-    let wif = store.get_wif(&key_type)?;
+    let wif = Zeroizing::new(store.get_wif(&key_type)?);
     drop(store);
-    brc100_signing::sign_data(wif, data)
+    brc100_signing::sign_data((*wif).clone(), data)
 }
 
 /// ECIES encrypt using a key from the store
@@ -255,9 +259,9 @@ pub async fn encrypt_ecies_from_store(
     key_type: String,
 ) -> Result<brc100_signing::EncryptResult, String> {
     let store = key_store.lock().await;
-    let wif = store.get_wif(&key_type)?;
+    let wif = Zeroizing::new(store.get_wif(&key_type)?);
     drop(store);
-    brc100_signing::encrypt_ecies(wif, plaintext, recipient_pub_key, sender_pub_key)
+    brc100_signing::encrypt_ecies((*wif).clone(), plaintext, recipient_pub_key, sender_pub_key)
 }
 
 /// ECIES decrypt using a key from the store
@@ -269,9 +273,9 @@ pub async fn decrypt_ecies_from_store(
     key_type: String,
 ) -> Result<String, String> {
     let store = key_store.lock().await;
-    let wif = store.get_wif(&key_type)?;
+    let wif = Zeroizing::new(store.get_wif(&key_type)?);
     drop(store);
-    brc100_signing::decrypt_ecies(wif, ciphertext_bytes, sender_pub_key)
+    brc100_signing::decrypt_ecies((*wif).clone(), ciphertext_bytes, sender_pub_key)
 }
 
 // ==================== Transaction Commands (from store) ====================
@@ -287,9 +291,9 @@ pub async fn build_p2pkh_tx_from_store(
     fee_rate: f64,
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
-    let wif = store.get_wif("wallet")?;
+    let wif = Zeroizing::new(store.get_wif("wallet")?);
     drop(store);
-    transaction::build_p2pkh_tx(wif, to_address, satoshis, selected_utxos, total_input, fee_rate)
+    transaction::build_p2pkh_tx((*wif).clone(), to_address, satoshis, selected_utxos, total_input, fee_rate)
 }
 
 /// Build a multi-key P2PKH transaction using the wallet key for change
@@ -303,9 +307,9 @@ pub async fn build_multi_key_p2pkh_tx_from_store(
     fee_rate: f64,
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
-    let wif = store.get_wif("wallet")?;
+    let wif = Zeroizing::new(store.get_wif("wallet")?);
     drop(store);
-    transaction::build_multi_key_p2pkh_tx(wif, to_address, satoshis, selected_utxos, total_input, fee_rate)
+    transaction::build_multi_key_p2pkh_tx((*wif).clone(), to_address, satoshis, selected_utxos, total_input, fee_rate)
 }
 
 /// Build a consolidation transaction using the wallet key from the store
@@ -316,9 +320,9 @@ pub async fn build_consolidation_tx_from_store(
     fee_rate: f64,
 ) -> Result<transaction::BuiltConsolidationResult, String> {
     let store = key_store.lock().await;
-    let wif = store.get_wif("wallet")?;
+    let wif = Zeroizing::new(store.get_wif("wallet")?);
     drop(store);
-    transaction::build_consolidation_tx(wif, utxos, fee_rate)
+    transaction::build_consolidation_tx((*wif).clone(), utxos, fee_rate)
 }
 
 #[cfg(test)]

@@ -303,7 +303,8 @@ describe('BRC-100 Service', () => {
 
         expect(height).toBe(850000)
         expect(fetch).toHaveBeenCalledWith(
-          'https://api.whatsonchain.com/v1/bsv/main/chain/info'
+          'https://api.whatsonchain.com/v1/bsv/main/chain/info',
+          expect.objectContaining({ signal: expect.any(AbortSignal) })
         )
       })
 

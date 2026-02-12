@@ -14,11 +14,12 @@ import { walletLogger } from './logger'
 // Storage keys
 const STORAGE_PREFIX = 'simply_sats_'
 
-// Keys that should be encrypted
-const SENSITIVE_KEYS = new Set([
-  'trusted_origins',
-  'connected_apps',
-  'rate_limit',
+// Keys that should be encrypted (session-scoped encryption with in-memory key).
+// NOTE: trusted_origins, connected_apps, and rate_limit were previously encrypted
+// but this caused data loss on app restart (session key is regenerated each session).
+// These values are app preferences, not secrets — they don't need encryption.
+const SENSITIVE_KEYS = new Set<string>([
+  // Currently empty — add keys here only for truly sensitive session-scoped data
 ])
 
 // Keys that remain unencrypted (non-sensitive preferences):
@@ -264,11 +265,16 @@ export async function secureGetJSON<T>(key: string): Promise<T | null> {
   }
 }
 
+// Keys that were previously encrypted but are now stored as plain JSON
+const PREVIOUSLY_ENCRYPTED_KEYS = ['trusted_origins', 'connected_apps', 'rate_limit']
+
 /**
- * Migrate existing unencrypted sensitive data to encrypted storage
- * Call this on app startup
+ * Migrate storage data on app startup:
+ * 1. Encrypt any unencrypted SENSITIVE_KEYS values
+ * 2. Strip enc: prefix from previously-encrypted keys that can no longer be decrypted
  */
 export async function migrateToSecureStorage(): Promise<void> {
+  // Migrate currently-sensitive keys to encrypted storage
   for (const key of SENSITIVE_KEYS) {
     const fullKey = `${STORAGE_PREFIX}${key}`
     const value = localStorage.getItem(fullKey)
@@ -284,6 +290,18 @@ export async function migrateToSecureStorage(): Promise<void> {
       walletLogger.info('Migrated to secure storage', { key })
     } catch (e) {
       walletLogger.error('Failed to migrate to secure storage', { key, error: e })
+    }
+  }
+
+  // Strip enc: prefix from keys that are no longer encrypted
+  // These were encrypted in a previous version but became unreadable after restart
+  for (const key of PREVIOUSLY_ENCRYPTED_KEYS) {
+    const fullKey = `${STORAGE_PREFIX}${key}`
+    const value = localStorage.getItem(fullKey)
+    if (value && value.startsWith('enc:')) {
+      // Can't decrypt (session key is different) — remove the stale encrypted data
+      localStorage.removeItem(fullKey)
+      walletLogger.info('Removed stale encrypted data (no longer needs encryption)', { key })
     }
   }
 }

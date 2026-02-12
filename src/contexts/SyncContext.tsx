@@ -23,7 +23,8 @@ import {
   syncWallet,
   restoreFromBlockchain,
   getBalanceFromDatabase,
-  getOrdinalsFromDatabase
+  getOrdinalsFromDatabase,
+  mapDbLocksToLockedUtxos
 } from '../services/sync'
 import { fetchOrdinalContent } from '../services/wallet/ordinalContent'
 import { useNetwork } from './NetworkContext'
@@ -281,16 +282,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       let preloadedLocks: import('../services/wallet').LockedUTXO[] = []
       try {
         const dbLocks = await getLocksFromDB(0, activeAccountId)
-        preloadedLocks = dbLocks.map(lock => ({
-          txid: lock.utxo.txid,
-          vout: lock.utxo.vout,
-          satoshis: lock.utxo.satoshis,
-          lockingScript: lock.utxo.lockingScript,
-          unlockBlock: lock.unlockBlock,
-          publicKeyHex: wallet.walletPubKey,
-          createdAt: lock.createdAt,
-          lockBlock: lock.lockBlock
-        }))
+        preloadedLocks = mapDbLocksToLockedUtxos(dbLocks, wallet.walletPubKey)
         if (preloadedLocks.length > 0) {
           // Send preloaded locks immediately via callback so UI updates
           onLocksDetected({ utxos: [], shouldClearLocks: false, preloadedLocks })
@@ -306,7 +298,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
         // Display DB ordinals immediately (before slow API calls)
         if (dbOrdinals.length > 0) {
-          setOrdinals(dbOrdinals as Ordinal[])
+          setOrdinals(dbOrdinals)
         }
 
         // Load cached content from DB for instant previews

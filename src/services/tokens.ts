@@ -16,18 +16,9 @@ const OP_1 = 0x51
 import { tokenLogger } from './logger'
 import { getDatabase } from './database'
 import { broadcastTransaction, calculateTxFee, type UTXO } from './wallet'
+import { gpOrdinalsApi } from '../infrastructure/api/clients'
 import type { TokenRow, TokenBalanceRow, TokenTransferRow, IdCheckRow, SqlParams } from './database-types'
 
-// GorillaPool API endpoints
-const GORILLAPOOL_MAINNET = 'https://ordinals.gorillapool.io'
-const GORILLAPOOL_TESTNET = 'https://testnet.ordinals.gorillapool.io'
-
-// Current network (default to mainnet)
-let currentNetwork: 'mainnet' | 'testnet' = 'mainnet'
-
-function getBaseUrl(): string {
-  return currentNetwork === 'mainnet' ? GORILLAPOOL_MAINNET : GORILLAPOOL_TESTNET
-}
 
 // Token metadata type
 export interface Token {
@@ -98,9 +89,10 @@ interface GPTokenDetails {
 
 /**
  * Set the network for API calls
+ * Note: Currently a no-op; gpOrdinalsApi client is configured for mainnet.
  */
-export function setTokenNetwork(network: 'mainnet' | 'testnet'): void {
-  currentNetwork = network
+export function setTokenNetwork(_network: 'mainnet' | 'testnet'): void {
+  // No-op: API calls now route through the pre-configured gpOrdinalsApi client
 }
 
 /**
@@ -108,14 +100,14 @@ export function setTokenNetwork(network: 'mainnet' | 'testnet'): void {
  */
 export async function fetchTokenBalances(address: string): Promise<TokenBalance[]> {
   try {
-    const response = await fetch(`${getBaseUrl()}/api/bsv20/${address}/balance`)
+    const result = await gpOrdinalsApi.get<GPTokenBalance[]>(`/api/bsv20/${address}/balance`)
 
-    if (!response.ok) {
-      tokenLogger.error('Failed to fetch balances', undefined, { status: response.status })
+    if (!result.ok) {
+      tokenLogger.error('Failed to fetch balances', undefined, { error: result.error.message })
       return []
     }
 
-    const data: GPTokenBalance[] = await response.json()
+    const data: GPTokenBalance[] = result.value
     const balances: TokenBalance[] = []
 
     for (const item of data) {
@@ -160,13 +152,13 @@ export async function fetchTokenBalances(address: string): Promise<TokenBalance[
  */
 export async function fetchTokenDetails(ticker: string): Promise<Token | null> {
   try {
-    const response = await fetch(`${getBaseUrl()}/api/bsv20/tick/${ticker}`)
+    const result = await gpOrdinalsApi.get<GPTokenDetails>(`/api/bsv20/tick/${ticker}`)
 
-    if (!response.ok) {
+    if (!result.ok) {
       return null
     }
 
-    const data: GPTokenDetails = await response.json()
+    const data: GPTokenDetails = result.value
 
     return {
       ticker: data.tick,
@@ -189,16 +181,16 @@ export async function fetchTokenDetails(ticker: string): Promise<Token | null> {
  */
 export async function fetchBsv21Details(contractId: string): Promise<Token | null> {
   try {
-    const response = await fetch(`${getBaseUrl()}/api/bsv20/id/${contractId}`)
+    const result = await gpOrdinalsApi.get<{ sym?: string; id?: string; dec?: number; max?: string; icon?: string }>(`/api/bsv20/id/${contractId}`)
 
-    if (!response.ok) {
+    if (!result.ok) {
       return null
     }
 
-    const data = await response.json()
+    const data = result.value
 
     return {
-      ticker: data.sym || data.id,
+      ticker: data.sym || data.id || contractId,
       protocol: 'bsv21',
       contractTxid: contractId,
       name: data.sym,
@@ -222,15 +214,15 @@ export async function fetchTokenUtxos(
   address: string
 ): Promise<TokenUtxoResponse[]> {
   try {
-    const response = await fetch(
-      `${getBaseUrl()}/api/bsv20/${address}/tick/${ticker}`
+    const result = await gpOrdinalsApi.get<TokenUtxoResponse[]>(
+      `/api/bsv20/${address}/tick/${ticker}`
     )
 
-    if (!response.ok) {
+    if (!result.ok) {
       return []
     }
 
-    const data = await response.json()
+    const data = result.value
     return data.filter((item: TokenUtxoResponse) => item.status === 1) // Only confirmed
   } catch (e) {
     tokenLogger.error('Error fetching token UTXOs', e)
@@ -336,7 +328,8 @@ export async function getTokenByTicker(
       verified: row.verified === 1,
       createdAt: row.created_at
     }
-  } catch (_e) {
+  } catch (e) {
+    tokenLogger.warn('Failed to get token by ticker', { ticker, protocol, error: e })
     return null
   }
 }
@@ -368,7 +361,8 @@ export async function getTokenById(tokenId: number): Promise<Token | null> {
       verified: row.verified === 1,
       createdAt: row.created_at
     }
-  } catch (_e) {
+  } catch (e) {
+    tokenLogger.warn('Failed to get token by ID', { tokenId, error: e })
     return null
   }
 }
@@ -396,7 +390,8 @@ export async function getAllTokens(): Promise<Token[]> {
       verified: row.verified === 1,
       createdAt: row.created_at
     }))
-  } catch (_e) {
+  } catch (e) {
+    tokenLogger.warn('Failed to get all tokens', { error: e })
     return []
   }
 }
@@ -473,7 +468,8 @@ export async function getTokenBalancesFromDb(accountId: number): Promise<TokenBa
     }
 
     return Array.from(balanceMap.values())
-  } catch (_e) {
+  } catch (e) {
+    tokenLogger.warn('Failed to get token balances from DB', { accountId, error: e })
     return []
   }
 }
@@ -526,7 +522,8 @@ export async function getTokenTransfers(
     params.push(limit)
 
     return await database.select<TokenTransferRow[]>(query, params)
-  } catch (_e) {
+  } catch (e) {
+    tokenLogger.warn('Failed to get token transfers', { accountId, tokenId, error: e })
     return []
   }
 }
@@ -587,7 +584,8 @@ export async function toggleFavoriteToken(
       )
       return true // Added to favorites
     }
-  } catch (_e) {
+  } catch (e) {
+    tokenLogger.warn('Failed to toggle favorite token', { accountId, tokenId, error: e })
     return false
   }
 }
@@ -620,7 +618,8 @@ export async function getFavoriteTokens(accountId: number): Promise<Token[]> {
       verified: row.verified === 1,
       createdAt: row.created_at
     }))
-  } catch (_e) {
+  } catch (e) {
+    tokenLogger.warn('Failed to get favorite tokens', { accountId, error: e })
     return []
   }
 }
@@ -773,21 +772,19 @@ export async function getTokenUtxosForSend(
   protocol: 'bsv20' | 'bsv21' = 'bsv20'
 ): Promise<TokenUTXO[]> {
   try {
-    const endpoint = protocol === 'bsv21'
-      ? `${getBaseUrl()}/api/bsv20/${address}/id/${ticker}`
-      : `${getBaseUrl()}/api/bsv20/${address}/tick/${ticker}`
+    const path = protocol === 'bsv21'
+      ? `/api/bsv20/${address}/id/${ticker}`
+      : `/api/bsv20/${address}/tick/${ticker}`
 
-    const response = await fetch(endpoint)
+    const result = await gpOrdinalsApi.get<TokenUTXO[]>(path)
 
-    if (!response.ok) {
-      tokenLogger.error('Failed to fetch token UTXOs', undefined, { status: response.status })
+    if (!result.ok) {
+      tokenLogger.error('Failed to fetch token UTXOs', undefined, { error: result.error.message })
       return []
     }
 
-    const data = await response.json()
-
     // Filter for confirmed UTXOs (status === 1)
-    return data.filter((item: TokenUTXO) => item.status === 1)
+    return result.value.filter((item: TokenUTXO) => item.status === 1)
   } catch (e) {
     tokenLogger.error('Error fetching token UTXOs for send', e)
     return []

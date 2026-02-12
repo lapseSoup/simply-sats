@@ -7,8 +7,7 @@
  */
 
 import { syncLogger } from '../logger'
-
-const GORILLA_POOL_CONTENT_BASE = 'https://ordinals.gorillapool.io/content'
+import { gpOrdinalsApi } from '../../infrastructure/api/clients'
 
 /**
  * Fetch ordinal content from GorillaPool.
@@ -23,9 +22,14 @@ export async function fetchOrdinalContent(
   contentType?: string
 ): Promise<{ contentData?: Uint8Array; contentText?: string } | null> {
   try {
-    const url = `${GORILLA_POOL_CONTENT_BASE}/${origin}`
-    const response = await fetch(url)
+    const result = await gpOrdinalsApi.fetch(`/content/${origin}`)
 
+    if (!result.ok) {
+      syncLogger.debug(`[OrdinalContent] Failed to fetch ${origin}: ${result.error.message}`)
+      return null
+    }
+
+    const response = result.value
     if (!response.ok) {
       syncLogger.debug(`[OrdinalContent] Failed to fetch ${origin}: ${response.status}`)
       return null

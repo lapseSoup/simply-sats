@@ -3,8 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { getTransactionsByLabel } from '../../services/database'
-import { uiLogger } from '../../services/logger'
+import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 import { NoTransactionsEmpty } from '../shared/EmptyState'
 import { ActivityListSkeleton } from '../shared/Skeleton'
@@ -74,31 +73,21 @@ const TransactionItem = memo(function TransactionItem({
 export function ActivityTab() {
   const { txHistory, locks, loading, activeAccountId } = useWallet()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
-  const [lockTxids, setLockTxids] = useState<Set<string>>(new Set())
-  const [unlockTxids, setUnlockTxids] = useState<Set<string>>(new Set())
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
+
+  // Fetch lock/unlock labels via hook (refreshes when txHistory or account changes)
+  const { txidsByLabel } = useLabeledTransactions({
+    labelNames: ['lock', 'unlock'],
+    accountId: activeAccountId || undefined,
+    refreshKey: txHistory
+  })
+  const lockTxids = useMemo(() => txidsByLabel.get('lock') ?? new Set<string>(), [txidsByLabel])
+  const unlockTxids = useMemo(() => txidsByLabel.get('unlock') ?? new Set<string>(), [txidsByLabel])
 
   // Virtualization state (hooks must be called unconditionally)
   const shouldVirtualize = txHistory.length >= VIRTUALIZATION_THRESHOLD
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerHeight, setContainerHeight] = useState(400)
-
-  // Fetch lock and unlock transaction IDs from database labels
-  useEffect(() => {
-    const fetchLabeledTxids = async () => {
-      try {
-        const [lockTxs, unlockTxs] = await Promise.all([
-          getTransactionsByLabel('lock', activeAccountId || undefined),
-          getTransactionsByLabel('unlock', activeAccountId || undefined)
-        ])
-        setLockTxids(new Set(lockTxs.map(tx => tx.txid)))
-        setUnlockTxids(new Set(unlockTxs.map(tx => tx.txid)))
-      } catch (e) {
-        uiLogger.warn('Failed to fetch labeled transactions', { error: String(e) })
-      }
-    }
-    fetchLabeledTxids()
-  }, [txHistory, activeAccountId]) // Refresh when tx history or account changes
 
   // Measure container height for virtualized list
   useEffect(() => {

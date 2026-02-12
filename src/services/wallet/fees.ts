@@ -15,6 +15,7 @@ import {
   MAX_FEE_RATE
 } from '../../domain/transaction/fees'
 import { walletLogger } from '../logger'
+import { gpMapiApi } from '../../infrastructure/api/clients'
 
 // Default fee rate - re-exported from domain layer
 const DEFAULT_FEE_RATE = DOMAIN_DEFAULT_FEE_RATE
@@ -35,16 +36,12 @@ export async function fetchDynamicFeeRate(): Promise<number> {
 
   try {
     // GorillaPool mAPI returns fee policies
-    const response = await fetch('https://mapi.gorillapool.io/mapi/feeQuote', {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    })
+    const result = await gpMapiApi.get<{ payload: string | { fees?: Array<{ feeType: string; miningFee?: { satoshis: number; bytes: number } }> } }>('/mapi/feeQuote')
 
-    if (response.ok) {
-      const result = await response.json()
-      const payload = typeof result.payload === 'string'
-        ? JSON.parse(result.payload)
-        : result.payload
+    if (result.ok) {
+      const payload = typeof result.value.payload === 'string'
+        ? JSON.parse(result.value.payload)
+        : result.value.payload
 
       if (payload?.fees) {
         // Extract standard fee for data transactions
@@ -100,7 +97,7 @@ export async function getFeeRateAsync(): Promise<number> {
   const stored = localStorage.getItem('simply_sats_fee_rate')
   if (stored) {
     const rate = parseFloat(stored)
-    if (!isNaN(rate) && rate > 0) return rate
+    if (!isNaN(rate) && rate > 0) return Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, rate))
   }
 
   // Fetch dynamic rate

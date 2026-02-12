@@ -79,6 +79,11 @@ export interface WocClient {
   getTransactionHistorySafe(address: string): Promise<Result<{ tx_hash: string; height: number }[], ApiError>>
   getTransactionDetailsSafe(txid: string): Promise<Result<WocTransaction, ApiError>>
   broadcastTransactionSafe(txHex: string): Promise<Result<string, ApiError>>
+
+  /** Check if a specific output has been spent. Returns the spending txid or null if unspent. */
+  isOutputSpentSafe(txid: string, vout: number): Promise<Result<string | null, ApiError>>
+  /** Get merkle proof for a transaction (TSC format). */
+  getTxProofSafe(txid: string): Promise<Result<unknown, ApiError>>
 }
 
 /**
@@ -232,6 +237,46 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Unknown error'
         return err(createApiError('BROADCAST_ERROR', message))
+      }
+    },
+
+    async isOutputSpentSafe(txid: string, vout: number): Promise<Result<string | null, ApiError>> {
+      try {
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/tx/${txid}/${vout}/spent`)
+
+        // 404 means no spending tx found = still unspent
+        if (response.status === 404) {
+          return ok(null)
+        }
+
+        if (!response.ok) {
+          return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
+        }
+
+        const data = await response.json()
+        if (data && data.txid) {
+          return ok(data.txid as string)
+        }
+
+        // Got 200 but no spending txid — treat as unspent
+        return ok(null)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Unknown error'
+        return err(createApiError('FETCH_ERROR', message))
+      }
+    },
+
+    async getTxProofSafe(txid: string): Promise<Result<unknown, ApiError>> {
+      try {
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/tx/${txid}/proof`)
+        if (!response.ok) {
+          return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
+        }
+        const data = await response.json()
+        return ok(data)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Unknown error'
+        return err(createApiError('FETCH_ERROR', message))
       }
     },
 
