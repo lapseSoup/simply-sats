@@ -496,6 +496,7 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
           const totalOutput = txDetails.vout.reduce((sum, v) => sum + Math.round(v.value * 1e8), 0)
           txDescription = `Unlocked ${totalOutput.toLocaleString()} sats`
           txLabel = 'unlock'
+          amount = totalOutput // Use actual received amount, not received-spent (which gives negative fee)
           // Mark the source lock(s) as unlocked in DB (prevents stale lock flash on restore)
           for (const vin of txDetails.vin) {
             if (vin.txid && vin.vout !== undefined) {
