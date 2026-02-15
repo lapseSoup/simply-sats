@@ -48,6 +48,81 @@ import { publicKeyToHash } from '../domain/locks'
 // Re-export cancellation functions for external use
 export { cancelSync, startNewSync, isSyncInProgress }
 
+/**
+ * Sync health diagnostic results
+ */
+export interface SyncHealthResult {
+  dbConnected: boolean
+  apiReachable: boolean
+  derivedAddressQuery: boolean
+  utxoQuery: boolean
+  errors: string[]
+  timings: Record<string, number>
+}
+
+/**
+ * Diagnose sync health by testing each component independently.
+ * Useful for identifying the exact failure point on Windows.
+ */
+export async function diagnoseSyncHealth(accountId?: number): Promise<SyncHealthResult> {
+  const errors: string[] = []
+  const timings: Record<string, number> = {}
+  let dbConnected = false
+  let apiReachable = false
+  let derivedAddressQuery = false
+  let utxoQuery = false
+
+  // Test 1: Database connectivity
+  const dbStart = Date.now()
+  try {
+    const { getDatabase } = await import('./database')
+    const db = getDatabase()
+    await db.select('SELECT 1 as test')
+    dbConnected = true
+  } catch (e) {
+    errors.push(`DB: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  timings.db = Date.now() - dbStart
+
+  // Test 2: WoC API reachability
+  const apiStart = Date.now()
+  try {
+    const result = await getWocClient().getBlockHeightSafe()
+    apiReachable = result.success
+    if (!result.success) errors.push(`API: ${result.error.message}`)
+  } catch (e) {
+    errors.push(`API: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  timings.api = Date.now() - apiStart
+
+  // Test 3: Derived address query
+  const derivedStart = Date.now()
+  try {
+    await getDerivedAddressesFromDB(accountId)
+    derivedAddressQuery = true
+  } catch (e) {
+    errors.push(`DerivedAddr: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  timings.derived = Date.now() - derivedStart
+
+  // Test 4: UTXO query
+  const utxoStart = Date.now()
+  try {
+    await getSpendableUTXOs(accountId)
+    utxoQuery = true
+  } catch (e) {
+    errors.push(`UTXO: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  timings.utxo = Date.now() - utxoStart
+
+  syncLogger.info('[DIAG] Sync health check', {
+    dbConnected, apiReachable, derivedAddressQuery, utxoQuery,
+    errors, timings
+  })
+
+  return { dbConnected, apiReachable, derivedAddressQuery, utxoQuery, errors, timings }
+}
+
 // Basket names for different address types
 export const BASKETS = {
   DEFAULT: 'default',      // Main spending wallet
@@ -558,7 +633,13 @@ export async function syncWallet(
     }
 
     // Sync derived addresses FIRST (most important for correct balance)
-    const derivedAddresses = await getDerivedAddressesFromDB(accountId)
+    let derivedAddresses
+    try {
+      derivedAddresses = await getDerivedAddressesFromDB(accountId)
+    } catch (e) {
+      syncLogger.error('[SYNC] DB query failed: getDerivedAddressesFromDB', e)
+      throw new Error(`Database query failed (derived addresses): ${e instanceof Error ? e.message : String(e)}`)
+    }
     syncLogger.debug(`[SYNC] Found ${derivedAddresses.length} derived addresses in database`)
 
     if (token.isCancelled) {

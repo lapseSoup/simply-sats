@@ -26,6 +26,7 @@ export async function initDatabase(): Promise<Database> {
  */
 export function getDatabase(): Database {
   if (!db) {
+    dbLogger.error('Database not initialized — call initDatabase() first')
     throw new Error('Database not initialized. Call initDatabase() first.')
   }
   return db

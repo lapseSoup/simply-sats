@@ -370,6 +370,28 @@ function WalletApp() {
           >
             Retry
           </button>
+          <button
+            className="backup-reminder-btn"
+            onClick={async () => {
+              showToast('Running diagnostics...')
+              try {
+                const { diagnoseSyncHealth } = await import('./services/sync')
+                const health = await diagnoseSyncHealth(activeAccountId || undefined)
+                const lines = [
+                  `DB: ${health.dbConnected ? 'OK' : 'FAIL'}`,
+                  `API: ${health.apiReachable ? 'OK' : 'FAIL'}`,
+                  `Derived: ${health.derivedAddressQuery ? 'OK' : 'FAIL'}`,
+                  `UTXOs: ${health.utxoQuery ? 'OK' : 'FAIL'}`,
+                  ...health.errors
+                ]
+                showToast(lines.join(' | '))
+              } catch (e) {
+                showToast(`Diagnostics failed: ${e instanceof Error ? e.message : String(e)}`)
+              }
+            }}
+          >
+            Diagnose
+          </button>
         </div>
       )}
 

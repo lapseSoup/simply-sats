@@ -208,8 +208,25 @@ export function SyncProvider({ children }: SyncProviderProps) {
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error'
-      setSyncError(`Sync failed: ${msg}`)
       syncLogger.error('Sync failed', error)
+
+      // Run diagnostics to identify the exact failure point
+      try {
+        const { diagnoseSyncHealth } = await import('../services/sync')
+        const health = await diagnoseSyncHealth(activeAccountId || undefined)
+        syncLogger.error('Post-failure health check', { ...health })
+        if (!health.dbConnected) {
+          setSyncError('Sync failed: database connection error')
+        } else if (!health.apiReachable) {
+          setSyncError('Sync failed: cannot reach blockchain API')
+        } else if (!health.derivedAddressQuery || !health.utxoQuery) {
+          setSyncError(`Sync failed: database query error — ${health.errors.join('; ')}`)
+        } else {
+          setSyncError(`Sync failed: ${msg}`)
+        }
+      } catch {
+        setSyncError(`Sync failed: ${msg}`)
+      }
     } finally {
       setSyncing(false)
     }

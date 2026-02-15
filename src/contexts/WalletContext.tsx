@@ -230,9 +230,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
   } = useTokens()
 
   // Store keys in Rust key store (mnemonic + index only — no WIFs cross IPC)
+  // 10s timeout prevents hanging on Windows if IPC stalls
   const storeKeysInRust = useCallback(async (mnemonic: string, accountIndex: number) => {
     try {
-      await invoke('store_keys', { mnemonic, accountIndex })
+      await Promise.race([
+        invoke('store_keys', { mnemonic, accountIndex }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('store_keys timed out after 10s')), 10000))
+      ])
     } catch (e) {
       walletLogger.warn('Failed to store keys in Rust key store', { error: String(e) })
     }
@@ -378,7 +382,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
         await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
         // Rotate session for this account (isolates BRC-100 sessions per account)
         try {
-          await invoke('rotate_session_for_account', { accountId: account.id })
+          await Promise.race([
+            invoke('rotate_session_for_account', { accountId: account.id }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('rotate_session timed out')), 5000))
+          ])
         } catch (e) {
           walletLogger.warn('Failed to rotate session on unlock', { error: String(e) })
         }
@@ -454,7 +461,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
         // Rotate session token for new account (isolates BRC-100 sessions per account)
         try {
-          await invoke('rotate_session_for_account', { accountId })
+          await Promise.race([
+            invoke('rotate_session_for_account', { accountId }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('rotate_session timed out')), 5000))
+          ])
         } catch (e) {
           walletLogger.warn('Failed to rotate session for account', { accountId, error: String(e) })
         }
