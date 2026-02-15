@@ -866,7 +866,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
           walletLogger.error('Failed to detect locks', e)
           // Don't clear locks on detection failure — keep preloaded DB data
         }
-      }
+      },
+      // Cancellation check: discard stale data if account was switched during fetch
+      () => fetchVersionRef.current !== version
     )
   }, [wallet, knownUnlockedLocks, syncFetchData, detectLocks, setLocks])
 

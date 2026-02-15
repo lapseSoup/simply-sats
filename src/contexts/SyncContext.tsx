@@ -83,7 +83,8 @@ interface SyncContextType {
     wallet: WalletKeys,
     activeAccountId: number | null,
     knownUnlockedLocks: Set<string>,
-    onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void
+    onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void,
+    isCancelled?: () => boolean
   ) => Promise<void>
 }
 
@@ -237,7 +238,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
     wallet: WalletKeys,
     activeAccountId: number | null,
     knownUnlockedLocks: Set<string>,
-    onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void
+    onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void,
+    isCancelled?: () => boolean
   ) => {
     // Guard: require a valid account ID to prevent cross-account data leaks
     if (!activeAccountId) return
@@ -252,6 +254,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         getBalanceFromDatabase('default', activeAccountId),
         getBalanceFromDatabase('derived', activeAccountId)
       ])
+      if (isCancelled?.()) return
       const totalBalance = defaultBal + derivedBal
       setBalance(totalBalance)
       try { localStorage.setItem('simply_sats_cached_balance', String(totalBalance)) } catch { /* quota exceeded */ }
@@ -269,6 +272,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
           syncLogger.warn('Partial failure fetching ord balance')
         }
         const totalOrdBalance = ordBal + idBal
+        if (isCancelled?.()) return
         setOrdBalance(totalOrdBalance)
         try { localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance)) } catch { /* quota exceeded */ }
       } catch (_e) {
@@ -293,6 +297,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         return bHeight - aHeight
       })
 
+      if (isCancelled?.()) return
       setTxHistory(dbTxHistory)
 
       // Load locks from database instantly so they appear before blockchain detection
@@ -313,10 +318,12 @@ export function SyncProvider({ children }: SyncProviderProps) {
         const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
         syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length, accountId: activeAccountId })
 
+        // Guard: if account switched during async DB call, discard results
+        if (isCancelled?.()) return
+
         // Display DB ordinals immediately (before slow API calls)
-        if (dbOrdinals.length > 0) {
-          setOrdinals(dbOrdinals)
-        }
+        // Always set — clears stale data from previous account when empty
+        setOrdinals(dbOrdinals)
 
         // Load cached content from DB for instant previews
         const cachedOrdinals = await getCachedOrdinals(activeAccountId)
@@ -367,6 +374,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
           return true
         })
 
+        // Guard: if account switched during slow API calls, discard results
+        if (isCancelled?.()) return
+
         setOrdinals(allOrdinals)
 
         // Cache ordinal metadata to DB and fetch missing content in background
@@ -377,7 +387,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
       // Fetch UTXOs and notify about lock detection
       try {
+        if (isCancelled?.()) return
         const utxoList = await getUTXOs(wallet.walletAddress)
+        if (isCancelled?.()) return
         setUtxos(utxoList)
         // Notify caller about UTXOs for lock detection
         onLocksDetected({
