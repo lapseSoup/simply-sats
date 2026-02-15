@@ -13,6 +13,22 @@ import { gpArcApi, gpMapiApi } from './clients'
 import { apiLogger } from '../../services/logger'
 
 /**
+ * Patterns indicating a transaction is already in the mempool.
+ * This is NOT a failure — it means the tx was already accepted.
+ */
+const TXN_ALREADY_KNOWN_PATTERNS = [
+  'txn-already-known',
+  'transaction already in the mempool',
+  'transaction already known',
+  '257:',
+]
+
+function isTxAlreadyKnown(errorMessage: string): boolean {
+  const lower = errorMessage.toLowerCase()
+  return TXN_ALREADY_KNOWN_PATTERNS.some(p => lower.includes(p.toLowerCase()))
+}
+
+/**
  * Broadcast a signed transaction hex to the BSV network.
  * Tries multiple endpoints in cascade for maximum reliability.
  *
@@ -39,11 +55,21 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       apiLogger.info('WhatsOnChain broadcast successful')
       return responseTxid || localTxid || ''
     }
-    apiLogger.warn('WoC broadcast failed', { error: result.error.message })
-    errors.push(`WoC: ${result.error.message}`)
+    const errorMsg = result.error.message
+    apiLogger.warn('WoC broadcast failed', { error: errorMsg })
+    errors.push(`WoC: ${errorMsg}`)
+    if (isTxAlreadyKnown(errorMsg) && localTxid) {
+      apiLogger.info('WoC: txn-already-known — treating as success', { txid: localTxid })
+      return localTxid
+    }
   } catch (error) {
-    apiLogger.warn('WoC error', { error: String(error) })
-    errors.push(`WoC: ${error}`)
+    const errorMsg = String(error)
+    apiLogger.warn('WoC error', { error: errorMsg })
+    errors.push(`WoC: ${errorMsg}`)
+    if (isTxAlreadyKnown(errorMsg) && localTxid) {
+      apiLogger.info('WoC: txn-already-known (catch) — treating as success', { txid: localTxid })
+      return localTxid
+    }
   }
 
   // 2. Try GorillaPool ARC (JSON body + skipScriptFlags)
@@ -72,12 +98,26 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
       apiLogger.warn('ARC rejected transaction', { error: errorMsg })
       errors.push(`ARC: ${errorMsg}`)
+      if (isTxAlreadyKnown(errorMsg) && localTxid) {
+        apiLogger.info('ARC: txn-already-known — treating as success', { txid: localTxid })
+        return localTxid
+      }
     } else {
-      errors.push(`ARC: ${result.error.message}`)
+      const errorMsg = result.error.message
+      errors.push(`ARC: ${errorMsg}`)
+      if (isTxAlreadyKnown(errorMsg) && localTxid) {
+        apiLogger.info('ARC: txn-already-known (http) — treating as success', { txid: localTxid })
+        return localTxid
+      }
     }
   } catch (error) {
-    apiLogger.warn('ARC error', { error: String(error) })
-    errors.push(`ARC: ${error}`)
+    const errorMsg = String(error)
+    apiLogger.warn('ARC error', { error: errorMsg })
+    errors.push(`ARC: ${errorMsg}`)
+    if (isTxAlreadyKnown(errorMsg) && localTxid) {
+      apiLogger.info('ARC: txn-already-known (catch) — treating as success', { txid: localTxid })
+      return localTxid
+    }
   }
 
   // 3. Try ARC with text/plain body
@@ -102,11 +142,25 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       }
       const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
       errors.push(`ARC2: ${errorMsg}`)
+      if (isTxAlreadyKnown(errorMsg) && localTxid) {
+        apiLogger.info('ARC2: txn-already-known — treating as success', { txid: localTxid })
+        return localTxid
+      }
     } else {
-      errors.push(`ARC2: ${result.error.message}`)
+      const errorMsg = result.error.message
+      errors.push(`ARC2: ${errorMsg}`)
+      if (isTxAlreadyKnown(errorMsg) && localTxid) {
+        apiLogger.info('ARC2: txn-already-known (http) — treating as success', { txid: localTxid })
+        return localTxid
+      }
     }
   } catch (error) {
-    errors.push(`ARC2: ${error}`)
+    const errorMsg = String(error)
+    errors.push(`ARC2: ${errorMsg}`)
+    if (isTxAlreadyKnown(errorMsg) && localTxid) {
+      apiLogger.info('ARC2: txn-already-known (catch) — treating as success', { txid: localTxid })
+      return localTxid
+    }
   }
 
   // 4. Try GorillaPool mAPI as last fallback
@@ -130,14 +184,35 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
         }
         const errorMsg = payload.resultDescription || payload.returnResult || 'Unknown mAPI error'
         errors.push(`mAPI: ${errorMsg}`)
+        if (isTxAlreadyKnown(errorMsg) && localTxid) {
+          apiLogger.info('mAPI: txn-already-known — treating as success', { txid: localTxid })
+          return localTxid
+        }
       } else {
         errors.push('mAPI: No payload in response')
       }
     } else {
-      errors.push(`mAPI: ${result.error.message}`)
+      const errorMsg = result.error.message
+      errors.push(`mAPI: ${errorMsg}`)
+      if (isTxAlreadyKnown(errorMsg) && localTxid) {
+        apiLogger.info('mAPI: txn-already-known (http) — treating as success', { txid: localTxid })
+        return localTxid
+      }
     }
   } catch (error) {
-    errors.push(`mAPI: ${error}`)
+    const errorMsg = String(error)
+    errors.push(`mAPI: ${errorMsg}`)
+    if (isTxAlreadyKnown(errorMsg) && localTxid) {
+      apiLogger.info('mAPI: txn-already-known (catch) — treating as success', { txid: localTxid })
+      return localTxid
+    }
+  }
+
+  // Final fallback: if any error was "txn-already-known" and we have a local txid,
+  // the transaction IS in the mempool — treat as success
+  if (localTxid && errors.some(e => isTxAlreadyKnown(e))) {
+    apiLogger.info('txn-already-known detected in errors — treating as success', { txid: localTxid })
+    return localTxid
   }
 
   throw new Error(`Failed to broadcast: ${errors.join(' | ')}`)

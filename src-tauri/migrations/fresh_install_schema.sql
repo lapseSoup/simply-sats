@@ -59,13 +59,14 @@ CREATE TABLE IF NOT EXISTS transactions (
     UNIQUE(txid, account_id)
 );
 
--- Transaction labels (001 + 007 created_at + 013 removed broken FK)
+-- Transaction labels (001 + 007 created_at + 013 removed broken FK + 018 account_id)
 CREATE TABLE IF NOT EXISTS transaction_labels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     txid TEXT NOT NULL,
     label TEXT NOT NULL,
     created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    UNIQUE(txid, label)
+    account_id INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(txid, label, account_id)
 );
 
 -- Baskets (001)
@@ -287,6 +288,8 @@ CREATE INDEX IF NOT EXISTS idx_utxos_account ON utxos(account_id);
 CREATE INDEX IF NOT EXISTS idx_utxos_pending ON utxos(spending_status) WHERE spending_status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);
+CREATE INDEX IF NOT EXISTS idx_transaction_labels_account ON transaction_labels(account_id);
+CREATE INDEX IF NOT EXISTS idx_transaction_labels_txid ON transaction_labels(txid);
 CREATE INDEX IF NOT EXISTS idx_locks_unlock_block ON locks(unlock_block);
 CREATE INDEX IF NOT EXISTS idx_locks_account ON locks(account_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_locks_utxo_id ON locks(utxo_id);

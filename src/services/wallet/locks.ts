@@ -400,9 +400,36 @@ export async function unlockBSV(
   walletLogger.debug('Unlock transaction ready', { nLockTime: tx.lockTime })
   walletLogger.debug('Attempting to broadcast unlock transaction')
 
-  const txid = await broadcastTransaction(tx)
+  let txid: string
+  try {
+    txid = await broadcastTransaction(tx)
+  } catch (broadcastError) {
+    // Broadcast failed — but the tx may already be in the mempool or confirmed.
+    // Check if the lock UTXO is already spent (handles "txn-already-known" residual, retries, race conditions)
+    walletLogger.warn('Unlock broadcast failed, checking if UTXO is already spent', { error: String(broadcastError) })
+    const woc = getWocClient()
+    const spentResult = await woc.isOutputSpentSafe(lockedUtxo.txid, lockedUtxo.vout)
 
-  // Track transaction
+    if (spentResult.success && spentResult.data !== null) {
+      // Lock UTXO IS spent — the unlock tx went through previously
+      walletLogger.info('Lock UTXO already spent — marking as unlocked', {
+        lockTxid: lockedUtxo.txid,
+        vout: lockedUtxo.vout,
+        spendingTxid: spentResult.data
+      })
+      try {
+        await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout, accountId)
+      } catch (_markErr) {
+        walletLogger.warn('Failed to mark lock as unlocked after spent-check', { error: String(_markErr) })
+      }
+      return spentResult.data // Return the spending txid
+    }
+
+    // UTXO is genuinely unspent and broadcast failed — real failure
+    throw broadcastError
+  }
+
+  // Happy path: broadcast succeeded — record and mark
   try {
     await recordSentTransaction(
       txid,

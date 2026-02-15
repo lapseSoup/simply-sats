@@ -281,6 +281,7 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         (15, "Ordinal content cache table", "EC58F70A6A31995F53F341C063C363393D5EE4FD8317D45189D4117248CF7D9C7CDE7AD4BD175B57D9026A0EEF7CBC23"),
         (16, "Derived address account scoping", "98C5F5AC4957A3456EC54191A1217DC3AE5C7A84CA2A9DF5D06BF064E431C76661E9C76B51AA2A484BB6050882376AA6"),
         (17, "Unique index on locks utxo_id", "E6B4E1322FB95571CCB99D425494F23DD9851735057F6FEE64A358D1F1FC5DE15B4F62950F9B3E7C3867352B772EF71E"),
+        (18, "Add account_id to transaction_labels", "D3284BCD78C6CDB5026836822F7B69BB2119CB9D94847362319C45F3DAFFC1C6DFB26995CF74B4F82C53A25652BF5F60"),
     ];
 
     for (version, description, checksum_hex) in migrations {
@@ -405,6 +406,12 @@ fn include_migrations() -> Vec<Migration> {
             version: 17,
             description: "Unique index on locks utxo_id",
             sql: include_str!("../migrations/017_lock_utxo_unique.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 18,
+            description: "Add account_id to transaction_labels",
+            sql: include_str!("../migrations/018_transaction_labels_account.sql"),
             kind: MigrationKind::Up,
         },
     ]

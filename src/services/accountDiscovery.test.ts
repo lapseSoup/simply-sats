@@ -59,32 +59,57 @@ const makeMockKeys = (index: number) => ({
   identityPubKey: `id-pub-${index}`
 })
 
+/** Helper: mock 3 address checks (wallet, ord, identity) for one account with no activity */
+const mockEmptyAccount = () => {
+  mockWocClient.getTransactionHistorySafe
+    .mockResolvedValueOnce({ success: true, data: [] }) // wallet
+    .mockResolvedValueOnce({ success: true, data: [] }) // ord
+    .mockResolvedValueOnce({ success: true, data: [] }) // identity
+}
+
+/** Helper: mock 3 address checks for one account with wallet activity */
+const mockActiveAccount = (txHash = 'abc', height = 850000) => {
+  mockWocClient.getTransactionHistorySafe
+    .mockResolvedValueOnce({ success: true, data: [{ tx_hash: txHash, height }] }) // wallet
+    .mockResolvedValueOnce({ success: true, data: [] }) // ord
+    .mockResolvedValueOnce({ success: true, data: [] }) // identity
+}
+
+/** Helper: mock 3 address checks for one account with ordinals activity */
+const mockOrdActiveAccount = (txHash = 'def', height = 850001) => {
+  mockWocClient.getTransactionHistorySafe
+    .mockResolvedValueOnce({ success: true, data: [] }) // wallet
+    .mockResolvedValueOnce({ success: true, data: [{ tx_hash: txHash, height }] }) // ord
+    .mockResolvedValueOnce({ success: true, data: [] }) // identity
+}
+
 describe('discoverAccounts', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(deriveWalletKeysForAccount).mockImplementation((_mnemonic, index) => Promise.resolve(makeMockKeys(index)))
   })
 
-  it('discovers 0 accounts when account 1 has no activity', async () => {
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: true, data: [] }) // wallet addr
-      .mockResolvedValueOnce({ success: true, data: [] }) // ord addr
+  it('discovers 0 accounts when first 2 accounts have no activity (gap limit = 2)', async () => {
+    // Account 1: no activity
+    mockEmptyAccount()
+    // Account 2: no activity (gap limit reached)
+    mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(0)
     expect(createAccount).not.toHaveBeenCalled()
     expect(deriveWalletKeysForAccount).toHaveBeenCalledWith('test mnemonic', 1)
+    expect(deriveWalletKeysForAccount).toHaveBeenCalledWith('test mnemonic', 2)
   })
 
   it('discovers accounts with wallet address activity and syncs them', async () => {
     // Account 1: wallet has activity
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'abc', height: 850000 }] })
-      .mockResolvedValueOnce({ success: true, data: [] })
-      // Account 2: no activity
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
+    mockActiveAccount('abc', 850000)
+    // Account 2: no activity
+    mockEmptyAccount()
+    // Account 3: no activity (gap limit reached)
+    mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
@@ -99,12 +124,28 @@ describe('discoverAccounts', () => {
 
   it('discovers accounts with ordinals address activity', async () => {
     // Account 1: only ordinals has activity
+    mockOrdActiveAccount('def', 850001)
+    // Account 2: no activity
+    mockEmptyAccount()
+    // Account 3: no activity (gap limit reached)
+    mockEmptyAccount()
+
+    const found = await discoverAccounts('test mnemonic', 'password')
+
+    expect(found).toBe(1)
+    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true)
+  })
+
+  it('discovers accounts with identity address activity', async () => {
+    // Account 1: only identity has activity
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'def', height: 850001 }] })
-      // Account 2: no activity
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
+      .mockResolvedValueOnce({ success: true, data: [] }) // wallet
+      .mockResolvedValueOnce({ success: true, data: [] }) // ord
+      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'id-tx', height: 850002 }] }) // identity active!
+    // Account 2: no activity
+    mockEmptyAccount()
+    // Account 3: no activity (gap limit reached)
+    mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
@@ -114,15 +155,13 @@ describe('discoverAccounts', () => {
 
   it('discovers multiple consecutive accounts', async () => {
     // Account 1: has activity
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'a', height: 1 }] })
-      .mockResolvedValueOnce({ success: true, data: [] })
-      // Account 2: has activity
-      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'b', height: 2 }] })
-      .mockResolvedValueOnce({ success: true, data: [] })
-      // Account 3: no activity (gap)
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
+    mockActiveAccount('a', 1)
+    // Account 2: has activity
+    mockActiveAccount('b', 2)
+    // Account 3: no activity
+    mockEmptyAccount()
+    // Account 4: no activity (gap limit reached)
+    mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
@@ -132,34 +171,58 @@ describe('discoverAccounts', () => {
     expect(createAccount).toHaveBeenCalledWith('Account 3', makeMockKeys(2), 'password', true)
   })
 
+  it('gap limit 2 allows discovering account after one empty account', async () => {
+    // Account 1: no activity (empty)
+    mockEmptyAccount()
+    // Account 2: HAS activity — gap limit 2 means we check past one empty
+    mockActiveAccount('found-it', 850000)
+    // Account 3: no activity
+    mockEmptyAccount()
+    // Account 4: no activity (gap limit reached — 2 consecutive empty after last active)
+    mockEmptyAccount()
+
+    const found = await discoverAccounts('test mnemonic', 'password')
+
+    expect(found).toBe(1)
+    expect(createAccount).toHaveBeenCalledTimes(1)
+    expect(createAccount).toHaveBeenCalledWith('Account 3', makeMockKeys(2), 'password', true)
+  })
+
   it('retries on API failure and stops only if retry also fails', async () => {
-    // First attempt: API failure
+    // First attempt: API failure on all 3 addresses
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValueOnce({ success: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } })
       .mockResolvedValueOnce({ success: true, data: [] })
-      // Retry after delay: also no activity
+      .mockResolvedValueOnce({ success: true, data: [] })
+    // Retry after delay: all 3 succeed but empty
+    mockWocClient.getTransactionHistorySafe
       .mockResolvedValueOnce({ success: true, data: [] })
       .mockResolvedValueOnce({ success: true, data: [] })
+      .mockResolvedValueOnce({ success: true, data: [] })
+    // Account 2: empty (gap limit reached: 2 consecutive empty)
+    mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(0)
     expect(createAccount).not.toHaveBeenCalled()
-    // Should have checked 4 times (2 initial + 2 retry)
-    expect(mockWocClient.getTransactionHistorySafe).toHaveBeenCalledTimes(4)
   })
 
   it('discovers account on retry after initial API failure', async () => {
-    // First attempt: API failure
+    // First attempt: API failure on wallet + ordinals
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValueOnce({ success: false, error: { code: 'RATE_LIMITED', message: '429' } })
       .mockResolvedValueOnce({ success: false, error: { code: 'RATE_LIMITED', message: '429' } })
-      // Retry: has activity
+      .mockResolvedValueOnce({ success: false, error: { code: 'RATE_LIMITED', message: '429' } })
+    // Retry: has activity
+    mockWocClient.getTransactionHistorySafe
       .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'abc', height: 850000 }] })
       .mockResolvedValueOnce({ success: true, data: [] })
-      // Account 2: no activity (gap)
       .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
+    // Account 2: no activity
+    mockEmptyAccount()
+    // Account 3: no activity (gap limit reached)
+    mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
@@ -169,12 +232,11 @@ describe('discoverAccounts', () => {
 
   it('stops on createAccount failure', async () => {
     // Account 1: has activity
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'a', height: 1 }] })
-      .mockResolvedValueOnce({ success: true, data: [] })
-      // Account 2: no activity (gap — ends phase 1)
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
+    mockActiveAccount('a', 1)
+    // Account 2: no activity
+    mockEmptyAccount()
+    // Account 3: no activity (gap limit reached)
+    mockEmptyAccount()
 
     vi.mocked(createAccount).mockRejectedValueOnce(new Error('DB write failed'))
 
@@ -186,6 +248,7 @@ describe('discoverAccounts', () => {
 
   it('respects max discovery cap of 20', async () => {
     // All accounts have activity — should stop at 20
+    // Each account check does 3 calls (wallet, ord, identity)
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValue({ success: true, data: [{ tx_hash: 'x', height: 1 }] })
 

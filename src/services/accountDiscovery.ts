@@ -20,11 +20,19 @@ import { accountLogger } from './logger'
 const MAX_ACCOUNT_DISCOVERY = 20
 
 /**
+ * Gap limit for account discovery.
+ * BIP-44 recommends 20 for address gaps, but for accounts we use a smaller
+ * value. We use 2 (not 1) so that a single empty or failed account doesn't
+ * prematurely stop discovery when Account 5 exists but Account 4 has no activity.
+ */
+const DISCOVERY_GAP_LIMIT = 2
+
+/**
  * Discover additional accounts with on-chain activity.
  *
- * Starting from account index 1, derives keys and checks wallet + ordinals
- * addresses for transaction history. Stops at the first account with no
- * activity (gap detection per BIP-44).
+ * Starting from account index 1, derives keys and checks wallet, ordinals,
+ * AND identity addresses for transaction history. Stops after DISCOVERY_GAP_LIMIT
+ * consecutive empty accounts (not on the first gap).
  *
  * @param mnemonic - The BIP-39 mnemonic used to derive accounts
  * @param password - Password for encrypting discovered account keys
@@ -41,42 +49,65 @@ export async function discoverAccounts(
   // Phase 1: Lightweight discovery (just check addresses for activity)
   // No syncing here — avoids rate limiting between checks
   const discovered: { index: number; keys: WalletKeys }[] = []
+  let consecutiveEmpty = 0
 
   for (let i = 1; i <= MAX_ACCOUNT_DISCOVERY; i++) {
     const keys = await deriveWalletKeysForAccount(mnemonic, i)
 
-    // Check both wallet and ordinals addresses for activity
-    const [walletResult, ordResult] = await Promise.all([
+    // Check ALL 3 addresses for activity (wallet, ordinals, AND identity)
+    const [walletResult, ordResult, idResult] = await Promise.all([
       wocClient.getTransactionHistorySafe(keys.walletAddress),
-      wocClient.getTransactionHistorySafe(keys.ordAddress)
+      wocClient.getTransactionHistorySafe(keys.ordAddress),
+      wocClient.getTransactionHistorySafe(keys.identityAddress)
     ])
 
     const walletHasActivity = walletResult.success && walletResult.data.length > 0
     const ordHasActivity = ordResult.success && ordResult.data.length > 0
+    const idHasActivity = idResult.success && idResult.data.length > 0
 
-    if (walletHasActivity || ordHasActivity) {
+    if (walletHasActivity || ordHasActivity || idHasActivity) {
       discovered.push({ index: i, keys })
+      consecutiveEmpty = 0 // Reset gap counter on activity found
       continue
     }
 
-    // Only gap-detect on successful empty responses, not API failures
-    if (walletResult.success && ordResult.success) {
-      break // True gap — both checked successfully with no activity
+    // Only count toward gap on successful empty responses, not API failures
+    const allSucceeded = walletResult.success && ordResult.success && idResult.success
+    if (allSucceeded) {
+      consecutiveEmpty++
+      accountLogger.debug('Empty account found', { accountIndex: i, consecutiveEmpty, gapLimit: DISCOVERY_GAP_LIMIT })
+      if (consecutiveEmpty >= DISCOVERY_GAP_LIMIT) {
+        accountLogger.info('Gap limit reached, stopping discovery', { consecutiveEmpty })
+        break
+      }
+      continue
     }
 
     // API failure (likely rate limiting) — wait and retry once
     accountLogger.warn('API failure during discovery, retrying after delay', { accountIndex: i })
     await new Promise(resolve => setTimeout(resolve, 2000))
-    const [retryW, retryO] = await Promise.all([
+    const [retryW, retryO, retryI] = await Promise.all([
       wocClient.getTransactionHistorySafe(keys.walletAddress),
-      wocClient.getTransactionHistorySafe(keys.ordAddress)
+      wocClient.getTransactionHistorySafe(keys.ordAddress),
+      wocClient.getTransactionHistorySafe(keys.identityAddress)
     ])
 
-    if ((retryW.success && retryW.data.length > 0) || (retryO.success && retryO.data.length > 0)) {
+    if (
+      (retryW.success && retryW.data.length > 0) ||
+      (retryO.success && retryO.data.length > 0) ||
+      (retryI.success && retryI.data.length > 0)
+    ) {
       discovered.push({ index: i, keys })
-    } else {
-      break
+      consecutiveEmpty = 0
+    } else if (retryW.success && retryO.success && retryI.success) {
+      // Retry succeeded but all empty — count toward gap
+      consecutiveEmpty++
+      if (consecutiveEmpty >= DISCOVERY_GAP_LIMIT) {
+        accountLogger.info('Gap limit reached after retry, stopping discovery', { consecutiveEmpty })
+        break
+      }
     }
+    // If retry also fails (API error), don't count toward gap — just continue to next account
   }
 
   // Phase 2: Create accounts and sync (heavy API calls isolated from discovery)

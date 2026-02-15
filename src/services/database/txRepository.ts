@@ -42,12 +42,12 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: nu
     )
   }
 
-  // Add labels if provided
+  // Add labels if provided (scoped by account_id)
   if (tx.labels && tx.labels.length > 0) {
     for (const label of tx.labels) {
       await database.execute(
-        'INSERT OR IGNORE INTO transaction_labels (txid, label) VALUES ($1, $2)',
-        [tx.txid, label]
+        'INSERT OR IGNORE INTO transaction_labels (txid, label, account_id) VALUES ($1, $2, $3)',
+        [tx.txid, label, accId]
       )
     }
   }
@@ -107,12 +107,12 @@ export async function upsertTransaction(tx: Omit<Transaction, 'id'>, accountId?:
     )
   }
 
-  // Add labels if provided
+  // Add labels if provided (scoped by account_id)
   if (tx.labels && tx.labels.length > 0) {
     for (const label of tx.labels) {
       await database.execute(
-        'INSERT OR IGNORE INTO transaction_labels (txid, label) VALUES ($1, $2)',
-        [tx.txid, label]
+        'INSERT OR IGNORE INTO transaction_labels (txid, label, account_id) VALUES ($1, $2, $3)',
+        [tx.txid, label, accId]
       )
     }
   }
@@ -186,7 +186,7 @@ export async function getTransactionsByLabel(label: string, accountId?: number):
 
   const query = accountId !== undefined && accountId !== null
     ? `SELECT t.* FROM transactions t
-       INNER JOIN transaction_labels tl ON t.txid = tl.txid
+       INNER JOIN transaction_labels tl ON t.txid = tl.txid AND tl.account_id = t.account_id
        WHERE tl.label = $1 AND t.account_id = $2
        ORDER BY t.created_at DESC`
     : `SELECT t.* FROM transactions t
@@ -247,27 +247,27 @@ export async function updateTransactionLabels(
 ): Promise<void> {
   const database = getDatabase()
 
-  // If accountId provided, verify the txid belongs to this account
-  if (accountId !== undefined && accountId !== null) {
-    const rows = await database.select<{ txid: string }[]>(
-      'SELECT txid FROM transactions WHERE txid = $1 AND account_id = $2 LIMIT 1',
-      [txid, accountId]
-    )
-    if (rows.length === 0) return // txid doesn't belong to this account — no-op
-  }
+  const accId = accountId ?? 1
 
-  // Delete existing labels for this txid
+  // Verify the txid belongs to this account
+  const rows = await database.select<{ txid: string }[]>(
+    'SELECT txid FROM transactions WHERE txid = $1 AND account_id = $2 LIMIT 1',
+    [txid, accId]
+  )
+  if (rows.length === 0) return // txid doesn't belong to this account — no-op
+
+  // Delete existing labels for this txid AND account_id (scoped — won't touch other accounts)
   await database.execute(
-    'DELETE FROM transaction_labels WHERE txid = $1',
-    [txid]
+    'DELETE FROM transaction_labels WHERE txid = $1 AND account_id = $2',
+    [txid, accId]
   )
 
-  // Insert new labels
+  // Insert new labels (scoped by account_id)
   for (const label of labels) {
     if (label.trim()) {
       await database.execute(
-        'INSERT INTO transaction_labels (txid, label) VALUES ($1, $2)',
-        [txid, label.trim()]
+        'INSERT INTO transaction_labels (txid, label, account_id) VALUES ($1, $2, $3)',
+        [txid, label.trim(), accId]
       )
     }
   }
@@ -281,10 +281,9 @@ export async function getAllLabels(accountId?: number): Promise<string[]> {
 
   const rows = await database.select<{ label: string }[]>(
     accountId
-      ? `SELECT DISTINCT tl.label FROM transaction_labels tl
-         INNER JOIN transactions t ON tl.txid = t.txid
-         WHERE t.account_id = $1
-         ORDER BY tl.label ASC`
+      ? `SELECT DISTINCT label FROM transaction_labels
+         WHERE account_id = $1
+         ORDER BY label ASC`
       : `SELECT DISTINCT label FROM transaction_labels ORDER BY label ASC`,
     accountId ? [accountId] : []
   )
@@ -302,10 +301,9 @@ export async function getTopLabels(limit = 3, accountId?: number): Promise<strin
 
   const rows = await database.select<{ label: string }[]>(
     accountId !== undefined && accountId !== null
-      ? `SELECT tl.label, COUNT(*) as cnt FROM transaction_labels tl
-         INNER JOIN transactions t ON tl.txid = t.txid AND t.account_id = $${systemLabels.length + 1}
-         WHERE tl.label NOT IN (${placeholders})
-         GROUP BY tl.label ORDER BY cnt DESC LIMIT $${systemLabels.length + 2}`
+      ? `SELECT label, COUNT(*) as cnt FROM transaction_labels
+         WHERE label NOT IN (${placeholders}) AND account_id = $${systemLabels.length + 1}
+         GROUP BY label ORDER BY cnt DESC LIMIT $${systemLabels.length + 2}`
       : `SELECT label, COUNT(*) as cnt FROM transaction_labels
          WHERE label NOT IN (${placeholders})
          GROUP BY label ORDER BY cnt DESC LIMIT $${systemLabels.length + 1}`,
@@ -327,9 +325,8 @@ export async function getTransactionLabels(txid: string, accountId?: number): Pr
 
   const rows = await database.select<{ label: string }[]>(
     accountId !== undefined && accountId !== null
-      ? `SELECT tl.label FROM transaction_labels tl
-         INNER JOIN transactions t ON tl.txid = t.txid
-         WHERE tl.txid = $1 AND t.account_id = $2`
+      ? `SELECT label FROM transaction_labels
+         WHERE txid = $1 AND account_id = $2`
       : 'SELECT label FROM transaction_labels WHERE txid = $1',
     accountId !== undefined && accountId !== null ? [txid, accountId] : [txid]
   )
@@ -387,7 +384,7 @@ export async function searchTransactionsByLabels(
 
   for (let i = 0; i < labels.length; i++) {
     const alias = `tl${i}`
-    fromClause += ` INNER JOIN transaction_labels ${alias} ON t.txid = ${alias}.txid`
+    fromClause += ` INNER JOIN transaction_labels ${alias} ON t.txid = ${alias}.txid AND ${alias}.account_id = t.account_id`
     whereConditions.push(`${alias}.label = $${paramIndex++}`)
     params.push(labels[i]!)
   }
@@ -443,7 +440,7 @@ export async function searchTransactions(
     `SELECT DISTINCT t.id, t.txid, t.raw_tx, t.description, t.created_at, t.confirmed_at,
             t.block_height, t.status, t.amount, t.account_id
      FROM transactions t
-     LEFT JOIN transaction_labels tl ON t.txid = tl.txid
+     LEFT JOIN transaction_labels tl ON t.txid = tl.txid AND tl.account_id = t.account_id
      WHERE ${accountId ? 't.account_id = $1 AND' : ''} (t.txid LIKE ${accountId ? '$2' : '$1'} OR tl.label LIKE ${accountId ? '$2' : '$1'} OR t.description LIKE ${accountId ? '$2' : '$1'})
      ORDER BY t.created_at DESC
      LIMIT ${accountId ? '$3' : '$2'}`,
@@ -489,11 +486,9 @@ export async function getPendingTransactionTxids(accountId?: number): Promise<Se
 export async function deleteTransactionsForAccount(accountId: number): Promise<number> {
   const database = getDatabase()
 
-  // Delete labels for transactions belonging to this account
+  // Delete labels for this account directly (account_id column now exists on transaction_labels)
   await database.execute(
-    `DELETE FROM transaction_labels WHERE txid IN (
-       SELECT txid FROM transactions WHERE account_id = $1
-     )`,
+    'DELETE FROM transaction_labels WHERE account_id = $1',
     [accountId]
   )
 
