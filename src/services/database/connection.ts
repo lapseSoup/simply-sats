@@ -11,6 +11,8 @@ import { dbLogger } from '../logger'
 // Database instance (singleton)
 let db: Database | null = null
 
+// Transaction queue — serializes all transactions to prevent concurrent corruption
+let transactionQueue: Promise<unknown> = Promise.resolve()
 // Transaction nesting depth (0 = no active transaction)
 let transactionDepth = 0
 
@@ -42,6 +44,24 @@ export function getDatabase(): Database {
  * so inner failures roll back only to the savepoint, not the outer transaction.
  */
 export async function withTransaction<T>(
+  operations: () => Promise<T>
+): Promise<T> {
+  // If this is a top-level transaction (depth === 0), serialize via queue
+  // to prevent concurrent BEGIN/COMMIT corruption.
+  // Nested calls (SAVEPOINTs) run inside the outer transaction's queue slot.
+  if (transactionDepth === 0) {
+    const result = new Promise<T>((resolve, reject) => {
+      transactionQueue = transactionQueue.then(() =>
+        executeTransaction(operations).then(resolve, reject)
+      )
+    })
+    return result
+  }
+  // Nested call — already inside a serialized slot
+  return executeTransaction(operations)
+}
+
+async function executeTransaction<T>(
   operations: () => Promise<T>
 ): Promise<T> {
   const database = getDatabase()

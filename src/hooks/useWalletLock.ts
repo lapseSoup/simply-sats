@@ -41,7 +41,7 @@ interface UseWalletLockReturn {
   sessionPassword: string | null
   setSessionPassword: Dispatch<SetStateAction<string | null>>
   autoLockMinutes: number
-  lockWallet: () => void
+  lockWallet: () => Promise<void>
   unlockWallet: (password: string) => Promise<boolean>
   setAutoLockMinutes: (minutes: number) => void
 }
@@ -72,15 +72,17 @@ export function useWalletLock({
   // No independent timeout needed — password is cleared when lockWallet() fires.
 
   // Lock wallet (clear keys from memory)
-  const lockWallet = useCallback(() => {
+  const lockWallet = useCallback(async () => {
     walletLogger.info('Locking wallet')
     setIsLocked(true)
     setWalletState(null)
     setWalletKeys(null)
     setSessionPassword(null)
-    invoke('clear_keys').catch(e => {
+    try {
+      await invoke('clear_keys')
+    } catch (e) {
       walletLogger.warn('Failed to clear Rust key store', { error: String(e) })
-    })
+    }
     audit.walletLocked(activeAccountId ?? undefined)
   }, [activeAccountId, setWalletState])
 
@@ -97,7 +99,9 @@ export function useWalletLock({
       if (document.hidden) {
         hiddenTimer = setTimeout(() => {
           walletLogger.info('Locking wallet — app hidden for extended period')
-          lockWallet()
+          lockWallet().catch(e => {
+            walletLogger.error('Failed to lock wallet on visibility change', { error: String(e) })
+          })
         }, HIDDEN_LOCK_DELAY_MS)
       } else {
         if (hiddenTimer) {

@@ -9,7 +9,7 @@ const SATS_PER_BSV = 100_000_000
 
 /** Convert BSV amount to satoshis with safe rounding */
 export function btcToSatoshis(btc: number): number {
-  if (!Number.isFinite(btc)) return 0
+  if (!Number.isFinite(btc) || btc < 0) return 0
   return Math.round(btc * SATS_PER_BSV)
 }
 

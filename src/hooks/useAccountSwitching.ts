@@ -214,7 +214,11 @@ export function useAccountSwitching({
     if (success) {
       const active = await getActiveAccount()
       if (active && wallet === null) {
-        const keys = await getKeysForAccount(active, sessionPassword ?? '')
+        if (!sessionPassword) {
+          walletLogger.error('Cannot switch to remaining account after deletion — no session password. User must re-unlock.')
+          return success
+        }
+        const keys = await getKeysForAccount(active, sessionPassword)
         if (keys) {
           setWallet(keys)
         }

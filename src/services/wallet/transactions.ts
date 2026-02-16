@@ -78,6 +78,10 @@ export async function executeBroadcast(
     if (!txid) {
       throw new Error('Broadcast returned empty transaction ID')
     }
+    // Validate txid format: must be 64-character hex string
+    if (!/^[0-9a-fA-F]{64}$/.test(txid)) {
+      throw new Error(`Broadcast returned invalid transaction ID: ${txid.substring(0, 100)}`)
+    }
     return txid
   } catch (broadcastError) {
     // Broadcast failed - rollback the pending status
@@ -185,7 +189,7 @@ export async function sendBSV(
  * Get all spendable UTXOs from both default and derived baskets
  * Returns UTXOs with their associated WIFs for signing
  */
-export async function getAllSpendableUTXOs(walletWif: string): Promise<ExtendedUTXO[]> {
+export async function getAllSpendableUTXOs(walletWif: string, accountId?: number): Promise<ExtendedUTXO[]> {
   const result: ExtendedUTXO[] = []
 
   // Get UTXOs from default basket
@@ -204,9 +208,9 @@ export async function getAllSpendableUTXOs(walletWif: string): Promise<ExtendedU
     })
   }
 
-  // Get UTXOs from derived basket with their WIFs
+  // Get UTXOs from derived basket with their WIFs — scoped to current account
   const derivedUtxos = await getSpendableUtxosFromDatabase(BASKETS.DERIVED)
-  const derivedAddresses = await getDerivedAddresses()
+  const derivedAddresses = await getDerivedAddresses(accountId)
 
   for (const u of derivedUtxos) {
     // Find the derived address entry that matches this UTXO's locking script

@@ -119,14 +119,11 @@ export async function readExternalDatabase(dbPath: string): Promise<RecoveredAcc
       throw new Error('No accounts found in backup')
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const accounts: RecoveredAccount[] = results[0]!.values.map((row: any[]) => ({
-      id: row[0] as number,
-      name: row[1] as string,
-      identityAddress: row[2] as string,
-      encryptedKeys: row[3] as string,
-      createdAt: row[4] as number
-    }))
+    type AccountRow = [number, string, string, string, number]
+    const accounts: RecoveredAccount[] = results[0]!.values.map((row: unknown[]) => {
+      const [id, name, identityAddress, encryptedKeys, createdAt] = row as AccountRow
+      return { id, name, identityAddress, encryptedKeys, createdAt }
+    })
 
     walletLogger.info('Found accounts in backup', { count: accounts.length })
     return accounts

@@ -32,11 +32,11 @@ interface UseWalletActionsOptions {
   setWallet: (wallet: WalletKeys | null) => void
   setIsLocked: (locked: boolean) => void
   setSessionPassword: (password: string | null) => void
-  setContacts: (contacts: never[]) => void
+  setContacts: (contacts: []) => void
   setFeeRateKBState: (rate: number) => void
   refreshAccounts: () => Promise<void>
   resetSync: () => void
-  setLocks: (locks: never[]) => void
+  setLocks: (locks: []) => void
   resetTokens: () => void
   resetAccounts: () => void
   setAutoLockMinutesState: (minutes: number) => void

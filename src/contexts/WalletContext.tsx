@@ -245,11 +245,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setWallet,
     setIsLocked,
     setSessionPassword,
-    setContacts: setContacts as (contacts: never[]) => void,
-    setFeeRateKBState: setFeeRateKBState as (rate: number) => void,
+    setContacts,
+    setFeeRateKBState,
     refreshAccounts,
     resetSync,
-    setLocks: setLocks as (locks: never[]) => void,
+    setLocks,
     resetTokens,
     resetAccounts,
     setAutoLockMinutesState: (() => {}) as (minutes: number) => void // Auto-lock state is managed by useWalletLock
@@ -292,9 +292,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Refresh token balances - wraps TokensContext to pass wallet
   const refreshTokens = useCallback(async () => {
-    if (!wallet) return
-    const accountId = activeAccountId || 1
-    await tokensRefresh(wallet, accountId)
+    if (!wallet || !activeAccountId) return
+    await tokensRefresh(wallet, activeAccountId)
   }, [wallet, activeAccountId, tokensRefresh])
 
   // Sync wallet with blockchain - delegates to SyncContext
@@ -349,7 +348,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
                 estimatedLockBlock = lock.confirmationBlock - mempoolBlocks
               }
               if (estimatedLockBlock && !preloaded.lockBlock) {
-                updateLockBlock(lock.txid, lock.vout, estimatedLockBlock).catch(() => {})
+                updateLockBlock(lock.txid, lock.vout, estimatedLockBlock).catch(e => {
+                  walletLogger.warn('Failed to backfill lock_block', { txid: lock.txid, vout: lock.vout, error: String(e) })
+                })
               }
               return {
                 ...lock,

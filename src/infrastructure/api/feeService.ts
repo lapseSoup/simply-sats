@@ -73,9 +73,15 @@ export function createFeeService(config: Partial<FeeServiceConfig> = {}): FeeSer
             ? JSON.parse(result.payload)
             : result.payload
 
-          if (payload?.fees) {
+          if (payload?.fees && Array.isArray(payload.fees)) {
             const standardFee = payload.fees.find(f => f.feeType === 'standard')
-            if (standardFee?.miningFee) {
+            if (standardFee?.miningFee &&
+                typeof standardFee.miningFee.satoshis === 'number' &&
+                typeof standardFee.miningFee.bytes === 'number' &&
+                Number.isFinite(standardFee.miningFee.satoshis) &&
+                Number.isFinite(standardFee.miningFee.bytes) &&
+                standardFee.miningFee.bytes > 0 &&
+                standardFee.miningFee.satoshis >= 0) {
               const ratePerByte = standardFee.miningFee.satoshis / standardFee.miningFee.bytes
               const clampedRate = clampFeeRate(ratePerByte)
 

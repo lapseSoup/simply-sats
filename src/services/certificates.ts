@@ -284,7 +284,9 @@ export async function deleteCertificate(serialNumber: string): Promise<void> {
  */
 export function generateSerialNumber(): string {
   const timestamp = Date.now().toString(36)
-  const random = Math.random().toString(36).substring(2, 10)
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  const random = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
   return `${timestamp}-${random}`.toUpperCase()
 }
 

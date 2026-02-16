@@ -43,12 +43,17 @@ export async function fetchDynamicFeeRate(): Promise<number> {
         ? JSON.parse(result.value.payload)
         : result.value.payload
 
-      if (payload?.fees) {
+      if (payload?.fees && Array.isArray(payload.fees)) {
         // Extract standard fee for data transactions
         const standardFee = payload.fees.find((f: { feeType: string }) => f.feeType === 'standard')
-        if (standardFee?.miningFee) {
+        if (standardFee?.miningFee &&
+            typeof standardFee.miningFee.satoshis === 'number' &&
+            typeof standardFee.miningFee.bytes === 'number' &&
+            Number.isFinite(standardFee.miningFee.satoshis) &&
+            Number.isFinite(standardFee.miningFee.bytes) &&
+            standardFee.miningFee.bytes > 0 &&
+            standardFee.miningFee.satoshis >= 0) {
           // Convert from satoshis/byte
-          if (standardFee.miningFee.bytes === 0) return DEFAULT_FEE_RATE
           const ratePerByte = standardFee.miningFee.satoshis / standardFee.miningFee.bytes
           const clampedRate = Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, ratePerByte))
 

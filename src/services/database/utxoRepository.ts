@@ -12,8 +12,6 @@ import type {
   UTXOExistsRow,
   UTXOVerifyRow,
   PendingUTXORow,
-  AddressCheckRow,
-  SpendingStatusCheckRow,
   BalanceSumRow,
   SqlParams
 } from '../database-types'
@@ -23,37 +21,34 @@ import type {
 // ============================================
 
 /**
- * Ensure the address column exists (migration)
+ * Ensure a column exists by probing it; run DDL statements if missing.
  */
-async function ensureAddressColumn(): Promise<void> {
+async function ensureColumn(probeColumn: string, ddlStatements: string[]): Promise<void> {
   const database = getDatabase()
   try {
-    // Check if column exists by trying to select it
-    await database.select<AddressCheckRow[]>('SELECT address FROM utxos LIMIT 1')
+    await database.select<Record<string, unknown>[]>(`SELECT ${probeColumn} FROM utxos LIMIT 1`)
   } catch {
-    // Column doesn't exist, add it
-    dbLogger.debug('[DB] Adding address column to utxos table...')
-    await database.execute('ALTER TABLE utxos ADD COLUMN address TEXT')
-    await database.execute('CREATE INDEX IF NOT EXISTS idx_utxos_address ON utxos(address)')
+    dbLogger.debug(`[DB] Adding ${probeColumn} column(s) to utxos table...`)
+    for (const ddl of ddlStatements) {
+      await database.execute(ddl)
+    }
   }
 }
 
-/**
- * Ensure the spending_status column exists (migration)
- */
+async function ensureAddressColumn(): Promise<void> {
+  await ensureColumn('address', [
+    'ALTER TABLE utxos ADD COLUMN address TEXT',
+    'CREATE INDEX IF NOT EXISTS idx_utxos_address ON utxos(address)'
+  ])
+}
+
 async function ensureSpendingStatusColumn(): Promise<void> {
-  const database = getDatabase()
-  try {
-    // Check if column exists by trying to select it
-    await database.select<SpendingStatusCheckRow[]>('SELECT spending_status FROM utxos LIMIT 1')
-  } catch {
-    // Column doesn't exist, add it
-    dbLogger.debug('[DB] Adding spending_status columns to utxos table...')
-    await database.execute("ALTER TABLE utxos ADD COLUMN spending_status TEXT DEFAULT 'unspent' CHECK(spending_status IN ('unspent', 'pending', 'spent'))")
-    await database.execute('ALTER TABLE utxos ADD COLUMN pending_spending_txid TEXT')
-    await database.execute('ALTER TABLE utxos ADD COLUMN pending_since INTEGER')
-    await database.execute("CREATE INDEX IF NOT EXISTS idx_utxos_pending ON utxos(spending_status) WHERE spending_status = 'pending'")
-  }
+  await ensureColumn('spending_status', [
+    "ALTER TABLE utxos ADD COLUMN spending_status TEXT DEFAULT 'unspent' CHECK(spending_status IN ('unspent', 'pending', 'spent'))",
+    'ALTER TABLE utxos ADD COLUMN pending_spending_txid TEXT',
+    'ALTER TABLE utxos ADD COLUMN pending_since INTEGER',
+    "CREATE INDEX IF NOT EXISTS idx_utxos_pending ON utxos(spending_status) WHERE spending_status = 'pending'"
+  ])
 }
 
 // ============================================
