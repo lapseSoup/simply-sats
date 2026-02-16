@@ -29,6 +29,7 @@ import {
 import { fetchOrdinalContent } from '../services/wallet/ordinalContent'
 import { useNetwork } from './NetworkContext'
 import { syncLogger } from '../services/logger'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 
 /** Cached content for rendering ordinal previews */
 export interface OrdinalContentEntry {
@@ -119,13 +120,13 @@ export function SyncProvider({ children }: SyncProviderProps) {
   })
   const [balance, setBalance] = useState<number>(() => {
     try {
-      const cached = localStorage.getItem('simply_sats_cached_balance')
+      const cached = localStorage.getItem(STORAGE_KEYS.CACHED_BALANCE)
       return cached ? parseInt(cached, 10) : 0
     } catch { return 0 }
   })
   const [ordBalance, setOrdBalance] = useState<number>(() => {
     try {
-      const cached = localStorage.getItem('simply_sats_cached_ord_balance')
+      const cached = localStorage.getItem(STORAGE_KEYS.CACHED_ORD_BALANCE)
       return cached ? parseInt(cached, 10) : 0
     } catch { return 0 }
   })
@@ -162,7 +163,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       }
 
       syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })
-      const accountId = activeAccountId || undefined
+      const accountId = activeAccountId ?? undefined
       if (isRestore) {
         await restoreFromBlockchain(
           wallet.walletAddress,
@@ -203,7 +204,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
         const totalBalance = defaultBal + derivedBal
         setBalance(totalBalance)
-        try { localStorage.setItem('simply_sats_cached_balance', String(totalBalance)) } catch { /* quota exceeded */ }
+        try { localStorage.setItem(STORAGE_KEYS.CACHED_BALANCE, String(totalBalance)) } catch { /* quota exceeded */ }
       } catch (e) {
         syncLogger.error('Failed to get basket balances', e)
       }
@@ -214,7 +215,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       // Run diagnostics to identify the exact failure point
       try {
         const { diagnoseSyncHealth } = await import('../services/sync')
-        const health = await diagnoseSyncHealth(activeAccountId || undefined)
+        const health = await diagnoseSyncHealth(activeAccountId ?? undefined)
         syncLogger.error('Post-failure health check', { ...health })
         if (!health.dbConnected) {
           setSyncError('Sync failed: database connection error')
@@ -260,7 +261,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       if (isCancelled?.()) return
       const totalBalance = defaultBal + derivedBal
       setBalance(totalBalance)
-      try { localStorage.setItem('simply_sats_cached_balance', String(totalBalance)) } catch { /* quota exceeded */ }
+      try { localStorage.setItem(STORAGE_KEYS.CACHED_BALANCE, String(totalBalance)) } catch { /* quota exceeded */ }
       setSyncError(null)
 
       // Get ordinals balance from API (use allSettled so one failure doesn't lose the other)
@@ -277,7 +278,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         const totalOrdBalance = ordBal + idBal
         if (isCancelled?.()) return
         setOrdBalance(totalOrdBalance)
-        try { localStorage.setItem('simply_sats_cached_ord_balance', String(totalOrdBalance)) } catch { /* quota exceeded */ }
+        try { localStorage.setItem(STORAGE_KEYS.CACHED_ORD_BALANCE, String(totalOrdBalance)) } catch { /* quota exceeded */ }
       } catch (_e) {
         // On API failure, keep current React state — don't overwrite with stale cache
         syncLogger.warn('Failed to fetch ord balance from API, keeping current value')

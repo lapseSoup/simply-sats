@@ -18,7 +18,8 @@ import {
 import {
   getOrdinalsFromDatabase,
   getBalanceFromDatabase,
-  mapDbLocksToLockedUtxos
+  mapDbLocksToLockedUtxos,
+  cancelSync
 } from '../services/sync'
 import { walletLogger } from '../services/logger'
 import { invoke } from '@tauri-apps/api/core'
@@ -78,6 +79,9 @@ export function useAccountSwitching({
       return false
     }
     try {
+      // Cancel any in-flight sync for the previous account before switching
+      cancelSync()
+
       const keys = await accountsSwitchAccount(accountId, sessionPassword)
       if (keys) {
         // Invalidate any in-flight fetchData callbacks from the previous account

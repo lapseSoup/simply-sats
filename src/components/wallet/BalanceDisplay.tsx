@@ -1,10 +1,10 @@
 import { Lock } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { useNetwork } from '../../contexts/NetworkContext'
 
 export function BalanceDisplay() {
-  const { balance, ordBalance, locks } = useWallet()
+  const { balance, ordBalance, locks } = useWalletState()
   const { displayInSats, toggleDisplayUnit, formatBSVShort, formatUSD } = useUI()
   const { syncing } = useNetwork()
 

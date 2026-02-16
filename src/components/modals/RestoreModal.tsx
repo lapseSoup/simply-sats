@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { SECURITY } from '../../config'
 import { Modal } from '../shared/Modal'
@@ -23,7 +23,7 @@ interface RestoreModalProps {
 type RestoreMode = 'mnemonic' | 'json' | 'fullbackup'
 
 export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
-  const { setWallet, performSync, handleRestoreWallet, handleImportJSON, refreshAccounts } = useWallet()
+  const { setWallet, performSync, handleRestoreWallet, handleImportJSON, refreshAccounts } = useWalletActions()
   const { showToast } = useUI()
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('mnemonic')
   const [restoreMnemonic, setRestoreMnemonic] = useState('')

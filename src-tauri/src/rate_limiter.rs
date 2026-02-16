@@ -16,7 +16,14 @@ use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Static integrity key — not secret, but raises the bar against casual tampering
+/// HMAC key for rate limit state integrity verification.
+///
+/// SECURITY NOTE: This key is hardcoded and extractable from the binary.
+/// It provides defense-in-depth against casual tampering of the rate limit
+/// state file, but cannot prevent a determined attacker with binary access
+/// from forging valid HMACs. A stronger approach would derive this key from
+/// a device-specific secret stored in the OS keychain. Accepted trade-off
+/// for current threat model (local desktop app).
 const INTEGRITY_KEY: &[u8] = b"SimplySats-RateLimit-Integrity-K";
 
 /// Rate limit configuration constants

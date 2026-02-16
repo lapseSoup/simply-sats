@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react'
 import { Search, LayoutGrid, List as ListIcon, ChevronRight } from 'lucide-react'
 import { List } from 'react-window'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState } from '../../contexts'
 import type { Ordinal } from '../../services/wallet'
 import { NoOrdinalsEmpty } from '../shared/EmptyState'
 import { OrdinalsGridSkeleton } from '../shared/Skeleton'
@@ -39,7 +39,7 @@ function getContentCategory(contentType: string | undefined): ContentCategory {
 
 export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
   // Note: _onTransferOrdinal is available for future use
-  const { ordinals, ordinalContentCache, loading } = useWallet()
+  const { ordinals, ordinalContentCache, loading } = useWalletState()
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('newest')

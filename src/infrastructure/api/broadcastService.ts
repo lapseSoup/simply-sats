@@ -10,6 +10,9 @@
 
 import { getWocClient } from './wocClient'
 import { gpArcApi, gpMapiApi } from './clients'
+// NOTE: Logger is a cross-cutting concern — this import from services is an accepted exception
+// to the strict layered architecture. Moving logger to infrastructure would break the
+// convention that services/logger.ts is the canonical logging module.
 import { apiLogger } from '../../services/logger'
 
 /**

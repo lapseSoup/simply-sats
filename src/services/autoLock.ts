@@ -216,6 +216,5 @@ export const TIMEOUT_OPTIONS = [
   { label: '10 minutes', value: 10 },
   { label: '15 minutes', value: 15 },
   { label: '30 minutes', value: 30 },
-  { label: '1 hour', value: 60 },
-  { label: 'Never', value: 0 }
+  { label: '1 hour', value: 60 }
 ] as const

@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { useNetwork } from './NetworkContext'
 import { uiLogger } from '../services/logger'
 import { UI } from '../config'
 import { satoshisToBtc } from '../utils/satoshiConversion'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info'
 
@@ -52,12 +53,12 @@ export function UIProvider({ children }: UIProviderProps) {
   const { usdPrice } = useNetwork()
 
   const [displayInSats, setDisplayInSats] = useState<boolean>(() => {
-    const saved = localStorage.getItem('simply_sats_display_sats')
+    const saved = localStorage.getItem(STORAGE_KEYS.DISPLAY_SATS)
     return saved !== null ? saved === 'true' : true
   })
 
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('simply_sats_theme')
+    const saved = localStorage.getItem(STORAGE_KEYS.THEME)
     return (saved === 'light' || saved === 'dark') ? saved : 'dark'
   })
 
@@ -69,10 +70,20 @@ export function UIProvider({ children }: UIProviderProps) {
   const toggleTheme = useCallback(() => {
     const newTheme: Theme = theme === 'dark' ? 'light' : 'dark'
     setTheme(newTheme)
-    localStorage.setItem('simply_sats_theme', newTheme)
+    localStorage.setItem(STORAGE_KEYS.THEME, newTheme)
   }, [theme])
 
   const [toasts, setToasts] = useState<ToastItem[]>([])
+  const toastTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  // Clear all pending toast timeouts on unmount
+  useEffect(() => {
+    const timeouts = toastTimeoutsRef.current
+    return () => {
+      timeouts.forEach(id => clearTimeout(id))
+      timeouts.clear()
+    }
+  }, [])
 
   // Backward compat: expose latest toast message as copyFeedback
   const copyFeedback = toasts.length > 0 ? toasts[toasts.length - 1]!.message : null
@@ -80,7 +91,7 @@ export function UIProvider({ children }: UIProviderProps) {
   const toggleDisplayUnit = useCallback(() => {
     const newValue = !displayInSats
     setDisplayInSats(newValue)
-    localStorage.setItem('simply_sats_display_sats', String(newValue))
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_SATS, String(newValue))
   }, [displayInSats])
 
   const dismissToast = useCallback((id: string) => {
@@ -93,9 +104,11 @@ export function UIProvider({ children }: UIProviderProps) {
     setToasts(prev => [...prev.slice(-4), { id, message, type }])
     // Errors and warnings persist longer (6s) so users can read them
     const duration = (type === 'error' || type === 'warning') ? 6000 : UI.TOAST_DURATION_MS
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
+      toastTimeoutsRef.current.delete(timeoutId)
       setToasts(prev => prev.filter(t => t.id !== id))
     }, duration)
+    toastTimeoutsRef.current.add(timeoutId)
   }, [])
 
   const copyToClipboard = useCallback(async (text: string, feedback = 'Copied!') => {

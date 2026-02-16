@@ -392,6 +392,10 @@ async fn handle_get_public_key(
 ) -> Response {
     let origin = extract_origin(&request);
 
+    if let Err(e) = validate_origin(&origin) {
+        return e;
+    }
+
     let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
         Ok(bytes) => bytes,
         Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({

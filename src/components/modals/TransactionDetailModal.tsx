@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { getTransactionByTxid } from '../../services/database'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState } from '../../contexts'
 import { getWocClient } from '../../infrastructure/api/wocClient'
 import { btcToSatoshis } from '../../utils/satoshiConversion'
 import { useTransactionLabels } from '../../hooks/useTransactionLabels'
@@ -65,12 +65,12 @@ export function TransactionDetailModal({
   onLabelsUpdated
 }: TransactionDetailModalProps) {
   const { copyToClipboard, showToast, formatUSD, displayInSats, formatBSVShort } = useUI()
-  const { activeAccountId } = useWallet()
+  const { activeAccountId } = useWalletState()
 
   // Labels via hook (handles loading, optimistic updates, suggestions)
   const { labels, suggestedLabels: hookSuggestions, loading: labelsLoading, addLabel, removeLabel } = useTransactionLabels({
     txid: transaction.tx_hash,
-    accountId: activeAccountId || undefined,
+    accountId: activeAccountId ?? undefined,
     suggestedCount: 3
   })
 

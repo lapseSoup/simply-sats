@@ -25,13 +25,14 @@ import { calculateLockFee, feeFromBytes } from './fees'
 import { broadcastTransaction, executeBroadcast } from './transactions'
 import { getWocClient } from '../../infrastructure/api/wocClient'
 import { btcToSatoshis } from '../../utils/satoshiConversion'
-import { getTransactionHistory, getTransactionDetails } from './balance'
+import { getTransactionHistory } from './balance'
 import {
   recordSentTransaction,
   confirmUtxosSpent
 } from '../sync'
 import { markLockUnlockedByTxid, getDatabase, addUTXO, addLock, withTransaction } from '../database'
 import { walletLogger } from '../logger'
+import { AppError, ErrorCodes, InsufficientFundsError } from '../errors'
 
 // Re-export pure domain functions for backwards compatibility
 import {
@@ -122,7 +123,7 @@ export async function lockBSV(
   }
 
   if (totalInput < satoshis) {
-    throw new Error('Insufficient funds')
+    throw new InsufficientFundsError(satoshis, totalInput)
   }
 
   // Calculate fee using actual script size
@@ -132,7 +133,7 @@ export async function lockBSV(
   const change = totalInput - satoshis - fee
 
   if (change < 0) {
-    throw new Error(`Insufficient funds (need ${fee} sats for fee)`)
+    throw new InsufficientFundsError(satoshis + fee, totalInput)
   }
 
   // Add inputs
@@ -261,7 +262,11 @@ export async function lockBSV(
     })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to record lock transaction locally', error, { txid })
-    throw new Error(`Lock broadcast succeeded (txid: ${txid}) but failed to record locally. Your wallet may show incorrect balance until next sync.`)
+    throw new AppError(
+      `Lock broadcast succeeded (txid: ${txid}) but failed to record locally. Your wallet may show incorrect balance until next sync.`,
+      ErrorCodes.DATABASE_ERROR,
+      { txid, originalError: error instanceof Error ? error.message : String(error) }
+    )
   }
 
   return { txid, lockedUtxo }
@@ -281,7 +286,11 @@ export async function unlockBSV(
 ): Promise<string> {
   // Check block height for user feedback
   if (currentBlockHeight < lockedUtxo.unlockBlock) {
-    throw new Error(`Cannot unlock yet. Current block: ${currentBlockHeight}, Unlock block: ${lockedUtxo.unlockBlock}`)
+    throw new AppError(
+      `Cannot unlock yet. Current block: ${currentBlockHeight}, Unlock block: ${lockedUtxo.unlockBlock}`,
+      ErrorCodes.LOCK_NOT_SPENDABLE,
+      { currentBlockHeight, unlockBlock: lockedUtxo.unlockBlock, blocksRemaining: lockedUtxo.unlockBlock - currentBlockHeight }
+    )
   }
 
   // Check if this UTXO is already being spent in another transaction
@@ -291,7 +300,11 @@ export async function unlockBSV(
     [lockedUtxo.txid, lockedUtxo.vout]
   )
   if (utxoCheck.length > 0 && utxoCheck[0]!.spending_status === 'pending') {
-    throw new Error('This lock is already being processed in another transaction')
+    throw new AppError(
+      'This lock is already being processed in another transaction',
+      ErrorCodes.LOCK_NOT_SPENDABLE,
+      { txid: lockedUtxo.txid, vout: lockedUtxo.vout }
+    )
   }
 
   const privateKey = PrivateKey.fromWif(wif)
@@ -306,7 +319,7 @@ export async function unlockBSV(
   const outputSats = lockedUtxo.satoshis - fee
 
   if (outputSats <= 0) {
-    throw new Error(`Insufficient funds to cover unlock fee (need ${fee} sats)`)
+    throw new InsufficientFundsError(fee, lockedUtxo.satoshis)
   }
 
   // Parse the locking script
@@ -417,7 +430,7 @@ export async function unlockBSV(
     }
 
     // UTXO is genuinely unspent and broadcast failed — real failure
-    throw broadcastError
+    throw AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED)
   }
 
   // Happy path: broadcast succeeded — record and mark atomically
@@ -664,67 +677,67 @@ export async function detectLockedUtxos(
     const expectedPkhBytes = publicKey.toHash() as number[]
     const expectedPkh = expectedPkhBytes.map(b => b.toString(16).padStart(2, '0')).join('')
 
-    // Check each transaction for timelock outputs
-    for (const historyItem of history) {
-      const txid = historyItem.tx_hash
+    // Batch-fetch all transaction details to avoid N+1 sequential API calls
+    const txids = [...new Set(history.map(h => h.tx_hash))]
+    const wocClient = getWocClient()
+    const txDetailsMap = await wocClient.getTransactionDetailsBatch(txids)
 
-      try {
-        const txDetails = await getTransactionDetails(txid)
-        if (!txDetails?.vout) continue
+    walletLogger.debug('Batch-fetched transaction details', { requested: txids.length, received: txDetailsMap.size })
 
-        // Check each output for timelock script
-        for (let vout = 0; vout < txDetails.vout.length; vout++) {
-          const output = txDetails.vout[vout]!
-          const scriptHex = output.scriptPubKey?.hex
+    // Process fetched transactions for timelock outputs
+    for (const [txid, txDetails] of txDetailsMap) {
+      if (!txDetails?.vout) continue
 
-          if (!scriptHex) continue
+      // Check each output for timelock script
+      for (let vout = 0; vout < txDetails.vout.length; vout++) {
+        const output = txDetails.vout[vout]!
+        const scriptHex = output.scriptPubKey?.hex
 
-          const parsed = parseTimelockScript(scriptHex)
-          if (!parsed) continue
+        if (!scriptHex) continue
 
-          // Verify the lock belongs to this wallet
-          if (parsed.publicKeyHash !== expectedPkh) {
-            walletLogger.debug('Found lock but PKH does not match (different wallet)')
-            continue
-          }
+        const parsed = parseTimelockScript(scriptHex)
+        if (!parsed) continue
 
-          // Check if marked as unlocked (in-memory set or database)
-          const markedUnlocked = await isLockMarkedUnlocked(txid, vout, knownUnlockedLocks)
-          if (markedUnlocked) {
-            continue
-          }
-
-          // Check if still unspent on chain
-          const unspent = await isUtxoUnspent(txid, vout)
-          if (!unspent) {
-            walletLogger.debug('Lock has been spent (unlocked)', { txid, vout })
-            continue
-          }
-
-          // Deduplicate: WoC may return same txid in both mempool and confirmed history
-          const dedupKey = `${txid}:${vout}`
-          if (seen.has(dedupKey)) continue
-          seen.add(dedupKey)
-
-          const satoshis = btcToSatoshis(output!.value)
-
-          walletLogger.info('Found active lock', { txid, vout, satoshis, unlockBlock: parsed.unlockBlock })
-
-          detectedLocks.push({
-            txid,
-            vout,
-            satoshis,
-            lockingScript: scriptHex,
-            unlockBlock: parsed.unlockBlock,
-            publicKeyHex,
-            createdAt: txDetails.time ? txDetails.time * 1000 : Date.now(),
-            confirmationBlock: txDetails.blockheight || undefined,
-            // Use confirmation block as lockBlock fallback for restore (best available data)
-            lockBlock: txDetails.blockheight || undefined
-          })
+        // Verify the lock belongs to this wallet
+        if (parsed.publicKeyHash !== expectedPkh) {
+          walletLogger.debug('Found lock but PKH does not match (different wallet)')
+          continue
         }
-      } catch (error) {
-        walletLogger.warn('Error processing tx', { txid, error: String(error) })
+
+        // Check if marked as unlocked (in-memory set or database)
+        const markedUnlocked = await isLockMarkedUnlocked(txid, vout, knownUnlockedLocks)
+        if (markedUnlocked) {
+          continue
+        }
+
+        // Check if still unspent on chain
+        const unspent = await isUtxoUnspent(txid, vout)
+        if (!unspent) {
+          walletLogger.debug('Lock has been spent (unlocked)', { txid, vout })
+          continue
+        }
+
+        // Deduplicate: WoC may return same txid in both mempool and confirmed history
+        const dedupKey = `${txid}:${vout}`
+        if (seen.has(dedupKey)) continue
+        seen.add(dedupKey)
+
+        const satoshis = btcToSatoshis(output!.value)
+
+        walletLogger.info('Found active lock', { txid, vout, satoshis, unlockBlock: parsed.unlockBlock })
+
+        detectedLocks.push({
+          txid,
+          vout,
+          satoshis,
+          lockingScript: scriptHex,
+          unlockBlock: parsed.unlockBlock,
+          publicKeyHex,
+          createdAt: txDetails.time ? txDetails.time * 1000 : Date.now(),
+          confirmationBlock: txDetails.blockheight || undefined,
+          // Use confirmation block as lockBlock fallback for restore (best available data)
+          lockBlock: txDetails.blockheight || undefined
+        })
       }
     }
 

@@ -10,6 +10,7 @@
 
 import { PrivateKey, PublicKey, Hash, Random } from '@bsv/sdk'
 import { messageLogger } from './logger'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 
 // MessageBox server endpoint
 const MESSAGEBOX_HOST = 'https://messagebox.babbage.systems'
@@ -41,7 +42,7 @@ let isListening = false
 // Load persisted notifications
 export function loadNotifications(): void {
   try {
-    const saved = localStorage.getItem('simply_sats_payment_notifications')
+    const saved = localStorage.getItem(STORAGE_KEYS.PAYMENT_NOTIFICATIONS)
     if (saved) {
       paymentNotifications = JSON.parse(saved)
       messageLogger.info('Loaded payment notifications from storage', { count: paymentNotifications.length })
@@ -54,7 +55,7 @@ export function loadNotifications(): void {
 // Save notifications to storage
 function saveNotifications(): void {
   try {
-    localStorage.setItem('simply_sats_payment_notifications', JSON.stringify(paymentNotifications))
+    localStorage.setItem(STORAGE_KEYS.PAYMENT_NOTIFICATIONS, JSON.stringify(paymentNotifications))
   } catch (e) {
     messageLogger.error('Failed to save payment notifications', e)
   }

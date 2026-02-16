@@ -163,6 +163,9 @@ export async function encrypt(plaintext: string | object, password: string): Pro
     try {
       return await tauriInvoke<EncryptedData>('encrypt_data', { plaintext: data, password })
     } catch (e) {
+      if (!import.meta.env.DEV) {
+        throw new Error('Encryption backend unavailable')
+      }
       cryptoLogger.error('Rust encrypt_data failed, falling back to Web Crypto', { error: e })
     }
   }
@@ -210,6 +213,9 @@ export async function decrypt(encryptedData: EncryptedData, password: string): P
         throw new Error('Decryption failed - invalid password or corrupted data')
       }
       cryptoLogger.error('Rust decrypt_data unavailable, falling back to Web Crypto', { error: e })
+      if (!import.meta.env.DEV) {
+        throw new Error('Decryption backend unavailable')
+      }
     }
   }
 

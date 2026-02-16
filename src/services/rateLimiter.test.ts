@@ -48,13 +48,13 @@ describe('Rate Limiter', () => {
       expect(result.remainingMs).toBe(5000)
     })
 
-    it('fails open on backend error', async () => {
+    it('fails closed on backend error', async () => {
       mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'))
 
       const result = await checkUnlockRateLimit()
 
-      expect(result.isLimited).toBe(false)
-      expect(result.remainingMs).toBe(0)
+      expect(result.isLimited).toBe(true)
+      expect(result.remainingMs).toBe(30000)
     })
   })
 
@@ -88,14 +88,14 @@ describe('Rate Limiter', () => {
       expect(result.attemptsRemaining).toBe(3)
     })
 
-    it('returns safe defaults on backend error', async () => {
+    it('fails closed on backend error', async () => {
       mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'))
 
       const result = await recordFailedUnlockAttempt()
 
-      expect(result.isLocked).toBe(false)
-      expect(result.lockoutMs).toBe(0)
-      expect(result.attemptsRemaining).toBe(5)
+      expect(result.isLocked).toBe(true)
+      expect(result.lockoutMs).toBe(60000)
+      expect(result.attemptsRemaining).toBe(0)
     })
   })
 

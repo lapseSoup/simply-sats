@@ -4,6 +4,7 @@
  */
 
 import type { UTXO } from './types'
+import { STORAGE_KEYS } from '../../infrastructure/storage/localStorage'
 import {
   calculateTxFee as domainCalculateTxFee,
   calculateLockFee as domainCalculateLockFee,
@@ -79,7 +80,7 @@ export async function fetchDynamicFeeRate(): Promise<number> {
  */
 export function getFeeRate(): number {
   // Check for user override first
-  const stored = localStorage.getItem('simply_sats_fee_rate')
+  const stored = localStorage.getItem(STORAGE_KEYS.FEE_RATE)
   if (stored) {
     const rate = parseFloat(stored)
     if (!isNaN(rate) && rate > 0) {
@@ -100,7 +101,7 @@ export function getFeeRate(): number {
  */
 export async function getFeeRateAsync(): Promise<number> {
   // Check for user override first
-  const stored = localStorage.getItem('simply_sats_fee_rate')
+  const stored = localStorage.getItem(STORAGE_KEYS.FEE_RATE)
   if (stored) {
     const rate = parseFloat(stored)
     if (!isNaN(rate) && rate > 0) return Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, rate))
@@ -114,14 +115,14 @@ export async function getFeeRateAsync(): Promise<number> {
  * Set the fee rate (in sats/byte)
  */
 export function setFeeRate(rate: number): void {
-  localStorage.setItem('simply_sats_fee_rate', String(rate))
+  localStorage.setItem(STORAGE_KEYS.FEE_RATE, String(rate))
 }
 
 /**
  * Clear user fee rate override (use dynamic rate)
  */
 export function clearFeeRateOverride(): void {
-  localStorage.removeItem('simply_sats_fee_rate')
+  localStorage.removeItem(STORAGE_KEYS.FEE_RATE)
 }
 
 /**

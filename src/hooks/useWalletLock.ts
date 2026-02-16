@@ -25,6 +25,7 @@ import { setWalletKeys } from '../services/brc100'
 import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
 import { invoke } from '@tauri-apps/api/core'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 
 interface UseWalletLockOptions {
   activeAccount: Account | null
@@ -56,7 +57,7 @@ export function useWalletLock({
 }: UseWalletLockOptions): UseWalletLockReturn {
   const [isLocked, setIsLocked] = useState(false)
   const [autoLockMinutes, setAutoLockMinutesState] = useState<number>(() => {
-    const saved = localStorage.getItem('simply_sats_auto_lock_minutes')
+    const saved = localStorage.getItem(STORAGE_KEYS.AUTO_LOCK_MINUTES)
     return saved ? parseInt(saved, 10) : 10
   })
 
@@ -200,7 +201,7 @@ export function useWalletLock({
   // Set auto-lock timeout
   const setAutoLockMinutes = useCallback((minutes: number) => {
     setAutoLockMinutesState(minutes)
-    localStorage.setItem('simply_sats_auto_lock_minutes', String(minutes))
+    localStorage.setItem(STORAGE_KEYS.AUTO_LOCK_MINUTES, String(minutes))
     if (minutes > 0) {
       setInactivityLimit(minutesToMs(minutes))
     } else {

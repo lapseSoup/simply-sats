@@ -76,13 +76,14 @@ export interface WocTxOutput {
 }
 
 export interface WocTxInput {
-  txid: string
-  vout: number
-  scriptSig: {
+  txid?: string         // Absent for coinbase transactions
+  vout?: number         // Absent for coinbase transactions
+  scriptSig?: {         // Absent for coinbase transactions
     asm: string
     hex: string
   }
   sequence: number
+  coinbase?: string     // Present only for coinbase transactions
   // prevout is included in some API responses
   prevout?: {
     value: number

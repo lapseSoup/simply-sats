@@ -182,19 +182,18 @@ describe('autoLock', () => {
 
   describe('TIMEOUT_OPTIONS', () => {
     it('should have valid timeout options', () => {
-      expect(TIMEOUT_OPTIONS.length).toBeGreaterThan(0)
+      expect(TIMEOUT_OPTIONS.length).toBe(5)
 
       for (const option of TIMEOUT_OPTIONS) {
         expect(typeof option.label).toBe('string')
         expect(typeof option.value).toBe('number')
-        expect(option.value).toBeGreaterThanOrEqual(0)
+        expect(option.value).toBeGreaterThan(0)
       }
     })
 
-    it('should include a "Never" option with value 0', () => {
+    it('should not include a "Never" option', () => {
       const neverOption = TIMEOUT_OPTIONS.find(o => o.value === 0)
-      expect(neverOption).toBeDefined()
-      expect(neverOption?.label).toBe('Never')
+      expect(neverOption).toBeUndefined()
     })
   })
 })

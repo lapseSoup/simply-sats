@@ -5,7 +5,7 @@
  * Provides lock/unlock functionality for BSV timelocks.
  */
 
-import { createContext, useContext, useState, useCallback, useMemo, type ReactNode, type SetStateAction } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode, type SetStateAction } from 'react'
 import type { WalletKeys, LockedUTXO, UTXO } from '../services/wallet'
 import { getUTXOs, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
 import { ok, err, type WalletResult } from '../domain/types'
@@ -65,6 +65,8 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
   // Lock state
   const [locks, setLocks] = useState<LockedUTXO[]>([])
+  const locksRef = useRef(locks)
+  useEffect(() => { locksRef.current = locks }, [locks])
   const [knownUnlockedLocks, setKnownUnlockedLocks] = useState<Set<string>>(new Set())
 
   // Add a lock key to known unlocked set
@@ -109,7 +111,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
       // Guard: prevent duplicate lock if same amount + unlockBlock was created recently
       const DEDUP_WINDOW_MS = 30_000 // 30 seconds
       const now = Date.now()
-      const recentDuplicate = locks.find(l =>
+      const recentDuplicate = locksRef.current.find(l =>
         l.satoshis === amountSats &&
         l.unlockBlock === unlockBlock &&
         (now - l.createdAt) < DEDUP_WINDOW_MS
@@ -133,7 +135,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Lock failed')
     }
-  }, [networkInfo, locks])
+  }, [networkInfo])
 
   // Unlock a time-locked UTXO
   const handleUnlock = useCallback(async (

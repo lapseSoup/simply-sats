@@ -200,6 +200,7 @@ export interface AccountRow {
   created_at: number
   last_accessed_at: number | null
   updated_at: number | null  // Added in migration 007
+  derivation_index: number | null  // Added in migration 019
 }
 
 /**

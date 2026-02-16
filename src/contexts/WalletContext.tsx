@@ -9,15 +9,7 @@ import { useNetwork } from './NetworkContext'
 import { useAccounts } from './AccountsContext'
 import { useSyncContext } from './SyncContext'
 import { useLocksContext } from './LocksContext'
-import {
-  getTransactionLabels,
-  updateTransactionLabels,
-  getTransactionByTxid,
-  upsertTransaction,
-  updateLockBlock,
-  addUTXO,
-  addLockIfNotExists
-} from '../services/database'
+import { reconcileLocks, combineLocksWithExisting } from '../services/wallet/lockReconciliation'
 import type { WalletResult } from '../domain/types'
 import { useTokens } from './TokensContext'
 import { walletLogger } from '../services/logger'
@@ -227,9 +219,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [wallet, activeAccountId, tokensRefresh])
 
   // Sync wallet with blockchain - delegates to SyncContext
+  // Captures the account ID at call time and aborts if it changes mid-sync
   const performSync = useCallback(async (isRestore = false, forceReset = false) => {
     if (!wallet) return
-    await syncPerformSync(wallet, activeAccountIdRef.current, isRestore, forceReset)
+    const accountAtStart = activeAccountIdRef.current
+    await syncPerformSync(wallet, accountAtStart, isRestore, forceReset)
+    // If account changed while sync was running, the results are already discarded
+    // by the cancellation token inside syncWallet (via startNewSync)
+    if (activeAccountIdRef.current !== accountAtStart) {
+      walletLogger.debug('performSync completed but account changed during sync, results discarded')
+    }
   }, [wallet, syncPerformSync])
 
   // Fetch data from database and API - delegates to SyncContext with lock detection callback
@@ -263,97 +262,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
           if (fetchVersionRef.current !== version) return
 
           if (detectedLocks.length > 0) {
-            const AVG_BLOCK_MS = 600_000
-            const preloadMap = new Map(
-              (preloadedLocks || []).map(l => [`${l.txid}:${l.vout}`, l])
+            const mergedLocks = await reconcileLocks(
+              detectedLocks,
+              preloadedLocks || [],
+              currentAccountId || undefined
             )
-            const mergedLocks = detectedLocks.map(lock => {
-              const preloaded = preloadMap.get(`${lock.txid}:${lock.vout}`)
-              if (!preloaded) return lock
-              const earlierCreatedAt = Math.min(lock.createdAt, preloaded.createdAt)
-              let estimatedLockBlock = preloaded.lockBlock || lock.lockBlock
-              if (!estimatedLockBlock && lock.confirmationBlock && earlierCreatedAt < lock.createdAt) {
-                const mempoolMs = lock.createdAt - earlierCreatedAt
-                const mempoolBlocks = Math.round(mempoolMs / AVG_BLOCK_MS)
-                estimatedLockBlock = lock.confirmationBlock - mempoolBlocks
-              }
-              if (estimatedLockBlock && !preloaded.lockBlock) {
-                updateLockBlock(lock.txid, lock.vout, estimatedLockBlock).catch(e => {
-                  walletLogger.warn('Failed to backfill lock_block', { txid: lock.txid, vout: lock.vout, error: String(e) })
-                })
-              }
-              return {
-                ...lock,
-                lockBlock: estimatedLockBlock,
-                createdAt: earlierCreatedAt
-              }
-            })
-            // Merge detected locks with existing state (preserves optimistic locks not yet on-chain)
-            setLocks(prev => {
-              const detectedMap = new Map(mergedLocks.map(l => [`${l.txid}:${l.vout}`, l]))
-              for (const existing of prev) {
-                const key = `${existing.txid}:${existing.vout}`
-                if (!detectedMap.has(key)) {
-                  detectedMap.set(key, existing)
-                }
-              }
-              return Array.from(detectedMap.values())
-            })
-
-            // Persist detected locks to DB
-            for (const lock of mergedLocks) {
-              try {
-                const utxoId = await addUTXO({
-                  txid: lock.txid,
-                  vout: lock.vout,
-                  satoshis: lock.satoshis,
-                  lockingScript: lock.lockingScript,
-                  basket: 'locks',
-                  spendable: false,
-                  createdAt: lock.createdAt
-                }, currentAccountId || undefined)
-                await addLockIfNotExists({
-                  utxoId,
-                  unlockBlock: lock.unlockBlock,
-                  lockBlock: lock.lockBlock,
-                  createdAt: lock.createdAt
-                }, currentAccountId || undefined)
-              } catch (_e) {
-                // Best-effort
-              }
-            }
-
-            // Auto-label lock transactions
-            const lockAccountId = currentAccountId || 1
-            for (const lock of mergedLocks) {
-              try {
-                const existingLabels = await getTransactionLabels(lock.txid, lockAccountId)
-                if (!existingLabels.includes('lock')) {
-                  await updateTransactionLabels(lock.txid, [...existingLabels, 'lock'], lockAccountId)
-                }
-                const dbTx = await getTransactionByTxid(lock.txid, lockAccountId)
-                if (dbTx) {
-                  const needsAmountFix = dbTx.amount !== undefined && dbTx.amount > 0
-                  const needsDescription = !dbTx.description
-
-                  if (needsDescription || needsAmountFix) {
-                    await upsertTransaction({
-                      txid: dbTx.txid,
-                      createdAt: dbTx.createdAt,
-                      status: dbTx.status,
-                      ...(needsDescription && {
-                        description: `Locked ${lock.satoshis} sats until block ${lock.unlockBlock}`
-                      }),
-                      ...(needsAmountFix && {
-                        amount: -lock.satoshis
-                      })
-                    }, lockAccountId)
-                  }
-                }
-              } catch (_e) {
-                // Best-effort
-              }
-            }
+            // Use functional updater to safely merge with current React state
+            // (avoids stale-closure issues if state changed during async operations)
+            setLocks(prev => combineLocksWithExisting(mergedLocks, prev))
           }
         } catch (e) {
           walletLogger.error('Failed to detect locks', e)

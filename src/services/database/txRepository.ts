@@ -281,12 +281,12 @@ export async function getAllLabels(accountId?: number): Promise<string[]> {
   const database = getDatabase()
 
   const rows = await database.select<{ label: string }[]>(
-    accountId
+    accountId != null
       ? `SELECT DISTINCT label FROM transaction_labels
          WHERE account_id = $1
          ORDER BY label ASC`
       : `SELECT DISTINCT label FROM transaction_labels ORDER BY label ASC`,
-    accountId ? [accountId] : []
+    accountId != null ? [accountId] : []
   )
 
   return rows.map(row => row.label)
@@ -390,7 +390,7 @@ export async function searchTransactionsByLabels(
     params.push(labels[i]!)
   }
 
-  if (accountId) {
+  if (accountId != null) {
     whereConditions.push(`t.account_id = $${paramIndex++}`)
     params.push(accountId)
   }
@@ -416,13 +416,13 @@ export async function searchTransactionsByLabels(
 
   return rows.map(row => ({
     txid: row.txid,
-    rawTx: row.raw_tx || undefined,
-    description: row.description || undefined,
+    rawTx: row.raw_tx ?? undefined,
+    description: row.description ?? undefined,
     createdAt: row.created_at,
-    confirmedAt: row.confirmed_at || undefined,
-    blockHeight: row.block_height || undefined,
+    confirmedAt: row.confirmed_at ?? undefined,
+    blockHeight: row.block_height ?? undefined,
     status: row.status as 'pending' | 'confirmed' | 'failed',
-    amount: row.amount || undefined
+    amount: row.amount ?? undefined
   }))
 }
 
@@ -450,13 +450,13 @@ export async function searchTransactions(
 
   return rows.map(row => ({
     txid: row.txid,
-    rawTx: row.raw_tx || undefined,
-    description: row.description || undefined,
+    rawTx: row.raw_tx ?? undefined,
+    description: row.description ?? undefined,
     createdAt: row.created_at,
-    confirmedAt: row.confirmed_at || undefined,
-    blockHeight: row.block_height || undefined,
+    confirmedAt: row.confirmed_at ?? undefined,
+    blockHeight: row.block_height ?? undefined,
     status: row.status as 'pending' | 'confirmed' | 'failed',
-    amount: row.amount || undefined
+    amount: row.amount ?? undefined
   }))
 }
 

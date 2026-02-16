@@ -183,7 +183,8 @@ type SafeResult<T> = { ok: true; value: T } | { ok: false; error: { message: str
 const mockWocClient = {
   getBlockHeightSafe: vi.fn<() => Promise<SafeResult<number>>>(async () => ({ ok: true, value: 870000 })),
   isOutputSpentSafe: vi.fn<() => Promise<SafeResult<string | null>>>(async () => ({ ok: true, value: null })),
-  getTransactionDetailsSafe: vi.fn<() => Promise<SafeResult<unknown>>>(async () => ({ ok: false, error: { message: 'not found' } }))
+  getTransactionDetailsSafe: vi.fn<() => Promise<SafeResult<unknown>>>(async () => ({ ok: false, error: { message: 'not found' } })),
+  getTransactionDetailsBatch: vi.fn(async () => new Map())
 }
 
 vi.mock('../../infrastructure/api/wocClient', () => ({
@@ -216,7 +217,7 @@ import {
 } from './locks'
 import { broadcastTransaction, executeBroadcast } from './transactions'
 import { calculateLockFee, feeFromBytes } from './fees'
-import { getTransactionHistory, getTransactionDetails } from './balance'
+import { getTransactionHistory } from './balance'
 import { recordSentTransaction, confirmUtxosSpent } from '../sync'
 import { markLockUnlockedByTxid, addUTXO, addLock } from '../database'
 
@@ -466,7 +467,7 @@ describe('locks service', () => {
       const lockedUtxo = createTestLockedUTXO({ satoshis: 100 })
 
       await expect(unlockBSV(TEST_WIF, lockedUtxo, 900_001))
-        .rejects.toThrow('Insufficient funds to cover unlock fee')
+        .rejects.toThrow('Insufficient funds')
     })
 
     it('should handle broadcast failure with already-spent recovery', async () => {
@@ -630,25 +631,27 @@ describe('locks service', () => {
         { tx_hash: 'tx-with-lock', height: 870_000 }
       ])
 
-      vi.mocked(getTransactionDetails).mockResolvedValueOnce({
-        txid: 'tx-with-lock',
-        hash: 'tx-with-lock',
-        version: 1,
-        size: 250,
-        locktime: 0,
-        vin: [],
-        vout: [{
-          value: 0.0001, // 10,000 sats
-          n: 0,
-          scriptPubKey: {
-            asm: '',
-            hex: 'valid-timelock-script',
-            type: 'nonstandard'
-          }
-        }],
-        time: 1700000000,
-        blockheight: 870_000
-      })
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        ['tx-with-lock', {
+          txid: 'tx-with-lock',
+          hash: 'tx-with-lock',
+          version: 1,
+          size: 250,
+          locktime: 0,
+          vin: [],
+          vout: [{
+            value: 0.0001, // 10,000 sats
+            n: 0,
+            scriptPubKey: {
+              asm: '',
+              hex: 'valid-timelock-script',
+              type: 'nonstandard'
+            }
+          }],
+          time: 1700000000,
+          blockheight: 870_000
+        }]
+      ]))
 
       // isOutputSpentSafe returns null (unspent) by default from beforeEach
       // parseTimelockScript returns match for 'valid-timelock-script'
@@ -669,25 +672,27 @@ describe('locks service', () => {
         { tx_hash: 'tx-other-wallet', height: 870_000 }
       ])
 
-      vi.mocked(getTransactionDetails).mockResolvedValueOnce({
-        txid: 'tx-other-wallet',
-        hash: 'tx-other-wallet',
-        version: 1,
-        size: 250,
-        locktime: 0,
-        vin: [],
-        vout: [{
-          value: 0.0001,
-          n: 0,
-          scriptPubKey: {
-            asm: '',
-            hex: 'valid-timelock-other-wallet', // Different PKH
-            type: 'nonstandard'
-          }
-        }],
-        time: 1700000000,
-        blockheight: 870_000
-      })
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        ['tx-other-wallet', {
+          txid: 'tx-other-wallet',
+          hash: 'tx-other-wallet',
+          version: 1,
+          size: 250,
+          locktime: 0,
+          vin: [],
+          vout: [{
+            value: 0.0001,
+            n: 0,
+            scriptPubKey: {
+              asm: '',
+              hex: 'valid-timelock-other-wallet', // Different PKH
+              type: 'nonstandard'
+            }
+          }],
+          time: 1700000000,
+          blockheight: 870_000
+        }]
+      ]))
 
       const result = await detectLockedUtxos(walletAddress, publicKeyHex)
       expect(result).toHaveLength(0)
@@ -698,25 +703,27 @@ describe('locks service', () => {
         { tx_hash: 'tx-spent-lock', height: 870_000 }
       ])
 
-      vi.mocked(getTransactionDetails).mockResolvedValueOnce({
-        txid: 'tx-spent-lock',
-        hash: 'tx-spent-lock',
-        version: 1,
-        size: 250,
-        locktime: 0,
-        vin: [],
-        vout: [{
-          value: 0.0001,
-          n: 0,
-          scriptPubKey: {
-            asm: '',
-            hex: 'valid-timelock-script',
-            type: 'nonstandard'
-          }
-        }],
-        time: 1700000000,
-        blockheight: 870_000
-      })
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        ['tx-spent-lock', {
+          txid: 'tx-spent-lock',
+          hash: 'tx-spent-lock',
+          version: 1,
+          size: 250,
+          locktime: 0,
+          vin: [],
+          vout: [{
+            value: 0.0001,
+            n: 0,
+            scriptPubKey: {
+              asm: '',
+              hex: 'valid-timelock-script',
+              type: 'nonstandard'
+            }
+          }],
+          time: 1700000000,
+          blockheight: 870_000
+        }]
+      ]))
 
       // Mark UTXO as spent
       mockWocClient.isOutputSpentSafe.mockResolvedValueOnce({
@@ -733,25 +740,27 @@ describe('locks service', () => {
         { tx_hash: 'tx-known-unlocked', height: 870_000 }
       ])
 
-      vi.mocked(getTransactionDetails).mockResolvedValueOnce({
-        txid: 'tx-known-unlocked',
-        hash: 'tx-known-unlocked',
-        version: 1,
-        size: 250,
-        locktime: 0,
-        vin: [],
-        vout: [{
-          value: 0.0001,
-          n: 0,
-          scriptPubKey: {
-            asm: '',
-            hex: 'valid-timelock-script',
-            type: 'nonstandard'
-          }
-        }],
-        time: 1700000000,
-        blockheight: 870_000
-      })
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        ['tx-known-unlocked', {
+          txid: 'tx-known-unlocked',
+          hash: 'tx-known-unlocked',
+          version: 1,
+          size: 250,
+          locktime: 0,
+          vin: [],
+          vout: [{
+            value: 0.0001,
+            n: 0,
+            scriptPubKey: {
+              asm: '',
+              hex: 'valid-timelock-script',
+              type: 'nonstandard'
+            }
+          }],
+          time: 1700000000,
+          blockheight: 870_000
+        }]
+      ]))
 
       const knownUnlocked = new Set(['tx-known-unlocked:0'])
 
@@ -764,25 +773,27 @@ describe('locks service', () => {
         { tx_hash: 'tx-no-script', height: 870_000 }
       ])
 
-      vi.mocked(getTransactionDetails).mockResolvedValueOnce({
-        txid: 'tx-no-script',
-        hash: 'tx-no-script',
-        version: 1,
-        size: 250,
-        locktime: 0,
-        vin: [],
-        vout: [{
-          value: 0.0001,
-          n: 0,
-          scriptPubKey: {
-            asm: '',
-            hex: '', // Empty hex
-            type: 'nonstandard'
-          }
-        }],
-        time: 1700000000,
-        blockheight: 870_000
-      })
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        ['tx-no-script', {
+          txid: 'tx-no-script',
+          hash: 'tx-no-script',
+          version: 1,
+          size: 250,
+          locktime: 0,
+          vin: [],
+          vout: [{
+            value: 0.0001,
+            n: 0,
+            scriptPubKey: {
+              asm: '',
+              hex: '', // Empty hex
+              type: 'nonstandard'
+            }
+          }],
+          time: 1700000000,
+          blockheight: 870_000
+        }]
+      ]))
 
       const result = await detectLockedUtxos(walletAddress, publicKeyHex)
       expect(result).toHaveLength(0)
@@ -794,29 +805,28 @@ describe('locks service', () => {
         { tx_hash: 'tx-dup', height: 0 } // Same txid in mempool
       ])
 
-      const txDetails = {
-        txid: 'tx-dup',
-        hash: 'tx-dup',
-        version: 1,
-        size: 250,
-        locktime: 0,
-        vin: [],
-        vout: [{
-          value: 0.0001,
-          n: 0,
-          scriptPubKey: {
-            asm: '',
-            hex: 'valid-timelock-script',
-            type: 'nonstandard'
-          }
-        }],
-        time: 1700000000,
-        blockheight: 870_000
-      }
-
-      vi.mocked(getTransactionDetails)
-        .mockResolvedValueOnce(txDetails)
-        .mockResolvedValueOnce(txDetails)
+      // Batch deduplicates txids internally, so only one entry in the Map
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        ['tx-dup', {
+          txid: 'tx-dup',
+          hash: 'tx-dup',
+          version: 1,
+          size: 250,
+          locktime: 0,
+          vin: [],
+          vout: [{
+            value: 0.0001,
+            n: 0,
+            scriptPubKey: {
+              asm: '',
+              hex: 'valid-timelock-script',
+              type: 'nonstandard'
+            }
+          }],
+          time: 1700000000,
+          blockheight: 870_000
+        }]
+      ]))
 
       const result = await detectLockedUtxos(walletAddress, publicKeyHex)
       // Should only have 1 entry despite 2 history items with same txid
@@ -829,9 +839,10 @@ describe('locks service', () => {
         { tx_hash: 'tx-good', height: 870_000 }
       ])
 
-      vi.mocked(getTransactionDetails)
-        .mockRejectedValueOnce(new Error('API error for tx-error'))
-        .mockResolvedValueOnce({
+      // Batch uses Promise.allSettled internally — failed txids are simply omitted from the Map
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        // 'tx-error' is absent (simulating API failure for that txid)
+        ['tx-good', {
           txid: 'tx-good',
           hash: 'tx-good',
           version: 1,
@@ -849,7 +860,8 @@ describe('locks service', () => {
           }],
           time: 1700000000,
           blockheight: 870_000
-        })
+        }]
+      ]))
 
       const result = await detectLockedUtxos(walletAddress, publicKeyHex)
       // Should still detect the second tx lock
@@ -871,25 +883,27 @@ describe('locks service', () => {
         { tx_hash: 'tx-no-time', height: 870_000 }
       ])
 
-      vi.mocked(getTransactionDetails).mockResolvedValueOnce({
-        txid: 'tx-no-time',
-        hash: 'tx-no-time',
-        version: 1,
-        size: 250,
-        locktime: 0,
-        vin: [],
-        vout: [{
-          value: 0.0001,
-          n: 0,
-          scriptPubKey: {
-            asm: '',
-            hex: 'valid-timelock-script',
-            type: 'nonstandard'
-          }
-        }],
-        // No time or blockheight
-        blockheight: undefined
-      })
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        ['tx-no-time', {
+          txid: 'tx-no-time',
+          hash: 'tx-no-time',
+          version: 1,
+          size: 250,
+          locktime: 0,
+          vin: [],
+          vout: [{
+            value: 0.0001,
+            n: 0,
+            scriptPubKey: {
+              asm: '',
+              hex: 'valid-timelock-script',
+              type: 'nonstandard'
+            }
+          }],
+          // No time or blockheight
+          blockheight: undefined
+        }]
+      ]))
 
       const result = await detectLockedUtxos(walletAddress, publicKeyHex)
 
@@ -903,33 +917,35 @@ describe('locks service', () => {
         { tx_hash: 'tx-multi-output', height: 870_000 }
       ])
 
-      vi.mocked(getTransactionDetails).mockResolvedValueOnce({
-        txid: 'tx-multi-output',
-        hash: 'tx-multi-output',
-        version: 1,
-        size: 400,
-        locktime: 0,
-        vin: [],
-        vout: [
-          {
-            value: 0.0001,
-            n: 0,
-            scriptPubKey: { asm: '', hex: 'valid-timelock-script', type: 'nonstandard' }
-          },
-          {
-            value: 0,
-            n: 1,
-            scriptPubKey: { asm: '', hex: '006a', type: 'nulldata' } // OP_RETURN
-          },
-          {
-            value: 0.005,
-            n: 2,
-            scriptPubKey: { asm: '', hex: '76a914abcdef88ac', type: 'pubkeyhash' } // Change
-          }
-        ],
-        time: 1700000000,
-        blockheight: 870_000
-      })
+      mockWocClient.getTransactionDetailsBatch.mockResolvedValueOnce(new Map([
+        ['tx-multi-output', {
+          txid: 'tx-multi-output',
+          hash: 'tx-multi-output',
+          version: 1,
+          size: 400,
+          locktime: 0,
+          vin: [],
+          vout: [
+            {
+              value: 0.0001,
+              n: 0,
+              scriptPubKey: { asm: '', hex: 'valid-timelock-script', type: 'nonstandard' }
+            },
+            {
+              value: 0,
+              n: 1,
+              scriptPubKey: { asm: '', hex: '006a', type: 'nulldata' } // OP_RETURN
+            },
+            {
+              value: 0.005,
+              n: 2,
+              scriptPubKey: { asm: '', hex: '76a914abcdef88ac', type: 'pubkeyhash' } // Change
+            }
+          ],
+          time: 1700000000,
+          blockheight: 870_000
+        }]
+      ]))
 
       const result = await detectLockedUtxos(walletAddress, publicKeyHex)
       // Only output 0 matches the timelock pattern

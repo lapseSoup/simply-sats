@@ -15,6 +15,8 @@ let db: Database | null = null
 let transactionQueue: Promise<unknown> = Promise.resolve()
 // Transaction nesting depth (0 = no active transaction)
 let transactionDepth = 0
+// Whether we're currently inside the serialized queue (guards direct executeTransaction calls)
+let isInsideQueue = false
 
 /**
  * Initialize database connection
@@ -51,9 +53,17 @@ export async function withTransaction<T>(
   // Nested calls (SAVEPOINTs) run inside the outer transaction's queue slot.
   if (transactionDepth === 0) {
     const result = new Promise<T>((resolve, reject) => {
-      transactionQueue = transactionQueue.then(() =>
-        executeTransaction(operations).then(resolve, reject)
-      )
+      transactionQueue = transactionQueue.then(async () => {
+        isInsideQueue = true
+        try {
+          const r = await executeTransaction(operations)
+          resolve(r)
+        } catch (e) {
+          reject(e)
+        } finally {
+          isInsideQueue = false
+        }
+      })
     })
     return result
   }
@@ -64,6 +74,11 @@ export async function withTransaction<T>(
 async function executeTransaction<T>(
   operations: () => Promise<T>
 ): Promise<T> {
+  // Guard: top-level calls must go through the queue (via withTransaction)
+  if (transactionDepth === 0 && !isInsideQueue) {
+    throw new Error('executeTransaction must be called via withTransaction()')
+  }
+
   const database = getDatabase()
   const depth = transactionDepth++
 

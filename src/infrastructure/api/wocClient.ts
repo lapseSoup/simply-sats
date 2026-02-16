@@ -6,6 +6,7 @@
 import { P2PKH } from '@bsv/sdk'
 import type { UTXO } from '../../domain/types'
 import { type Result, ok, err } from '../../domain/types'
+import type { WocTransaction } from '../../services/wallet/types'
 
 /**
  * API error with additional context
@@ -21,38 +22,8 @@ export interface WocConfig {
   timeout: number
 }
 
-/**
- * Transaction details returned by WhatsOnChain
- * Captures core fields from the WoC API response
- */
-export interface WocTransaction {
-  txid: string
-  hash: string
-  version: number
-  size: number
-  locktime: number
-  vin: Array<{
-    txid?: string
-    vout?: number
-    scriptSig?: { asm: string; hex: string }
-    sequence: number
-    coinbase?: string
-  }>
-  vout: Array<{
-    value: number
-    n: number
-    scriptPubKey: {
-      asm: string
-      hex: string
-      type: string
-      addresses?: string[]
-    }
-  }>
-  blockhash?: string
-  confirmations?: number
-  time?: number
-  blocktime?: number
-}
+// Re-export WocTransaction for consumers that import from wocClient
+export type { WocTransaction }
 
 export const DEFAULT_WOC_CONFIG: WocConfig = {
   baseUrl: 'https://api.whatsonchain.com/v1/bsv/main',
@@ -84,6 +55,9 @@ export interface WocClient {
   isOutputSpentSafe(txid: string, vout: number): Promise<Result<string | null, ApiError>>
   /** Get merkle proof for a transaction (TSC format). */
   getTxProofSafe(txid: string): Promise<Result<unknown, ApiError>>
+
+  /** Fetch transaction details for multiple txids in batched concurrent requests. */
+  getTransactionDetailsBatch(txids: string[], concurrency?: number): Promise<Map<string, WocTransaction>>
 }
 
 /**
@@ -136,7 +110,7 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
 
     async getBalanceSafe(address: string): Promise<Result<number, ApiError>> {
       try {
-        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${address}/balance`)
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${encodeURIComponent(address)}/balance`)
         if (!response.ok) {
           return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
         }
@@ -144,7 +118,7 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
         if (typeof data.confirmed !== 'number' || typeof data.unconfirmed !== 'number') {
           return err(createApiError('INVALID_RESPONSE', 'Invalid balance response format'))
         }
-        return ok(data.confirmed + data.unconfirmed)
+        return ok(Math.max(0, data.confirmed + data.unconfirmed))
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Unknown error'
         return err(createApiError('FETCH_ERROR', message))
@@ -153,7 +127,7 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
 
     async getUtxosSafe(address: string): Promise<Result<UTXO[], ApiError>> {
       try {
-        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${address}/unspent`)
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${encodeURIComponent(address)}/unspent`)
         if (!response.ok) {
           return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
         }
@@ -189,7 +163,7 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
 
     async getTransactionHistorySafe(address: string): Promise<Result<{ tx_hash: string; height: number }[], ApiError>> {
       try {
-        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${address}/history`)
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${encodeURIComponent(address)}/history`)
         if (!response.ok) {
           return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
         }
@@ -206,7 +180,7 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
 
     async getTransactionDetailsSafe(txid: string): Promise<Result<WocTransaction, ApiError>> {
       try {
-        const response = await fetchWithTimeout(`${cfg.baseUrl}/tx/${txid}`)
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/tx/${encodeURIComponent(txid)}`)
         if (!response.ok) {
           return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
         }
@@ -242,7 +216,7 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
 
     async isOutputSpentSafe(txid: string, vout: number): Promise<Result<string | null, ApiError>> {
       try {
-        const response = await fetchWithTimeout(`${cfg.baseUrl}/tx/${txid}/${vout}/spent`)
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/tx/${encodeURIComponent(txid)}/${encodeURIComponent(String(vout))}/spent`)
 
         // 404 means no spending tx found = still unspent
         if (response.status === 404) {
@@ -268,7 +242,7 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
 
     async getTxProofSafe(txid: string): Promise<Result<unknown, ApiError>> {
       try {
-        const response = await fetchWithTimeout(`${cfg.baseUrl}/tx/${txid}/proof`)
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/tx/${encodeURIComponent(txid)}/proof`)
         if (!response.ok) {
           return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
         }
@@ -316,6 +290,32 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
         return result.value
       }
       throw new Error(result.error.message)
+    },
+
+    async getTransactionDetailsBatch(
+      txids: string[],
+      concurrency = 5
+    ): Promise<Map<string, WocTransaction>> {
+      const results = new Map<string, WocTransaction>()
+      for (let i = 0; i < txids.length; i += concurrency) {
+        const batch = txids.slice(i, i + concurrency)
+        const settled = await Promise.allSettled(
+          batch.map(async txid => {
+            const response = await fetchWithTimeout(
+              `${cfg.baseUrl}/tx/${encodeURIComponent(txid)}`
+            )
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            const data = await response.json()
+            return { txid, data: data as WocTransaction }
+          })
+        )
+        for (const result of settled) {
+          if (result.status === 'fulfilled') {
+            results.set(result.value.txid, result.value.data)
+          }
+        }
+      }
+      return results
     }
   }
 }

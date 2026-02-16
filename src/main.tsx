@@ -9,6 +9,17 @@ import '@fontsource/jetbrains-mono/latin-500.css'
 import './index.css'
 import App from './App.tsx'
 import { registerExitCleanup } from './infrastructure/storage/localStorage'
+import { createLogger } from './services/logger'
+
+const appLogger = createLogger('App')
+
+// Global handler for unhandled promise rejections — surfaces silent async failures
+window.addEventListener('unhandledrejection', (event) => {
+  appLogger.error('Unhandled promise rejection', {
+    reason: event.reason instanceof Error ? event.reason.message : String(event.reason),
+    stack: event.reason instanceof Error ? event.reason.stack : undefined
+  })
+})
 
 // Register cleanup handler to clear privacy-sensitive data on app exit
 registerExitCleanup()

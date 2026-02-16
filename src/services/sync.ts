@@ -7,6 +7,7 @@
  */
 
 import { P2PKH } from '@bsv/sdk'
+import { BASKETS } from '../domain/types'
 import type { LockedUTXO } from './wallet/types'
 import {
   addUTXO,
@@ -124,15 +125,8 @@ export async function diagnoseSyncHealth(accountId?: number): Promise<SyncHealth
   return { dbConnected, apiReachable, derivedAddressQuery, utxoQuery, errors, timings }
 }
 
-// Basket names for different address types
-export const BASKETS = {
-  DEFAULT: 'default',      // Main spending wallet
-  ORDINALS: 'ordinals',    // Ordinal inscriptions
-  IDENTITY: 'identity',    // BRC-100 identity key
-  LOCKS: 'locks',          // Time-locked outputs
-  WROOTZ_LOCKS: 'wrootz_locks', // Time-locked outputs created via Wrootz app
-  DERIVED: 'derived'       // Received via derived addresses (BRC-42/43)
-} as const
+// Re-export BASKETS from domain/types (single source of truth)
+export { BASKETS } from '../domain/types'
 
 // Address info for syncing
 export interface AddressInfo {

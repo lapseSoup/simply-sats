@@ -27,6 +27,7 @@ import {
   migrateToSecureStorage
 } from '../services/secureStorage'
 import { walletLogger, uiLogger } from '../services/logger'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 
 interface UseWalletInitOptions {
   setWallet: (wallet: WalletKeys | null) => void
@@ -70,7 +71,7 @@ export function useWalletInit({
 
         // One-time cleanup: delete corrupted transactions for non-account-1 accounts
         try {
-          const cleanupFlag = 'simply_sats_tx_cleanup_v1'
+          const cleanupFlag = STORAGE_KEYS.TX_CLEANUP_V1
           if (!localStorage.getItem(cleanupFlag)) {
             const accounts = await getAllAccounts()
             for (const acc of accounts) {
@@ -147,7 +148,7 @@ export function useWalletInit({
 
   // Migration: remove old localStorage locks (database is source of truth)
   useEffect(() => {
-    localStorage.removeItem('simply_sats_locks')
+    localStorage.removeItem(STORAGE_KEYS.LOCKS)
   }, [])
 
   const refreshContacts = useCallback(async () => {

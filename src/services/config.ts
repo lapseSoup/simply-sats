@@ -6,12 +6,14 @@
  * and provides a single source of truth for configuration.
  */
 
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
+
 // Network type for environment switching
 export type NetworkType = 'mainnet' | 'testnet'
 
 // Get current network from localStorage or default to mainnet
 function getCurrentNetwork(): NetworkType {
-  const stored = localStorage.getItem('simply_sats_network')
+  const stored = localStorage.getItem(STORAGE_KEYS.NETWORK)
   if (stored === 'testnet') return 'testnet'
   return 'mainnet'
 }
@@ -235,7 +237,7 @@ export const CONFIRMATION_THRESHOLDS = {
  * Set the current network
  */
 export function setNetwork(network: NetworkType): void {
-  localStorage.setItem('simply_sats_network', network)
+  localStorage.setItem(STORAGE_KEYS.NETWORK, network)
 }
 
 /**

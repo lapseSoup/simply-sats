@@ -1,6 +1,6 @@
 import { useState, memo, useMemo } from 'react'
 import { Lock, Unlock, Sparkles } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import type { LockedUTXO } from '../../services/wallet'
 import { NoLocksEmpty } from '../shared/EmptyState'
@@ -36,7 +36,7 @@ function formatTimeRemaining(seconds: number): string {
 
 
 export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabProps) {
-  const { locks, networkInfo } = useWallet()
+  const { locks, networkInfo } = useWalletState()
   const { formatUSD } = useUI()
   const [selectedLock, setSelectedLock] = useState<LockedUTXO | null>(null)
 

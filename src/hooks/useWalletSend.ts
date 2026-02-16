@@ -56,18 +56,31 @@ export function useWalletSend({
     try {
       const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
 
-      const extendedUtxos: ExtendedUTXO[] = spendableUtxos.map(u => ({
-        txid: u.txid,
-        vout: u.vout,
-        satoshis: u.satoshis,
-        script: u.lockingScript || '',
-        wif: wallet.walletWif,
-        address: wallet.walletAddress
-      }))
+      // Build a map of derived address → WIF for correct per-UTXO signing
+      const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
+      const derivedMap = new Map<string, string>() // address → WIF
+      for (const d of derivedAddrs) {
+        if (d.privateKeyWif) {
+          derivedMap.set(d.address, d.privateKeyWif)
+        }
+      }
+
+      const extendedUtxos: ExtendedUTXO[] = spendableUtxos.map(u => {
+        // Look up the correct WIF: derived address WIF, or fall back to wallet WIF
+        const utxoAddress = u.address || wallet.walletAddress
+        const wif = derivedMap.get(utxoAddress) || wallet.walletWif
+        return {
+          txid: u.txid,
+          vout: u.vout,
+          satoshis: u.satoshis,
+          script: u.lockingScript || '',
+          wif,
+          address: utxoAddress
+        }
+      })
 
       // Include derived address UTXOs only when NOT in coin control mode
       if (!selectedUtxos) {
-        const derivedAddrs = await getDerivedAddresses(activeAccountId || undefined)
         for (const derived of derivedAddrs) {
           if (derived.privateKeyWif) {
             try {

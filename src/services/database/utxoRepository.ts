@@ -507,30 +507,32 @@ export async function toggleUtxoFrozen(
 ): Promise<void> {
   const database = getDatabase()
   const spendable = frozen ? 0 : 1
+  const frozenFlag = frozen ? 1 : 0
 
   dbLogger.debug(`[DB] Setting UTXO ${txid.slice(0, 8)}:${vout} frozen=${frozen} (spendable=${spendable})`)
 
   if (accountId !== undefined) {
     await database.execute(
-      'UPDATE utxos SET spendable = $1 WHERE txid = $2 AND vout = $3 AND account_id = $4',
-      [spendable, txid, vout, accountId]
+      'UPDATE utxos SET spendable = $1, frozen = $2 WHERE txid = $3 AND vout = $4 AND account_id = $5',
+      [spendable, frozenFlag, txid, vout, accountId]
     )
   } else {
     await database.execute(
-      'UPDATE utxos SET spendable = $1 WHERE txid = $2 AND vout = $3',
-      [spendable, txid, vout]
+      'UPDATE utxos SET spendable = $1, frozen = $2 WHERE txid = $3 AND vout = $4',
+      [spendable, frozenFlag, txid, vout]
     )
   }
 }
 
 /**
  * Repair UTXOs - fix any broken spendable flags
- * Call this to fix UTXOs that should be spendable but aren't
+ * Call this to fix UTXOs that should be spendable but aren't.
+ * Excludes frozen UTXOs (user-intentionally frozen) and lock-basket UTXOs.
  */
 export async function repairUTXOs(accountId?: number): Promise<number> {
   const database = getDatabase()
 
-  // Find UTXOs that are not in the locks basket but have spendable=0 and no spent_at
+  // Find UTXOs that are not in the locks basket, not frozen, but have spendable=0 and no spent_at
   // These are likely broken from previous bugs
   let result
   if (accountId !== undefined) {
@@ -539,6 +541,7 @@ export async function repairUTXOs(accountId?: number): Promise<number> {
        WHERE spendable = 0
        AND spent_at IS NULL
        AND basket != 'locks'
+       AND (frozen IS NULL OR frozen = 0)
        AND account_id = $1`,
       [accountId]
     )
@@ -547,7 +550,8 @@ export async function repairUTXOs(accountId?: number): Promise<number> {
       `UPDATE utxos SET spendable = 1
        WHERE spendable = 0
        AND spent_at IS NULL
-       AND basket != 'locks'`
+       AND basket != 'locks'
+       AND (frozen IS NULL OR frozen = 0)`
     )
   }
 

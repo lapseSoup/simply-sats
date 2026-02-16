@@ -11,8 +11,9 @@ import type { WalletKeys } from './types'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData, type EncryptedData } from '../crypto'
 import { walletLogger } from '../logger'
 import { SECURITY } from '../../config'
+import { STORAGE_KEYS } from '../../infrastructure/storage/localStorage'
 
-const STORAGE_KEY = 'simply_sats_wallet'
+const STORAGE_KEY = STORAGE_KEYS.WALLET
 
 /**
  * Check if we're running in Tauri environment

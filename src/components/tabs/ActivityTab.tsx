@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo, useCallback, useMemo, type ReactNode } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
@@ -71,14 +71,14 @@ const TransactionItem = memo(function TransactionItem({
 })
 
 export function ActivityTab() {
-  const { txHistory, locks, loading, activeAccountId } = useWallet()
+  const { txHistory, locks, loading, activeAccountId } = useWalletState()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
 
   // Fetch lock/unlock labels via hook (refreshes when txHistory or account changes)
   const { txidsByLabel } = useLabeledTransactions({
     labelNames: ['lock', 'unlock'],
-    accountId: activeAccountId || undefined,
+    accountId: activeAccountId ?? undefined,
     refreshKey: txHistory
   })
   const lockTxids = useMemo(() => txidsByLabel.get('lock') ?? new Set<string>(), [txidsByLabel])

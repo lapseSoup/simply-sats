@@ -1,8 +1,8 @@
 import { Wallet, Image, Fingerprint, Lock, GitBranch } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState } from '../../contexts'
 
 export function BasketChips() {
-  const { balance, basketBalances, ordinals } = useWallet()
+  const { balance, basketBalances, ordinals } = useWalletState()
 
   return (
     <div className="baskets-row" role="list" aria-label="Wallet baskets">

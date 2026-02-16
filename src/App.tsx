@@ -149,7 +149,7 @@ function WalletApp() {
         logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
         await performSync(true)
       } else {
-        const derivedAddrs = await getDerivedAddresses(activeAccountId || undefined)
+        const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
         if (derivedAddrs.length > 0) {
           logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
           await performSync(false)
@@ -369,7 +369,7 @@ function WalletApp() {
               showToast('Running diagnostics...')
               try {
                 const { diagnoseSyncHealth } = await import('./services/sync')
-                const health = await diagnoseSyncHealth(activeAccountId || undefined)
+                const health = await diagnoseSyncHealth(activeAccountId ?? undefined)
                 const lines = [
                   `DB: ${health.dbConnected ? 'OK' : 'FAIL'}`,
                   `API: ${health.apiReachable ? 'OK' : 'FAIL'}`,

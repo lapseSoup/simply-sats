@@ -30,6 +30,13 @@ import { walletLogger } from '../logger'
 import { resetInactivityTimer } from '../autoLock'
 import { acquireSyncLock } from '../cancellation'
 import { broadcastTransaction as infraBroadcast } from '../../infrastructure/api/broadcastService'
+import {
+  AppError,
+  ErrorCodes,
+  InsufficientFundsError,
+  InvalidAddressError,
+  InvalidAmountError
+} from '../errors'
 
 /**
  * Broadcast a signed transaction - try multiple endpoints for non-standard scripts.
@@ -47,10 +54,10 @@ export async function broadcastTransaction(txOrHex: Transaction | string): Promi
  */
 function validateSendRequest(toAddress: string, satoshis: number): void {
   if (!Number.isFinite(satoshis) || satoshis <= 0) {
-    throw new Error('Invalid amount')
+    throw new InvalidAmountError(satoshis, 'Invalid amount')
   }
   if (!isValidBSVAddress(toAddress)) {
-    throw new Error('Invalid BSV address')
+    throw new InvalidAddressError(toAddress)
   }
 }
 
@@ -69,7 +76,11 @@ export async function executeBroadcast(
     walletLogger.debug('Marked UTXOs as pending spend', { txid: pendingTxid })
   } catch (error) {
     walletLogger.error('Failed to mark UTXOs as pending', error)
-    throw new Error('Failed to prepare transaction - UTXOs could not be locked')
+    throw new AppError(
+      'Failed to prepare transaction - UTXOs could not be locked',
+      ErrorCodes.DATABASE_ERROR,
+      { pendingTxid, originalError: error instanceof Error ? error.message : String(error) }
+    )
   }
 
   // Now broadcast the transaction
@@ -92,7 +103,7 @@ export async function executeBroadcast(
     } catch (rollbackError) {
       walletLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
     }
-    throw broadcastError
+    throw AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED)
   }
 }
 
@@ -147,7 +158,11 @@ async function recordTransactionResult(
     walletLogger.info('Transaction tracked locally', { txid, change })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to confirm transaction locally', error, { txid })
-    throw new Error(`Transaction broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`)
+    throw new AppError(
+      `Transaction broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
+      ErrorCodes.DATABASE_ERROR,
+      { txid, originalError: error instanceof Error ? error.message : String(error) }
+    )
   }
 }
 
@@ -168,7 +183,7 @@ export async function sendBSV(
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
     if (!sufficient) {
-      throw new Error('Insufficient funds')
+      throw new InsufficientFundsError(satoshis, totalInput)
     }
 
     const feeRate = getFeeRate()
@@ -252,7 +267,7 @@ export async function sendBSVMultiKey(
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
     if (!sufficient) {
-      throw new Error('Insufficient funds')
+      throw new InsufficientFundsError(satoshis, totalInput)
     }
 
     const feeRate = getFeeRate()
@@ -310,7 +325,11 @@ export async function consolidateUtxos(
     walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
-    throw new Error(`Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`)
+    throw new AppError(
+      `Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
+      ErrorCodes.DATABASE_ERROR,
+      { txid, originalError: error instanceof Error ? error.message : String(error) }
+    )
   }
 
   return { txid, outputSats, fee }

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS utxos (
     spending_status TEXT DEFAULT 'unspent' CHECK(spending_status IN ('unspent', 'pending', 'spent')),
     pending_spending_txid TEXT,
     pending_since INTEGER,
+    frozen INTEGER DEFAULT 0,
     UNIQUE(txid, vout)
 );
 
@@ -135,7 +136,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     is_active INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     last_accessed_at INTEGER,
-    updated_at INTEGER
+    updated_at INTEGER,
+    derivation_index INTEGER
 );
 
 -- Account settings (003 + 007 updated_at)

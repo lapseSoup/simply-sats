@@ -40,7 +40,9 @@ const DEFAULT_CONFIG: LoggerConfig = {
   maxStoredLogs: 1000
 }
 
-const STORAGE_KEY = 'simply_sats_logs'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
+
+const STORAGE_KEY = STORAGE_KEYS.LOGS
 
 class Logger {
   private config: LoggerConfig

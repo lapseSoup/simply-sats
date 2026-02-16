@@ -9,6 +9,7 @@
  */
 
 import { PrivateKey, PublicKey, Hash } from '@bsv/sdk'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 
 /**
  * Derive a child private key using BRC-42 protocol
@@ -212,7 +213,7 @@ export function addKnownSender(pubKeyHex: string): void {
     KNOWN_SENDER_PUBKEYS.push(pubKeyHex)
     // Persist to localStorage
     try {
-      localStorage.setItem('simply_sats_known_senders', JSON.stringify(KNOWN_SENDER_PUBKEYS))
+      localStorage.setItem(STORAGE_KEYS.KNOWN_SENDERS, JSON.stringify(KNOWN_SENDER_PUBKEYS))
     } catch (_e) {
       // Ignore storage errors
     }
@@ -224,7 +225,7 @@ export function addKnownSender(pubKeyHex: string): void {
  */
 export function loadKnownSenders(): void {
   try {
-    const saved = localStorage.getItem('simply_sats_known_senders')
+    const saved = localStorage.getItem(STORAGE_KEYS.KNOWN_SENDERS)
     if (saved) {
       const senders = JSON.parse(saved)
       for (const s of senders) {

@@ -7,8 +7,9 @@ import {
   DEFAULT_FEE_RATE,
   clampFeeRate
 } from '../../domain/transaction/fees'
+import { STORAGE_KEYS } from '../storage/localStorage'
 
-const STORAGE_KEY = 'simply_sats_fee_rate'
+const STORAGE_KEY = STORAGE_KEYS.FEE_RATE
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 export interface FeeService {

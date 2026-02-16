@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, X, ArrowDownLeft, ArrowUpRight, Circle } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../services/database'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
@@ -13,7 +13,7 @@ type SearchResult = {
 }
 
 export function SearchTab() {
-  const { activeAccountId } = useWallet()
+  const { activeAccountId } = useWalletState()
   const { formatUSD } = useUI()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
@@ -29,7 +29,7 @@ export function SearchTab() {
 
   // Load all labels on mount
   useEffect(() => {
-    getAllLabels(activeAccountId || undefined)
+    getAllLabels(activeAccountId ?? undefined)
       .then(setAllLabels)
       .catch(() => setAllLabels([]))
   }, [activeAccountId])
@@ -63,11 +63,11 @@ export function SearchTab() {
         txs = await searchTransactionsByLabels(
           labels,
           freeText.trim() || undefined,
-          activeAccountId || undefined
+          activeAccountId ?? undefined
         )
       } else {
         // Simple text search
-        txs = await searchTransactions(freeText.trim(), activeAccountId || undefined)
+        txs = await searchTransactions(freeText.trim(), activeAccountId ?? undefined)
       }
       setResults(txs.map(tx => ({
         tx_hash: tx.txid,

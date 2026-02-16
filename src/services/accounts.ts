@@ -23,6 +23,7 @@ export interface Account {
   isActive: boolean
   createdAt: number
   lastAccessedAt?: number
+  derivationIndex?: number
 }
 
 // Account settings type
@@ -63,7 +64,8 @@ export async function createAccount(
   name: string,
   keys: WalletKeys,
   password: string,
-  useLegacyRequirements = false
+  useLegacyRequirements = false,
+  derivationIndex?: number
 ): Promise<number> {
   // Password is required - no unencrypted storage allowed
   if (!password) {
@@ -102,9 +104,9 @@ export async function createAccount(
 
   // Insert new account as active
   const result = await database.execute(
-    `INSERT INTO accounts (name, identity_address, encrypted_keys, is_active, created_at, last_accessed_at)
-     VALUES ($1, $2, $3, 1, $4, $4)`,
-    [name, keys.identityAddress, encryptedKeysStr, Date.now()]
+    `INSERT INTO accounts (name, identity_address, encrypted_keys, is_active, created_at, last_accessed_at, derivation_index)
+     VALUES ($1, $2, $3, 1, $4, $4, $5)`,
+    [name, keys.identityAddress, encryptedKeysStr, Date.now(), derivationIndex ?? null]
   )
 
   const accountId = result.lastInsertId as number
@@ -134,7 +136,8 @@ export async function getAllAccounts(): Promise<Account[]> {
       encryptedKeys: row.encrypted_keys,
       isActive: row.is_active === 1,
       createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at ?? undefined
+      lastAccessedAt: row.last_accessed_at ?? undefined,
+      derivationIndex: row.derivation_index ?? undefined
     }))
   } catch (e) {
     // Table may not exist yet, or database query failed
@@ -164,7 +167,8 @@ export async function getActiveAccount(): Promise<Account | null> {
       encryptedKeys: row.encrypted_keys,
       isActive: true,
       createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at ?? undefined
+      lastAccessedAt: row.last_accessed_at ?? undefined,
+      derivationIndex: row.derivation_index ?? undefined
     }
   } catch (_e) {
     return null
@@ -193,7 +197,8 @@ export async function getAccountById(accountId: number): Promise<Account | null>
       encryptedKeys: row.encrypted_keys,
       isActive: row.is_active === 1,
       createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at ?? undefined
+      lastAccessedAt: row.last_accessed_at ?? undefined,
+      derivationIndex: row.derivation_index ?? undefined
     }
   } catch (_e) {
     return null
@@ -222,7 +227,8 @@ export async function getAccountByIdentity(identityAddress: string): Promise<Acc
       encryptedKeys: row.encrypted_keys,
       isActive: row.is_active === 1,
       createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at ?? undefined
+      lastAccessedAt: row.last_accessed_at ?? undefined,
+      derivationIndex: row.derivation_index ?? undefined
     }
   } catch (_e) {
     return null

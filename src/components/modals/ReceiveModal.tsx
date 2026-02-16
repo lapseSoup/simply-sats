@@ -69,7 +69,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
         privateKeyWif: childPrivKey.toWif(),
         label: label || `From ${senderPubKey.substring(0, 8)}...`,
         createdAt: Date.now()
-      }, activeAccountId || undefined)
+      }, activeAccountId ?? undefined)
       return true
     } catch (e) {
       uiLogger.error('Failed to save derived address:', e)

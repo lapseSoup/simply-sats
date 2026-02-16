@@ -12,6 +12,7 @@ import {
 } from '../../domain/wallet/keyDerivation'
 import { validateMnemonic } from '../../domain/wallet/validation'
 import { walletLogger } from '../logger'
+import { AppError, ErrorCodes } from '../errors'
 
 // Re-export WALLET_PATHS for backward compatibility
 export { WALLET_PATHS }
@@ -38,7 +39,10 @@ export async function restoreWallet(mnemonic: string): Promise<WalletKeys> {
 
   if (!validation.isValid || !validation.normalizedMnemonic) {
     walletLogger.error('Mnemonic validation failed', undefined, { error: validation.error })
-    throw new Error(validation.error || 'Invalid mnemonic phrase. Please check your 12 words.')
+    throw new AppError(
+      validation.error || 'Invalid mnemonic phrase. Please check your 12 words.',
+      ErrorCodes.INVALID_MNEMONIC
+    )
   }
 
   try {
@@ -46,7 +50,11 @@ export async function restoreWallet(mnemonic: string): Promise<WalletKeys> {
     return await deriveWalletKeys(validation.normalizedMnemonic)
   } catch (error) {
     walletLogger.error('Error deriving keys from mnemonic', error)
-    throw new Error('Failed to derive wallet keys from mnemonic')
+    throw new AppError(
+      'Failed to derive wallet keys from mnemonic',
+      ErrorCodes.ENCRYPTION_ERROR,
+      { originalError: error instanceof Error ? error.message : String(error) }
+    )
   }
 }
 

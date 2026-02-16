@@ -477,7 +477,7 @@ describe('toggleUtxoFrozen', () => {
 
     await toggleUtxoFrozen('tx1', 0, true, 5)
     const call = mockDb.execute.mock.calls[0]!
-    expect(call[0]).toContain('account_id = $4')
+    expect(call[0]).toContain('account_id = $5')
     expect(call[1]).toContain(5)
   })
 })

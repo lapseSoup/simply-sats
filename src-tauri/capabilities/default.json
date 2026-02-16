@@ -19,8 +19,14 @@
     "dialog:allow-save",
     "dialog:allow-open",
     "fs:default",
-    "fs:allow-write-text-file",
-    "fs:allow-read-text-file",
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [{ "path": "$APPDATA/**" }, { "path": "$DOWNLOAD/**" }, { "path": "$DESKTOP/**" }]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "$APPDATA/**" }, { "path": "$DOWNLOAD/**" }, { "path": "$DESKTOP/**" }]
+    },
     "core:webview:allow-create-webview-window"
   ]
 }

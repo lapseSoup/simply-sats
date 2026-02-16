@@ -149,18 +149,19 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
         return null
       }
 
-      // Derive keys for the new account using the next available index
-      // Use max existing ID to avoid collision when accounts have been deleted
-      // (e.g., accounts 0,1,2 -> delete 1 -> allAccounts.length=2 collides with account 2)
-      const newAccountIndex = allAccounts.length > 0
-        ? Math.max(...allAccounts.map(a => a.id ?? 0)) : 0
-      accountLogger.debug('Deriving keys for new account', { newAccountIndex })
+      // Derive keys for the new account using the next available derivation index.
+      // Use derivation_index from each account (falling back to id-1 for pre-migration accounts)
+      // to decouple key derivation from DB auto-increment IDs.
+      const existingIndices = allAccounts.map(a => a.derivationIndex ?? ((a.id ?? 1) - 1))
+      const newAccountIndex = existingIndices.length > 0
+        ? Math.max(...existingIndices) + 1 : 0
+      accountLogger.debug('Deriving keys for new account', { newAccountIndex, existingIndices })
 
       const keys = await deriveWalletKeysForAccount(firstAccountKeys.mnemonic, newAccountIndex)
 
       // Use legacy password requirements since we're reusing the session password
       // (which may have been created under older, less strict requirements)
-      const accountId = await createAccount(name, keys, password, true)
+      const accountId = await createAccount(name, keys, password, true, newAccountIndex)
       if (!accountId) {
         accountLogger.error('Failed to create account in database')
         return null

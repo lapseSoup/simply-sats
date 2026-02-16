@@ -34,7 +34,26 @@ export const STORAGE_KEYS = {
 
   // UI state
   ACTIVE_TAB: 'simply_sats_active_tab',
-  SIDEBAR_COLLAPSED: 'simply_sats_sidebar_collapsed'
+  SIDEBAR_COLLAPSED: 'simply_sats_sidebar_collapsed',
+  THEME: 'simply_sats_theme',
+
+  // Logging
+  LOGS: 'simply_sats_logs',
+
+  // Key derivation
+  KNOWN_SENDERS: 'simply_sats_known_senders',
+
+  // Payment notifications
+  PAYMENT_NOTIFICATIONS: 'simply_sats_payment_notifications',
+
+  // Backup reminder
+  BACKUP_REMINDER: 'simply_sats_last_backup_verified',
+
+  // One-time migration flags
+  TX_CLEANUP_V1: 'simply_sats_tx_cleanup_v1',
+
+  // Legacy (migration cleanup)
+  LOCKS: 'simply_sats_locks'
 } as const
 
 /**
@@ -311,11 +330,12 @@ export const storage = {
  * Register cleanup handler for app exit/close
  * Clears privacy-sensitive cached data when the app is closed
  */
-export function registerExitCleanup(): void {
+export function registerExitCleanup(): () => void {
   // Handle tab/window close
-  window.addEventListener('beforeunload', () => {
+  const handler = () => {
     storage.clearPrivacySensitive()
-  })
+  }
+  window.addEventListener('beforeunload', handler)
 
   // Handle visibility change (optional - clear when tab is hidden for extended period)
   // This is commented out as it may be too aggressive for some use cases
@@ -324,6 +344,11 @@ export function registerExitCleanup(): void {
   //     storage.clearPrivacySensitive()
   //   }
   // })
+
+  // Return cleanup function to remove the listener
+  return () => {
+    window.removeEventListener('beforeunload', handler)
+  }
 }
 
 // Default export for convenience

@@ -105,6 +105,73 @@ export type {
   DiscoveredOutput
 }
 
+/** Resolve the correct public key based on request params */
+function resolvePublicKey(keys: WalletKeys, params: { identityKey?: boolean; forOrdinals?: boolean }): string {
+  if (params.identityKey) return keys.identityPubKey
+  if (params.forOrdinals) return keys.ordPubKey
+  return keys.walletPubKey
+}
+
+/** Resolve listOutputs response from database */
+async function resolveListOutputs(params: {
+  basket?: string
+  includeSpent?: boolean
+  includeTags?: string[]
+  limit?: number
+  offset?: number
+}): Promise<{ outputs: Array<Record<string, unknown>>; totalOutputs: number }> {
+  const basket = params.basket
+  const includeSpent = params.includeSpent || false
+  const includeTags = params.includeTags || []
+  const limit = params.limit || 100
+  const offset = params.offset || 0
+
+  const currentHeight = await getCurrentBlockHeight()
+
+  if (basket === 'wrootz_locks' || basket === 'locks') {
+    const locks = await getLocksFromDB(currentHeight)
+    const outputs = locks.map(lock => ({
+      outpoint: `${lock.utxo.txid}.${lock.utxo.vout}`,
+      satoshis: lock.utxo.satoshis,
+      lockingScript: lock.utxo.lockingScript,
+      tags: [`unlock_${lock.unlockBlock}`, ...(lock.ordinalOrigin ? [`ordinal_${lock.ordinalOrigin}`] : [])],
+      spendable: currentHeight >= lock.unlockBlock,
+      customInstructions: JSON.stringify({
+        unlockBlock: lock.unlockBlock,
+        blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
+      })
+    }))
+    return { outputs, totalOutputs: outputs.length }
+  }
+
+  // Map basket names
+  let dbBasket: string = basket || BASKETS.DEFAULT
+  if (basket === 'ordinals') dbBasket = BASKETS.ORDINALS
+  else if (basket === 'identity') dbBasket = BASKETS.IDENTITY
+  else if (!basket || basket === 'default') dbBasket = BASKETS.DEFAULT
+
+  const utxos = await getUTXOsByBasket(dbBasket, !includeSpent)
+
+  let filteredUtxos = utxos
+  if (includeTags.length > 0) {
+    filteredUtxos = utxos.filter(u =>
+      u.tags && includeTags.some((tag: string) => u.tags?.includes(tag))
+    )
+  }
+
+  const paginatedUtxos = filteredUtxos.slice(offset, offset + limit)
+
+  const outputs = paginatedUtxos.map(u => ({
+    outpoint: `${u.txid}.${u.vout}`,
+    satoshis: u.satoshis,
+    lockingScript: u.lockingScript,
+    tags: u.tags || [],
+    spendable: u.spendable
+  }))
+
+  return { outputs, totalOutputs: filteredUtxos.length }
+}
+
 // Get request manager instance
 const requestManager = getRequestManager()
 
@@ -180,16 +247,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
 
       const walletKeys = getWalletKeys()
       if (request.type === 'getPublicKey' && walletKeys) {
-        const params = request.params || {}
-        let publicKey: string
-        if (params.identityKey) {
-          publicKey = walletKeys.identityPubKey
-        } else if (params.forOrdinals) {
-          publicKey = walletKeys.ordPubKey
-        } else {
-          publicKey = walletKeys.walletPubKey
-        }
-
+        const publicKey = resolvePublicKey(walletKeys, request.params || {})
         try {
           await invoke('respond_to_brc100', {
             requestId: request.id,
@@ -204,74 +262,11 @@ export async function setupHttpServerListener(): Promise<() => void> {
       // Auto-respond to listOutputs using database
       if (request.type === 'listOutputs' && getWalletKeys()) {
         const params = getParams<ListOutputsParams>(request)
-        const basket = params.basket
-        const includeSpent = params.includeSpent || false
-        const includeTags = params.includeTags || []
-        const limit = params.limit || 100
-        const offset = params.offset || 0
-
         try {
-          const currentHeight = await getCurrentBlockHeight()
-
-          if (basket === 'wrootz_locks' || basket === 'locks') {
-            // Return locks from database
-            const locks = await getLocksFromDB(currentHeight)
-            const outputs = locks.map(lock => ({
-              outpoint: `${lock.utxo.txid}.${lock.utxo.vout}`,
-              satoshis: lock.utxo.satoshis,
-              lockingScript: lock.utxo.lockingScript,
-              tags: [`unlock_${lock.unlockBlock}`, ...(lock.ordinalOrigin ? [`ordinal_${lock.ordinalOrigin}`] : [])],
-              spendable: currentHeight >= lock.unlockBlock,
-              customInstructions: JSON.stringify({
-                unlockBlock: lock.unlockBlock,
-                blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
-              })
-            }))
-
-            await invoke('respond_to_brc100', {
-              requestId: request.id,
-              response: { result: { outputs, totalOutputs: outputs.length } }
-            })
-            return
-          }
-
-          // Map basket names
-          let dbBasket: string = basket || BASKETS.DEFAULT
-          if (basket === 'ordinals') dbBasket = BASKETS.ORDINALS
-          else if (basket === 'identity') dbBasket = BASKETS.IDENTITY
-          else if (!basket || basket === 'default') dbBasket = BASKETS.DEFAULT
-
-          // Get UTXOs from database
-          const utxos = await getUTXOsByBasket(dbBasket, !includeSpent)
-
-          // Filter by tags if specified
-          let filteredUtxos = utxos
-          if (includeTags.length > 0) {
-            filteredUtxos = utxos.filter(u =>
-              u.tags && includeTags.some((tag: string) => u.tags!.includes(tag))
-            )
-          }
-
-          // Apply pagination
-          const paginatedUtxos = filteredUtxos.slice(offset, offset + limit)
-
-          const outputs = paginatedUtxos.map(u => ({
-            outpoint: `${u.txid}.${u.vout}`,
-            satoshis: u.satoshis,
-            lockingScript: u.lockingScript,
-            tags: u.tags || [],
-            spendable: u.spendable
-          }))
-
+          const result = await resolveListOutputs(params)
           await invoke('respond_to_brc100', {
             requestId: request.id,
-            response: {
-              result: {
-                outputs,
-                totalOutputs: filteredUtxos.length,
-                BEEF: undefined // We don't have BEEF yet
-              }
-            }
+            response: { result }
           })
           return
         } catch (e) {
@@ -586,13 +581,7 @@ export async function handleBRC100Request(
     switch (request.type) {
       case 'getPublicKey': {
         const params = getParams<GetPublicKeyParams>(request)
-        if (params.identityKey) {
-          response.result = { publicKey: keys.identityPubKey }
-        } else if (params.forOrdinals) {
-          response.result = { publicKey: keys.ordPubKey }
-        } else {
-          response.result = { publicKey: keys.walletPubKey }
-        }
+        response.result = { publicKey: resolvePublicKey(keys, params) }
         break
       }
 
@@ -604,68 +593,12 @@ export async function handleBRC100Request(
 
       case 'listOutputs': {
         const params = getParams<ListOutputsParams>(request)
-        const basket = params.basket
-        const includeSpent = params.includeSpent || false
-        const includeTags = params.includeTags || []
-        const limit = params.limit || 100
-        const offset = params.offset || 0
-
         try {
-          const currentHeight = await getCurrentBlockHeight()
-
-          if (basket === 'wrootz_locks' || basket === 'locks') {
-            // Return locks from database
-            const locks = await getLocksFromDB(currentHeight)
-            response.result = {
-              outputs: locks.map(lock => ({
-                outpoint: `${lock.utxo.txid}.${lock.utxo.vout}`,
-                satoshis: lock.utxo.satoshis,
-                lockingScript: lock.utxo.lockingScript,
-                tags: [`unlock_${lock.unlockBlock}`, ...(lock.ordinalOrigin ? [`ordinal_${lock.ordinalOrigin}`] : [])],
-                spendable: currentHeight >= lock.unlockBlock,
-                customInstructions: JSON.stringify({
-                  unlockBlock: lock.unlockBlock,
-                  blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
-                })
-              })),
-              totalOutputs: locks.length
-            }
-          } else {
-            // Map basket name
-            let dbBasket: string = basket || BASKETS.DEFAULT
-            if (basket === 'ordinals') dbBasket = BASKETS.ORDINALS
-            else if (basket === 'identity') dbBasket = BASKETS.IDENTITY
-            else if (!basket || basket === 'default') dbBasket = BASKETS.DEFAULT
-
-            // Get UTXOs from database
-            const utxos = await getUTXOsByBasket(dbBasket, !includeSpent)
-
-            // Filter by tags if specified
-            let filteredUtxos = utxos
-            if (includeTags.length > 0) {
-              filteredUtxos = utxos.filter(u =>
-                u.tags && includeTags.some((tag: string) => u.tags!.includes(tag))
-              )
-            }
-
-            // Apply pagination
-            const paginatedUtxos = filteredUtxos.slice(offset, offset + limit)
-
-            response.result = {
-              outputs: paginatedUtxos.map(u => ({
-                outpoint: `${u.txid}.${u.vout}`,
-                satoshis: u.satoshis,
-                lockingScript: u.lockingScript,
-                tags: u.tags || [],
-                spendable: u.spendable
-              })),
-              totalOutputs: filteredUtxos.length
-            }
-          }
+          response.result = await resolveListOutputs(params)
         } catch (error) {
           brc100Logger.error('listOutputs error', error)
           // Fallback to balance from database
-          const balance = await getBalanceFromDB(basket || undefined)
+          const balance = await getBalanceFromDB(params.basket || undefined)
           response.result = {
             outputs: [{ satoshis: balance, spendable: true }],
             totalOutputs: balance > 0 ? 1 : 0
@@ -767,13 +700,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
     switch (request.type) {
       case 'getPublicKey': {
         const params = getParams<GetPublicKeyParams>(request)
-        if (params.identityKey) {
-          response.result = { publicKey: keys.identityPubKey }
-        } else if (params.forOrdinals) {
-          response.result = { publicKey: keys.ordPubKey }
-        } else {
-          response.result = { publicKey: keys.walletPubKey }
-        }
+        response.result = { publicKey: resolvePublicKey(keys, params) }
         break
       }
 

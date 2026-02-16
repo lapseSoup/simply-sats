@@ -69,10 +69,7 @@ export async function getTransactionHistory(address: string): Promise<WocHistory
  * Get transaction details including inputs/outputs (uses wocClient infrastructure)
  */
 export async function getTransactionDetails(txid: string): Promise<WocTransaction | null> {
-  // Note: wocClient returns a compatible WocTransaction type
-  const result = await getWocClient().getTransactionDetails(txid)
-  // Convert to our local WocTransaction type (they're compatible)
-  return result as unknown as WocTransaction | null
+  return getWocClient().getTransactionDetails(txid)
 }
 
 /**

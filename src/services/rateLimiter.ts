@@ -43,8 +43,8 @@ export async function checkUnlockRateLimit(): Promise<{ isLimited: boolean; rema
     }
   } catch (error) {
     walletLogger.error('Failed to check rate limit', { error })
-    // Fail open - allow attempt if backend unavailable
-    return { isLimited: false, remainingMs: 0 }
+    // Fail closed - block attempts if backend unavailable
+    return { isLimited: true, remainingMs: 30000 }
   }
 }
 
@@ -73,8 +73,8 @@ export async function recordFailedUnlockAttempt(): Promise<{ isLocked: boolean; 
     }
   } catch (error) {
     walletLogger.error('Failed to record failed attempt', { error })
-    // Return safe defaults
-    return { isLocked: false, lockoutMs: 0, attemptsRemaining: MAX_ATTEMPTS }
+    // Fail closed - assume locked if backend unavailable
+    return { isLocked: true, lockoutMs: 60000, attemptsRemaining: 0 }
   }
 }
 

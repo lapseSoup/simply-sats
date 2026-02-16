@@ -5,7 +5,9 @@
  * and prompts them periodically to re-verify.
  */
 
-const BACKUP_REMINDER_KEY = 'simply_sats_last_backup_verified'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
+
+const BACKUP_REMINDER_KEY = STORAGE_KEYS.BACKUP_REMINDER
 const BACKUP_REMINDER_INTERVAL_DAYS = 30
 
 /**

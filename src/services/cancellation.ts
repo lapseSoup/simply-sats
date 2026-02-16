@@ -224,11 +224,16 @@ export function cancellableDelay(ms: number, token: CancellationToken): Promise<
       return
     }
 
-    const timeoutId = setTimeout(resolve, ms)
-
-    token.signal.addEventListener('abort', () => {
+    const onAbort = () => {
       clearTimeout(timeoutId)
       reject(new CancellationError())
-    }, { once: true })
+    }
+
+    const timeoutId = setTimeout(() => {
+      token.signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+
+    token.signal.addEventListener('abort', onAbort, { once: true })
   })
 }
