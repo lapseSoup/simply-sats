@@ -4,7 +4,7 @@
  * Extracted from WalletContext to reduce god-object complexity.
  */
 
-import { useCallback, useRef, useEffect, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
 import type { WalletKeys, LockedUTXO, Ordinal } from '../services/wallet'
 import type { Account } from '../services/accounts'
 import type { TxHistoryItem } from '../contexts/SyncContext'
@@ -23,9 +23,9 @@ import {
 } from '../services/sync'
 import { walletLogger } from '../services/logger'
 import { invoke } from '@tauri-apps/api/core'
+import { getSessionPassword } from '../services/sessionPasswordStore'
 
 interface UseAccountSwitchingOptions {
-  sessionPassword: string | null
   fetchVersionRef: MutableRefObject<number>
   accountsSwitchAccount: (accountId: number, password: string) => Promise<WalletKeys | null>
   accountsCreateNewAccount: (name: string, password: string) => Promise<WalletKeys | null>
@@ -53,7 +53,6 @@ interface UseAccountSwitchingReturn {
 }
 
 export function useAccountSwitching({
-  sessionPassword,
   fetchVersionRef,
   accountsSwitchAccount,
   accountsCreateNewAccount,
@@ -72,14 +71,10 @@ export function useAccountSwitching({
   wallet,
   accounts
 }: UseAccountSwitchingOptions): UseAccountSwitchingReturn {
-  // Use ref to avoid stale closure — sessionPassword may update after callback creation
-  const sessionPasswordRef = useRef(sessionPassword)
-  useEffect(() => {
-    sessionPasswordRef.current = sessionPassword
-  }, [sessionPassword])
 
   const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
-    const currentPassword = sessionPasswordRef.current
+    // Read password from module-level store (never stale, no closure issues)
+    const currentPassword = getSessionPassword()
     walletLogger.debug('switchAccount called', { accountId, hasSessionPassword: !!currentPassword })
     if (!currentPassword) {
       walletLogger.error('Cannot switch account - no session password available. User must re-unlock wallet.')
@@ -180,7 +175,7 @@ export function useAccountSwitching({
   }, [accountsSwitchAccount, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
-    const currentPassword = sessionPasswordRef.current
+    const currentPassword = getSessionPassword()
     if (!currentPassword) {
       walletLogger.error('Cannot create account - no session password available')
       return false
@@ -202,7 +197,7 @@ export function useAccountSwitching({
   }, [accountsCreateNewAccount, setWallet, setIsLocked, accounts.length, storeKeysInRust])
 
   const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
-    const currentPassword = sessionPasswordRef.current
+    const currentPassword = getSessionPassword()
     if (!currentPassword) {
       walletLogger.error('Cannot import account - no session password available')
       return false
@@ -236,7 +231,7 @@ export function useAccountSwitching({
     if (success) {
       const active = await getActiveAccount()
       if (active && wallet === null) {
-        const currentPassword = sessionPasswordRef.current
+        const currentPassword = getSessionPassword()
         if (!currentPassword) {
           walletLogger.error('Cannot switch to remaining account after deletion — no session password. User must re-unlock.')
           return success

@@ -27,6 +27,7 @@ import { stopAutoLock } from '../services/autoLock'
 import { validatePassword, MIN_PASSWORD_LENGTH } from '../utils/passwordValidation'
 import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
+import { setSessionPassword as setModuleSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
 
 interface UseWalletActionsOptions {
   setWallet: (wallet: WalletKeys | null) => void
@@ -80,6 +81,7 @@ export function useWalletActions({
       // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
       setWallet({ ...keys, mnemonic: '' })
       setSessionPassword(password)
+      setModuleSessionPassword(password)
       audit.walletCreated()
       // Return mnemonic for display during onboarding
       return keys.mnemonic || null
@@ -102,6 +104,7 @@ export function useWalletActions({
       // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
       setWallet({ ...keys, mnemonic: '' })
       setSessionPassword(password)
+      setModuleSessionPassword(password)
       // Queue account discovery for after initial sync completes
       const activeAcc = await getActiveAccount()
       pendingDiscoveryRef.current = { mnemonic: mnemonic.trim(), password, excludeAccountId: activeAcc?.id }
@@ -125,6 +128,7 @@ export function useWalletActions({
       await refreshAccounts()
       setWallet(keys)
       setSessionPassword(password)
+      setModuleSessionPassword(password)
       return true
     } catch (err) {
       walletLogger.error('Failed to import JSON', err)
@@ -140,6 +144,7 @@ export function useWalletActions({
     setWallet(null)
     setIsLocked(false)
     setSessionPassword(null)
+    clearSessionPassword()
     resetSync()
     setLocks([])
     setContacts([])

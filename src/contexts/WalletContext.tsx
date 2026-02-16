@@ -184,7 +184,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     importAccount,
     deleteAccount
   } = useAccountSwitching({
-    sessionPassword,
     fetchVersionRef,
     accountsSwitchAccount,
     accountsCreateNewAccount,

@@ -28,6 +28,7 @@ import {
 } from '../services/secureStorage'
 import { walletLogger, uiLogger } from '../services/logger'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
+import { setSessionPassword as setModuleSessionPassword } from '../services/sessionPasswordStore'
 
 interface UseWalletInitOptions {
   setWallet: (wallet: WalletKeys | null) => void
@@ -128,6 +129,7 @@ export function useWalletInit({
               // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
               setWallet({ ...keys, mnemonic: '' })
               setSessionPassword('')
+              setModuleSessionPassword('')
               walletLogger.info('Migrating to multi-account system')
               await migrateToMultiAccount(keys, '')
               if (!mounted) return

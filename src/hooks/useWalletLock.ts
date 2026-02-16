@@ -26,6 +26,7 @@ import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
 import { invoke } from '@tauri-apps/api/core'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
+import { setSessionPassword as setModuleSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
 
 interface UseWalletLockOptions {
   activeAccount: Account | null
@@ -79,6 +80,7 @@ export function useWalletLock({
     setWalletState(null)
     setWalletKeys(null)
     setSessionPassword(null)
+    clearSessionPassword()
     try {
       await invoke('clear_keys')
     } catch (e) {
@@ -156,6 +158,7 @@ export function useWalletLock({
         setWalletKeys(keys)
         setIsLocked(false)
         setSessionPassword(password)
+        setModuleSessionPassword(password)
         walletLogger.debug('Session password stored for account switching')
         resetInactivityTimer()
         await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)

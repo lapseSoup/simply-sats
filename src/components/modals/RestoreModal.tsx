@@ -14,6 +14,7 @@ import { setWalletKeys } from '../../services/brc100'
 import { saveWallet } from '../../services/wallet'
 import { migrateToMultiAccount, getActiveAccount } from '../../services/accounts'
 import { discoverAccounts } from '../../services/accountDiscovery'
+import { setSessionPassword as setModuleSessionPassword } from '../../services/sessionPasswordStore'
 
 interface RestoreModalProps {
   onClose: () => void
@@ -133,6 +134,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         setWallet({ ...keys, mnemonic: '' })
         setWalletKeys(keys)
         setSessionPassword(password)
+        setModuleSessionPassword(password)
       } else if (backup.wallet.keys) {
         const keys = await importFromJSON(JSON.stringify(backup.wallet.keys))
         await saveWallet(keys, password)
@@ -141,6 +143,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         setWallet(keys)
         setWalletKeys(keys)
         setSessionPassword(password)
+        setModuleSessionPassword(password)
       } else {
         showToast('Backup does not contain wallet keys.', 'error')
         return
