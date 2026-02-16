@@ -242,14 +242,15 @@ export async function switchAccount(accountId: number): Promise<boolean> {
   const database = getDatabase()
 
   try {
-    // Wrap in transaction to prevent partial state (all deactivated, none activated)
-    await withTransaction(async () => {
-      await database.execute('UPDATE accounts SET is_active = 0')
-      await database.execute(
-        'UPDATE accounts SET is_active = 1, last_accessed_at = $1 WHERE id = $2',
-        [Date.now(), accountId]
-      )
-    })
+    // Two sequential UPDATEs without withTransaction() — avoids deadlocking
+    // when sync operations hold the transaction queue.  SQLite auto-commits
+    // each statement; worst case is a partial update (two accounts active)
+    // which self-heals on next switch.
+    await database.execute('UPDATE accounts SET is_active = 0 WHERE is_active = 1')
+    await database.execute(
+      'UPDATE accounts SET is_active = 1, last_accessed_at = $1 WHERE id = $2',
+      [Date.now(), accountId]
+    )
 
     accountLogger.info('Switched to account', { accountId })
     return true

@@ -6,6 +6,7 @@ import { SimplySatsLogo } from '../shared/SimplySatsLogo'
 import { AccountSwitcher } from './AccountSwitcher'
 import { getBalanceFromDB } from '../../services/database'
 import { walletLogger } from '../../services/logger'
+import { getLastSwitchDiag } from '../../hooks/useAccountSwitching'
 
 interface HeaderProps {
   onSettingsClick: () => void
@@ -73,8 +74,9 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
       if (success) {
         onAccountSwitch?.()
       } else {
-        walletLogger.error('Failed to switch account - session password may be missing')
-        showToast('Please unlock wallet to switch accounts', 'warning')
+        const diag = getLastSwitchDiag()
+        walletLogger.error('Failed to switch account', { diag })
+        showToast('Failed to switch account. Please try again.', 'warning')
       }
       // fetchData is triggered automatically by App.tsx useEffect
       // when wallet + activeAccountId state updates after re-render

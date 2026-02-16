@@ -31,6 +31,10 @@ import { invoke } from '@tauri-apps/api/core'
 import { getSessionPassword } from '../services/sessionPasswordStore'
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 
+// Diagnostic: last failure reason (visible to UI for debugging)
+let _lastSwitchDiag = ''
+export function getLastSwitchDiag(): string { return _lastSwitchDiag }
+
 interface UseAccountSwitchingOptions {
   fetchVersionRef: MutableRefObject<number>
   accountsSwitchAccount: (accountId: number, password: string) => Promise<WalletKeys | null>
@@ -64,13 +68,24 @@ interface UseAccountSwitchingReturn {
  */
 async function deriveKeysFromRust(account: Account): Promise<WalletKeys | null> {
   try {
+    _lastSwitchDiag = 'Rust: calling get_mnemonic...'
     const mnemonic = await invoke<string | null>('get_mnemonic')
-    if (!mnemonic) return null
+    if (!mnemonic) {
+      _lastSwitchDiag = 'Rust: get_mnemonic returned NULL'
+      return null
+    }
+    _lastSwitchDiag = `Rust: got mnemonic (${mnemonic.split(' ').length} words), deriving...`
 
     const accountIndex = account.derivationIndex ?? ((account.id ?? 1) - 1)
     const keys = await deriveWalletKeysForAccount(mnemonic, accountIndex)
+    if (!keys) {
+      _lastSwitchDiag = `Rust: derivation returned null for idx=${accountIndex}`
+      return null
+    }
+    _lastSwitchDiag = `Rust: OK addr=${keys.walletAddress?.substring(0, 8)}`
     return keys
   } catch (e) {
+    _lastSwitchDiag = `Rust: THREW ${String(e).substring(0, 80)}`
     walletLogger.warn('Failed to derive keys from Rust key store', { error: String(e) })
     return null
   }
@@ -97,6 +112,7 @@ export function useAccountSwitching({
 }: UseAccountSwitchingOptions): UseAccountSwitchingReturn {
 
   const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
+    _lastSwitchDiag = `START id=${accountId} accts=${accounts.length}`
     try {
       // Cancel any in-flight sync for the previous account before switching
       cancelSync()
@@ -104,9 +120,11 @@ export function useAccountSwitching({
       // Find the target account
       const account = accounts.find(a => a.id === accountId)
       if (!account) {
+        _lastSwitchDiag = `FAIL: account ${accountId} not in [${accounts.map(a => a.id).join(',')}]`
         walletLogger.error('Cannot switch — account not found', { accountId })
         return false
       }
+      _lastSwitchDiag = `Found: id=${account.id} derivIdx=${account.derivationIndex}`
 
       // PRIMARY PATH: Derive keys from Rust key store's mnemonic (no password needed).
       // This bypasses all React state / closure issues with sessionPassword.
@@ -114,25 +132,31 @@ export function useAccountSwitching({
 
       if (keys) {
         // Rust-derived keys — update DB active account
+        _lastSwitchDiag += ' | keys OK, updating DB...'
         const dbSuccess = await switchAccountDb(accountId)
         if (!dbSuccess) {
+          _lastSwitchDiag += ' | DB update FAILED'
           walletLogger.error('Failed to update active account in database')
           return false
         }
         await refreshAccounts()
+        _lastSwitchDiag += ' | DB+refresh OK'
       } else {
         // FALLBACK: If Rust has no mnemonic (shouldn't happen while wallet is unlocked),
         // try the password-based approach via the module-level session password store.
         const currentPassword = getSessionPassword()
+        _lastSwitchDiag += ` | FALLBACK hasPwd=${!!currentPassword}`
         walletLogger.debug('Rust derivation unavailable, trying password fallback', {
           accountId,
           hasSessionPassword: !!currentPassword
         })
         if (!currentPassword) {
+          _lastSwitchDiag += ' | NO PWD → FAIL'
           walletLogger.error('Cannot switch account — no mnemonic in Rust and no session password.')
           return false
         }
         keys = await accountsSwitchAccount(accountId, currentPassword)
+        _lastSwitchDiag += keys ? ' | pwd-keys OK' : ' | pwd-keys NULL'
       }
 
       if (keys) {
@@ -216,9 +240,11 @@ export function useAccountSwitching({
         walletLogger.info('Account switched successfully', { accountId })
         return true
       }
+      _lastSwitchDiag += ' | FINAL: keys null after all paths'
       walletLogger.error('Failed to switch account - could not derive or decrypt keys')
       return false
     } catch (e) {
+      _lastSwitchDiag = `EXCEPTION: ${String(e).substring(0, 100)}`
       walletLogger.error('Error switching account', e)
       return false
     }
