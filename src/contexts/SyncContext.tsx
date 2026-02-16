@@ -416,7 +416,11 @@ export function SyncProvider({ children }: SyncProviderProps) {
         setSyncError(`Some data may be stale: failed to load ${partialErrors.join(', ')}`)
       }
     } catch (error) {
-      setSyncError('Failed to load wallet data')
+      if (partialErrors.length > 0) {
+        setSyncError(`Some data may be stale: failed to load ${partialErrors.join(', ')}`)
+      } else {
+        setSyncError('Failed to load wallet data')
+      }
       syncLogger.error('Failed to fetch data', error)
     }
   }, [])

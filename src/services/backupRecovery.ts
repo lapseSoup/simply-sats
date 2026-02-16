@@ -146,6 +146,11 @@ export async function readBackupFolder(folderPath: string): Promise<RecoveredAcc
   const sep = cleanPath.includes('\\') ? '\\' : '/'
   const dbPath = `${cleanPath}${sep}simplysats.db`
 
+  // Defense-in-depth: reject path traversal sequences even though paths come from file dialog
+  if (dbPath.includes('..')) {
+    throw new Error('Invalid backup path: directory traversal not allowed')
+  }
+
   return readExternalDatabase(dbPath)
 }
 

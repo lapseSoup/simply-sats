@@ -420,26 +420,26 @@ export async function unlockBSV(
     throw broadcastError
   }
 
-  // Happy path: broadcast succeeded — record and mark
+  // Happy path: broadcast succeeded — record and mark atomically
+  // Pattern matches lockBSV post-broadcast recording
   try {
-    await recordSentTransaction(
-      txid,
-      tx.toHex(),
-      `Unlocked ${lockedUtxo.satoshis} sats`,
-      ['unlock'],
-      outputSats,
-      accountId
+    await withTransaction(async () => {
+      await recordSentTransaction(
+        txid,
+        tx.toHex(),
+        `Unlocked ${lockedUtxo.satoshis} sats`,
+        ['unlock'],
+        outputSats,
+        accountId
+      )
+      await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout, accountId)
+      walletLogger.info('Marked lock as unlocked', { txid: lockedUtxo.txid, vout: lockedUtxo.vout })
+    })
+  } catch (error) {
+    walletLogger.error(
+      `Unlock broadcast succeeded (txid: ${txid}) but failed to record locally. The unlock is on-chain but may not appear in your history.`,
+      { error: String(error), lockTxid: lockedUtxo.txid }
     )
-  } catch (error) {
-    walletLogger.warn('Failed to track unlock transaction', { error: String(error) })
-  }
-
-  // Mark the lock as unlocked in the database
-  try {
-    await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout, accountId)
-    walletLogger.info('Marked lock as unlocked', { txid: lockedUtxo.txid, vout: lockedUtxo.vout })
-  } catch (error) {
-    walletLogger.warn('Failed to mark lock as unlocked in database', { error: String(error) })
   }
 
   return txid
