@@ -154,6 +154,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   } = useWalletInit({
     setWallet,
     setIsLocked,
+    setSessionPassword,
     refreshAccounts
   })
 
@@ -345,6 +346,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   const actionsValue: WalletActionsContextType = useMemo(() => ({
     setWallet,
+    setSessionPassword,
     switchAccount,
     createNewAccount,
     importAccount,
@@ -371,7 +373,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleSendToken,
     consumePendingDiscovery
   }), [
-    setWallet, switchAccount, createNewAccount, importAccount, deleteAccount,
+    setWallet, setSessionPassword, switchAccount, createNewAccount, importAccount, deleteAccount,
     renameAccount, refreshAccounts, refreshTokens, lockWallet, unlockWallet,
     setAutoLockMinutes, setFeeRate, refreshContacts, performSync, fetchData,
     handleCreateWallet, handleRestoreWallet, handleImportJSON, handleDeleteWallet,

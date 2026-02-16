@@ -103,11 +103,12 @@ function WalletApp() {
     enabled: true
   })
 
-  // Keep a ref to fetchData so the payment listener doesn't re-setup on every sync
+  // Keep refs to fetchData/performSync so effects don't re-trigger when
+  // their identity changes (e.g. knownUnlockedLocks updates detectLocks → fetchData)
   const fetchDataRef = useRef(fetchData)
-  useEffect(() => {
-    fetchDataRef.current = fetchData
-  }, [fetchData])
+  useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
+  const performSyncRef = useRef(performSync)
+  useEffect(() => { performSyncRef.current = performSync }, [performSync])
 
   // MessageBox listener for payments
   useEffect(() => {
@@ -140,12 +141,14 @@ function WalletApp() {
 
   // Auto-sync on wallet load (only when account is set)
   // Single effect handles both sync + data fetch to avoid race conditions
+  // Uses refs for fetchData/performSync to avoid re-triggering when their
+  // identity changes (e.g. knownUnlockedLocks → detectLocks → fetchData)
   useEffect(() => {
     if (!wallet || activeAccountId === null) return
 
     const checkSync = async () => {
       // Load DB data immediately so UI is populated while sync runs
-      await fetchData()
+      await fetchDataRef.current()
 
       const needsSync = await needsInitialSync([
         wallet.walletAddress,
@@ -154,16 +157,16 @@ function WalletApp() {
       ])
       if (needsSync) {
         logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
-        await performSync(true)
+        await performSyncRef.current(true)
       } else {
         const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
         if (derivedAddrs.length > 0) {
           logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
-          await performSync(false)
+          await performSyncRef.current(false)
         }
       }
       // Refresh data after sync to pick up new blockchain data
-      await fetchData()
+      await fetchDataRef.current()
 
       // Run account discovery AFTER primary sync to avoid race conditions
       // (discoverAccounts changes activeAccountId which would discard fetchData results if concurrent)
@@ -188,7 +191,7 @@ function WalletApp() {
     }
 
     checkSync()
-  }, [wallet, performSync, fetchData, activeAccountId, consumePendingDiscovery, refreshAccounts, showToast])
+  }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, showToast])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {

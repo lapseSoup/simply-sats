@@ -32,6 +32,7 @@ import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 interface UseWalletInitOptions {
   setWallet: (wallet: WalletKeys | null) => void
   setIsLocked: Dispatch<SetStateAction<boolean>>
+  setSessionPassword: (password: string | null) => void
   refreshAccounts: () => Promise<void>
 }
 
@@ -45,6 +46,7 @@ interface UseWalletInitReturn {
 export function useWalletInit({
   setWallet,
   setIsLocked,
+  setSessionPassword,
   refreshAccounts
 }: UseWalletInitOptions): UseWalletInitReturn {
   const [loading, setLoading] = useState(true)
@@ -125,6 +127,7 @@ export function useWalletInit({
             if (keys) {
               // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
               setWallet({ ...keys, mnemonic: '' })
+              setSessionPassword('')
               walletLogger.info('Migrating to multi-account system')
               await migrateToMultiAccount(keys, '')
               if (!mounted) return
@@ -145,7 +148,7 @@ export function useWalletInit({
     return () => {
       mounted = false
     }
-  }, [setWallet, setIsLocked, refreshAccounts])
+  }, [setWallet, setIsLocked, setSessionPassword, refreshAccounts])
 
   // Migration: remove old localStorage locks (database is source of truth)
   useEffect(() => {

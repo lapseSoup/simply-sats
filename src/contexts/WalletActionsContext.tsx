@@ -14,6 +14,7 @@ import type { WalletResult } from '../domain/types'
 
 export interface WalletActionsContextType {
   setWallet: (wallet: WalletKeys | null) => void
+  setSessionPassword: (password: string | null) => void
 
   // Account actions
   switchAccount: (accountId: number) => Promise<boolean>

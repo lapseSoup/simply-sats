@@ -73,7 +73,7 @@ export function UnlockConfirmModal({ locks, onConfirm, onCancel, unlocking }: Un
               onClick={onConfirm}
               disabled={unlocking || cantUnlock}
             >
-              {unlocking ? 'Unlocking...' : cantUnlock ? 'Cannot Unlock' : <><Unlock size={16} strokeWidth={1.75} style={{ marginRight: 4, verticalAlign: 'text-bottom' }} /> Unlock {totalReceive.toLocaleString()} sats</>}
+              {unlocking ? 'Unlocking...' : cantUnlock ? 'Cannot Unlock' : <><Unlock size={16} strokeWidth={1.75} /> Unlock {totalReceive.toLocaleString()} sats</>}
             </button>
           </div>
         </div>

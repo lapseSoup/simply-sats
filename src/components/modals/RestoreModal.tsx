@@ -23,7 +23,7 @@ interface RestoreModalProps {
 type RestoreMode = 'mnemonic' | 'json' | 'fullbackup'
 
 export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
-  const { setWallet, performSync, handleRestoreWallet, handleImportJSON, refreshAccounts } = useWalletActions()
+  const { setWallet, setSessionPassword, performSync, handleRestoreWallet, handleImportJSON, refreshAccounts } = useWalletActions()
   const { showToast } = useUI()
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('mnemonic')
   const [restoreMnemonic, setRestoreMnemonic] = useState('')
@@ -132,6 +132,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
         setWallet({ ...keys, mnemonic: '' })
         setWalletKeys(keys)
+        setSessionPassword(password)
       } else if (backup.wallet.keys) {
         const keys = await importFromJSON(JSON.stringify(backup.wallet.keys))
         await saveWallet(keys, password)
@@ -139,6 +140,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         await migrateToMultiAccount(keys, password)
         setWallet(keys)
         setWalletKeys(keys)
+        setSessionPassword(password)
       } else {
         showToast('Backup does not contain wallet keys.', 'error')
         return

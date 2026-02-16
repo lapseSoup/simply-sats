@@ -124,12 +124,13 @@ export function useWalletActions({
       await migrateToMultiAccount(keys, password)
       await refreshAccounts()
       setWallet(keys)
+      setSessionPassword(password)
       return true
     } catch (err) {
       walletLogger.error('Failed to import JSON', err)
       return false
     }
-  }, [setWallet, refreshAccounts])
+  }, [setWallet, setSessionPassword, refreshAccounts])
 
   const handleDeleteWallet = useCallback(async () => {
     // 1. Stop auto-lock timer
