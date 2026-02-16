@@ -2,13 +2,18 @@
  * Hook for account switching with DB preloading.
  *
  * Extracted from WalletContext to reduce god-object complexity.
+ *
+ * Account switching now derives keys directly from the Rust key store's mnemonic,
+ * bypassing the need for a session password entirely. This eliminates an entire
+ * class of React state/closure bugs that caused "Please unlock wallet to switch
+ * accounts" errors.
  */
 
 import { useCallback, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
 import type { WalletKeys, LockedUTXO, Ordinal } from '../services/wallet'
 import type { Account } from '../services/accounts'
 import type { TxHistoryItem } from '../contexts/SyncContext'
-import { getActiveAccount } from '../services/accounts'
+import { getActiveAccount, switchAccount as switchAccountDb } from '../services/accounts'
 import { discoverAccounts } from '../services/accountDiscovery'
 import {
   getLocks as getLocksFromDB,
@@ -24,6 +29,7 @@ import {
 import { walletLogger } from '../services/logger'
 import { invoke } from '@tauri-apps/api/core'
 import { getSessionPassword } from '../services/sessionPasswordStore'
+import { deriveWalletKeysForAccount } from '../domain/wallet'
 
 interface UseAccountSwitchingOptions {
   fetchVersionRef: MutableRefObject<number>
@@ -52,6 +58,24 @@ interface UseAccountSwitchingReturn {
   deleteAccount: (accountId: number) => Promise<boolean>
 }
 
+/**
+ * Derive keys for an account from the Rust key store's mnemonic.
+ * Returns null if mnemonic is not available (wallet locked or cleared).
+ */
+async function deriveKeysFromRust(account: Account): Promise<WalletKeys | null> {
+  try {
+    const mnemonic = await invoke<string | null>('get_mnemonic')
+    if (!mnemonic) return null
+
+    const accountIndex = account.derivationIndex ?? ((account.id ?? 1) - 1)
+    const keys = await deriveWalletKeysForAccount(mnemonic, accountIndex)
+    return keys
+  } catch (e) {
+    walletLogger.warn('Failed to derive keys from Rust key store', { error: String(e) })
+    return null
+  }
+}
+
 export function useAccountSwitching({
   fetchVersionRef,
   accountsSwitchAccount,
@@ -73,18 +97,44 @@ export function useAccountSwitching({
 }: UseAccountSwitchingOptions): UseAccountSwitchingReturn {
 
   const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
-    // Read password from module-level store (never stale, no closure issues)
-    const currentPassword = getSessionPassword()
-    walletLogger.debug('switchAccount called', { accountId, hasSessionPassword: !!currentPassword })
-    if (!currentPassword) {
-      walletLogger.error('Cannot switch account - no session password available. User must re-unlock wallet.')
-      return false
-    }
     try {
       // Cancel any in-flight sync for the previous account before switching
       cancelSync()
 
-      const keys = await accountsSwitchAccount(accountId, currentPassword)
+      // Find the target account
+      const account = accounts.find(a => a.id === accountId)
+      if (!account) {
+        walletLogger.error('Cannot switch — account not found', { accountId })
+        return false
+      }
+
+      // PRIMARY PATH: Derive keys from Rust key store's mnemonic (no password needed).
+      // This bypasses all React state / closure issues with sessionPassword.
+      let keys = await deriveKeysFromRust(account)
+
+      if (keys) {
+        // Rust-derived keys — update DB active account
+        const dbSuccess = await switchAccountDb(accountId)
+        if (!dbSuccess) {
+          walletLogger.error('Failed to update active account in database')
+          return false
+        }
+        await refreshAccounts()
+      } else {
+        // FALLBACK: If Rust has no mnemonic (shouldn't happen while wallet is unlocked),
+        // try the password-based approach via the module-level session password store.
+        const currentPassword = getSessionPassword()
+        walletLogger.debug('Rust derivation unavailable, trying password fallback', {
+          accountId,
+          hasSessionPassword: !!currentPassword
+        })
+        if (!currentPassword) {
+          walletLogger.error('Cannot switch account — no mnemonic in Rust and no session password.')
+          return false
+        }
+        keys = await accountsSwitchAccount(accountId, currentPassword)
+      }
+
       if (keys) {
         // Invalidate any in-flight fetchData callbacks from the previous account
         fetchVersionRef.current += 1
@@ -166,13 +216,13 @@ export function useAccountSwitching({
         walletLogger.info('Account switched successfully', { accountId })
         return true
       }
-      walletLogger.error('Failed to switch account - invalid password or account not found')
+      walletLogger.error('Failed to switch account - could not derive or decrypt keys')
       return false
     } catch (e) {
       walletLogger.error('Error switching account', e)
       return false
     }
-  }, [accountsSwitchAccount, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
+  }, [accounts, accountsSwitchAccount, refreshAccounts, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()
@@ -231,14 +281,18 @@ export function useAccountSwitching({
     if (success) {
       const active = await getActiveAccount()
       if (active && wallet === null) {
-        const currentPassword = getSessionPassword()
-        if (!currentPassword) {
-          walletLogger.error('Cannot switch to remaining account after deletion — no session password. User must re-unlock.')
-          return success
+        // Try Rust derivation first, fall back to password
+        let keys = await deriveKeysFromRust(active)
+        if (!keys) {
+          const currentPassword = getSessionPassword()
+          if (currentPassword) {
+            keys = await getKeysForAccount(active, currentPassword)
+          }
         }
-        const keys = await getKeysForAccount(active, currentPassword)
         if (keys) {
           setWallet(keys)
+        } else {
+          walletLogger.error('Cannot switch to remaining account after deletion — no keys available.')
         }
       }
     }
