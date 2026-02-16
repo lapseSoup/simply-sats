@@ -92,7 +92,7 @@ describe('getUTXOsFromDB', () => {
       { txid: 'tx1', vout: 0, satoshis: 1000, lockingScript: 'ls1' }
     ])
 
-    const result = await getUTXOsFromDB('derived')
+    const result = await getUTXOsFromDB('default')
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({ txid: 'tx1', vout: 0, satoshis: 1000, script: 'ls1' })
   })
