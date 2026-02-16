@@ -81,3 +81,10 @@
 **Date:** 2026-02-15
 **Context:** Reverted a commit to main unnecessarily when user said "no commit to the main branch" — they meant "no, commit to main" not "don't commit to main."
 **Rule:** Default workflow is committing directly to main. Only use feature branches if the user explicitly requests a different route.
+
+## withTransaction() Can Deadlock When Sync Operations Hold the Queue
+**Date:** 2026-02-16
+**Context:** Account switching failed with "Please unlock wallet to switch accounts" for 6 fix attempts. All 5 prior fixes targeted the session password propagation (React state, useRef, module-level store, Rust mnemonic derivation). The ACTUAL root cause was `switchAccount()` in `accounts.ts` using `withTransaction()` which deadlocked because sync operations held the transaction queue.
+**Problem:** `withTransaction()` uses a Promise queue to serialize DB transactions. When a sync operation is mid-transaction and the user clicks "switch account", `switchAccountDb()` also calls `withTransaction()`, which waits in the queue. If the sync's cancellation token fires but the DB operation is already in-flight, the queue can deadlock. The switch times out or errors, returns `false`, and the UI shows a misleading "unlock wallet" toast.
+**Rule:** (1) For simple DB operations (account switching, flag updates), use direct `database.execute()` without `withTransaction()`. SQLite auto-commits each statement. (2) When debugging, add visible diagnostic output (toast messages, not just console.log) so release builds can be diagnosed. (3) After 3+ failed fixes, STOP assuming the root cause and add diagnostic instrumentation to find the ACTUAL failure point. The bug was never about passwords — it was about database contention.
+**Fix:** Replaced `withTransaction(async () => { UPDATE; UPDATE; })` with two sequential `database.execute()` calls. Also added `getLastSwitchDiag()` diagnostic infrastructure for future debugging.
