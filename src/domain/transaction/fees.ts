@@ -38,8 +38,9 @@ export const DEFAULT_FEE_RATE = 0.1
 
 /**
  * Minimum allowed fee rate in satoshis per byte.
+ * 1 sat/KB (0.001 sat/byte) — BSV miners accept this rate.
  */
-export const MIN_FEE_RATE = 0.01
+export const MIN_FEE_RATE = 0.001
 
 /**
  * Maximum allowed fee rate in satoshis per byte.
