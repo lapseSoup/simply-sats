@@ -322,8 +322,12 @@ export function SyncProvider({ children }: SyncProviderProps) {
         if (isCancelled?.()) return
 
         // Display DB ordinals immediately (before slow API calls)
-        // Always set — clears stale data from previous account when empty
-        setOrdinals(dbOrdinals)
+        // Only set from DB if we actually found ordinals — avoids clobbering state
+        // with empty results before API calls complete (fixes ordinals not showing
+        // after 12-word restore, where sync writes UTXOs but not ordinal metadata)
+        if (dbOrdinals.length > 0) {
+          setOrdinals(dbOrdinals)
+        }
 
         // Load cached content from DB for instant previews
         const cachedOrdinals = await getCachedOrdinals(activeAccountId)

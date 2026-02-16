@@ -261,7 +261,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
 
       <div className="selected-file">
         <span className="file-label">Selected:</span>
-        <span className="file-path">{selectedPath?.split('/').pop()}</span>
+        <span className="file-path">{selectedPath?.split(/[\\/]/).pop()}</span>
       </div>
 
       <div className="form-group">

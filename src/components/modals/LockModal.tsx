@@ -6,6 +6,7 @@ import { calculateLockFee } from '../../services/wallet/fees'
 import { getTimelockScriptSize } from '../../services/wallet'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
+import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 
 // Short lock warning threshold: less than 6 blocks (~1 hour)
 const SHORT_LOCK_WARNING_BLOCKS = 6
@@ -43,7 +44,7 @@ export function LockModal({ onClose }: LockModalProps) {
 
   const lockSats = displayInSats
     ? Math.round(parseFloat(lockAmount || '0'))
-    : Math.round(parseFloat(lockAmount || '0') * 100000000)
+    : btcToSatoshis(parseFloat(lockAmount || '0'))
   const blocks = parseInt(lockBlocks || '0')
   const currentHeight = networkInfo?.blockHeight || 0
   const unlockBlock = currentHeight + blocks
@@ -189,7 +190,7 @@ export function LockModal({ onClose }: LockModalProps) {
             <label className="form-label" htmlFor="lock-amount" style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Amount ({displayInSats ? 'sats' : 'BSV'})</span>
               <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>
-                {displayInSats ? balance.toLocaleString() : (balance / 100000000).toFixed(8)} available
+                {displayInSats ? balance.toLocaleString() : satoshisToBtc(balance).toFixed(8)} available
               </span>
             </label>
             <input

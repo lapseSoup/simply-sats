@@ -9,6 +9,7 @@ import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 import { CoinControlModal } from './CoinControlModal'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
+import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 
 interface SendModalProps {
   onClose: () => void
@@ -52,7 +53,7 @@ export function SendModal({ onClose }: SendModalProps) {
   // Parse amount based on display mode (sats or BSV)
   const rawSendSats = displayInSats
     ? Math.round(parseFloat(sendAmount || '0'))
-    : Math.round(parseFloat(sendAmount || '0') * 100000000)
+    : btcToSatoshis(parseFloat(sendAmount || '0'))
   const sendSats = Number.isNaN(rawSendSats) ? 0 : rawSendSats
   const availableSats = balance
 
@@ -145,7 +146,7 @@ export function SendModal({ onClose }: SendModalProps) {
   // Format amount for display in confirmation
   const formatAmount = (sats: number) => {
     if (sats >= 100000000) {
-      return `${(sats / 100000000).toFixed(8)} BSV`
+      return `${satoshisToBtc(sats).toFixed(8)} BSV`
     }
     return `${sats.toLocaleString()} sats`
   }
@@ -208,7 +209,7 @@ export function SendModal({ onClose }: SendModalProps) {
               />
               <button
                 className="input-action"
-                onClick={() => setSendAmount(displayInSats ? String(maxSendSats) : (maxSendSats / 100000000).toFixed(8))}
+                onClick={() => setSendAmount(displayInSats ? String(maxSendSats) : satoshisToBtc(maxSendSats).toFixed(8))}
                 type="button"
               >
                 MAX
@@ -218,7 +219,7 @@ export function SendModal({ onClose }: SendModalProps) {
               <div className="form-hint" style={{ marginTop: '4px', color: 'var(--text-secondary)' }}>
                 {displayInSats
                   ? <>{sendSats.toLocaleString()} sats &middot; </>
-                  : <>{(sendSats / 100000000).toFixed(8)} BSV &middot; </>
+                  : <>{satoshisToBtc(sendSats).toFixed(8)} BSV &middot; </>
                 }
                 ≈ ${formatUSD(sendSats)} USD
               </div>

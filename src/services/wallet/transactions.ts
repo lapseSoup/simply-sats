@@ -58,7 +58,7 @@ function validateSendRequest(toAddress: string, satoshis: number): void {
  * Shared broadcast flow: mark pending → broadcast → rollback on failure.
  * Accepts either a Transaction object or a raw hex string.
  */
-async function executeBroadcast(
+export async function executeBroadcast(
   txOrHex: Transaction | string,
   pendingTxid: string,
   spentOutpoints: { txid: string; vout: number }[]
@@ -74,7 +74,11 @@ async function executeBroadcast(
 
   // Now broadcast the transaction
   try {
-    return await broadcastTransaction(txOrHex)
+    const txid = await broadcastTransaction(txOrHex)
+    if (!txid) {
+      throw new Error('Broadcast returned empty transaction ID')
+    }
+    return txid
   } catch (broadcastError) {
     // Broadcast failed - rollback the pending status
     walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)

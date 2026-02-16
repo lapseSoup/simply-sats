@@ -8,13 +8,11 @@ import type { UTXO, Ordinal, GpOrdinalItem, OrdinalDetails } from './types'
 import { gpOrdinalsApi } from '../../infrastructure/api/clients'
 import { getWocClient } from '../../infrastructure/api/wocClient'
 import { calculateTxFee } from './fees'
-import { broadcastTransaction } from './transactions'
+import { executeBroadcast } from './transactions'
 import { getTransactionHistory, getTransactionDetails } from './balance'
 import {
   recordSentTransaction,
-  markUtxosPendingSpend,
-  confirmUtxosSpent,
-  rollbackPendingSpend
+  confirmUtxosSpent
 } from '../sync'
 import { walletLogger } from '../logger'
 import {
@@ -358,30 +356,8 @@ export async function transferOrdinal(
     throw new Error('Ordinal UTXO is no longer spendable — it may have been spent or is pending in another transaction')
   }
 
-  // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
-  try {
-    await markUtxosPendingSpend(utxosToSpend, pendingTxid)
-    ordLogger.debug('Marked UTXOs as pending spend for ordinal transfer', { txid: pendingTxid })
-  } catch (error) {
-    ordLogger.error('Failed to mark UTXOs as pending', error)
-    throw new Error('Failed to prepare ordinal transfer - UTXOs could not be locked')
-  }
-
-  // Now broadcast the transaction
-  let txid: string
-  try {
-    txid = await broadcastTransaction(tx)
-  } catch (broadcastError) {
-    // Broadcast failed - rollback the pending status
-    ordLogger.error('Ordinal transfer broadcast failed, rolling back pending status', broadcastError)
-    try {
-      await rollbackPendingSpend(utxosToSpend)
-      ordLogger.debug('Rolled back pending status for UTXOs')
-    } catch (rollbackError) {
-      ordLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
-    }
-    throw broadcastError
-  }
+  // Mark pending → broadcast → rollback on failure (shared pattern)
+  const txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
 
   // Track transaction locally
   try {

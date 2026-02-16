@@ -22,14 +22,13 @@ import {
 } from '@bsv/sdk'
 import type { UTXO, LockedUTXO } from './types'
 import { calculateLockFee, feeFromBytes } from './fees'
-import { broadcastTransaction } from './transactions'
+import { broadcastTransaction, executeBroadcast } from './transactions'
 import { getWocClient } from '../../infrastructure/api/wocClient'
+import { btcToSatoshis } from '../../utils/satoshiConversion'
 import { getTransactionHistory, getTransactionDetails } from './balance'
 import {
   recordSentTransaction,
-  markUtxosPendingSpend,
-  confirmUtxosSpent,
-  rollbackPendingSpend
+  confirmUtxosSpent
 } from '../sync'
 import { markLockUnlockedByTxid, getDatabase, addUTXO, addLock } from '../database'
 import { walletLogger } from '../logger'
@@ -188,30 +187,8 @@ export async function lockBSV(
   // Compute txid before broadcast for pending marking
   const pendingTxid = tx.id('hex')
 
-  // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
-  try {
-    await markUtxosPendingSpend(utxosToSpend, pendingTxid)
-    walletLogger.debug('Marked UTXOs as pending spend for lock', { txid: pendingTxid })
-  } catch (error) {
-    walletLogger.error('Failed to mark UTXOs as pending', error)
-    throw new Error('Failed to prepare lock transaction - UTXOs could not be locked')
-  }
-
-  // Now broadcast the transaction
-  let txid: string
-  try {
-    txid = await broadcastTransaction(tx)
-  } catch (broadcastError) {
-    // Broadcast failed - rollback the pending status
-    walletLogger.error('Lock broadcast failed, rolling back pending status', broadcastError)
-    try {
-      await rollbackPendingSpend(utxosToSpend)
-      walletLogger.debug('Rolled back pending status for UTXOs')
-    } catch (rollbackError) {
-      walletLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
-    }
-    throw broadcastError
-  }
+  // Mark pending → broadcast → rollback on failure (shared pattern)
+  const txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
 
   const lockedUtxo: LockedUTXO = {
     txid,
@@ -301,6 +278,16 @@ export async function unlockBSV(
   // Check block height for user feedback
   if (currentBlockHeight < lockedUtxo.unlockBlock) {
     throw new Error(`Cannot unlock yet. Current block: ${currentBlockHeight}, Unlock block: ${lockedUtxo.unlockBlock}`)
+  }
+
+  // Check if this UTXO is already being spent in another transaction
+  const db = getDatabase()
+  const utxoCheck = await db.select<{ spending_status: string | null }[]>(
+    'SELECT spending_status FROM utxos WHERE txid = $1 AND vout = $2',
+    [lockedUtxo.txid, lockedUtxo.vout]
+  )
+  if (utxoCheck.length > 0 && utxoCheck[0]!.spending_status === 'pending') {
+    throw new Error('This lock is already being processed in another transaction')
   }
 
   const privateKey = PrivateKey.fromWif(wif)
@@ -590,8 +577,8 @@ async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
     // Fallback: Check the full transaction
     const txResult = await woc.getTransactionDetailsSafe(txid)
     if (!txResult.success) {
-      walletLogger.debug('Could not fetch tx', { txid, error: txResult.error.message })
-      return true // Assume unspent on error
+      walletLogger.warn('Could not verify UTXO spend status, assuming unspent', { txid, vout, error: txResult.error.message })
+      return true // Assume unspent on error — better to show a stale lock than lose one
     }
 
     const output = txResult.data.vout?.[vout]
@@ -715,7 +702,7 @@ export async function detectLockedUtxos(
           if (seen.has(dedupKey)) continue
           seen.add(dedupKey)
 
-          const satoshis = Math.round(output!.value * 100000000)
+          const satoshis = btcToSatoshis(output!.value)
 
           walletLogger.info('Found active lock', { txid, vout, satoshis, unlockBlock: parsed.unlockBlock })
 

@@ -4,6 +4,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { getTransactionByTxid } from '../../services/database'
 import { useWallet } from '../../contexts/WalletContext'
 import { getWocClient } from '../../infrastructure/api/wocClient'
+import { btcToSatoshis } from '../../utils/satoshiConversion'
 import { useTransactionLabels } from '../../hooks/useTransactionLabels'
 import { Modal } from '../shared/Modal'
 
@@ -27,7 +28,7 @@ async function computeFeeFromBlockchain(txid: string): Promise<number | null> {
     const tx = await wocClient.getTransactionDetails(txid)
     if (!tx) return null
 
-    const totalOut = tx.vout.reduce((sum, o) => sum + Math.round(o.value * 1e8), 0)
+    const totalOut = tx.vout.reduce((sum, o) => sum + btcToSatoshis(o.value), 0)
 
     let totalIn = 0
     for (const vin of tx.vin) {
@@ -35,7 +36,7 @@ async function computeFeeFromBlockchain(txid: string): Promise<number | null> {
       if (vin.txid && vin.vout !== undefined) {
         const prevTx = await wocClient.getTransactionDetails(vin.txid)
         if (prevTx?.vout?.[vin.vout]) {
-          totalIn += Math.round(prevTx.vout[vin.vout]!.value * 1e8)
+          totalIn += btcToSatoshis(prevTx.vout[vin.vout]!.value)
         }
       }
     }

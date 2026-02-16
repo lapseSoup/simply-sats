@@ -177,7 +177,8 @@ describe('NetworkContext', () => {
       })
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        'https://api.whatsonchain.com/v1/bsv/main/exchangerate'
+        'https://api.whatsonchain.com/v1/bsv/main/exchangerate',
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       )
       expect(result.current.usdPrice).toBe(65.50)
     })

@@ -10,6 +10,7 @@ import {
   BASKETS
 } from '../sync'
 import { walletLogger } from '../logger'
+import { btcToSatoshis } from '../../utils/satoshiConversion'
 
 /**
  * Get balance from WhatsOnChain (uses wocClient infrastructure)
@@ -100,7 +101,7 @@ export async function calculateTxAmount(
   // Sum outputs to our addresses (received)
   for (const vout of txDetails.vout) {
     if (isOurAddress(vout.scriptPubKey?.addresses)) {
-      received += Math.round(vout.value * 1e8)
+      received += btcToSatoshis(vout.value)
     }
   }
 
@@ -108,7 +109,7 @@ export async function calculateTxAmount(
   for (const vin of txDetails.vin) {
     // First check if prevout is available (some APIs include it)
     if (vin.prevout && isOurAddress(vin.prevout.scriptPubKey?.addresses)) {
-      sent += Math.round(vin.prevout.value * 1e8)
+      sent += btcToSatoshis(vin.prevout.value)
     } else if (vin.txid && vin.vout !== undefined) {
       // Fetch the previous transaction to check if the spent output was ours
       try {
@@ -116,7 +117,7 @@ export async function calculateTxAmount(
         if (prevTx?.vout?.[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]!
           if (isOurAddress(prevOutput.scriptPubKey?.addresses)) {
-            sent += Math.round(prevOutput.value * 1e8)
+            sent += btcToSatoshis(prevOutput.value)
           }
         }
       } catch {

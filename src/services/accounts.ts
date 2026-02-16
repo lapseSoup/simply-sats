@@ -6,6 +6,7 @@
  */
 
 import { getDatabase } from './database'
+import { withTransaction } from './database/connection'
 import { encrypt, decrypt, type EncryptedData } from './crypto'
 import type { WalletKeys } from './wallet'
 import type { AccountRow, AccountSettingRow, IdCheckRow } from './database-types'
@@ -234,14 +235,14 @@ export async function switchAccount(accountId: number): Promise<boolean> {
   const database = getDatabase()
 
   try {
-    // Deactivate all accounts
-    await database.execute('UPDATE accounts SET is_active = 0')
-
-    // Activate the selected account
-    await database.execute(
-      'UPDATE accounts SET is_active = 1, last_accessed_at = $1 WHERE id = $2',
-      [Date.now(), accountId]
-    )
+    // Wrap in transaction to prevent partial state (all deactivated, none activated)
+    await withTransaction(async () => {
+      await database.execute('UPDATE accounts SET is_active = 0')
+      await database.execute(
+        'UPDATE accounts SET is_active = 1, last_accessed_at = $1 WHERE id = $2',
+        [Date.now(), accountId]
+      )
+    })
 
     accountLogger.info('Switched to account', { accountId })
     return true
@@ -307,11 +308,18 @@ export async function deleteAccount(accountId: number): Promise<boolean> {
     const account = await getAccountById(accountId)
     const wasActive = account?.isActive
 
-    // Delete account-specific data
-    await database.execute('DELETE FROM account_settings WHERE account_id = $1', [accountId])
-
-    // Delete the account
-    await database.execute('DELETE FROM accounts WHERE id = $1', [accountId])
+    // Delete all account-scoped data atomically
+    await withTransaction(async () => {
+      // Delete in dependency order (children before parents)
+      await database.execute('DELETE FROM transaction_labels WHERE account_id = $1', [accountId])
+      await database.execute('DELETE FROM transactions WHERE account_id = $1', [accountId])
+      await database.execute('DELETE FROM locks WHERE account_id = $1', [accountId])
+      await database.execute('DELETE FROM utxos WHERE account_id = $1', [accountId])
+      await database.execute('DELETE FROM ordinal_cache WHERE account_id = $1', [accountId])
+      await database.execute('DELETE FROM derived_addresses WHERE account_id = $1', [accountId])
+      await database.execute('DELETE FROM account_settings WHERE account_id = $1', [accountId])
+      await database.execute('DELETE FROM accounts WHERE id = $1', [accountId])
+    })
 
     // If deleted account was active, activate another one
     if (wasActive) {

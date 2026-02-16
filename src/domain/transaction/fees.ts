@@ -50,7 +50,8 @@ export const MAX_FEE_RATE = 1.0
  * Dust threshold for change outputs in satoshis.
  * Change outputs below this value are not worth creating
  * because the cost to spend them exceeds their value.
- * Must match DUST_THRESHOLD in src-tauri/src/transaction.rs.
+ * NOTE: This is the *change* dust threshold (100 sats), not the general
+ * UTXO dust threshold (546 sats in TRANSACTION.DUST_THRESHOLD).
  */
 export const DUST_THRESHOLD = 100
 

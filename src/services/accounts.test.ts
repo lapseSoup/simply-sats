@@ -146,6 +146,14 @@ vi.mock('./crypto', () => ({
   })
 }))
 
+// Mock the database connection module (withTransaction)
+vi.mock('./database/connection', () => ({
+  withTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
+  getDatabase: () => ({}),
+  initDatabase: vi.fn(),
+  closeDatabase: vi.fn()
+}))
+
 // Helper to create mock wallet keys
 function createMockWalletKeys(suffix = '1'): WalletKeys {
   return {

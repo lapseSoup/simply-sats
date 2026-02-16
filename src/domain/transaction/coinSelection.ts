@@ -12,6 +12,9 @@
 
 import type { UTXO, ExtendedUTXO } from '../types'
 
+/** Default fee buffer for coin selection (satoshis) */
+export const DEFAULT_COIN_SELECTION_BUFFER = 100
+
 /**
  * Result of a coin selection operation.
  *
@@ -83,7 +86,7 @@ export function sortUtxosByValue<T extends UTXO>(utxos: T[]): T[] {
 export function selectCoins<T extends UTXO>(
   utxos: T[],
   targetAmount: number,
-  buffer: number = 100
+  buffer: number = DEFAULT_COIN_SELECTION_BUFFER
 ): CoinSelectionResult<T> {
   if (utxos.length === 0) {
     return { selected: [], total: 0, sufficient: false }
@@ -106,7 +109,7 @@ export function selectCoins<T extends UTXO>(
   return {
     selected,
     total,
-    sufficient: total >= targetAmount
+    sufficient: total >= target
   }
 }
 
@@ -135,7 +138,7 @@ export function selectCoins<T extends UTXO>(
 export function selectCoinsMultiKey(
   utxos: ExtendedUTXO[],
   targetAmount: number,
-  buffer: number = 100
+  buffer: number = DEFAULT_COIN_SELECTION_BUFFER
 ): CoinSelectionResult<ExtendedUTXO> {
   return selectCoins(utxos, targetAmount, buffer)
 }

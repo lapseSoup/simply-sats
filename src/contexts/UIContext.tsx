@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, t
 import { useNetwork } from './NetworkContext'
 import { uiLogger } from '../services/logger'
 import { UI } from '../config'
+import { satoshisToBtc } from '../utils/satoshiConversion'
 
 interface ToastItem {
   id: string
@@ -96,14 +97,14 @@ export function UIProvider({ children }: UIProviderProps) {
   }, [showToast])
 
   const formatBSVShort = useCallback((sats: number) => {
-    const bsv = sats / 100000000
+    const bsv = satoshisToBtc(sats)
     if (bsv >= 1) return bsv.toFixed(4)
     if (bsv >= 0.01) return bsv.toFixed(6)
     return bsv.toFixed(8)
   }, [])
 
   const formatUSD = useCallback((sats: number) => {
-    return ((sats / 100000000) * usdPrice).toFixed(2)
+    return (satoshisToBtc(sats) * usdPrice).toFixed(2)
   }, [usdPrice])
 
   const value: UIContextType = useMemo(() => ({

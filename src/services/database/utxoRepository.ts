@@ -176,14 +176,13 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true, acc
 
   let query = 'SELECT * FROM utxos WHERE basket = $1'
   const params: SqlParams = [basket]
-  const paramIndex = 2
 
   if (spendableOnly) {
     query += " AND spendable = 1 AND spent_at IS NULL AND (spending_status IS NULL OR spending_status = 'unspent')"
   }
 
   if (accountId !== undefined) {
-    query += ` AND account_id = $${paramIndex}`
+    query += ` AND account_id = $${params.length + 1}`
     params.push(accountId)
   }
 

@@ -150,8 +150,10 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
       }
 
       // Derive keys for the new account using the next available index
-      // Account indices: 0 (first), 1, 2, 3, etc.
-      const newAccountIndex = allAccounts.length
+      // Use max existing ID to avoid collision when accounts have been deleted
+      // (e.g., accounts 0,1,2 -> delete 1 -> allAccounts.length=2 collides with account 2)
+      const newAccountIndex = allAccounts.length > 0
+        ? Math.max(...allAccounts.map(a => a.id ?? 0)) : 0
       accountLogger.debug('Deriving keys for new account', { newAccountIndex })
 
       const keys = await deriveWalletKeysForAccount(firstAccountKeys.mnemonic, newAccountIndex)

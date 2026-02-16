@@ -87,8 +87,11 @@ export const TRANSACTION = {
   /** Maximum fee rate in satoshis per kilobyte (safety limit) */
   MAX_FEE_RATE_PER_KB: 10000,
 
-  /** Dust threshold in satoshis */
+  /** Dust threshold in satoshis (for filtering/display — UTXOs below this are considered dust) */
   DUST_THRESHOLD: 546,
+
+  /** Change output dust threshold in satoshis (change below this isn't worth creating) */
+  CHANGE_DUST_THRESHOLD: 100,
 
   /** High-value transaction threshold in satoshis (for extra confirmation) */
   HIGH_VALUE_THRESHOLD: 100000,

@@ -42,6 +42,7 @@ import {
   isSyncInProgress
 } from './cancellation'
 import { syncLogger } from './logger'
+import { btcToSatoshis } from '../utils/satoshiConversion'
 import { parseTimelockScript } from './wallet/locks'
 import { publicKeyToHash } from '../domain/locks'
 
@@ -368,7 +369,7 @@ async function calculateTxAmount(
   // Prefer address matching (faster, clearer) with script hex fallback
   for (const vout of tx.vout) {
     if (isOurOutput(vout, primaryAddress, primaryLockingScript)) {
-      received += Math.round(vout.value * 1e8) // Convert BSV to sats
+      received += btcToSatoshis(vout.value)
     }
   }
 
@@ -390,7 +391,7 @@ async function calculateTxAmount(
         if (prevTx?.vout?.[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]!
           if (isOurOutputMulti(prevOutput, allAddressSet, allLockingScripts)) {
-            spent += Math.round(prevOutput.value * 100000000)
+            spent += btcToSatoshis(prevOutput.value)
           }
         }
       } catch (e) {
@@ -443,7 +444,7 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
       for (const vout of txDetails.vout) {
         const parsed = parseTimelockScript(vout.scriptPubKey.hex)
         if (parsed) {
-          lockSats = Math.round(vout.value * 1e8)
+          lockSats = btcToSatoshis(vout.value)
           txDescription = `Locked ${lockSats.toLocaleString()} sats until block ${parsed.unlockBlock.toLocaleString()}`
           txLabel = 'lock'
           break
@@ -462,7 +463,7 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
             const utxoId = await addUTXO({
               txid: txRef.tx_hash,
               vout: i,
-              satoshis: Math.round(lockVout.value * 1e8),
+              satoshis: btcToSatoshis(lockVout.value),
               lockingScript: lockVout.scriptPubKey.hex,
               basket: 'locks',
               spendable: false,
@@ -493,7 +494,7 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
       if (!txLabel && txDetails.locktime > 500000) {
         const hasNLockTimeInput = txDetails.vin.some(v => v.sequence === 4294967294)
         if (hasNLockTimeInput) {
-          const totalOutput = txDetails.vout.reduce((sum, v) => sum + Math.round(v.value * 1e8), 0)
+          const totalOutput = txDetails.vout.reduce((sum, v) => sum + btcToSatoshis(v.value), 0)
           txDescription = `Unlocked ${totalOutput.toLocaleString()} sats`
           txLabel = 'unlock'
           amount = totalOutput // Use actual received amount, not received-spent (which gives negative fee)

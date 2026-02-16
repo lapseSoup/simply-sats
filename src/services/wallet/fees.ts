@@ -48,6 +48,7 @@ export async function fetchDynamicFeeRate(): Promise<number> {
         const standardFee = payload.fees.find((f: { feeType: string }) => f.feeType === 'standard')
         if (standardFee?.miningFee) {
           // Convert from satoshis/byte
+          if (standardFee.miningFee.bytes === 0) return DEFAULT_FEE_RATE
           const ratePerByte = standardFee.miningFee.satoshis / standardFee.miningFee.bytes
           const clampedRate = Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, ratePerByte))
 

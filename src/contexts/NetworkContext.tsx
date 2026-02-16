@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { getNetworkStatus } from '../services/brc100'
 import { apiLogger } from '../services/logger'
+import { NETWORK } from '../config'
 
 export interface NetworkInfo {
   blockHeight: number
@@ -85,9 +86,12 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
     async function fetchPrice() {
       if (cancelled) return
       try {
-        const res = await fetch('https://api.whatsonchain.com/v1/bsv/main/exchangerate')
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), NETWORK.HTTP_TIMEOUT_MS)
+        const res = await fetch('https://api.whatsonchain.com/v1/bsv/main/exchangerate', { signal: controller.signal })
+        clearTimeout(timeout)
         const data = await res.json()
-        if (!cancelled && data?.rate) {
+        if (!cancelled && data?.rate && typeof data.rate === 'number' && Number.isFinite(data.rate) && data.rate > 0) {
           setUsdPrice(data.rate)
           priceFailuresRef.current = 0
         }
