@@ -24,11 +24,12 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: nu
     [tx.txid, tx.rawTx || null, tx.description || null, tx.createdAt, tx.confirmedAt || null, tx.blockHeight || null, tx.status, tx.amount ?? null, accId]
   )
 
-  // If amount was provided and row already existed, update the amount (only if currently NULL)
+  // If amount was provided and row already existed, update the amount
+  // Fixes NULL amounts AND incorrect 0 amounts (from rate-limited API calls during restore)
   // Scope by account_id to avoid updating other accounts' rows for the same txid
   if (tx.amount !== undefined) {
     await database.execute(
-      'UPDATE transactions SET amount = COALESCE(amount, $1) WHERE txid = $2 AND account_id = $3 AND amount IS NULL',
+      'UPDATE transactions SET amount = $1 WHERE txid = $2 AND account_id = $3 AND (amount IS NULL OR (amount = 0 AND $1 != 0))',
       [tx.amount, tx.txid, accId]
     )
   }

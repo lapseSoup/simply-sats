@@ -50,7 +50,7 @@ const TransactionItem = memo(function TransactionItem({
         </div>
       </div>
       <div className="tx-amount">
-        {tx.amount ? (
+        {tx.amount != null ? (
           <>
             <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
               {displayInSats
@@ -125,10 +125,10 @@ export function ActivityTab() {
     if (isUnlockTx) {
       return { type: 'Unlocked', icon: <Unlock size={14} strokeWidth={1.75} /> }
     }
-    if (tx.amount && tx.amount > 0) {
+    if (tx.amount != null && tx.amount > 0) {
       return { type: 'Received', icon: <ArrowDownLeft size={14} strokeWidth={1.75} /> }
     }
-    if (tx.amount && tx.amount < 0) {
+    if (tx.amount != null && tx.amount < 0) {
       return { type: 'Sent', icon: <ArrowUpRight size={14} strokeWidth={1.75} /> }
     }
     return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }

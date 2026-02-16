@@ -148,6 +148,8 @@ interface WalletContextType {
   handleListOrdinal: (ordinal: Ordinal, priceSats: number) => Promise<{ success: boolean; txid?: string; error?: string }>
   handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
 
+  // Account discovery (deferred after restore sync)
+  consumePendingDiscovery: () => { mnemonic: string; password: string; excludeAccountId?: number } | null
 }
 
 const WalletContext = createContext<WalletContextType | null>(null)
@@ -172,6 +174,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const [contacts, setContacts] = useState<Contact[]>([])
   // Incremented on account switch to invalidate stale async callbacks
   const fetchVersionRef = useRef(0)
+  // Stores pending account discovery params — consumed by App.tsx after initial sync completes
+  const pendingDiscoveryRef = useRef<{ mnemonic: string; password: string; excludeAccountId?: number } | null>(null)
 
   // Get sync state from SyncContext
   const {
@@ -909,6 +913,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
       await refreshAccounts()
       setWallet({ ...keys, mnemonic: mnemonic.trim() })
       setSessionPassword(password) // Store password for session operations (account creation)
+      // Queue account discovery for after initial sync completes (prevents race condition)
+      const activeAcc = await getActiveAccount()
+      pendingDiscoveryRef.current = { mnemonic: mnemonic.trim(), password, excludeAccountId: activeAcc?.id }
       // Audit log wallet restoration
       audit.walletRestored()
       return true
@@ -1148,6 +1155,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
     return result
   }, [wallet, fetchData, refreshTokens, sendTokenAction])
 
+  // Account discovery (deferred until after initial sync completes)
+  const consumePendingDiscovery = useCallback(() => {
+    const params = pendingDiscoveryRef.current
+    pendingDiscoveryRef.current = null
+    return params
+  }, [])
+
   // Settings
   const setFeeRate = useCallback((rate: number) => {
     setFeeRateKBState(rate)
@@ -1218,7 +1232,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleUnlock,
     handleTransferOrdinal,
     handleListOrdinal,
-    handleSendToken
+    handleSendToken,
+    consumePendingDiscovery
   }), [
     wallet, setWallet, balance, ordBalance, usdPrice, utxos, ordinals, ordinalContentCache,
     locks, txHistory, basketBalances, contacts, accounts, activeAccount, activeAccountId,
@@ -1227,7 +1242,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     autoLockMinutes, setAutoLockMinutes, networkInfo, syncing, syncError, loading,
     feeRateKB, setFeeRate, sessionPassword, refreshContacts, performSync, fetchData, handleCreateWallet,
     handleRestoreWallet, handleImportJSON, handleDeleteWallet, handleSend, handleLock,
-    handleUnlock, handleTransferOrdinal, handleListOrdinal, handleSendToken
+    handleUnlock, handleTransferOrdinal, handleListOrdinal, handleSendToken,
+    consumePendingDiscovery
   ])
 
   return (

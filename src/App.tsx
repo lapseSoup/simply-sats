@@ -20,6 +20,7 @@ import { loadNotifications, startPaymentListener } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
 import { getDerivedAddresses } from './services/database'
 import { needsInitialSync } from './services/sync'
+import { discoverAccounts } from './services/accountDiscovery'
 // import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive
 
 // Tab order for keyboard navigation
@@ -48,7 +49,9 @@ function WalletApp() {
     importAccount,
     deleteAccount,
     renameAccount,
-    syncError
+    syncError,
+    consumePendingDiscovery,
+    refreshAccounts
   } = useWallet()
 
   const { copyFeedback, toasts, showToast } = useUI()
@@ -157,10 +160,31 @@ function WalletApp() {
       }
       // Always fetch data after sync (or directly from DB if already synced)
       await fetchData()
+
+      // Run account discovery AFTER primary sync to avoid race conditions
+      // (discoverAccounts changes activeAccountId which would discard fetchData results if concurrent)
+      if (needsSync) {
+        const discoveryParams = consumePendingDiscovery()
+        if (discoveryParams) {
+          try {
+            const found = await discoverAccounts(
+              discoveryParams.mnemonic,
+              discoveryParams.password,
+              discoveryParams.excludeAccountId
+            )
+            if (found > 0) {
+              await refreshAccounts()
+              showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
+            }
+          } catch (_e) {
+            // Silent failure — primary restore already succeeded
+          }
+        }
+      }
     }
 
     checkSync()
-  }, [wallet, performSync, fetchData, activeAccountId])
+  }, [wallet, performSync, fetchData, activeAccountId, consumePendingDiscovery, refreshAccounts, showToast])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {

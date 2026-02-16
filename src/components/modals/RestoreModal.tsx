@@ -56,16 +56,8 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       const success = await handleRestoreWallet(restoreMnemonic.trim(), password)
       if (success) {
         onSuccess()
-        // Discover additional accounts with on-chain activity (non-blocking)
-        const active = await getActiveAccount()
-        discoverAccounts(restoreMnemonic.trim(), password, active?.id)
-          .then(async (found) => {
-            if (found > 0) {
-              await refreshAccounts()
-              showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
-            }
-          })
-          .catch(() => {}) // Silent failure — primary restore already succeeded
+        // Account discovery is now deferred until after initial sync completes
+        // (handled by App.tsx auto-sync effect via WalletContext.consumePendingDiscovery)
       } else {
         showToast('Failed to restore wallet')
       }
