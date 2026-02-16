@@ -4,7 +4,7 @@
  * Extracted from WalletContext to reduce god-object complexity.
  */
 
-import { useCallback, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useRef, useEffect, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
 import type { WalletKeys, LockedUTXO, Ordinal } from '../services/wallet'
 import type { Account } from '../services/accounts'
 import type { TxHistoryItem } from '../contexts/SyncContext'
@@ -72,9 +72,16 @@ export function useAccountSwitching({
   wallet,
   accounts
 }: UseAccountSwitchingOptions): UseAccountSwitchingReturn {
+  // Use ref to avoid stale closure — sessionPassword may update after callback creation
+  const sessionPasswordRef = useRef(sessionPassword)
+  useEffect(() => {
+    sessionPasswordRef.current = sessionPassword
+  }, [sessionPassword])
+
   const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
-    walletLogger.debug('switchAccount called', { accountId, hasSessionPassword: !!sessionPassword })
-    if (!sessionPassword) {
+    const currentPassword = sessionPasswordRef.current
+    walletLogger.debug('switchAccount called', { accountId, hasSessionPassword: !!currentPassword })
+    if (!currentPassword) {
       walletLogger.error('Cannot switch account - no session password available. User must re-unlock wallet.')
       return false
     }
@@ -82,7 +89,7 @@ export function useAccountSwitching({
       // Cancel any in-flight sync for the previous account before switching
       cancelSync()
 
-      const keys = await accountsSwitchAccount(accountId, sessionPassword)
+      const keys = await accountsSwitchAccount(accountId, currentPassword)
       if (keys) {
         // Invalidate any in-flight fetchData callbacks from the previous account
         fetchVersionRef.current += 1
@@ -170,10 +177,11 @@ export function useAccountSwitching({
       walletLogger.error('Error switching account', e)
       return false
     }
-  }, [accountsSwitchAccount, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, sessionPassword, storeKeysInRust, fetchVersionRef, setIsLocked])
+  }, [accountsSwitchAccount, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
-    if (!sessionPassword) {
+    const currentPassword = sessionPasswordRef.current
+    if (!currentPassword) {
       walletLogger.error('Cannot create account - no session password available')
       return false
     }
@@ -181,7 +189,7 @@ export function useAccountSwitching({
       walletLogger.warn('Account creation blocked - maximum 10 accounts reached')
       return false
     }
-    const keys = await accountsCreateNewAccount(name, sessionPassword)
+    const keys = await accountsCreateNewAccount(name, currentPassword)
     if (keys) {
       // Store mnemonic in Rust key store before clearing from React state
       await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? (accounts.length))
@@ -191,14 +199,15 @@ export function useAccountSwitching({
       return true
     }
     return false
-  }, [accountsCreateNewAccount, setWallet, setIsLocked, sessionPassword, accounts.length, storeKeysInRust])
+  }, [accountsCreateNewAccount, setWallet, setIsLocked, accounts.length, storeKeysInRust])
 
   const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
-    if (!sessionPassword) {
+    const currentPassword = sessionPasswordRef.current
+    if (!currentPassword) {
       walletLogger.error('Cannot import account - no session password available')
       return false
     }
-    const keys = await accountsImportAccount(name, mnemonic, sessionPassword)
+    const keys = await accountsImportAccount(name, mnemonic, currentPassword)
     if (keys) {
       // Store mnemonic in Rust key store before clearing from React state
       await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? (accounts.length))
@@ -207,7 +216,7 @@ export function useAccountSwitching({
       setIsLocked(false)
       // Discover derivative accounts for this mnemonic (non-blocking)
       const active = await getActiveAccount()
-      discoverAccounts(mnemonic, sessionPassword, active?.id)
+      discoverAccounts(mnemonic, currentPassword, active?.id)
         .then(async (found) => {
           if (found > 0) {
             await refreshAccounts()
@@ -220,25 +229,26 @@ export function useAccountSwitching({
       return true
     }
     return false
-  }, [accountsImportAccount, setWallet, setIsLocked, sessionPassword, refreshAccounts, accounts.length, storeKeysInRust])
+  }, [accountsImportAccount, setWallet, setIsLocked, refreshAccounts, accounts.length, storeKeysInRust])
 
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
     const success = await accountsDeleteAccount(accountId)
     if (success) {
       const active = await getActiveAccount()
       if (active && wallet === null) {
-        if (!sessionPassword) {
+        const currentPassword = sessionPasswordRef.current
+        if (!currentPassword) {
           walletLogger.error('Cannot switch to remaining account after deletion — no session password. User must re-unlock.')
           return success
         }
-        const keys = await getKeysForAccount(active, sessionPassword)
+        const keys = await getKeysForAccount(active, currentPassword)
         if (keys) {
           setWallet(keys)
         }
       }
     }
     return success
-  }, [accountsDeleteAccount, wallet, setWallet, getKeysForAccount, sessionPassword])
+  }, [accountsDeleteAccount, wallet, setWallet, getKeysForAccount])
 
   return {
     switchAccount,
