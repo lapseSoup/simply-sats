@@ -206,6 +206,15 @@ vi.mock('../logger', () => ({
   }
 }))
 
+// ─── Mock getWifForOperation (./types) ─────────────────────────────
+vi.mock('./types', async () => {
+  const actual = await vi.importActual<typeof import('./types')>('./types')
+  return {
+    ...actual,
+    getWifForOperation: vi.fn().mockResolvedValue('L1RMEbBkMJ3JKzn3e3cE9Fm4XLKP5Pmjbsci7dqASiJVTCTxhsWi')
+  }
+})
+
 // ─── Import modules under test (after mocks) ───────────────────────
 import {
   parseTimelockScript,
@@ -222,7 +231,6 @@ import { recordSentTransaction, confirmUtxosSpent } from '../sync'
 import { markLockUnlockedByTxid, addUTXO, addLock } from '../database'
 
 // ─── Fixtures ───────────────────────────────────────────────────────
-const TEST_WIF = 'L1RMEbBkMJ3JKzn3e3cE9Fm4XLKP5Pmjbsci7dqASiJVTCTxhsWi'
 
 function createTestUTXO(overrides?: Partial<UTXO>): UTXO {
   return {
@@ -285,7 +293,7 @@ describe('locks service', () => {
     it('should lock satoshis successfully and return txid + lockedUtxo', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      const result = await lockBSV(TEST_WIF, 10_000, 900_000, utxos)
+      const result = await lockBSV(10_000, 900_000, utxos)
 
       expect(result.txid).toBe('exec-broadcast-txid-001')
       expect(result.lockedUtxo).toBeDefined()
@@ -304,7 +312,7 @@ describe('locks service', () => {
     it('should throw "Insufficient funds" when total input < satoshis', async () => {
       const utxos = [createTestUTXO({ satoshis: 500 })]
 
-      await expect(lockBSV(TEST_WIF, 10_000, 900_000, utxos))
+      await expect(lockBSV(10_000, 900_000, utxos))
         .rejects.toThrow('Insufficient funds')
     })
 
@@ -313,7 +321,7 @@ describe('locks service', () => {
       // Provide exactly 10_000 — not enough for fee
       const utxos = [createTestUTXO({ satoshis: 10_000 })]
 
-      await expect(lockBSV(TEST_WIF, 10_000, 900_000, utxos))
+      await expect(lockBSV(10_000, 900_000, utxos))
         .rejects.toThrow('Insufficient funds')
     })
 
@@ -326,7 +334,7 @@ describe('locks service', () => {
 
       // Lock 5_000 sats, fee = 300 => need 5_500 (threshold is satoshis + 500)
       // First two UTXOs = 7_000 >= 5_500, so it should stop there
-      const result = await lockBSV(TEST_WIF, 5_000, 900_000, utxos)
+      const result = await lockBSV(5_000, 900_000, utxos)
       expect(result.txid).toBe('exec-broadcast-txid-001')
     })
 
@@ -335,14 +343,14 @@ describe('locks service', () => {
 
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await expect(lockBSV(TEST_WIF, 10_000, 900_000, utxos))
+      await expect(lockBSV(10_000, 900_000, utxos))
         .rejects.toThrow('Broadcast failed')
     })
 
     it('should add change UTXO to database when change > 0', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await lockBSV(TEST_WIF, 10_000, 900_000, utxos)
+      await lockBSV(10_000, 900_000, utxos)
 
       // addUTXO should be called twice: once for lock output, once for change
       // (Lock change UTXO + lock UTXO itself)
@@ -352,7 +360,7 @@ describe('locks service', () => {
     it('should add lock record to database', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await lockBSV(TEST_WIF, 10_000, 900_000, utxos)
+      await lockBSV(10_000, 900_000, utxos)
 
       expect(addLock).toHaveBeenCalledOnce()
       expect(addLock).toHaveBeenCalledWith(
@@ -366,7 +374,7 @@ describe('locks service', () => {
     it('should pass ordinalOrigin and accountId when provided', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await lockBSV(TEST_WIF, 10_000, 900_000, utxos, 'origin-abc', 870_000, 5)
+      await lockBSV(10_000, 900_000, utxos, 'origin-abc', 870_000, 5)
 
       expect(addLock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -393,7 +401,7 @@ describe('locks service', () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
       // Should throw — atomic transaction ensures all-or-nothing recording
-      await expect(lockBSV(TEST_WIF, 10_000, 900_000, utxos)).rejects.toThrow(
+      await expect(lockBSV(10_000, 900_000, utxos)).rejects.toThrow(
         /Lock broadcast succeeded.*but failed to record locally/
       )
     })
@@ -401,7 +409,7 @@ describe('locks service', () => {
     it('should use the correct fee calculation', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await lockBSV(TEST_WIF, 10_000, 900_000, utxos)
+      await lockBSV(10_000, 900_000, utxos)
 
       expect(calculateLockFee).toHaveBeenCalledWith(
         1, // numInputs
@@ -416,7 +424,7 @@ describe('locks service', () => {
     it('should unlock successfully when block height is reached', async () => {
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 870_000 })
 
-      const txid = await unlockBSV(TEST_WIF, lockedUtxo, 870_001)
+      const txid = await unlockBSV(lockedUtxo, 870_001)
 
       expect(txid).toBe('broadcast-txid-001')
       expect(broadcastTransaction).toHaveBeenCalledOnce()
@@ -431,7 +439,7 @@ describe('locks service', () => {
     it('should throw when block height not reached', async () => {
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 900_000 })
 
-      await expect(unlockBSV(TEST_WIF, lockedUtxo, 870_000))
+      await expect(unlockBSV(lockedUtxo, 870_000))
         .rejects.toThrow('Cannot unlock yet. Current block: 870000, Unlock block: 900000')
     })
 
@@ -440,7 +448,7 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await expect(unlockBSV(TEST_WIF, lockedUtxo, 870_000))
+      await expect(unlockBSV(lockedUtxo, 870_000))
         .rejects.toThrow('This lock is already being processed in another transaction')
     })
 
@@ -449,7 +457,7 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(TEST_WIF, lockedUtxo, 870_000)
+      const txid = await unlockBSV(lockedUtxo, 870_000)
       expect(txid).toBe('broadcast-txid-001')
     })
 
@@ -458,7 +466,7 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(TEST_WIF, lockedUtxo, 870_000)
+      const txid = await unlockBSV(lockedUtxo, 870_000)
       expect(txid).toBe('broadcast-txid-001')
     })
 
@@ -466,7 +474,7 @@ describe('locks service', () => {
       // feeFromBytes returns 200, so if satoshis <= 200 we get outputSats <= 0
       const lockedUtxo = createTestLockedUTXO({ satoshis: 100 })
 
-      await expect(unlockBSV(TEST_WIF, lockedUtxo, 900_001))
+      await expect(unlockBSV(lockedUtxo, 900_001))
         .rejects.toThrow('Insufficient funds')
     })
 
@@ -479,7 +487,7 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(TEST_WIF, lockedUtxo, 870_000)
+      const txid = await unlockBSV(lockedUtxo, 870_000)
       expect(txid).toBe('spending-txid-xyz')
       expect(markLockUnlockedByTxid).toHaveBeenCalled()
     })
@@ -494,7 +502,7 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await expect(unlockBSV(TEST_WIF, lockedUtxo, 870_000))
+      await expect(unlockBSV(lockedUtxo, 870_000))
         .rejects.toThrow('Network error')
     })
 
@@ -508,14 +516,14 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await expect(unlockBSV(TEST_WIF, lockedUtxo, 870_000))
+      await expect(unlockBSV(lockedUtxo, 870_000))
         .rejects.toThrow('Broadcast error')
     })
 
     it('should pass accountId to markLockUnlockedByTxid', async () => {
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await unlockBSV(TEST_WIF, lockedUtxo, 870_000, 7)
+      await unlockBSV(lockedUtxo, 870_000, 7)
 
       expect(markLockUnlockedByTxid).toHaveBeenCalledWith(
         lockedUtxo.txid,
@@ -529,7 +537,7 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(TEST_WIF, lockedUtxo, 870_000)
+      const txid = await unlockBSV(lockedUtxo, 870_000)
       expect(txid).toBe('broadcast-txid-001')
     })
 
@@ -538,14 +546,14 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(TEST_WIF, lockedUtxo, 870_000)
+      const txid = await unlockBSV(lockedUtxo, 870_000)
       expect(txid).toBe('broadcast-txid-001')
     })
 
     it('should use feeFromBytes for fee calculation', async () => {
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await unlockBSV(TEST_WIF, lockedUtxo, 870_000)
+      await unlockBSV(lockedUtxo, 870_000)
 
       expect(feeFromBytes).toHaveBeenCalledWith(expect.any(Number))
     })
@@ -580,7 +588,7 @@ describe('locks service', () => {
     it('should generate transaction hex, txid, and outputSats', async () => {
       const lockedUtxo = createTestLockedUTXO({ satoshis: 50_000 })
 
-      const result = await generateUnlockTxHex(TEST_WIF, lockedUtxo)
+      const result = await generateUnlockTxHex(lockedUtxo)
 
       expect(result.txHex).toBe('deadbeef')
       expect(result.txid).toBe('mock-txid-abc123')
@@ -591,14 +599,14 @@ describe('locks service', () => {
     it('should throw when locked amount cannot cover fee', async () => {
       const lockedUtxo = createTestLockedUTXO({ satoshis: 50 })
 
-      await expect(generateUnlockTxHex(TEST_WIF, lockedUtxo))
+      await expect(generateUnlockTxHex(lockedUtxo))
         .rejects.toThrow('Insufficient funds to cover unlock fee')
     })
 
     it('should not broadcast or record anything (dry run)', async () => {
       const lockedUtxo = createTestLockedUTXO({ satoshis: 50_000 })
 
-      await generateUnlockTxHex(TEST_WIF, lockedUtxo)
+      await generateUnlockTxHex(lockedUtxo)
 
       expect(broadcastTransaction).not.toHaveBeenCalled()
       expect(executeBroadcast).not.toHaveBeenCalled()

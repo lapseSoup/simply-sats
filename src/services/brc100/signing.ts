@@ -28,13 +28,15 @@ async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promi
 }
 
 /**
- * Sign a message with the identity key
+ * Sign a message with the identity key.
+ * In Tauri, uses the key store (WIF never leaves Rust).
  */
 export async function signMessage(keys: WalletKeys, message: string): Promise<string> {
   if (isTauri()) {
-    return tauriInvoke<string>('sign_message', { wif: keys.identityWif, message })
+    return tauriInvoke<string>('sign_message_from_store', { message, keyType: 'identity' })
   }
 
+  // JS fallback (browser dev mode only)
   const privateKey = PrivateKey.fromWif(keys.identityWif)
   const messageBytes = new TextEncoder().encode(message)
   const signature = privateKey.sign(Array.from(messageBytes))
@@ -49,6 +51,12 @@ export async function signData(
   data: number[],
   keyType: 'identity' | 'wallet' | 'ordinals' = 'identity'
 ): Promise<string> {
+  if (isTauri()) {
+    // Use key store — WIF never leaves Rust
+    return tauriInvoke<string>('sign_data_from_store', { data: new Uint8Array(data), keyType })
+  }
+
+  // JS fallback (browser dev mode only)
   let wif: string
   switch (keyType) {
     case 'wallet':
@@ -62,10 +70,6 @@ export async function signData(
       break
     default:
       throw new Error(`Invalid keyType: ${keyType as string}`)
-  }
-
-  if (isTauri()) {
-    return tauriInvoke<string>('sign_data', { wif, data: new Uint8Array(data) })
   }
 
   const privateKey = PrivateKey.fromWif(wif)

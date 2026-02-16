@@ -36,10 +36,11 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
 
   if (!wallet) return null
 
-  const deriveReceiveAddress = (senderPubKey: string, invoiceIndex: number): string => {
-    if (!wallet.identityWif) return ''
+  const deriveReceiveAddress = async (senderPubKey: string, invoiceIndex: number): Promise<string> => {
     try {
-      const receiverPriv = PrivateKey.fromWif(wallet.identityWif)
+      const { getWifForOperation } = await import('../../services/wallet')
+      const identityWif = await getWifForOperation('identity', 'deriveReceiveAddress', wallet)
+      const receiverPriv = PrivateKey.fromWif(identityWif)
       const senderPub = PublicKey.fromString(senderPubKey)
       const invoiceNumber = `2-3241645161d8-simply-sats ${invoiceIndex}`
       return deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
@@ -55,9 +56,10 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
     invoiceIndex: number,
     label?: string
   ): Promise<boolean> => {
-    if (!wallet.identityWif) return false
     try {
-      const receiverPriv = PrivateKey.fromWif(wallet.identityWif)
+      const { getWifForOperation } = await import('../../services/wallet')
+      const identityWif = await getWifForOperation('identity', 'saveDerivedAddress', wallet)
+      const receiverPriv = PrivateKey.fromWif(identityWif)
       const senderPub = PublicKey.fromString(senderPubKey)
       const invoiceNumber = `2-3241645161d8-simply-sats ${invoiceIndex}`
       const childPrivKey = deriveChildPrivateKey(receiverPriv, senderPub, invoiceNumber)
@@ -85,7 +87,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
         setSenderPubKeyInput(contact.pubkey)
         const nextIndex = await getNextInvoiceNumber(contact.pubkey)
         setCurrentInvoiceIndex(nextIndex)
-        setDerivedReceiveAddress(deriveReceiveAddress(contact.pubkey, nextIndex))
+        setDerivedReceiveAddress(await deriveReceiveAddress(contact.pubkey, nextIndex))
       }
     } else {
       setSenderPubKeyInput('')
@@ -100,7 +102,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
     if (val.length >= 66) {
       const nextIndex = await getNextInvoiceNumber(val)
       setCurrentInvoiceIndex(nextIndex)
-      setDerivedReceiveAddress(deriveReceiveAddress(val, nextIndex))
+      setDerivedReceiveAddress(await deriveReceiveAddress(val, nextIndex))
     } else {
       setDerivedReceiveAddress('')
       setCurrentInvoiceIndex(1)

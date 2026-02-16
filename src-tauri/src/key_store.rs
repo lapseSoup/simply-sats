@@ -205,7 +205,18 @@ pub async fn has_keys(
     Ok(store.has_keys())
 }
 
-/// Get mnemonic once for backup display, then clear it from memory
+/// Get mnemonic for backup/export operations (does NOT clear from memory)
+/// Use this when you need the mnemonic multiple times (e.g., multiple backup exports)
+#[tauri::command]
+pub async fn get_mnemonic(
+    key_store: tauri::State<'_, SharedKeyStore>,
+) -> Result<Option<String>, String> {
+    let store = key_store.lock().await;
+    Ok(store.mnemonic.clone())
+}
+
+/// Get mnemonic once for temporary display, then clear it from memory
+/// Use this for one-time display operations (e.g., showing recovery phrase in UI)
 #[tauri::command]
 pub async fn get_mnemonic_once(
     key_store: tauri::State<'_, SharedKeyStore>,
@@ -339,6 +350,37 @@ pub async fn build_consolidation_tx_from_store(
     let wif = Zeroizing::new(store.get_wif("wallet")?);
     drop(store);
     transaction::build_consolidation_tx((*wif).clone(), utxos, fee_rate)
+}
+
+// ==================== Bridge Command for Complex JS Operations ====================
+
+/// Retrieve a WIF from the store for operations that cannot yet be performed
+/// entirely in Rust (lock/unlock sCrypt, ordinals, tokens, BRC-42 derivation).
+///
+/// SECURITY NOTE: This is an intermediate migration step. The WIF is returned to
+/// the frontend for the duration of a single operation, rather than being stored
+/// persistently in React state. The caller MUST NOT persist the returned WIF.
+///
+/// Future: Each operation using this command should be migrated to a dedicated
+/// `_from_store` Rust command that never exposes the WIF to JavaScript.
+///
+/// `operation` is a free-text label used for audit logging only (e.g. "lockBSV",
+/// "transferOrdinal", "sendToken"). It does not affect behaviour.
+#[tauri::command]
+pub async fn get_wif_for_operation(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    key_type: String,
+    operation: String,
+) -> Result<String, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = store.get_wif(&key_type)?;
+    log::warn!(
+        "WIF retrieved for JS operation '{}' (key_type: {}). \
+         This is a transitional bridge — migrate to a _from_store command.",
+        operation, key_type
+    );
+    Ok(wif)
 }
 
 #[cfg(test)]

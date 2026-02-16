@@ -24,7 +24,16 @@ vi.mock('./database', () => ({
 
 vi.mock('./logger', () => ({
   brc100Logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  walletLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
+
+vi.mock('./wallet', async () => {
+  const actual = await vi.importActual('./wallet')
+  return {
+    ...actual,
+    getWifForOperation: vi.fn().mockResolvedValue('L1RrrnXkcKut5DEMwtDthjwRcTTwED36thyL1DebVrKuwvohjMNi'),
+  }
+})
 
 import {
   generateSerialNumber,
@@ -232,10 +241,10 @@ describe('ensureCertificatesTable', () => {
 
     // 1 CREATE TABLE + 3 CREATE INDEX = 4 calls
     expect(mockExecute).toHaveBeenCalledTimes(4)
-    expect(mockExecute.mock.calls[0][0]).toContain('CREATE TABLE IF NOT EXISTS certificates')
-    expect(mockExecute.mock.calls[1][0]).toContain('CREATE INDEX IF NOT EXISTS idx_certificates_subject')
-    expect(mockExecute.mock.calls[2][0]).toContain('CREATE INDEX IF NOT EXISTS idx_certificates_certifier')
-    expect(mockExecute.mock.calls[3][0]).toContain('CREATE INDEX IF NOT EXISTS idx_certificates_type')
+    expect(mockExecute.mock.calls[0]![0]).toContain('CREATE TABLE IF NOT EXISTS certificates')
+    expect(mockExecute.mock.calls[1]![0]).toContain('CREATE INDEX IF NOT EXISTS idx_certificates_subject')
+    expect(mockExecute.mock.calls[2]![0]).toContain('CREATE INDEX IF NOT EXISTS idx_certificates_certifier')
+    expect(mockExecute.mock.calls[3]![0]).toContain('CREATE INDEX IF NOT EXISTS idx_certificates_type')
   })
 
   it('should not throw on database error', async () => {
@@ -257,7 +266,7 @@ describe('storeCertificate', () => {
     expect(id).toBe(42)
     // Should have called ensureCertificatesTable (4 calls) + 1 INSERT
     expect(mockExecute).toHaveBeenCalledTimes(5)
-    const insertCall = mockExecute.mock.calls[4]
+    const insertCall = mockExecute.mock.calls[4]!
     expect(insertCall[0]).toContain('INSERT OR REPLACE INTO certificates')
     expect(insertCall[1]).toContain('identity')
     expect(insertCall[1]).toContain(subjectPubKey)

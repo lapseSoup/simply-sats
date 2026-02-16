@@ -460,7 +460,12 @@ async fn respond_to_brc100(
     Ok(())
 }
 
-// Command to get the session token for frontend use
+/// Returns the session token for BRC-100 HTTP API authentication.
+///
+/// SECURITY NOTE: This token is necessarily accessible from frontend JS
+/// because the SDK needs it for HTTP requests to the BRC-100 server.
+/// An XSS in the webview would grant full API access. This is an accepted
+/// trade-off — the CSP and Tauri's webview isolation mitigate the risk.
 #[tauri::command]
 async fn get_session_token(
     session_state: tauri::State<'_, SharedSessionState>,
@@ -586,6 +591,7 @@ pub fn run() {
             key_store::clear_keys,
             key_store::get_public_keys,
             key_store::has_keys,
+            key_store::get_mnemonic,
             key_store::get_mnemonic_once,
             key_store::sign_message_from_store,
             key_store::sign_data_from_store,
@@ -593,7 +599,8 @@ pub fn run() {
             key_store::decrypt_ecies_from_store,
             key_store::build_p2pkh_tx_from_store,
             key_store::build_multi_key_p2pkh_tx_from_store,
-            key_store::build_consolidation_tx_from_store
+            key_store::build_consolidation_tx_from_store,
+            key_store::get_wif_for_operation
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();

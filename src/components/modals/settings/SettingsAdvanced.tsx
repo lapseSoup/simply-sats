@@ -46,9 +46,11 @@ export function SettingsAdvanced() {
   }, [senderInput, fetchData, showToast])
 
   const handleCheckMessageBox = useCallback(async () => {
-    if (!wallet?.identityWif) return
+    if (!wallet) return
     try {
-      const identityPrivKey = PrivateKey.fromWif(wallet.identityWif)
+      const { getWifForOperation } = await import('../../../services/wallet')
+      const identityWif = await getWifForOperation('identity', 'checkMessageBox', wallet)
+      const identityPrivKey = PrivateKey.fromWif(identityWif)
       const newPayments = await checkForPayments(identityPrivKey)
       setPaymentNotifications(getPaymentNotifications())
       if (newPayments.length > 0) {
@@ -63,7 +65,7 @@ export function SettingsAdvanced() {
   }, [wallet, fetchData, showToast])
 
   const handleDebugSearch = useCallback(() => {
-    if (!debugAddressInput || !wallet?.identityWif) return
+    if (!debugAddressInput || !wallet) return
     const senders = getKnownSenders()
     if (senders.length === 0) {
       setDebugResult('No known senders')
@@ -71,9 +73,11 @@ export function SettingsAdvanced() {
     }
     setDebugSearching(true)
     setDebugResult('Searching...')
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
-        const identityPrivKey = PrivateKey.fromWif(wallet.identityWif)
+        const { getWifForOperation } = await import('../../../services/wallet')
+        const identityWif = await getWifForOperation('identity', 'debugInvoiceFinder', wallet)
+        const identityPrivKey = PrivateKey.fromWif(identityWif)
         for (const sender of senders) {
           const result = debugFindInvoiceNumber(identityPrivKey, sender, debugAddressInput)
           if (result.found) {

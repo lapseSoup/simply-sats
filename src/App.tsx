@@ -111,7 +111,7 @@ function WalletApp() {
 
   // MessageBox listener for payments
   useEffect(() => {
-    if (!wallet?.identityWif) return
+    if (!wallet) return
 
     loadNotifications()
 
@@ -123,13 +123,20 @@ function WalletApp() {
       setTimeout(() => setNewPaymentAlert(null), 5000)
     }
 
-    const identityPrivKey = PrivateKey.fromWif(wallet.identityWif)
-    const stopListener = startPaymentListener(identityPrivKey, handleNewPayment)
+    const setupListener = async () => {
+      const { getWifForOperation } = await import('./services/wallet')
+      const identityWif = await getWifForOperation('identity', 'paymentListener', wallet)
+      const identityPrivKey = PrivateKey.fromWif(identityWif)
+      return startPaymentListener(identityPrivKey, handleNewPayment)
+    }
+
+    let stopListener: (() => void) | undefined
+    setupListener().then(stop => { stopListener = stop })
 
     return () => {
-      stopListener()
+      stopListener?.()
     }
-  }, [wallet?.identityWif, showToast])
+  }, [wallet, showToast])
 
   // Auto-sync on wallet load (only when account is set)
   // Single effect handles both sync + data fetch to avoid race conditions
@@ -335,9 +342,20 @@ function WalletApp() {
           <span>🔒 It's been a while since you verified your recovery phrase.</span>
           <button
             className="backup-reminder-btn"
-            onClick={() => {
-              setNewMnemonic(wallet?.mnemonic || null)
-              openModal('mnemonic')
+            onClick={async () => {
+              // Fetch mnemonic from Rust key store on-demand
+              const { invoke } = await import('@tauri-apps/api/core')
+              try {
+                const mnemonic = await invoke<string | null>('get_mnemonic_once')
+                if (mnemonic) {
+                  setNewMnemonic(mnemonic)
+                  openModal('mnemonic')
+                } else {
+                  showToast('Mnemonic not available — wallet may have been imported without one', 'warning')
+                }
+              } catch (_err) {
+                showToast('Failed to retrieve recovery phrase', 'error')
+              }
               setShowBackupReminder(false)
             }}
           >

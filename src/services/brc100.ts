@@ -4,7 +4,7 @@ import { brc100Logger } from './logger'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import type { WalletKeys, UTXO, LockedUTXO } from './wallet'
-import { getUTXOs, calculateTxFee, lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV } from './wallet'
+import { getUTXOs, calculateTxFee, lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV, getWifForOperation } from './wallet'
 import {
   getSpendableUTXOs,
   getUTXOsByBasket,
@@ -446,7 +446,8 @@ export async function createLockTransaction(
   blocks: number,
   ordinalOrigin?: string
 ): Promise<{ txid: string; unlockBlock: number }> {
-  const privateKey = PrivateKey.fromWif(keys.walletWif)
+  const walletWif = await getWifForOperation('wallet', 'createLockTransaction', keys)
+  const privateKey = PrivateKey.fromWif(walletWif)
   const publicKey = privateKey.toPublicKey()
   const fromAddress = publicKey.toAddress()
 
@@ -622,6 +623,7 @@ export async function handleBRC100Request(
         }
 
         // Sign with identity key by default
+        // signData uses _from_store in Tauri; keys only needed for JS fallback
         const signature = await signData(keys, sigRequest.data, 'identity')
 
         // Defense-in-depth: verify our own signature before returning it
@@ -706,6 +708,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
       case 'createSignature': {
         const sigRequest = request.params as unknown as SignatureRequest
+        // signData uses _from_store in Tauri; keys only needed for JS fallback
         const signature = await signData(keys, sigRequest.data, 'identity')
 
         // Defense-in-depth: verify our own signature before returning it
@@ -796,8 +799,8 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
           // Use the wallet's native lockBSV function (OP_PUSH_TX)
           // Pass ordinalOrigin so it can be included as OP_RETURN in the same transaction
+          // lockBSV retrieves the WIF internally from the Rust key store
           const result = await walletLockBSV(
-            keys.walletWif,
             satoshis,
             unlockBlock,
             walletUtxos,
@@ -881,8 +884,8 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
           }
 
           // Use the wallet's native unlockBSV function
+          // unlockBSV retrieves the WIF internally from the Rust key store
           const unlockTxid = await walletUnlockBSV(
-            keys.walletWif,
             lockedUtxo,
             currentHeight
           )
@@ -929,7 +932,8 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
         try {
           // Derive shared secret using ECDH
-          const senderPrivKey = PrivateKey.fromWif(keys.identityWif)
+          const identityWif = await getWifForOperation('identity', 'encrypt', keys)
+          const senderPrivKey = PrivateKey.fromWif(identityWif)
           const recipientPublicKey = PublicKey.fromString(recipientPubKey)
 
           // Use ECDH to derive shared secret
@@ -978,7 +982,8 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
         try {
           // Derive shared secret using ECDH
-          const recipientPrivKey = PrivateKey.fromWif(keys.identityWif)
+          const identityWif = await getWifForOperation('identity', 'decrypt', keys)
+          const recipientPrivKey = PrivateKey.fromWif(identityWif)
           const senderPublicKey = PublicKey.fromString(senderPubKey)
 
           // Use ECDH to derive shared secret
@@ -1018,7 +1023,8 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
         }
 
         try {
-          const rootPrivKey = PrivateKey.fromWif(keys.identityWif)
+          const identityWif = await getWifForOperation('identity', 'getTaggedKeys', keys)
+          const rootPrivKey = PrivateKey.fromWif(identityWif)
           const derivedKeys: Array<{
             keyId: string
             publicKey: string
@@ -1100,7 +1106,8 @@ async function buildAndBroadcastAction(
   keys: WalletKeys,
   actionRequest: CreateActionRequest
 ): Promise<{ txid: string }> {
-  const privateKey = PrivateKey.fromWif(keys.walletWif)
+  const walletWif = await getWifForOperation('wallet', 'buildAndBroadcastAction', keys)
+  const privateKey = PrivateKey.fromWif(walletWif)
   const publicKey = privateKey.toPublicKey()
   const fromAddress = publicKey.toAddress()
   const sourceLockingScript = new P2PKH().lock(fromAddress)

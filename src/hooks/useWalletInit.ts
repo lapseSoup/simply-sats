@@ -123,7 +123,8 @@ export function useWalletInit({
             const keys = await loadWallet('')
             if (!mounted) return
             if (keys) {
-              setWallet(keys)
+              // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
+              setWallet({ ...keys, mnemonic: '' })
               walletLogger.info('Migrating to multi-account system')
               await migrateToMultiAccount(keys, '')
               if (!mounted) return

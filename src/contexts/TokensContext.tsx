@@ -4,7 +4,7 @@ import {
   syncTokenBalances,
   sendToken
 } from '../services/tokens'
-import { getUTXOs, type WalletKeys } from '../services/wallet'
+import { getUTXOs, getWifForOperation, type WalletKeys } from '../services/wallet'
 import { tokenLogger } from '../services/logger'
 
 interface TokensContextType {
@@ -83,11 +83,14 @@ export function TokensProvider({ children }: TokensProviderProps) {
         return { success: false, error: 'No funding UTXOs available for transfer fee' }
       }
 
+      const walletWif = await getWifForOperation('wallet', 'sendToken', wallet)
+      const ordWif = await getWifForOperation('ordinals', 'sendToken', wallet)
+
       const result = await sendToken(
         wallet.walletAddress,
         wallet.ordAddress,
-        wallet.walletWif,
-        wallet.ordWif,
+        walletWif,
+        ordWif,
         fundingUtxos,
         ticker,
         protocol,

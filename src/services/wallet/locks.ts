@@ -21,6 +21,7 @@ import {
   Hash
 } from '@bsv/sdk'
 import type { UTXO, LockedUTXO } from './types'
+import { getWifForOperation } from './types'
 import { calculateLockFee, feeFromBytes } from './fees'
 import { broadcastTransaction, executeBroadcast } from './transactions'
 import { getWocClient } from '../../infrastructure/api/wocClient'
@@ -88,7 +89,6 @@ function createWrootzOpReturn(action: string, data: string): LockingScript {
  * @param ordinalOrigin - Optional ordinal origin to link this lock to (for Wrootz)
  */
 export async function lockBSV(
-  wif: string,
   satoshis: number,
   unlockBlock: number,
   utxos: UTXO[],
@@ -96,6 +96,7 @@ export async function lockBSV(
   lockBlock?: number,
   accountId?: number
 ): Promise<{ txid: string; lockedUtxo: LockedUTXO }> {
+  const wif = await getWifForOperation('wallet', 'lockBSV')
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const fromAddress = publicKey.toAddress()
@@ -279,7 +280,6 @@ export async function lockBSV(
  * The preimage is the BIP-143 sighash preimage that the script validates on-chain
  */
 export async function unlockBSV(
-  wif: string,
   lockedUtxo: LockedUTXO,
   currentBlockHeight: number,
   accountId?: number
@@ -307,6 +307,7 @@ export async function unlockBSV(
     )
   }
 
+  const wif = await getWifForOperation('wallet', 'unlockBSV')
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
@@ -475,9 +476,9 @@ export async function getCurrentBlockHeight(): Promise<number> {
  * Uses OP_PUSH_TX technique with preimage in the solution.
  */
 export async function generateUnlockTxHex(
-  wif: string,
   lockedUtxo: LockedUTXO
 ): Promise<{ txHex: string; txid: string; outputSats: number }> {
+  const wif = await getWifForOperation('wallet', 'generateUnlockTxHex')
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()

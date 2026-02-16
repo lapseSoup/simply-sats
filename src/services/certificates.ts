@@ -391,7 +391,9 @@ export async function acquireCertificate(
   }
 
   // Sign with identity key (self-signed)
-  const signature = signCertificate(certData, keys.identityWif)
+  const { getWifForOperation } = await import('./wallet')
+  const identityWif = await getWifForOperation('identity', 'acquireCertificate', keys)
+  const signature = signCertificate(certData, identityWif)
 
   const cert: Certificate = {
     ...certData,

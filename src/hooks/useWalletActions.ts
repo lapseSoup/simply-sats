@@ -77,9 +77,11 @@ export function useWalletActions({
       await saveWallet(keys, password)
       await migrateToMultiAccount(keys, password)
       await refreshAccounts()
-      setWallet({ ...keys })
+      // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
+      setWallet({ ...keys, mnemonic: '' })
       setSessionPassword(password)
       audit.walletCreated()
+      // Return mnemonic for display during onboarding
       return keys.mnemonic || null
     } catch (err) {
       walletLogger.error('Failed to create wallet', err)
@@ -97,7 +99,8 @@ export function useWalletActions({
       await saveWallet(keys, password)
       await migrateToMultiAccount({ ...keys, mnemonic: mnemonic.trim() }, password)
       await refreshAccounts()
-      setWallet({ ...keys, mnemonic: mnemonic.trim() })
+      // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
+      setWallet({ ...keys, mnemonic: '' })
       setSessionPassword(password)
       // Queue account discovery for after initial sync completes
       const activeAcc = await getActiveAccount()

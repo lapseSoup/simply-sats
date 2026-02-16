@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { CircleCheck, AlertTriangle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { consolidateUtxos } from '../../services/wallet'
+import { consolidateUtxos, getWifForOperation } from '../../services/wallet'
 import { calculateTxFee } from '../../services/wallet'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
 import { uiLogger } from '../../services/logger'
@@ -53,7 +53,8 @@ export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModal
         script: u.lockingScript
       }))
 
-      const result = await consolidateUtxos(wallet.walletWif, utxoIds)
+      const walletWif = await getWifForOperation('wallet', 'consolidateUTXOs', wallet)
+      const result = await consolidateUtxos(walletWif, utxoIds)
 
       setTxid(result.txid)
       setStatus('success')

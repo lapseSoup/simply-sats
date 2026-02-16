@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 import {
   Lock,
   FileText,
@@ -14,6 +15,7 @@ import { encrypt } from '../../../services/crypto'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'
 import { TestRecoveryModal } from '../TestRecoveryModal'
 import { handleKeyDown } from './settingsKeyDown'
+import { SECURITY } from '../../../config'
 
 interface SettingsSecurityProps {
   onClose: () => void
@@ -34,6 +36,15 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
   const [mnemonicToShow, setMnemonicToShow] = useState<string | null>(null)
   const [showTestRecovery, setShowTestRecovery] = useState(false)
 
+  // Auto-clear mnemonic from memory after 60 seconds (security)
+  useEffect(() => {
+    if (!mnemonicToShow) return
+    const timer = setTimeout(() => {
+      setMnemonicToShow(null)
+    }, SECURITY.MNEMONIC_AUTO_CLEAR_MS)
+    return () => clearTimeout(timer)
+  }, [mnemonicToShow])
+
   const handleExportKeys = useCallback(() => {
     setShowKeysWarning(true)
   }, [])
@@ -45,14 +56,23 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       return
     }
     try {
+      // Retrieve WIFs from key store for export
+      const { getWifForOperation } = await import('../../../services/wallet')
+      const identityWif = await getWifForOperation('identity', 'exportKeys', wallet)
+      const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet)
+      const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet)
+
+      // Fetch mnemonic from Rust key store for export (doesn't clear it)
+      const mnemonic = await invoke<string | null>('get_mnemonic')
+
       const keyData = {
         format: 'simply-sats',
         version: 1,
-        mnemonic: wallet.mnemonic || null,
+        mnemonic: mnemonic || null,
         keys: {
-          identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
-          payment: { wif: wallet.walletWif, address: wallet.walletAddress },
-          ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
+          identity: { wif: identityWif, pubKey: wallet.identityPubKey },
+          payment: { wif: walletWif, address: wallet.walletAddress },
+          ordinals: { wif: ordWif, address: wallet.ordAddress }
         }
       }
       const encrypted = await encrypt(JSON.stringify(keyData), sessionPassword)
@@ -77,17 +97,24 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
   }, [wallet, sessionPassword, showToast])
 
   const handleShowMnemonic = useCallback(() => {
-    if (wallet?.mnemonic) {
-      setShowMnemonicWarning(true)
-    }
-  }, [wallet])
+    setShowMnemonicWarning(true)
+  }, [])
 
-  const executeShowMnemonic = useCallback(() => {
+  const executeShowMnemonic = useCallback(async () => {
     setShowMnemonicWarning(false)
-    if (wallet?.mnemonic) {
-      setMnemonicToShow(wallet.mnemonic)
+    try {
+      // Fetch mnemonic once from Rust key store (auto-clears after retrieval)
+      const mnemonic = await invoke<string | null>('get_mnemonic_once')
+      if (mnemonic) {
+        setMnemonicToShow(mnemonic)
+      } else {
+        showToast('Mnemonic not available — wallet may have been imported without one', 'warning')
+      }
+    } catch (err) {
+      console.error('Failed to retrieve mnemonic:', err)
+      showToast('Failed to retrieve recovery phrase', 'error')
     }
-  }, [wallet])
+  }, [showToast])
 
   const handleLockNow = useCallback(() => {
     lockWallet()
@@ -150,7 +177,8 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
             <span className="settings-row-arrow" aria-hidden="true"><ChevronRight size={16} strokeWidth={1.75} /></span>
           </div>
 
-          {wallet.mnemonic && (
+          {/* Show recovery phrase option — mnemonic fetched on-demand from Rust key store */}
+          {wallet && (
             <>
               <div className="settings-row" role="button" tabIndex={0} onClick={handleShowMnemonic} onKeyDown={handleKeyDown(handleShowMnemonic)} aria-label="View recovery phrase">
                 <div className="settings-row-left">

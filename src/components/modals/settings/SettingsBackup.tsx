@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 import {
   Save,
   Download,
@@ -29,14 +30,23 @@ export function SettingsBackup() {
     }
     try {
       const dbBackup = await exportDatabase()
+      // Retrieve WIFs from key store for backup (WIFs needed in backup file)
+      const { getWifForOperation } = await import('../../../services/wallet')
+      const identityWif = await getWifForOperation('identity', 'exportBackup', wallet)
+      const walletWif = await getWifForOperation('wallet', 'exportBackup', wallet)
+      const ordWif = await getWifForOperation('ordinals', 'exportBackup', wallet)
+
+      // Fetch mnemonic from Rust key store for backup (doesn't clear it)
+      const mnemonic = await invoke<string | null>('get_mnemonic')
+
       const fullBackup = {
         format: 'simply-sats-full',
         wallet: {
-          mnemonic: wallet.mnemonic || null,
+          mnemonic: mnemonic || null,
           keys: {
-            identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
-            payment: { wif: wallet.walletWif, address: wallet.walletAddress },
-            ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
+            identity: { wif: identityWif, pubKey: wallet.identityPubKey },
+            payment: { wif: walletWif, address: wallet.walletAddress },
+            ordinals: { wif: ordWif, address: wallet.ordAddress }
           }
         },
         database: dbBackup
@@ -70,14 +80,23 @@ export function SettingsBackup() {
     try {
       showToast('Exporting full backup (including ordinal content)...')
       const dbBackup = await exportDatabaseFull()
+      // Retrieve WIFs from key store for backup
+      const { getWifForOperation } = await import('../../../services/wallet')
+      const identityWif = await getWifForOperation('identity', 'exportFullBackup', wallet)
+      const walletWif = await getWifForOperation('wallet', 'exportFullBackup', wallet)
+      const ordWif = await getWifForOperation('ordinals', 'exportFullBackup', wallet)
+
+      // Fetch mnemonic from Rust key store for backup (doesn't clear it)
+      const mnemonic = await invoke<string | null>('get_mnemonic')
+
       const fullBackup = {
         format: 'simply-sats-full',
         wallet: {
-          mnemonic: wallet.mnemonic || null,
+          mnemonic: mnemonic || null,
           keys: {
-            identity: { wif: wallet.identityWif, pubKey: wallet.identityPubKey },
-            payment: { wif: wallet.walletWif, address: wallet.walletAddress },
-            ordinals: { wif: wallet.ordWif, address: wallet.ordAddress }
+            identity: { wif: identityWif, pubKey: wallet.identityPubKey },
+            payment: { wif: walletWif, address: wallet.walletAddress },
+            ordinals: { wif: ordWif, address: wallet.ordAddress }
           }
         },
         database: dbBackup

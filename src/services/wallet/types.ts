@@ -9,17 +9,59 @@ export type WalletType = 'yours'
 export interface WalletKeys {
   mnemonic: string
   walletType: WalletType
+  /** @deprecated Use getWifForOperation() — WIF should not live in JS state in production. */
   walletWif: string
   walletAddress: string
   walletPubKey: string
+  /** @deprecated Use getWifForOperation() — WIF should not live in JS state in production. */
   ordWif: string
   ordAddress: string
   ordPubKey: string
+  /** @deprecated Use getWifForOperation() — WIF should not live in JS state in production. */
   identityWif: string
   identityAddress: string
   identityPubKey: string
   /** BIP-44 account index used for key derivation. Added to eliminate WIF transit over IPC. */
   accountIndex?: number
+}
+
+/**
+ * Key type for retrieving WIFs from the Rust key store.
+ */
+export type KeyType = 'wallet' | 'ordinals' | 'identity'
+
+/**
+ * Retrieve a WIF from the Rust key store for a single operation.
+ *
+ * In Tauri (desktop), this fetches the WIF from Rust memory and returns it
+ * for the duration of one operation. The caller MUST NOT persist the value.
+ *
+ * In browser dev mode, falls back to reading from the WalletKeys object.
+ *
+ * @param keyType - Which key to retrieve: 'wallet', 'ordinals', or 'identity'
+ * @param operation - Descriptive label for audit logging (e.g. 'lockBSV')
+ * @param fallbackKeys - WalletKeys object for browser dev mode fallback
+ */
+export async function getWifForOperation(
+  keyType: KeyType,
+  operation: string,
+  fallbackKeys?: WalletKeys
+): Promise<string> {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return invoke<string>('get_wif_for_operation', { keyType, operation })
+  }
+
+  // Browser dev mode fallback
+  if (!fallbackKeys) {
+    throw new Error(`No WIF available for '${operation}' — not in Tauri and no fallback keys provided`)
+  }
+  switch (keyType) {
+    case 'wallet': return fallbackKeys.walletWif
+    case 'ordinals': return fallbackKeys.ordWif
+    case 'identity': return fallbackKeys.identityWif
+    default: throw new Error(`Invalid key type: ${keyType as string}`)
+  }
 }
 
 /**

@@ -123,7 +123,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
       const walletUtxos = await getUTXOs(wallet.walletAddress)
 
-      const lockResult = await lockBSV(wallet.walletWif, amountSats, unlockBlock, walletUtxos, undefined, currentHeight, activeAccountId ?? undefined)
+      const lockResult = await lockBSV(amountSats, unlockBlock, walletUtxos, undefined, currentHeight, activeAccountId ?? undefined)
 
       // Add the locked UTXO to our list (functional updater to avoid stale closure)
       setLocks(prev => [...prev, lockResult.lockedUtxo])
@@ -139,7 +139,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
   // Unlock a time-locked UTXO
   const handleUnlock = useCallback(async (
-    wallet: WalletKeys,
+    _wallet: WalletKeys,
     lock: LockedUTXO,
     activeAccountId: number | null,
     onComplete: () => Promise<void>
@@ -148,7 +148,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     if (!currentHeight) return err('Could not get block height')
 
     try {
-      const txid = await unlockBSV(wallet.walletWif, lock, currentHeight, activeAccountId ?? undefined)
+      const txid = await unlockBSV(lock, currentHeight, activeAccountId ?? undefined)
 
       // Add to known-unlocked set BEFORE removing from state and fetching data
       // This prevents the race condition where detectLockedUtxos re-adds the lock

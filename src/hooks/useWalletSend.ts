@@ -10,7 +10,8 @@ import type { UTXO as DatabaseUTXO } from '../services/database'
 import {
   getUTXOs,
   sendBSVMultiKey,
-  transferOrdinal
+  transferOrdinal,
+  getWifForOperation
 } from '../services/wallet'
 import { listOrdinal } from '../services/wallet/marketplace'
 import {
@@ -65,10 +66,12 @@ export function useWalletSend({
         }
       }
 
+      const walletWif = await getWifForOperation('wallet', 'sendBSV', wallet)
+
       const extendedUtxos: ExtendedUTXO[] = spendableUtxos.map(u => {
         // Look up the correct WIF: derived address WIF, or fall back to wallet WIF
         const utxoAddress = u.address || wallet.walletAddress
-        const wif = derivedMap.get(utxoAddress) || wallet.walletWif
+        const wif = derivedMap.get(utxoAddress) || walletWif
         return {
           txid: u.txid,
           vout: u.vout,
@@ -108,7 +111,7 @@ export function useWalletSend({
         return true
       })
 
-      const txid = await sendBSVMultiKey(wallet.walletWif, address, amountSats, deduplicatedUtxos, activeAccountId ?? undefined)
+      const txid = await sendBSVMultiKey(walletWif, address, amountSats, deduplicatedUtxos, activeAccountId ?? undefined)
       await fetchData()
       audit.transactionSent(txid, amountSats, activeAccountId ?? undefined)
       return ok({ txid })
@@ -137,11 +140,14 @@ export function useWalletSend({
         script: ''
       }
 
+      const ordWif = await getWifForOperation('ordinals', 'transferOrdinal', wallet)
+      const fundingWif = await getWifForOperation('wallet', 'transferOrdinal', wallet)
+
       const txid = await transferOrdinal(
-        wallet.ordWif,
+        ordWif,
         ordinalUtxo,
         toAddress,
-        wallet.walletWif,
+        fundingWif,
         fundingUtxos
       )
 
@@ -172,10 +178,13 @@ export function useWalletSend({
         script: ''
       }
 
+      const ordWif = await getWifForOperation('ordinals', 'listOrdinal', wallet)
+      const paymentWif = await getWifForOperation('wallet', 'listOrdinal', wallet)
+
       const txid = await listOrdinal(
-        wallet.ordWif,
+        ordWif,
         ordinalUtxo,
-        wallet.walletWif,
+        paymentWif,
         fundingUtxos,
         wallet.walletAddress,
         wallet.ordAddress,

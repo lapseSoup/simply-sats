@@ -129,7 +129,8 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         await saveWallet(keys, password)
         // Create account in database for persistence across app restarts
         await migrateToMultiAccount({ ...keys, mnemonic: backup.wallet.mnemonic }, password)
-        setWallet({ ...keys, mnemonic: backup.wallet.mnemonic })
+        // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
+        setWallet({ ...keys, mnemonic: '' })
         setWalletKeys(keys)
       } else if (backup.wallet.keys) {
         const keys = await importFromJSON(JSON.stringify(backup.wallet.keys))

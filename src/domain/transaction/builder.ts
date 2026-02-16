@@ -200,7 +200,7 @@ export function calculateChangeAndFee(
 export async function buildP2PKHTx(params: BuildP2PKHTxParams): Promise<BuiltTransaction> {
   const { wif, toAddress, satoshis, selectedUtxos, totalInput, feeRate } = params
 
-  // Delegate to Rust when running inside Tauri
+  // Delegate to Rust when running inside Tauri — use key store (WIF never leaves Rust)
   if (isTauri()) {
     const result = await tauriInvoke<{
       rawTx: string
@@ -209,8 +209,7 @@ export async function buildP2PKHTx(params: BuildP2PKHTxParams): Promise<BuiltTra
       change: number
       changeAddress: string
       spentOutpoints: Array<{ txid: string; vout: number }>
-    }>('build_p2pkh_tx', {
-      wif,
+    }>('build_p2pkh_tx_from_store', {
       toAddress,
       satoshis,
       selectedUtxos: selectedUtxos.map(u => ({
@@ -325,6 +324,9 @@ export async function buildMultiKeyP2PKHTx(params: BuildMultiKeyP2PKHTxParams): 
   const { changeWif, toAddress, satoshis, selectedUtxos, totalInput, feeRate } = params
 
   // Delegate to Rust when running inside Tauri
+  // Uses _from_store for the change WIF (wallet key); per-UTXO WIFs for derived
+  // addresses are still passed because they come from BRC-42 derivation, not the
+  // main wallet key. Future: move derived key resolution to Rust.
   if (isTauri()) {
     const result = await tauriInvoke<{
       rawTx: string
@@ -333,8 +335,7 @@ export async function buildMultiKeyP2PKHTx(params: BuildMultiKeyP2PKHTxParams): 
       change: number
       changeAddress: string
       spentOutpoints: Array<{ txid: string; vout: number }>
-    }>('build_multi_key_p2pkh_tx', {
-      changeWif,
+    }>('build_multi_key_p2pkh_tx_from_store', {
       toAddress,
       satoshis,
       selectedUtxos: selectedUtxos.map(u => ({
@@ -456,7 +457,7 @@ export async function buildConsolidationTx(
     throw new Error('Need at least 2 UTXOs to consolidate')
   }
 
-  // Delegate to Rust when running inside Tauri
+  // Delegate to Rust when running inside Tauri — use key store (WIF never leaves Rust)
   if (isTauri()) {
     const result = await tauriInvoke<{
       rawTx: string
@@ -465,8 +466,7 @@ export async function buildConsolidationTx(
       outputSats: number
       address: string
       spentOutpoints: Array<{ txid: string; vout: number }>
-    }>('build_consolidation_tx', {
-      wif,
+    }>('build_consolidation_tx_from_store', {
       utxos: utxos.map(u => ({
         txid: u.txid,
         vout: u.vout,

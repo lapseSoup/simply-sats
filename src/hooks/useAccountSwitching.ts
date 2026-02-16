@@ -89,10 +89,13 @@ export function useAccountSwitching({
         // Clear stale state from previous account before setting new wallet
         setLocks([])
         resetSync()
-        setWallet(keys)
-        setIsLocked(false)
 
+        // Store mnemonic in Rust key store before clearing from React state
         await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? ((accountId ?? 1) - 1))
+
+        // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
+        setWallet({ ...keys, mnemonic: '' })
+        setIsLocked(false)
 
         // Rotate session token for new account
         try {
@@ -180,12 +183,15 @@ export function useAccountSwitching({
     }
     const keys = await accountsCreateNewAccount(name, sessionPassword)
     if (keys) {
-      setWallet(keys)
+      // Store mnemonic in Rust key store before clearing from React state
+      await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? (accounts.length))
+      // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
+      setWallet({ ...keys, mnemonic: '' })
       setIsLocked(false)
       return true
     }
     return false
-  }, [accountsCreateNewAccount, setWallet, setIsLocked, sessionPassword, accounts.length])
+  }, [accountsCreateNewAccount, setWallet, setIsLocked, sessionPassword, accounts.length, storeKeysInRust])
 
   const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
     if (!sessionPassword) {
@@ -194,7 +200,10 @@ export function useAccountSwitching({
     }
     const keys = await accountsImportAccount(name, mnemonic, sessionPassword)
     if (keys) {
-      setWallet(keys)
+      // Store mnemonic in Rust key store before clearing from React state
+      await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? (accounts.length))
+      // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
+      setWallet({ ...keys, mnemonic: '' })
       setIsLocked(false)
       // Discover derivative accounts for this mnemonic (non-blocking)
       const active = await getActiveAccount()
@@ -211,7 +220,7 @@ export function useAccountSwitching({
       return true
     }
     return false
-  }, [accountsImportAccount, setWallet, setIsLocked, sessionPassword, refreshAccounts])
+  }, [accountsImportAccount, setWallet, setIsLocked, sessionPassword, refreshAccounts, accounts.length, storeKeysInRust])
 
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
     const success = await accountsDeleteAccount(accountId)

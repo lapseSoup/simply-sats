@@ -36,11 +36,12 @@ export async function encryptECIES(
   recipientPubKey: string
 ): Promise<{ ciphertext: string; senderPublicKey: string }> {
   if (isTauri()) {
-    return tauriInvoke<{ ciphertext: string; senderPublicKey: string }>('encrypt_ecies', {
-      wif: keys.identityWif,
+    // Use key store — WIF never leaves Rust
+    return tauriInvoke<{ ciphertext: string; senderPublicKey: string }>('encrypt_ecies_from_store', {
       plaintext,
       recipientPubKey,
-      senderPubKey: keys.identityPubKey
+      senderPubKey: keys.identityPubKey,
+      keyType: 'identity'
     })
   }
 
@@ -79,10 +80,11 @@ export async function decryptECIES(
   senderPubKey: string
 ): Promise<string> {
   if (isTauri()) {
-    return tauriInvoke<string>('decrypt_ecies', {
-      wif: keys.identityWif,
+    // Use key store — WIF never leaves Rust
+    return tauriInvoke<string>('decrypt_ecies_from_store', {
       ciphertextBytes: new Uint8Array(ciphertextBytes),
-      senderPubKey
+      senderPubKey,
+      keyType: 'identity'
     })
   }
 

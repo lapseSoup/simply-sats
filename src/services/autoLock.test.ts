@@ -192,7 +192,7 @@ describe('autoLock', () => {
     })
 
     it('should not include a "Never" option', () => {
-      const neverOption = TIMEOUT_OPTIONS.find(o => o.value === 0)
+      const neverOption = TIMEOUT_OPTIONS.find(o => (o.value as number) === 0)
       expect(neverOption).toBeUndefined()
     })
   })

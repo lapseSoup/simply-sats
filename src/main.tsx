@@ -9,9 +9,9 @@ import '@fontsource/jetbrains-mono/latin-500.css'
 import './index.css'
 import App from './App.tsx'
 import { registerExitCleanup } from './infrastructure/storage/localStorage'
-import { createLogger } from './services/logger'
+import { logger } from './services/logger'
 
-const appLogger = createLogger('App')
+const appLogger = logger.child({ module: 'App' })
 
 // Global handler for unhandled promise rejections — surfaces silent async failures
 window.addEventListener('unhandledrejection', (event) => {

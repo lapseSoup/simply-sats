@@ -8,6 +8,7 @@ export type {
   WalletType,
   WalletKeys,
   PublicWalletKeys,
+  KeyType,
   UTXO,
   ExtendedUTXO,
   WocUtxo,
@@ -22,6 +23,9 @@ export type {
   Ordinal,
   LockedUTXO
 } from './types'
+
+// Key store bridge
+export { getWifForOperation } from './types'
 
 // Core wallet operations
 export {

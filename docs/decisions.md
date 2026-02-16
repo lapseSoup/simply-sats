@@ -105,3 +105,14 @@ All configurable in `src/config/index.ts` SECURITY object.
 **Test expansion:** 38 new tests (619 → 657 total) for RequestManager (21) and script utilities (17).
 
 **What's still planned:** Transaction builder extraction (Task 6.1), database repository interfaces (Task 6.2), error handling standardization with Result types (Task 6.3). See `tasks/todo.md`.
+
+## Tauri SQL Capabilities
+
+**Security Trade-off:** `sql:allow-execute` grants the frontend broad SQL access via the Tauri plugin.
+
+**Note:** Tauri 2's sql plugin does not support per-table or per-query scoping. The frontend can theoretically execute any SQL query. This is an accepted trade-off mitigated by:
+- Content Security Policy (CSP) — no external scripts can be injected
+- Tauri's webview isolation — the app runs in a sandboxed renderer without network access
+- Assumption of trust in the desktop environment (if the device is compromised, the app is already lost)
+
+**Future improvement:** Move sensitive operations (e.g., account creation, key rotation) behind dedicated Tauri commands that enforce business logic server-side, rather than exposing raw SQL access. This is planned in `tasks/todo.md` (Phase 2, Q1 2026).
