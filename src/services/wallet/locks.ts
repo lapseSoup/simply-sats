@@ -655,6 +655,7 @@ export async function detectLockedUtxos(
   }
 
   const detectedLocks: LockedUTXO[] = []
+  const seen = new Set<string>()
 
   try {
     // Get transaction history for the wallet address
@@ -708,6 +709,11 @@ export async function detectLockedUtxos(
             walletLogger.debug('Lock has been spent (unlocked)', { txid, vout })
             continue
           }
+
+          // Deduplicate: WoC may return same txid in both mempool and confirmed history
+          const dedupKey = `${txid}:${vout}`
+          if (seen.has(dedupKey)) continue
+          seen.add(dedupKey)
 
           const satoshis = Math.round(output!.value * 100000000)
 

@@ -26,6 +26,7 @@ export function LockModal({ onClose }: LockModalProps) {
   const {
     wallet,
     balance,
+    utxos,
     networkInfo,
     handleLock
   } = useWallet()
@@ -84,13 +85,28 @@ export function LockModal({ onClose }: LockModalProps) {
     })
   }
 
-  // Calculate exact fee using actual script size and user's fee rate setting
+  // Estimate actual input count based on UTXOs and lock amount
+  // Mirrors the UTXO selection in lockBSV() (sorts descending, breaks at satoshis + 500)
+  let estimatedInputs = 1
+  if (lockSats > 0 && utxos.length > 0) {
+    const sorted = [...utxos].sort((a, b) => b.satoshis - a.satoshis)
+    let total = 0
+    estimatedInputs = 0
+    for (const u of sorted) {
+      total += u.satoshis
+      estimatedInputs++
+      if (total >= lockSats + 500) break
+    }
+    estimatedInputs = Math.max(1, estimatedInputs)
+  }
+
+  // Calculate exact fee using actual script size, input count, and user's fee rate setting
   let fee = 0
   if (wallet && blocks > 0) {
     const scriptSize = getTimelockScriptSize(wallet.walletPubKey, unlockBlock)
-    fee = calculateLockFee(1, scriptSize)
+    fee = calculateLockFee(estimatedInputs, scriptSize)
   } else {
-    fee = calculateLockFee(1)
+    fee = calculateLockFee(estimatedInputs)
   }
 
   const totalRequired = lockSats + fee

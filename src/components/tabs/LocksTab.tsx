@@ -68,7 +68,7 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
                   const isUnlocking = unlocking === lock.txid
                   return (
                     <LockItem
-                      key={lock.txid}
+                      key={`${lock.txid}:${lock.vout}`}
                       lock={lock}
                       currentHeight={currentHeight}
                       isUnlockable={true}
@@ -89,7 +89,7 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
                 )}
                 {lockedLocks.map((lock) => (
                   <LockItem
-                    key={lock.txid}
+                    key={`${lock.txid}:${lock.vout}`}
                     lock={lock}
                     currentHeight={currentHeight}
                     isUnlockable={false}
