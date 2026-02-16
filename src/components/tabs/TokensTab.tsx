@@ -13,6 +13,7 @@ import { useUI } from '../../contexts/UIContext'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { NoTokensEmpty } from '../shared/EmptyState'
+import { isOk } from '../../domain/types'
 
 // Memoized token card to prevent unnecessary re-renders
 const TokenCard = memo(function TokenCard({
@@ -138,7 +139,7 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
         sendAddress.trim()
       )
 
-      if (result.success) {
+      if (isOk(result)) {
         showToast(`Sent ${sendAmount} ${selectedToken.token.ticker}!`)
         setSendModalOpen(false)
         setSendAmount('')

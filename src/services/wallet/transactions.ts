@@ -164,7 +164,7 @@ export async function sendBSV(
   validateSendRequest(toAddress, satoshis)
 
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during send
-  const releaseLock = await acquireSyncLock()
+  const releaseLock = await acquireSyncLock(accountId ?? 1)
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
     if (!sufficient) {
@@ -248,7 +248,7 @@ export async function sendBSVMultiKey(
   validateSendRequest(toAddress, satoshis)
 
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during send
-  const releaseLock = await acquireSyncLock()
+  const releaseLock = await acquireSyncLock(accountId ?? 1)
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
     if (!sufficient) {
@@ -275,10 +275,11 @@ export async function sendBSVMultiKey(
  */
 export async function consolidateUtxos(
   wif: string,
-  utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>
+  utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>,
+  accountId?: number
 ): Promise<{ txid: string; outputSats: number; fee: number }> {
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during consolidation
-  const releaseLock = await acquireSyncLock()
+  const releaseLock = await acquireSyncLock(accountId ?? 1)
   try {
   const feeRate = getFeeRate()
   const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })

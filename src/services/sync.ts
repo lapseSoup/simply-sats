@@ -89,8 +89,8 @@ export async function diagnoseSyncHealth(accountId?: number): Promise<SyncHealth
   const apiStart = Date.now()
   try {
     const result = await getWocClient().getBlockHeightSafe()
-    apiReachable = result.success
-    if (!result.success) errors.push(`API: ${result.error.message}`)
+    apiReachable = result.ok
+    if (!result.ok) errors.push(`API: ${result.error.message}`)
   } catch (e) {
     errors.push(`API: ${e instanceof Error ? e.message : String(e)}`)
   }
@@ -167,11 +167,11 @@ async function fetchUtxosFromWoc(address: string): Promise<{ txid: string; vout:
   // Use Safe variant to distinguish "zero UTXOs" from "API error"
   // Returns null on error so callers can skip destructive operations (marking UTXOs spent)
   const result = await getWocClient().getUtxosSafe(address)
-  if (!result.success) {
+  if (!result.ok) {
     syncLogger.error(`[SYNC] WoC UTXO fetch failed for ${address.slice(0,12)}...: ${result.error.message}`)
     return null
   }
-  return result.data.map(u => ({
+  return result.value.map(u => ({
     txid: u.txid,
     vout: u.vout,
     satoshis: u.satoshis
@@ -418,12 +418,12 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
 
   // Fetch transaction history
   const historyResult = await wocClient.getTransactionHistorySafe(address)
-  if (!historyResult.success) {
+  if (!historyResult.ok) {
     syncLogger.warn(`Failed to fetch tx history for ${address.slice(0,12)}...`, { error: historyResult.error })
     return 0
   }
 
-  const history = historyResult.data.slice(0, limit)
+  const history = historyResult.value.slice(0, limit)
   let newTxCount = 0
 
   for (const txRef of history) {
@@ -616,7 +616,7 @@ export async function syncWallet(
 ): Promise<{ total: number; results: SyncResult[] } | undefined> {
   // Acquire sync lock to prevent database race conditions
   // This ensures only one sync runs at a time
-  const releaseLock = await acquireSyncLock()
+  const releaseLock = await acquireSyncLock(accountId ?? 1)
 
   // Start new sync (cancels any previous sync)
   const token = startNewSync()

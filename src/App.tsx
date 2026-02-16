@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { AlertCircle } from 'lucide-react'
 import './App.css'
 
-import { useWallet, useUI } from './contexts'
+import { useWallet, useUI, useModal } from './contexts'
+import { isOk } from './domain/types'
 import { logger } from './services/logger'
 import { Toast, PaymentAlert, SkipLink } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
@@ -11,10 +12,9 @@ import { RestoreModal, MnemonicModal, LockScreenModal, BackupVerificationModal }
 import { FEATURES, SECURITY } from './config'
 import { OnboardingFlow } from './components/onboarding'
 import { AppProviders } from './AppProviders'
-import { AppModals, type Modal, type AccountModalMode } from './AppModals'
+import { AppModals } from './AppModals'
 import { AppTabNav, AppTabContent, type Tab } from './AppTabs'
 
-import type { Ordinal, LockedUTXO } from './services/wallet'
 import type { PaymentNotification } from './services/messageBox'
 import { loadNotifications, startPaymentListener } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
@@ -55,23 +55,17 @@ function WalletApp() {
   } = useWallet()
 
   const { copyFeedback, toasts, showToast } = useUI()
+  const {
+    modal, openModal, closeModal,
+    openAccountModal,
+    selectOrdinal, startTransferOrdinal,
+    newMnemonic, setNewMnemonic, confirmMnemonic,
+    unlockConfirm, unlocking, setUnlocking,
+    startUnlock, startUnlockAll, cancelUnlock
+  } = useModal()
 
   // UI State
   const [activeTab, setActiveTab] = useState<Tab>('activity')
-  const [modal, setModal] = useState<Modal>(null)
-  const [accountModalMode, setAccountModalMode] = useState<AccountModalMode>('manage')
-
-  // Ordinal state
-  const [ordinalToTransfer, setOrdinalToTransfer] = useState<Ordinal | null>(null)
-  const [ordinalToList, setOrdinalToList] = useState<Ordinal | null>(null)
-  const [selectedOrdinal, setSelectedOrdinal] = useState<Ordinal | null>(null)
-
-  // Wallet state
-  const [newMnemonic, setNewMnemonic] = useState<string | null>(null)
-
-  // Unlock state
-  const [unlockConfirm, setUnlockConfirm] = useState<LockedUTXO | 'all' | null>(null)
-  const [unlocking, setUnlocking] = useState<string | null>(null)
 
   // Payment alert state
   const [newPaymentAlert, setNewPaymentAlert] = useState<PaymentNotification | null>(null)
@@ -86,7 +80,7 @@ function WalletApp() {
     handleReject: handleRejectBRC100
   } = useBrc100Handler({
     wallet,
-    onRequestReceived: () => setModal('brc100')
+    onRequestReceived: () => openModal('brc100')
   })
 
   // Tab navigation
@@ -105,7 +99,7 @@ function WalletApp() {
   useKeyboardNav({
     onArrowLeft: () => !modal && navigateTab('left'),
     onArrowRight: () => !modal && navigateTab('right'),
-    onEscape: () => modal && setModal(null),
+    onEscape: () => modal && closeModal(),
     enabled: true
   })
 
@@ -197,7 +191,7 @@ function WalletApp() {
       logger.info('Mnemonic auto-cleared from memory after timeout')
     }, SECURITY.MNEMONIC_AUTO_CLEAR_MS)
     return () => clearTimeout(timer)
-  }, [newMnemonic])
+  }, [newMnemonic, setNewMnemonic])
 
   // Backup reminder disabled — too aggressive for current UX
   // Users verify their recovery phrase once during onboarding; periodic re-verification is overkill
@@ -211,10 +205,6 @@ function WalletApp() {
   // }, [wallet, isLocked])
 
   // Handlers
-  const handleAccountModalOpen = (mode: AccountModalMode) => {
-    setAccountModalMode(mode)
-    setModal('account')
-  }
 
   const handleAccountCreate = async (name: string): Promise<boolean> => {
     return await createNewAccount(name)
@@ -222,30 +212,6 @@ function WalletApp() {
 
   const handleAccountImport = async (name: string, mnemonic: string): Promise<boolean> => {
     return importAccount(name, mnemonic)
-  }
-
-  const handleMnemonicConfirm = () => {
-    setNewMnemonic(null)
-    setModal(null)
-  }
-
-  const handleSelectOrdinal = (ordinal: Ordinal) => {
-    setSelectedOrdinal(ordinal)
-    setModal('ordinal')
-  }
-
-  const handleTransferOrdinal = (ordinal: Ordinal) => {
-    setOrdinalToTransfer(ordinal)
-    setModal('transfer-ordinal')
-  }
-
-
-  const handleUnlockClick = (lock: LockedUTXO) => {
-    setUnlockConfirm(lock)
-  }
-
-  const handleUnlockAll = () => {
-    setUnlockConfirm('all')
   }
 
   const getUnlockableLocks = () => {
@@ -261,7 +227,7 @@ function WalletApp() {
     for (const lock of locksToUnlock) {
       setUnlocking(lock.txid)
       const result = await handleUnlock(lock)
-      if (result.success) {
+      if (isOk(result)) {
         showToast(`Unlocked ${lock.satoshis.toLocaleString()} sats!`)
       } else {
         showToast(result.error || 'Unlock failed')
@@ -269,17 +235,17 @@ function WalletApp() {
     }
 
     setUnlocking(null)
-    setUnlockConfirm(null)
+    cancelUnlock()
   }
 
   const handleBrc100Approve = () => {
     handleApproveBRC100()
-    setModal(null)
+    closeModal()
   }
 
   const handleBrc100Reject = () => {
     handleRejectBRC100()
-    setModal(null)
+    closeModal()
   }
 
   // Loading screen
@@ -310,17 +276,17 @@ function WalletApp() {
       <>
         <OnboardingFlow
           onCreateWallet={handleCreateWallet}
-          onRestoreClick={() => setModal('restore')}
+          onRestoreClick={() => openModal('restore')}
           onWalletCreated={(mnemonic) => {
             setNewMnemonic(mnemonic)
-            setModal('mnemonic')
+            openModal('mnemonic')
           }}
         />
 
         {modal === 'restore' && (
           <RestoreModal
-            onClose={() => setModal(null)}
-            onSuccess={() => setModal(null)}
+            onClose={closeModal}
+            onSuccess={closeModal}
           />
         )}
 
@@ -328,14 +294,14 @@ function WalletApp() {
           FEATURES.BACKUP_VERIFICATION ? (
             <BackupVerificationModal
               mnemonic={newMnemonic}
-              onConfirm={handleMnemonicConfirm}
+              onConfirm={confirmMnemonic}
               onCancel={() => {
                 setNewMnemonic(null)
-                setModal(null)
+                closeModal()
               }}
             />
           ) : (
-            <MnemonicModal mnemonic={newMnemonic} onConfirm={handleMnemonicConfirm} />
+            <MnemonicModal mnemonic={newMnemonic} onConfirm={confirmMnemonic} />
           )
         )}
 
@@ -350,16 +316,16 @@ function WalletApp() {
       <SkipLink targetId="main-content">Skip to main content</SkipLink>
 
       <Header
-        onSettingsClick={() => setModal('settings')}
-        onAccountModalOpen={handleAccountModalOpen}
+        onSettingsClick={() => openModal('settings')}
+        onAccountModalOpen={openAccountModal}
         onAccountSwitch={() => setActiveTab('activity')}
       />
 
       <BalanceDisplay />
 
       <QuickActions
-        onSend={() => setModal('send')}
-        onReceive={() => setModal('receive')}
+        onSend={() => openModal('send')}
+        onReceive={() => openModal('receive')}
       />
 
       <BasketChips />
@@ -371,7 +337,7 @@ function WalletApp() {
             className="backup-reminder-btn"
             onClick={() => {
               setNewMnemonic(wallet?.mnemonic || null)
-              setModal('mnemonic')
+              openModal('mnemonic')
               setShowBackupReminder(false)
             }}
           >
@@ -435,54 +401,27 @@ function WalletApp() {
 
       <AppTabContent
         activeTab={activeTab}
-        onSelectOrdinal={handleSelectOrdinal}
-        onTransferOrdinal={handleTransferOrdinal}
+        onSelectOrdinal={selectOrdinal}
+        onTransferOrdinal={startTransferOrdinal}
         onRefreshTokens={refreshTokens}
-        onLock={() => setModal('lock')}
-        onUnlock={handleUnlockClick}
-        onUnlockAll={handleUnlockAll}
+        onLock={() => openModal('lock')}
+        onUnlock={startUnlock}
+        onUnlockAll={startUnlockAll}
         unlocking={unlocking}
       />
 
       <AppModals
-        modal={modal}
-        onCloseModal={() => setModal(null)}
-        selectedOrdinal={selectedOrdinal}
-        onTransferOrdinal={(ordinal) => {
-          setOrdinalToTransfer(ordinal)
-          setModal('transfer-ordinal')
-        }}
-        onListOrdinal={(ordinal) => {
-          setOrdinalToList(ordinal)
-          setModal('list-ordinal')
-        }}
-        ordinalToTransfer={ordinalToTransfer}
-        onTransferComplete={() => {
-          setOrdinalToTransfer(null)
-          setModal(null)
-        }}
-        ordinalToList={ordinalToList}
-        onListComplete={() => {
-          setOrdinalToList(null)
-          setModal(null)
-        }}
         brc100Request={brc100Request}
         onApproveBRC100={handleBrc100Approve}
         onRejectBRC100={handleBrc100Reject}
-        newMnemonic={newMnemonic}
-        onMnemonicConfirm={handleMnemonicConfirm}
-        accountModalMode={accountModalMode}
         accounts={accounts}
         activeAccountId={activeAccountId}
         onCreateAccount={handleAccountCreate}
         onImportAccount={handleAccountImport}
         onDeleteAccount={deleteAccount}
         onRenameAccount={renameAccount}
-        unlockConfirm={unlockConfirm}
         unlockableLocks={getUnlockableLocks()}
         onConfirmUnlock={handleConfirmUnlock}
-        onCancelUnlock={() => setUnlockConfirm(null)}
-        isUnlocking={!!unlocking}
       />
 
       <Toast message={copyFeedback} toasts={toasts} />

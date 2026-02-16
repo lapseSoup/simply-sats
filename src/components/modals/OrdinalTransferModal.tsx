@@ -13,6 +13,7 @@ import type { Ordinal } from '../../services/wallet'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateTxFee } from '../../services/wallet/fees'
+import { isOk } from '../../domain/types'
 import { isValidBSVAddress } from '../../domain/wallet/validation'
 
 interface OrdinalTransferModalProps {
@@ -60,8 +61,8 @@ export function OrdinalTransferModal({
 
     const result = await handleTransferOrdinal(ordinal, toAddress.trim())
 
-    if (result.success && result.txid) {
-      setTxid(result.txid)
+    if (isOk(result)) {
+      setTxid(result.value.txid)
       showToast('Ordinal transferred successfully!')
     } else {
       setError(result.error || 'Transfer failed')

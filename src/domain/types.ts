@@ -175,6 +175,9 @@ export interface SendResult {
   error?: string
 }
 
+/** Common result type for wallet operations (send, lock, unlock, transfer, list) */
+export type WalletResult = Result<{ txid: string }, string>
+
 // ============================================
 // Lock Types
 // ============================================

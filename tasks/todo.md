@@ -165,15 +165,17 @@ Baseline after fixes: 0 type errors, 0 lint errors, 938 tests passing.
 - #34 (double fetchVersionRef increment): Intentional version-fencing pattern
 - #19 (UTXO tag insertion): Partial tags acceptable; errors already logged
 
-### Remaining — Requires Separate Sessions
-- [ ] #10: Increase PBKDF2 to 600K iterations with migration path for existing wallets
-- [ ] #11: Split WalletContext god object into WalletStateContext + WalletActionsContext + WalletSettingsContext
-- [ ] #12: Test coverage for 40+ untested files (hooks, services, contexts, DB repositories)
-- [ ] #13: Migrate error handling from ad-hoc `{success, error}` to `Result<T,E>` pattern
-- [ ] #14: Consolidate duplicated broadcast logic into single `broadcastService.ts`
-- [ ] #15: Scope sync lock per account to prevent cross-account send hangs
-- [ ] #20: Add auth checks at Tauri command level (not just HTTP layer)
-- [ ] #23: Move modal state to dedicated ModalContext to eliminate 33-prop drilling in AppModals
+### Deferred Fixes — Completed (Feb 16 2026) ✅
+All 8 deferred items implemented. Baseline: 0 type errors, 0 lint errors, 1098 tests passing.
+
+- [x] #10: Increase PBKDF2 to 600K iterations with lazy migration for existing wallets (`config/index.ts`, `crypto.ts`, `crypto.rs`, `accounts.ts`)
+- [x] #11: Split WalletContext into WalletStateContext (25 props) + WalletActionsContext (26 actions); `useWallet()` backward-compatible facade
+- [x] #12: Added 158 new tests across 5 test files (utxoRepository, txRepository, lockRepository, balance, fees)
+- [x] #13: Migrated error handling from ad-hoc `{success, error}` to canonical `Result<T,E>` with `WalletResult` alias; removed competing Result type from errors.ts
+- [x] #14: Consolidated broadcast — overlay.ts now uses 4-endpoint cascade from broadcastService instead of direct WoC call
+- [x] #15: Scoped sync lock per account via `Map<number, SyncMutex>` — prevents cross-account send hangs
+- [x] #20: Added `require_keys()` auth guard to 7 `_from_store` Tauri commands in key_store.rs
+- [x] #23: Extracted ModalContext — eliminated 33-prop drilling; AppModals consumes `useModal()` context directly
 
 ---
 

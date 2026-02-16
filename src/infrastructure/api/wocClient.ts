@@ -5,7 +5,7 @@
 
 import { P2PKH } from '@bsv/sdk'
 import type { UTXO } from '../../domain/types'
-import { type Result, ok, err } from '../../services/errors'
+import { type Result, ok, err } from '../../domain/types'
 
 /**
  * API error with additional context
@@ -287,33 +287,33 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
 
     async getBlockHeight(): Promise<number> {
       const result = await this.getBlockHeightSafe()
-      return result.success ? result.data : 0
+      return result.ok ? result.value : 0
     },
 
     async getBalance(address: string): Promise<number> {
       const result = await this.getBalanceSafe(address)
-      return result.success ? result.data : 0
+      return result.ok ? result.value : 0
     },
 
     async getUtxos(address: string): Promise<UTXO[]> {
       const result = await this.getUtxosSafe(address)
-      return result.success ? result.data : []
+      return result.ok ? result.value : []
     },
 
     async getTransactionHistory(address: string): Promise<{ tx_hash: string; height: number }[]> {
       const result = await this.getTransactionHistorySafe(address)
-      return result.success ? result.data : []
+      return result.ok ? result.value : []
     },
 
     async getTransactionDetails(txid: string): Promise<WocTransaction | null> {
       const result = await this.getTransactionDetailsSafe(txid)
-      return result.success ? result.data : null
+      return result.ok ? result.value : null
     },
 
     async broadcastTransaction(txHex: string): Promise<string> {
       const result = await this.broadcastTransactionSafe(txHex)
-      if (result.success) {
-        return result.data
+      if (result.ok) {
+        return result.value
       }
       throw new Error(result.error.message)
     }

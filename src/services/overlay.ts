@@ -13,6 +13,7 @@
 
 import { P2PKH } from '@bsv/sdk'
 import { overlayLogger } from './logger'
+import { broadcastTransaction } from '../infrastructure/api/broadcastService'
 import { getWocClient } from '../infrastructure/api/wocClient'
 
 // Known overlay network nodes (can be expanded)
@@ -449,9 +450,9 @@ export async function getBeef(txid: string): Promise<string | null> {
   // Fallback to WhatsOnChain for merkle proof
   try {
     const proofResult = await getWocClient().getTxProofSafe(txid)
-    if (proofResult.success) {
+    if (proofResult.ok) {
       // Note: This is TSC format, not full BEEF
-      return JSON.stringify(proofResult.data)
+      return JSON.stringify(proofResult.value)
     }
   } catch {
     // Ignore
@@ -461,10 +462,11 @@ export async function getBeef(txid: string): Promise<string | null> {
 }
 
 /**
- * Broadcast transaction via overlay network AND WhatsOnChain
+ * Broadcast transaction via overlay network AND miners (4-endpoint cascade)
  *
  * This ensures maximum reliability by broadcasting to both
- * the overlay network and the traditional miners.
+ * the overlay network and the traditional miners via broadcastService
+ * (WoC -> ARC JSON -> ARC text -> mAPI).
  */
 export async function broadcastWithOverlay(
   rawTx: string,
@@ -472,7 +474,7 @@ export async function broadcastWithOverlay(
 ): Promise<{
   txid: string
   overlayResults: SubmitResult[]
-  wocResult: { success: boolean; error?: string }
+  minerBroadcast: { success: boolean; error?: string }
 }> {
   let txid = ''
 
@@ -483,24 +485,20 @@ export async function broadcastWithOverlay(
     txid = successfulOverlay.txid
   }
 
-  // Also broadcast to WhatsOnChain for miners
-  let wocResult: { success: boolean; error?: string } = { success: false }
+  // Broadcast to miners via 4-endpoint cascade (WoC -> ARC -> ARC text -> mAPI)
+  let minerBroadcast: { success: boolean; error?: string } = { success: false }
   try {
-    const broadcastResult = await getWocClient().broadcastTransactionSafe(rawTx)
-    if (broadcastResult.success) {
-      txid = txid || broadcastResult.data
-      wocResult = { success: true }
-    } else {
-      wocResult = { success: false, error: broadcastResult.error.message }
-    }
+    const minerTxid = await broadcastTransaction(rawTx)
+    txid = txid || minerTxid
+    minerBroadcast = { success: true }
   } catch (error) {
-    wocResult = {
+    minerBroadcast = {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     }
   }
 
-  return { txid, overlayResults, wocResult }
+  return { txid, overlayResults, minerBroadcast }
 }
 
 /**

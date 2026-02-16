@@ -124,21 +124,44 @@ class SyncMutex {
   }
 }
 
-const syncMutex = new SyncMutex()
+const syncMutexes = new Map<number, SyncMutex>()
 
 /**
- * Check if a sync is currently in progress
+ * Get or lazily create a mutex for the given account
  */
-export function isSyncInProgress(): boolean {
-  return syncMutex.isLocked
+function getMutex(accountId: number): SyncMutex {
+  let mutex = syncMutexes.get(accountId)
+  if (!mutex) {
+    mutex = new SyncMutex()
+    syncMutexes.set(accountId, mutex)
+  }
+  return mutex
 }
 
 /**
- * Acquire the sync mutex. Returns a release function.
- * Use this to ensure exclusive access during sync operations.
+ * Check if a sync is currently in progress.
+ * If accountId is provided, checks only that account.
+ * If omitted, checks if ANY account is syncing.
  */
-export async function acquireSyncLock(): Promise<() => void> {
-  return syncMutex.acquire()
+export function isSyncInProgress(accountId?: number): boolean {
+  if (accountId !== undefined) {
+    const mutex = syncMutexes.get(accountId)
+    return mutex ? mutex.isLocked : false
+  }
+  // Check if any account has an active lock
+  for (const mutex of syncMutexes.values()) {
+    if (mutex.isLocked) return true
+  }
+  return false
+}
+
+/**
+ * Acquire the sync mutex for a specific account. Returns a release function.
+ * Use this to ensure exclusive access during sync operations.
+ * Each account has its own lock so cross-account operations don't block each other.
+ */
+export async function acquireSyncLock(accountId: number = 1): Promise<() => void> {
+  return getMutex(accountId).acquire()
 }
 
 /**

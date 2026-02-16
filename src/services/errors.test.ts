@@ -16,10 +16,7 @@ import {
   UserRejectedError,
   TimeoutError,
   isAppError,
-  getUserMessage,
-  ok,
-  err,
-  tryAsync
+  getUserMessage
 } from './errors'
 
 describe('Error Handling', () => {
@@ -225,54 +222,6 @@ describe('Error Handling', () => {
     it('should return generic message for unknown types', () => {
       expect(getUserMessage('string error')).toBe('An unexpected error occurred')
       expect(getUserMessage(null)).toBe('An unexpected error occurred')
-    })
-  })
-
-  describe('Result type utilities', () => {
-    describe('ok', () => {
-      it('should create success result', () => {
-        const result = ok(42)
-
-        expect(result.success).toBe(true)
-        if (result.success) {
-          expect(result.data).toBe(42)
-        }
-      })
-    })
-
-    describe('err', () => {
-      it('should create error result', () => {
-        const error = new AppError('Failed')
-        const result = err(error)
-
-        expect(result.success).toBe(false)
-        if (!result.success) {
-          expect(result.error).toBe(error)
-        }
-      })
-    })
-
-    describe('tryAsync', () => {
-      it('should return success for resolved promise', async () => {
-        const result = await tryAsync(async () => 'success')
-
-        expect(result.success).toBe(true)
-        if (result.success) {
-          expect(result.data).toBe('success')
-        }
-      })
-
-      it('should return error for rejected promise', async () => {
-        const result = await tryAsync(async () => {
-          throw new Error('Failed')
-        })
-
-        expect(result.success).toBe(false)
-        if (!result.success) {
-          expect(result.error).toBeInstanceOf(AppError)
-          expect(result.error.message).toBe('Failed')
-        }
-      })
     })
   })
 

@@ -1282,10 +1282,10 @@ async function buildAndBroadcastAction(
 
   // Check if broadcast succeeded
   const overlaySuccess = broadcastResult.overlayResults.some(r => r.accepted)
-  const wocSuccess = broadcastResult.wocResult.success
+  const minerSuccess = broadcastResult.minerBroadcast.success
 
-  if (!overlaySuccess && !wocSuccess) {
-    throw new Error(`Failed to broadcast: ${broadcastResult.wocResult.error || 'No nodes accepted'}`)
+  if (!overlaySuccess && !minerSuccess) {
+    throw new Error(`Failed to broadcast: ${broadcastResult.minerBroadcast.error || 'No nodes accepted'}`)
   }
 
   const txid = broadcastResult.txid || tx.id('hex')
@@ -1294,7 +1294,7 @@ async function buildAndBroadcastAction(
   brc100Logger.info('Overlay broadcast results', {
     txid,
     overlayAccepted: overlaySuccess,
-    wocAccepted: wocSuccess,
+    minerAccepted: minerSuccess,
     overlayResults: broadcastResult.overlayResults
   })
 

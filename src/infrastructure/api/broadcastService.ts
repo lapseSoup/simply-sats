@@ -23,7 +23,7 @@ const TXN_ALREADY_KNOWN_PATTERNS = [
   '257:',
 ]
 
-function isTxAlreadyKnown(errorMessage: string): boolean {
+export function isTxAlreadyKnown(errorMessage: string): boolean {
   const lower = errorMessage.toLowerCase()
   return TXN_ALREADY_KNOWN_PATTERNS.some(p => lower.includes(p.toLowerCase()))
 }
@@ -44,8 +44,8 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
   // 1. Try WhatsOnChain (via existing wocClient which has its own timeout)
   try {
     const result = await getWocClient().broadcastTransactionSafe(txHex)
-    if (result.success) {
-      const responseTxid = result.data
+    if (result.ok) {
+      const responseTxid = result.value
       if (responseTxid && localTxid && responseTxid !== localTxid) {
         apiLogger.error('TXID mismatch between WoC and local', {
           broadcasterTxid: responseTxid,

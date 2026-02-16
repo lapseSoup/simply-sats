@@ -89,12 +89,12 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
     // Fallback: Use WhatsOnChain to get 1-sat UTXOs, then verify each with GorillaPool
     ordLogger.debug('Using WhatsOnChain for ordinals detection')
     const wocUtxos = await getWocClient().getUtxosSafe(address)
-    if (!wocUtxos.success) {
+    if (!wocUtxos.ok) {
       ordLogger.warn('Failed to fetch ordinals from WhatsOnChain', { address, error: wocUtxos.error.message })
       return []
     }
     // Map to the format the rest of the code expects
-    const utxos = wocUtxos.data.map(u => ({ tx_hash: u.txid, tx_pos: u.vout, value: u.satoshis }))
+    const utxos = wocUtxos.value.map(u => ({ tx_hash: u.txid, tx_pos: u.vout, value: u.satoshis }))
     ordLogger.debug('WhatsOnChain returned UTXOs', { address, count: utxos.length })
 
     const ordinals: Ordinal[] = []

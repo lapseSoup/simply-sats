@@ -4,7 +4,9 @@ import {
   CancellationError,
   isCancellationError,
   withCancellation,
-  cancellableDelay
+  cancellableDelay,
+  acquireSyncLock,
+  isSyncInProgress
 } from './cancellation'
 
 describe('Cancellation Service', () => {
@@ -143,6 +145,91 @@ describe('Cancellation Service', () => {
       controller.cancel()
 
       await expect(promise).rejects.toThrow(CancellationError)
+    })
+  })
+
+  describe('acquireSyncLock (per-account)', () => {
+    it('should acquire and release lock with default accountId', async () => {
+      const release = await acquireSyncLock()
+      expect(isSyncInProgress()).toBe(true)
+      release()
+      // Allow microtask to settle
+      await Promise.resolve()
+      expect(isSyncInProgress()).toBe(false)
+    })
+
+    it('should acquire lock for a specific account', async () => {
+      const release = await acquireSyncLock(2)
+      expect(isSyncInProgress(2)).toBe(true)
+      expect(isSyncInProgress(1)).toBe(false)
+      release()
+      await Promise.resolve()
+      expect(isSyncInProgress(2)).toBe(false)
+    })
+
+    it('should allow two different accounts to hold locks simultaneously', async () => {
+      const releaseA = await acquireSyncLock(1)
+      const releaseB = await acquireSyncLock(2)
+
+      expect(isSyncInProgress(1)).toBe(true)
+      expect(isSyncInProgress(2)).toBe(true)
+
+      releaseA()
+      await Promise.resolve()
+      expect(isSyncInProgress(1)).toBe(false)
+      expect(isSyncInProgress(2)).toBe(true)
+
+      releaseB()
+      await Promise.resolve()
+      expect(isSyncInProgress(2)).toBe(false)
+    })
+
+    it('should block same account from acquiring lock concurrently', async () => {
+      const releaseFirst = await acquireSyncLock(1)
+
+      let secondAcquired = false
+      const secondPromise = acquireSyncLock(1).then(release => {
+        secondAcquired = true
+        return release
+      })
+
+      // Let microtasks run — second should still be blocked
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(secondAcquired).toBe(false)
+
+      // Release first lock — second should now acquire
+      releaseFirst()
+      const releaseSecond = await secondPromise
+      expect(secondAcquired).toBe(true)
+      expect(isSyncInProgress(1)).toBe(true)
+
+      releaseSecond()
+      await Promise.resolve()
+      expect(isSyncInProgress(1)).toBe(false)
+    })
+
+    it('isSyncInProgress with no arg should check all accounts', async () => {
+      expect(isSyncInProgress()).toBe(false)
+
+      const releaseA = await acquireSyncLock(1)
+      expect(isSyncInProgress()).toBe(true)
+
+      const releaseB = await acquireSyncLock(2)
+      expect(isSyncInProgress()).toBe(true)
+
+      releaseA()
+      await Promise.resolve()
+      // Account 2 still locked, so any-account check should be true
+      expect(isSyncInProgress()).toBe(true)
+
+      releaseB()
+      await Promise.resolve()
+      expect(isSyncInProgress()).toBe(false)
+    })
+
+    it('isSyncInProgress returns false for unknown accountId', () => {
+      expect(isSyncInProgress(999)).toBe(false)
     })
   })
 })

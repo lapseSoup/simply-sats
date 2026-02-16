@@ -7,7 +7,8 @@ import {
   TokensProvider,
   SyncProvider,
   LocksProvider,
-  ConnectedAppsProvider
+  ConnectedAppsProvider,
+  ModalProvider
 } from './contexts'
 import { ScreenReaderAnnounceProvider } from './components/shared'
 
@@ -38,9 +39,11 @@ export function AppProviders({ children }: AppProvidersProps) {
             <TokensProvider>
               <SyncProvider>
                 <LocksProvider>
-                  <WalletProvider>
-                    {children}
-                  </WalletProvider>
+                  <ModalProvider>
+                    <WalletProvider>
+                      {children}
+                    </WalletProvider>
+                  </ModalProvider>
                 </LocksProvider>
               </SyncProvider>
             </TokensProvider>

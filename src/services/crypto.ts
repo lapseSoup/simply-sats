@@ -4,7 +4,7 @@
  * This module provides secure encryption/decryption for wallet keys using
  * industry-standard cryptographic practices:
  *
- * - **Key Derivation**: PBKDF2-SHA256 with 100,000 iterations (OWASP recommended)
+ * - **Key Derivation**: PBKDF2-SHA256 with 600,000 iterations (OWASP 2025 recommended)
  * - **Encryption**: AES-256-GCM (authenticated encryption)
  * - **Random Generation**: Cryptographically secure random values for salt/IV
  *
@@ -71,8 +71,8 @@ export interface EncryptedData {
 
 /** Current encryption format version */
 const CURRENT_VERSION = 1
-/** PBKDF2 iterations - OWASP recommended minimum for 2024 */
-const PBKDF2_ITERATIONS = 100000
+/** PBKDF2 iterations - OWASP recommended minimum for 2025 */
+const PBKDF2_ITERATIONS = 600000
 /** Salt length in bytes (128 bits) */
 const SALT_LENGTH = 16
 /** IV length in bytes (96 bits for AES-GCM) */

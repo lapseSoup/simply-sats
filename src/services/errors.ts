@@ -283,32 +283,3 @@ export function withErrorHandling<
   }) as T
 }
 
-/**
- * Create a result type for operations that may fail
- */
-export type Result<T, E = AppError> =
-  | { success: true; data: T }
-  | { success: false; error: E }
-
-export function ok<T>(data: T): Result<T, never> {
-  return { success: true, data }
-}
-
-export function err<E>(error: E): Result<never, E> {
-  return { success: false, error }
-}
-
-/**
- * Wrap an async operation in a Result
- */
-export async function tryAsync<T>(
-  fn: () => Promise<T>,
-  errorCode: ErrorCode = ErrorCodes.GENERIC_ERROR
-): Promise<Result<T>> {
-  try {
-    const data = await fn()
-    return ok(data)
-  } catch (error) {
-    return err(AppError.fromUnknown(error, errorCode))
-  }
-}

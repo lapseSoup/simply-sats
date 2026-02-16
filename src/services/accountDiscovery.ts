@@ -61,9 +61,9 @@ export async function discoverAccounts(
       wocClient.getTransactionHistorySafe(keys.identityAddress)
     ])
 
-    const walletHasActivity = walletResult.success && walletResult.data.length > 0
-    const ordHasActivity = ordResult.success && ordResult.data.length > 0
-    const idHasActivity = idResult.success && idResult.data.length > 0
+    const walletHasActivity = walletResult.ok && walletResult.value.length > 0
+    const ordHasActivity = ordResult.ok && ordResult.value.length > 0
+    const idHasActivity = idResult.ok && idResult.value.length > 0
 
     if (walletHasActivity || ordHasActivity || idHasActivity) {
       discovered.push({ index: i, keys })
@@ -72,7 +72,7 @@ export async function discoverAccounts(
     }
 
     // Only count toward gap on successful empty responses, not API failures
-    const allSucceeded = walletResult.success && ordResult.success && idResult.success
+    const allSucceeded = walletResult.ok && ordResult.ok && idResult.ok
     if (allSucceeded) {
       consecutiveEmpty++
       accountLogger.debug('Empty account found', { accountIndex: i, consecutiveEmpty, gapLimit: DISCOVERY_GAP_LIMIT })
@@ -93,13 +93,13 @@ export async function discoverAccounts(
     ])
 
     if (
-      (retryW.success && retryW.data.length > 0) ||
-      (retryO.success && retryO.data.length > 0) ||
-      (retryI.success && retryI.data.length > 0)
+      (retryW.ok && retryW.value.length > 0) ||
+      (retryO.ok && retryO.value.length > 0) ||
+      (retryI.ok && retryI.value.length > 0)
     ) {
       discovered.push({ index: i, keys })
       consecutiveEmpty = 0
-    } else if (retryW.success && retryO.success && retryI.success) {
+    } else if (retryW.ok && retryO.ok && retryI.ok) {
       // Retry succeeded but all empty — count toward gap
       consecutiveEmpty++
       if (consecutiveEmpty >= DISCOVERY_GAP_LIMIT) {

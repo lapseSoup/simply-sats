@@ -8,6 +8,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode, type SetStateAction } from 'react'
 import type { WalletKeys, LockedUTXO, UTXO } from '../services/wallet'
 import { getUTXOs, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
+import { ok, err, type WalletResult } from '../domain/types'
 import { useNetwork } from './NetworkContext'
 import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
@@ -28,14 +29,14 @@ interface LocksContextType {
     blocks: number,
     activeAccountId: number | null,
     onComplete: () => Promise<void>
-  ) => Promise<{ success: boolean; txid?: string; error?: string }>
+  ) => Promise<WalletResult>
 
   handleUnlock: (
     wallet: WalletKeys,
     lock: LockedUTXO,
     activeAccountId: number | null,
     onComplete: () => Promise<void>
-  ) => Promise<{ success: boolean; txid?: string; error?: string }>
+  ) => Promise<WalletResult>
 
   // Detection helper (called from SyncContext)
   detectLocks: (
@@ -98,9 +99,9 @@ export function LocksProvider({ children }: LocksProviderProps) {
     blocks: number,
     activeAccountId: number | null,
     onComplete: () => Promise<void>
-  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
+  ): Promise<WalletResult> => {
     const currentHeight = networkInfo?.blockHeight
-    if (!currentHeight) return { success: false, error: 'Could not get block height' }
+    if (!currentHeight) return err('Could not get block height')
 
     try {
       const unlockBlock = currentHeight + blocks
@@ -115,22 +116,22 @@ export function LocksProvider({ children }: LocksProviderProps) {
       )
       if (recentDuplicate) {
         walletLogger.warn('Duplicate lock prevented', { amountSats, unlockBlock, existingTxid: recentDuplicate.txid })
-        return { success: false, error: 'A lock with this amount and duration was just created' }
+        return err('A lock with this amount and duration was just created')
       }
 
       const walletUtxos = await getUTXOs(wallet.walletAddress)
 
-      const result = await lockBSV(wallet.walletWif, amountSats, unlockBlock, walletUtxos, undefined, currentHeight, activeAccountId ?? undefined)
+      const lockResult = await lockBSV(wallet.walletWif, amountSats, unlockBlock, walletUtxos, undefined, currentHeight, activeAccountId ?? undefined)
 
       // Add the locked UTXO to our list (functional updater to avoid stale closure)
-      setLocks(prev => [...prev, result.lockedUtxo])
+      setLocks(prev => [...prev, lockResult.lockedUtxo])
 
       await onComplete()
       // Audit log lock creation
-      audit.lockCreated(result.txid, amountSats, unlockBlock, activeAccountId ?? undefined)
-      return { success: true, txid: result.txid }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Lock failed' }
+      audit.lockCreated(lockResult.txid, amountSats, unlockBlock, activeAccountId ?? undefined)
+      return ok({ txid: lockResult.txid })
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'Lock failed')
     }
   }, [networkInfo, locks])
 
@@ -140,9 +141,9 @@ export function LocksProvider({ children }: LocksProviderProps) {
     lock: LockedUTXO,
     activeAccountId: number | null,
     onComplete: () => Promise<void>
-  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
+  ): Promise<WalletResult> => {
     const currentHeight = networkInfo?.blockHeight
-    if (!currentHeight) return { success: false, error: 'Could not get block height' }
+    if (!currentHeight) return err('Could not get block height')
 
     try {
       const txid = await unlockBSV(wallet.walletWif, lock, currentHeight, activeAccountId ?? undefined)
@@ -158,9 +159,9 @@ export function LocksProvider({ children }: LocksProviderProps) {
       await onComplete()
       // Audit log lock release
       audit.lockReleased(txid, lock.satoshis, activeAccountId ?? undefined)
-      return { success: true, txid }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Unlock failed' }
+      return ok({ txid })
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'Unlock failed')
     }
   }, [networkInfo, addKnownUnlockedLock])
 

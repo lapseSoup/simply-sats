@@ -178,11 +178,11 @@ vi.mock('../database', () => ({
 }))
 
 // ─── Mock wocClient ─────────────────────────────────────────────────
-type SafeResult<T> = { success: true; data: T } | { success: false; error: { message: string; status?: number } }
+type SafeResult<T> = { ok: true; value: T } | { ok: false; error: { message: string; status?: number } }
 const mockWocClient = {
-  getBlockHeightSafe: vi.fn<() => Promise<SafeResult<number>>>(async () => ({ success: true, data: 870000 })),
-  isOutputSpentSafe: vi.fn<() => Promise<SafeResult<string | null>>>(async () => ({ success: true, data: null })),
-  getTransactionDetailsSafe: vi.fn<() => Promise<SafeResult<unknown>>>(async () => ({ success: false, error: { message: 'not found' } }))
+  getBlockHeightSafe: vi.fn<() => Promise<SafeResult<number>>>(async () => ({ ok: true, value: 870000 })),
+  isOutputSpentSafe: vi.fn<() => Promise<SafeResult<string | null>>>(async () => ({ ok: true, value: null })),
+  getTransactionDetailsSafe: vi.fn<() => Promise<SafeResult<unknown>>>(async () => ({ ok: false, error: { message: 'not found' } }))
 }
 
 vi.mock('../../infrastructure/api/wocClient', () => ({
@@ -252,8 +252,8 @@ describe('locks service', () => {
     vi.clearAllMocks()
     mockDbState.utxoRows = []
     mockDbState.lockRows = []
-    mockWocClient.getBlockHeightSafe.mockResolvedValue({ success: true, data: 870000 })
-    mockWocClient.isOutputSpentSafe.mockResolvedValue({ success: true, data: null })
+    mockWocClient.getBlockHeightSafe.mockResolvedValue({ ok: true, value: 870000 })
+    mockWocClient.isOutputSpentSafe.mockResolvedValue({ ok: true, value: null })
   })
 
   // ── parseTimelockScript ──────────────────────────────────────────
@@ -470,8 +470,8 @@ describe('locks service', () => {
     it('should handle broadcast failure with already-spent recovery', async () => {
       vi.mocked(broadcastTransaction).mockRejectedValueOnce(new Error('txn-already-known'))
       mockWocClient.isOutputSpentSafe.mockResolvedValueOnce({
-        success: true,
-        data: 'spending-txid-xyz' // Already spent
+        ok: true,
+        value: 'spending-txid-xyz' // Already spent
       })
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
@@ -485,8 +485,8 @@ describe('locks service', () => {
       const broadcastError = new Error('Network error')
       vi.mocked(broadcastTransaction).mockRejectedValueOnce(broadcastError)
       mockWocClient.isOutputSpentSafe.mockResolvedValueOnce({
-        success: true,
-        data: null // Not spent
+        ok: true,
+        value: null // Not spent
       })
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
@@ -499,7 +499,7 @@ describe('locks service', () => {
       const broadcastError = new Error('Broadcast error')
       vi.mocked(broadcastTransaction).mockRejectedValueOnce(broadcastError)
       mockWocClient.isOutputSpentSafe.mockResolvedValueOnce({
-        success: false,
+        ok: false,
         error: { message: 'API error', status: 500 }
       })
 
@@ -553,8 +553,8 @@ describe('locks service', () => {
   describe('getCurrentBlockHeight', () => {
     it('should return block height on success', async () => {
       mockWocClient.getBlockHeightSafe.mockResolvedValueOnce({
-        success: true,
-        data: 870_123
+        ok: true,
+        value: 870_123
       })
 
       const height = await getCurrentBlockHeight()
@@ -563,7 +563,7 @@ describe('locks service', () => {
 
     it('should throw when API returns error', async () => {
       mockWocClient.getBlockHeightSafe.mockResolvedValueOnce({
-        success: false,
+        ok: false,
         error: { message: 'Network timeout', status: 500 }
       })
 
@@ -718,8 +718,8 @@ describe('locks service', () => {
 
       // Mark UTXO as spent
       mockWocClient.isOutputSpentSafe.mockResolvedValueOnce({
-        success: true,
-        data: 'spending-tx-123' // Spent
+        ok: true,
+        value: 'spending-tx-123' // Spent
       })
 
       const result = await detectLockedUtxos(walletAddress, publicKeyHex)

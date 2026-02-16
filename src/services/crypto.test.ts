@@ -55,7 +55,7 @@ describe('Password-based Encryption', () => {
   it('should include version and iterations in encrypted data', async () => {
     const encrypted = await encrypt(testPlaintext, testPassword)
     expect(encrypted.version).toBe(1)
-    expect(encrypted.iterations).toBe(100000)
+    expect(encrypted.iterations).toBe(600000)
   })
 })
 
@@ -107,7 +107,7 @@ describe('Legacy Data Migration', () => {
 
     expect(isEncryptedData(migrated)).toBe(true)
     expect(migrated.version).toBe(1)
-    expect(migrated.iterations).toBe(100000)
+    expect(migrated.iterations).toBe(600000)
 
     const decrypted = await decrypt(migrated, testPassword)
     expect(JSON.parse(decrypted)).toEqual(legacyWalletData)

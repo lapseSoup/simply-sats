@@ -10,6 +10,7 @@ import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } 
 import { CoinControlModal } from './CoinControlModal'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
+import { isOk } from '../../domain/types'
 
 interface SendModalProps {
   onClose: () => void
@@ -133,7 +134,7 @@ export function SendModal({ onClose }: SendModalProps) {
     // Pass selected UTXOs to handleSend if coin control was used
     const result = await handleSend(sendAddress, sendSats, selectedUtxos ?? undefined)
 
-    if (result.success) {
+    if (isOk(result)) {
       showToast(`Sent ${sendSats.toLocaleString()} sats!`)
       onClose()
     } else {

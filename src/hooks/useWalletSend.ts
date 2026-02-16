@@ -20,6 +20,7 @@ import {
   getSpendableUtxosFromDatabase
 } from '../services/sync'
 import { audit } from '../services/auditLog'
+import { ok, err, type WalletResult } from '../domain/types'
 
 interface UseWalletSendOptions {
   wallet: WalletKeys | null
@@ -36,10 +37,10 @@ interface UseWalletSendOptions {
 }
 
 interface UseWalletSendReturn {
-  handleSend: (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]) => Promise<{ success: boolean; txid?: string; error?: string }>
-  handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
-  handleListOrdinal: (ordinal: Ordinal, priceSats: number) => Promise<{ success: boolean; txid?: string; error?: string }>
-  handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
+  handleSend: (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]) => Promise<WalletResult>
+  handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<WalletResult>
+  handleListOrdinal: (ordinal: Ordinal, priceSats: number) => Promise<WalletResult>
+  handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<WalletResult>
 }
 
 export function useWalletSend({
@@ -49,8 +50,8 @@ export function useWalletSend({
   refreshTokens,
   sendTokenAction
 }: UseWalletSendOptions): UseWalletSendReturn {
-  const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<{ success: boolean; txid?: string; error?: string }> => {
-    if (!wallet) return { success: false, error: 'No wallet loaded' }
+  const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
+    if (!wallet) return err('No wallet loaded')
 
     try {
       const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
@@ -97,23 +98,23 @@ export function useWalletSend({
       const txid = await sendBSVMultiKey(wallet.walletWif, address, amountSats, deduplicatedUtxos, activeAccountId ?? undefined)
       await fetchData()
       audit.transactionSent(txid, amountSats, activeAccountId ?? undefined)
-      return { success: true, txid }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Send failed' }
+      return ok({ txid })
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'Send failed')
     }
   }, [wallet, fetchData, activeAccountId])
 
   const handleTransferOrdinal = useCallback(async (
     ordinal: Ordinal,
     toAddress: string
-  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
-    if (!wallet) return { success: false, error: 'No wallet loaded' }
+  ): Promise<WalletResult> => {
+    if (!wallet) return err('No wallet loaded')
 
     try {
       const fundingUtxos = await getUTXOs(wallet.walletAddress)
 
       if (fundingUtxos.length === 0) {
-        return { success: false, error: 'No funding UTXOs available for transfer fee' }
+        return err('No funding UTXOs available for transfer fee')
       }
 
       const ordinalUtxo: UTXO = {
@@ -132,23 +133,23 @@ export function useWalletSend({
       )
 
       await fetchData()
-      return { success: true, txid }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Transfer failed' }
+      return ok({ txid })
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'Transfer failed')
     }
   }, [wallet, fetchData])
 
   const handleListOrdinal = useCallback(async (
     ordinal: Ordinal,
     priceSats: number
-  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
-    if (!wallet) return { success: false, error: 'No wallet loaded' }
+  ): Promise<WalletResult> => {
+    if (!wallet) return err('No wallet loaded')
 
     try {
       const fundingUtxos = await getUTXOs(wallet.walletAddress)
 
       if (fundingUtxos.length === 0) {
-        return { success: false, error: 'No funding UTXOs available for listing fee' }
+        return err('No funding UTXOs available for listing fee')
       }
 
       const ordinalUtxo: UTXO = {
@@ -169,9 +170,9 @@ export function useWalletSend({
       )
 
       await fetchData()
-      return { success: true, txid }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Listing failed' }
+      return ok({ txid })
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'Listing failed')
     }
   }, [wallet, fetchData])
 
@@ -180,17 +181,18 @@ export function useWalletSend({
     protocol: 'bsv20' | 'bsv21',
     amount: string,
     toAddress: string
-  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
-    if (!wallet) return { success: false, error: 'No wallet loaded' }
+  ): Promise<WalletResult> => {
+    if (!wallet) return err('No wallet loaded')
 
     const result = await sendTokenAction(wallet, ticker, protocol, amount, toAddress)
 
-    if (result.success) {
+    if (result.success && result.txid) {
       await fetchData()
       await refreshTokens()
+      return ok({ txid: result.txid })
     }
 
-    return result
+    return err(result.error || 'Token transfer failed')
   }, [wallet, fetchData, refreshTokens, sendTokenAction])
 
   return {

@@ -1,10 +1,14 @@
 import { lazy, Suspense } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { MnemonicModal, UnlockConfirmModal } from './components/modals'
-import type { Ordinal, LockedUTXO } from './services/wallet'
+import type { LockedUTXO } from './services/wallet'
 import type { BRC100Request } from './services/brc100'
 import type { Account } from './services/accounts'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
+import { useModal } from './contexts'
+
+// Re-export types from ModalContext for backward compatibility
+export type { Modal, AccountModalMode } from './contexts/ModalContext'
 
 // Lazy-loaded modals for code splitting (only loaded when first opened)
 const SendModal = lazy(() => import('./components/modals/SendModal').then(m => ({ default: m.SendModal })))
@@ -57,114 +61,63 @@ function ModalErrorFallback({ modalName, error, reset, onClose }: {
   )
 }
 
-export type Modal =
-  | 'send'
-  | 'receive'
-  | 'settings'
-  | 'mnemonic'
-  | 'restore'
-  | 'ordinal'
-  | 'brc100'
-  | 'lock'
-  | 'transfer-ordinal'
-  | 'list-ordinal'
-  | 'account'
-  | null
-
-export type AccountModalMode = 'create' | 'import' | 'manage'
-
 interface AppModalsProps {
-  modal: Modal
-  onCloseModal: () => void
-
-  // Send/Lock/Receive modals
-  // (no additional props needed)
-
-  // Settings modal
-  // (no additional props needed)
-
-  // Ordinal modal
-  selectedOrdinal: Ordinal | null
-  onTransferOrdinal: (ordinal: Ordinal) => void
-  onListOrdinal: (ordinal: Ordinal) => void
-
-  // Transfer ordinal modal
-  ordinalToTransfer: Ordinal | null
-  onTransferComplete: () => void
-
-  // List ordinal modal
-  ordinalToList: Ordinal | null
-  onListComplete: () => void
-
-  // BRC-100 modal
+  // BRC-100 (from useBrc100Handler in App.tsx)
   brc100Request: BRC100Request | null
   onApproveBRC100: () => void
   onRejectBRC100: () => void
-
-  // Mnemonic modal
-  newMnemonic: string | null
-  onMnemonicConfirm: () => void
-
-  // Account modal
-  accountModalMode: AccountModalMode
+  // Account management (from useWallet in App.tsx)
   accounts: Account[]
   activeAccountId: number | null
   onCreateAccount: (name: string) => Promise<boolean>
   onImportAccount: (name: string, mnemonic: string) => Promise<boolean>
   onDeleteAccount: (id: number) => Promise<boolean>
   onRenameAccount: (id: number, name: string) => Promise<void>
-
-  // Unlock confirm modal
-  unlockConfirm: LockedUTXO | 'all' | null
+  // Unlock (computed in App.tsx)
   unlockableLocks: LockedUTXO[]
   onConfirmUnlock: () => void
-  onCancelUnlock: () => void
-  isUnlocking: boolean
 }
 
 /**
  * Renders all modal components based on the current modal state.
- * Centralizes modal rendering logic from App.tsx.
+ * Most modal state comes from ModalContext; only cross-cutting props
+ * that depend on other contexts are passed as props.
  */
 export function AppModals({
-  modal,
-  onCloseModal,
-  selectedOrdinal,
-  onTransferOrdinal,
-  onListOrdinal,
-  ordinalToTransfer,
-  onTransferComplete,
-  ordinalToList,
-  onListComplete,
   brc100Request,
   onApproveBRC100,
   onRejectBRC100,
-  newMnemonic,
-  onMnemonicConfirm,
-  accountModalMode,
   accounts,
   activeAccountId,
   onCreateAccount,
   onImportAccount,
   onDeleteAccount,
   onRenameAccount,
-  unlockConfirm,
   unlockableLocks,
   onConfirmUnlock,
-  onCancelUnlock,
-  isUnlocking
 }: AppModalsProps) {
+  const {
+    modal, closeModal,
+    selectedOrdinal,
+    ordinalToTransfer, completeTransfer,
+    ordinalToList, completeList,
+    newMnemonic, confirmMnemonic,
+    accountModalMode,
+    unlockConfirm, cancelUnlock, unlocking,
+    startTransferOrdinal, startListOrdinal
+  } = useModal()
+
   return (
     <>
       {modal === 'send' && (
         <ErrorBoundary
           context="SendModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Send" error={error} reset={reset} onClose={onCloseModal} />
+            <ModalErrorFallback modalName="Send" error={error} reset={reset} onClose={closeModal} />
           )}
         >
           <Suspense fallback={null}>
-            <SendModal onClose={onCloseModal} />
+            <SendModal onClose={closeModal} />
           </Suspense>
         </ErrorBoundary>
       )}
@@ -172,11 +125,11 @@ export function AppModals({
         <ErrorBoundary
           context="LockModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Lock" error={error} reset={reset} onClose={onCloseModal} />
+            <ModalErrorFallback modalName="Lock" error={error} reset={reset} onClose={closeModal} />
           )}
         >
           <Suspense fallback={null}>
-            <LockModal onClose={onCloseModal} />
+            <LockModal onClose={closeModal} />
           </Suspense>
         </ErrorBoundary>
       )}
@@ -184,11 +137,11 @@ export function AppModals({
         <ErrorBoundary
           context="ReceiveModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Receive" error={error} reset={reset} onClose={onCloseModal} />
+            <ModalErrorFallback modalName="Receive" error={error} reset={reset} onClose={closeModal} />
           )}
         >
           <Suspense fallback={null}>
-            <ReceiveModal onClose={onCloseModal} />
+            <ReceiveModal onClose={closeModal} />
           </Suspense>
         </ErrorBoundary>
       )}
@@ -196,11 +149,11 @@ export function AppModals({
         <ErrorBoundary
           context="SettingsModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Settings" error={error} reset={reset} onClose={onCloseModal} />
+            <ModalErrorFallback modalName="Settings" error={error} reset={reset} onClose={closeModal} />
           )}
         >
           <Suspense fallback={null}>
-            <SettingsModal onClose={onCloseModal} />
+            <SettingsModal onClose={closeModal} />
           </Suspense>
         </ErrorBoundary>
       )}
@@ -209,15 +162,15 @@ export function AppModals({
         <ErrorBoundary
           context="OrdinalModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Ordinal" error={error} reset={reset} onClose={onCloseModal} />
+            <ModalErrorFallback modalName="Ordinal" error={error} reset={reset} onClose={closeModal} />
           )}
         >
           <Suspense fallback={null}>
             <OrdinalModal
               ordinal={selectedOrdinal}
-              onClose={onCloseModal}
-              onTransfer={() => onTransferOrdinal(selectedOrdinal)}
-              onList={() => onListOrdinal(selectedOrdinal)}
+              onClose={closeModal}
+              onTransfer={() => startTransferOrdinal(selectedOrdinal)}
+              onList={() => startListOrdinal(selectedOrdinal)}
             />
           </Suspense>
         </ErrorBoundary>
@@ -227,13 +180,13 @@ export function AppModals({
         <ErrorBoundary
           context="OrdinalTransferModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Transfer Ordinal" error={error} reset={reset} onClose={onTransferComplete} />
+            <ModalErrorFallback modalName="Transfer Ordinal" error={error} reset={reset} onClose={completeTransfer} />
           )}
         >
           <Suspense fallback={null}>
             <OrdinalTransferModal
               ordinal={ordinalToTransfer}
-              onClose={onTransferComplete}
+              onClose={completeTransfer}
             />
           </Suspense>
         </ErrorBoundary>
@@ -243,13 +196,13 @@ export function AppModals({
         <ErrorBoundary
           context="OrdinalListModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="List Ordinal" error={error} reset={reset} onClose={onListComplete} />
+            <ModalErrorFallback modalName="List Ordinal" error={error} reset={reset} onClose={completeList} />
           )}
         >
           <Suspense fallback={null}>
             <OrdinalListModal
               ordinal={ordinalToList}
-              onClose={onListComplete}
+              onClose={completeList}
             />
           </Suspense>
         </ErrorBoundary>
@@ -276,10 +229,10 @@ export function AppModals({
         <ErrorBoundary
           context="MnemonicModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Recovery Phrase" error={error} reset={reset} onClose={onMnemonicConfirm} />
+            <ModalErrorFallback modalName="Recovery Phrase" error={error} reset={reset} onClose={confirmMnemonic} />
           )}
         >
-          <MnemonicModal mnemonic={newMnemonic} onConfirm={onMnemonicConfirm} />
+          <MnemonicModal mnemonic={newMnemonic} onConfirm={confirmMnemonic} />
         </ErrorBoundary>
       )}
 
@@ -287,13 +240,13 @@ export function AppModals({
         <ErrorBoundary
           context="AccountModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Account" error={error} reset={reset} onClose={onCloseModal} />
+            <ModalErrorFallback modalName="Account" error={error} reset={reset} onClose={closeModal} />
           )}
         >
           <Suspense fallback={null}>
             <AccountModal
               isOpen={true}
-              onClose={onCloseModal}
+              onClose={closeModal}
               mode={accountModalMode}
               accounts={accounts}
               activeAccountId={activeAccountId}
@@ -310,14 +263,14 @@ export function AppModals({
         <ErrorBoundary
           context="UnlockConfirmModal"
           fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Unlock Confirmation" error={error} reset={reset} onClose={onCancelUnlock} />
+            <ModalErrorFallback modalName="Unlock Confirmation" error={error} reset={reset} onClose={cancelUnlock} />
           )}
         >
           <UnlockConfirmModal
             locks={unlockConfirm === 'all' ? unlockableLocks : [unlockConfirm]}
             onConfirm={onConfirmUnlock}
-            onCancel={onCancelUnlock}
-            unlocking={isUnlocking}
+            onCancel={cancelUnlock}
+            unlocking={!!unlocking}
           />
         </ErrorBoundary>
       )}

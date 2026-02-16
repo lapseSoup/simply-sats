@@ -7,6 +7,7 @@ import { getTimelockScriptSize } from '../../services/wallet'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
+import { isOk } from '../../domain/types'
 
 // Short lock warning threshold: less than 6 blocks (~1 hour)
 const SHORT_LOCK_WARNING_BLOCKS = 6
@@ -121,7 +122,7 @@ export function LockModal({ onClose }: LockModalProps) {
 
     const result = await handleLock(lockSats, blocks)
 
-    if (result.success) {
+    if (isOk(result)) {
       showToast(`Locked ${lockSats.toLocaleString()} sats for ${blocks} blocks!`)
       onClose()
     } else {

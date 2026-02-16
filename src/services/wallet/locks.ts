@@ -397,19 +397,19 @@ export async function unlockBSV(
     const woc = getWocClient()
     const spentResult = await woc.isOutputSpentSafe(lockedUtxo.txid, lockedUtxo.vout)
 
-    if (spentResult.success && spentResult.data !== null) {
+    if (spentResult.ok && spentResult.value !== null) {
       // Lock UTXO IS spent — the unlock tx went through previously
       walletLogger.info('Lock UTXO already spent — marking as unlocked', {
         lockTxid: lockedUtxo.txid,
         vout: lockedUtxo.vout,
-        spendingTxid: spentResult.data
+        spendingTxid: spentResult.value
       })
       try {
         await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout, accountId)
       } catch (_markErr) {
         walletLogger.warn('Failed to mark lock as unlocked after spent-check', { error: String(_markErr) })
       }
-      return spentResult.data // Return the spending txid
+      return spentResult.value // Return the spending txid
     }
 
     // UTXO is genuinely unspent and broadcast failed — real failure
@@ -446,11 +446,11 @@ export async function unlockBSV(
  */
 export async function getCurrentBlockHeight(): Promise<number> {
   const result = await getWocClient().getBlockHeightSafe()
-  if (!result.success) {
+  if (!result.ok) {
     walletLogger.error('Error fetching block height', result.error)
     throw new Error(result.error.message)
   }
-  return result.data
+  return result.value
 }
 
 /**
@@ -559,9 +559,9 @@ async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
     // Primary check: the direct spent endpoint (faster and more reliable)
     const spentResult = await woc.isOutputSpentSafe(txid, vout)
 
-    if (spentResult.success) {
-      if (spentResult.data !== null) {
-        walletLogger.debug('UTXO has been spent', { txid, vout, spendingTxid: spentResult.data })
+    if (spentResult.ok) {
+      if (spentResult.value !== null) {
+        walletLogger.debug('UTXO has been spent', { txid, vout, spendingTxid: spentResult.value })
         return false
       }
       // null means unspent
@@ -576,12 +576,12 @@ async function isUtxoUnspent(txid: string, vout: number): Promise<boolean> {
 
     // Fallback: Check the full transaction
     const txResult = await woc.getTransactionDetailsSafe(txid)
-    if (!txResult.success) {
+    if (!txResult.ok) {
       walletLogger.warn('Could not verify UTXO spend status, assuming unspent', { txid, vout, error: txResult.error.message })
       return true // Assume unspent on error — better to show a stale lock than lose one
     }
 
-    const output = txResult.data.vout?.[vout]
+    const output = txResult.value.vout?.[vout]
     if (output && 'spent' in output && output.spent) {
       return false
     }

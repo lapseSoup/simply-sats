@@ -220,6 +220,15 @@ pub async fn get_mnemonic_once(
     Ok(mnemonic)
 }
 
+/// Ensure keys are loaded before sensitive operations.
+/// Returns Err if wallet is locked (no keys available).
+fn require_keys(store: &KeyStoreInner) -> Result<(), String> {
+    if !store.has_keys() {
+        return Err("Wallet is locked — no keys available".to_string());
+    }
+    Ok(())
+}
+
 // ==================== Signing Commands (from store) ====================
 
 /// Sign a message using a key from the store
@@ -230,6 +239,7 @@ pub async fn sign_message_from_store(
     key_type: String,
 ) -> Result<String, String> {
     let store = key_store.lock().await;
+    require_keys(&store)?;
     let wif = Zeroizing::new(store.get_wif(&key_type)?);
     drop(store); // Release lock before signing
     brc100_signing::sign_message((*wif).clone(), message)
@@ -244,6 +254,7 @@ pub async fn sign_data_from_store(
     key_type: String,
 ) -> Result<String, String> {
     let store = key_store.lock().await;
+    require_keys(&store)?;
     let wif = Zeroizing::new(store.get_wif(&key_type)?);
     drop(store);
     brc100_signing::sign_data((*wif).clone(), data)
@@ -259,6 +270,7 @@ pub async fn encrypt_ecies_from_store(
     key_type: String,
 ) -> Result<brc100_signing::EncryptResult, String> {
     let store = key_store.lock().await;
+    require_keys(&store)?;
     let wif = Zeroizing::new(store.get_wif(&key_type)?);
     drop(store);
     brc100_signing::encrypt_ecies((*wif).clone(), plaintext, recipient_pub_key, sender_pub_key)
@@ -273,6 +285,7 @@ pub async fn decrypt_ecies_from_store(
     key_type: String,
 ) -> Result<String, String> {
     let store = key_store.lock().await;
+    require_keys(&store)?;
     let wif = Zeroizing::new(store.get_wif(&key_type)?);
     drop(store);
     brc100_signing::decrypt_ecies((*wif).clone(), ciphertext_bytes, sender_pub_key)
@@ -291,6 +304,7 @@ pub async fn build_p2pkh_tx_from_store(
     fee_rate: f64,
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
+    require_keys(&store)?;
     let wif = Zeroizing::new(store.get_wif("wallet")?);
     drop(store);
     transaction::build_p2pkh_tx((*wif).clone(), to_address, satoshis, selected_utxos, total_input, fee_rate)
@@ -307,6 +321,7 @@ pub async fn build_multi_key_p2pkh_tx_from_store(
     fee_rate: f64,
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
+    require_keys(&store)?;
     let wif = Zeroizing::new(store.get_wif("wallet")?);
     drop(store);
     transaction::build_multi_key_p2pkh_tx((*wif).clone(), to_address, satoshis, selected_utxos, total_input, fee_rate)
@@ -320,6 +335,7 @@ pub async fn build_consolidation_tx_from_store(
     fee_rate: f64,
 ) -> Result<transaction::BuiltConsolidationResult, String> {
     let store = key_store.lock().await;
+    require_keys(&store)?;
     let wif = Zeroizing::new(store.get_wif("wallet")?);
     drop(store);
     transaction::build_consolidation_tx((*wif).clone(), utxos, fee_rate)

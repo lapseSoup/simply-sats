@@ -22,8 +22,8 @@ use zeroize::Zeroize;
 
 /// Current encryption format version (must match TypeScript CURRENT_VERSION)
 const CURRENT_VERSION: u32 = 1;
-/// PBKDF2 iterations — OWASP 2024 recommended minimum
-const PBKDF2_ITERATIONS: u32 = 100_000;
+/// PBKDF2 iterations — OWASP 2025 recommended minimum
+const PBKDF2_ITERATIONS: u32 = 600_000;
 /// Salt length in bytes (128 bits)
 const SALT_LENGTH: usize = 16;
 /// IV length in bytes (96 bits for AES-GCM)

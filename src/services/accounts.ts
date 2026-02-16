@@ -12,6 +12,7 @@ import type { WalletKeys } from './wallet'
 import type { AccountRow, AccountSettingRow, IdCheckRow } from './database-types'
 import { validatePassword, DEFAULT_PASSWORD_REQUIREMENTS, LEGACY_PASSWORD_REQUIREMENTS } from './password-validation'
 import { accountLogger } from './logger'
+import { SECURITY } from '../config'
 
 // Account type
 export interface Account {
@@ -270,6 +271,27 @@ export async function getAccountKeys(
     // All accounts should be encrypted - try to decrypt
     const encryptedData = JSON.parse(account.encryptedKeys) as EncryptedData
     const keysJson = await decrypt(encryptedData, password)
+
+    // Lazy PBKDF2 migration: re-encrypt with current iterations if outdated
+    if (encryptedData.iterations < SECURITY.PBKDF2_ITERATIONS && account.id) {
+      try {
+        const newEncrypted = await encrypt(keysJson, password)
+        const database = getDatabase()
+        await database.execute(
+          'UPDATE accounts SET encrypted_keys = $1 WHERE id = $2',
+          [JSON.stringify(newEncrypted), account.id]
+        )
+        accountLogger.info('Migrated PBKDF2 iterations', {
+          accountId: account.id,
+          from: encryptedData.iterations,
+          to: newEncrypted.iterations
+        })
+      } catch (migrationError) {
+        // Non-fatal: keys decrypted fine, re-encryption retried next unlock
+        accountLogger.warn('Failed to migrate PBKDF2 iterations', { error: String(migrationError) })
+      }
+    }
+
     const keys = JSON.parse(keysJson)
     return keys as WalletKeys
   } catch (e) {

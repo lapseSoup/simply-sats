@@ -18,8 +18,8 @@ export const SECURITY = {
   /** Recommended password length for strong passwords */
   RECOMMENDED_PASSWORD_LENGTH: 16,
 
-  /** PBKDF2 iterations for key derivation (OWASP 2024 recommendation: 100,000+) */
-  PBKDF2_ITERATIONS: 100000,
+  /** PBKDF2 iterations for key derivation (OWASP 2025 recommendation: 600,000+) */
+  PBKDF2_ITERATIONS: 600000,
 
   /** Auto-lock timeout in minutes (default) */
   DEFAULT_AUTO_LOCK_MINUTES: 10,

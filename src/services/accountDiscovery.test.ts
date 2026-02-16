@@ -62,25 +62,25 @@ const makeMockKeys = (index: number) => ({
 /** Helper: mock 3 address checks (wallet, ord, identity) for one account with no activity */
 const mockEmptyAccount = () => {
   mockWocClient.getTransactionHistorySafe
-    .mockResolvedValueOnce({ success: true, data: [] }) // wallet
-    .mockResolvedValueOnce({ success: true, data: [] }) // ord
-    .mockResolvedValueOnce({ success: true, data: [] }) // identity
+    .mockResolvedValueOnce({ ok: true, value: [] }) // wallet
+    .mockResolvedValueOnce({ ok: true, value: [] }) // ord
+    .mockResolvedValueOnce({ ok: true, value: [] }) // identity
 }
 
 /** Helper: mock 3 address checks for one account with wallet activity */
 const mockActiveAccount = (txHash = 'abc', height = 850000) => {
   mockWocClient.getTransactionHistorySafe
-    .mockResolvedValueOnce({ success: true, data: [{ tx_hash: txHash, height }] }) // wallet
-    .mockResolvedValueOnce({ success: true, data: [] }) // ord
-    .mockResolvedValueOnce({ success: true, data: [] }) // identity
+    .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: txHash, height }] }) // wallet
+    .mockResolvedValueOnce({ ok: true, value: [] }) // ord
+    .mockResolvedValueOnce({ ok: true, value: [] }) // identity
 }
 
 /** Helper: mock 3 address checks for one account with ordinals activity */
 const mockOrdActiveAccount = (txHash = 'def', height = 850001) => {
   mockWocClient.getTransactionHistorySafe
-    .mockResolvedValueOnce({ success: true, data: [] }) // wallet
-    .mockResolvedValueOnce({ success: true, data: [{ tx_hash: txHash, height }] }) // ord
-    .mockResolvedValueOnce({ success: true, data: [] }) // identity
+    .mockResolvedValueOnce({ ok: true, value: [] }) // wallet
+    .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: txHash, height }] }) // ord
+    .mockResolvedValueOnce({ ok: true, value: [] }) // identity
 }
 
 describe('discoverAccounts', () => {
@@ -139,9 +139,9 @@ describe('discoverAccounts', () => {
   it('discovers accounts with identity address activity', async () => {
     // Account 1: only identity has activity
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: true, data: [] }) // wallet
-      .mockResolvedValueOnce({ success: true, data: [] }) // ord
-      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'id-tx', height: 850002 }] }) // identity active!
+      .mockResolvedValueOnce({ ok: true, value: [] }) // wallet
+      .mockResolvedValueOnce({ ok: true, value: [] }) // ord
+      .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'id-tx', height: 850002 }] }) // identity active!
     // Account 2: no activity
     mockEmptyAccount()
     // Account 3: no activity (gap limit reached)
@@ -191,14 +191,14 @@ describe('discoverAccounts', () => {
   it('retries on API failure and stops only if retry also fails', async () => {
     // First attempt: API failure on all 3 addresses
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } })
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
+      .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } })
+      .mockResolvedValueOnce({ ok: true, value: [] })
+      .mockResolvedValueOnce({ ok: true, value: [] })
     // Retry after delay: all 3 succeed but empty
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
+      .mockResolvedValueOnce({ ok: true, value: [] })
+      .mockResolvedValueOnce({ ok: true, value: [] })
+      .mockResolvedValueOnce({ ok: true, value: [] })
     // Account 2: empty (gap limit reached: 2 consecutive empty)
     mockEmptyAccount()
 
@@ -211,14 +211,14 @@ describe('discoverAccounts', () => {
   it('discovers account on retry after initial API failure', async () => {
     // First attempt: API failure on wallet + ordinals
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: false, error: { code: 'RATE_LIMITED', message: '429' } })
-      .mockResolvedValueOnce({ success: false, error: { code: 'RATE_LIMITED', message: '429' } })
-      .mockResolvedValueOnce({ success: false, error: { code: 'RATE_LIMITED', message: '429' } })
+      .mockResolvedValueOnce({ ok: false, error: { code: 'RATE_LIMITED', message: '429' } })
+      .mockResolvedValueOnce({ ok: false, error: { code: 'RATE_LIMITED', message: '429' } })
+      .mockResolvedValueOnce({ ok: false, error: { code: 'RATE_LIMITED', message: '429' } })
     // Retry: has activity
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ success: true, data: [{ tx_hash: 'abc', height: 850000 }] })
-      .mockResolvedValueOnce({ success: true, data: [] })
-      .mockResolvedValueOnce({ success: true, data: [] })
+      .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'abc', height: 850000 }] })
+      .mockResolvedValueOnce({ ok: true, value: [] })
+      .mockResolvedValueOnce({ ok: true, value: [] })
     // Account 2: no activity
     mockEmptyAccount()
     // Account 3: no activity (gap limit reached)
@@ -250,7 +250,7 @@ describe('discoverAccounts', () => {
     // All accounts have activity — should stop at 20
     // Each account check does 3 calls (wallet, ord, identity)
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValue({ success: true, data: [{ tx_hash: 'x', height: 1 }] })
+      .mockResolvedValue({ ok: true, value: [{ tx_hash: 'x', height: 1 }] })
 
     const found = await discoverAccounts('test mnemonic', 'password')
 

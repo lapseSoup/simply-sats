@@ -13,6 +13,7 @@ import type { Ordinal } from '../../services/wallet'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateTxFee } from '../../services/wallet/fees'
+import { isOk } from '../../domain/types'
 
 interface OrdinalListModalProps {
   ordinal: Ordinal
@@ -51,8 +52,8 @@ export function OrdinalListModal({
     const price = parseInt(priceSats, 10)
     const result = await handleListOrdinal(ordinal, price)
 
-    if (result.success && result.txid) {
-      setTxid(result.txid)
+    if (isOk(result)) {
+      setTxid(result.value.txid)
       showToast('Ordinal listed for sale!')
     } else {
       setError(result.error || 'Listing failed')

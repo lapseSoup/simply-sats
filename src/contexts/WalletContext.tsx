@@ -1,13 +1,13 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
-import type { WalletKeys, LockedUTXO, Ordinal } from '../services/wallet'
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
+import type { WalletKeys, LockedUTXO } from '../services/wallet'
 import {
   getFeeRatePerKB,
   setFeeRateFromKB
 } from '../services/wallet'
 import { setWalletKeys } from '../services/brc100'
-import { useNetwork, type NetworkInfo } from './NetworkContext'
+import { useNetwork } from './NetworkContext'
 import { useAccounts } from './AccountsContext'
-import { useSyncContext, type TxHistoryItem, type BasketBalances } from './SyncContext'
+import { useSyncContext } from './SyncContext'
 import { useLocksContext } from './LocksContext'
 import {
   getTransactionLabels,
@@ -16,12 +16,9 @@ import {
   upsertTransaction,
   updateLockBlock,
   addUTXO,
-  addLockIfNotExists,
-  type Contact,
-  type UTXO as DatabaseUTXO
+  addLockIfNotExists
 } from '../services/database'
-import type { Account } from '../services/accounts'
-import { type TokenBalance } from '../services/tokens'
+import type { WalletResult } from '../domain/types'
 import { useTokens } from './TokensContext'
 import { walletLogger } from '../services/logger'
 import { invoke } from '@tauri-apps/api/core'
@@ -29,92 +26,25 @@ import { invoke } from '@tauri-apps/api/core'
 // Extracted hooks
 import { useWalletLock, initAutoLock, minutesToMs } from '../hooks/useWalletLock'
 import { useWalletInit } from '../hooks/useWalletInit'
-import { useWalletActions } from '../hooks/useWalletActions'
+import { useWalletActions as useWalletActionsHook } from '../hooks/useWalletActions'
 import { useWalletSend } from '../hooks/useWalletSend'
 import { useAccountSwitching } from '../hooks/useAccountSwitching'
+
+// Split context objects
+import { WalletStateContext, useWalletState, type WalletStateContextType } from './WalletStateContext'
+import { WalletActionsContext, useWalletActions, type WalletActionsContextType } from './WalletActionsContext'
 
 // Re-export types for backward compatibility
 export type { TxHistoryItem, BasketBalances } from './SyncContext'
 
-interface WalletContextType {
-  // Wallet state
-  wallet: WalletKeys | null
-  setWallet: (wallet: WalletKeys | null) => void
-  balance: number
-  ordBalance: number
-  usdPrice: number
-  utxos: import('../services/wallet').UTXO[]
-  ordinals: Ordinal[]
-  ordinalContentCache: Map<string, { contentData?: Uint8Array; contentText?: string }>
-  locks: LockedUTXO[]
-  txHistory: TxHistoryItem[]
-  basketBalances: BasketBalances
-  contacts: Contact[]
-
-  // Multi-account state
-  accounts: Account[]
-  activeAccount: Account | null
-  activeAccountId: number | null
-  switchAccount: (accountId: number) => Promise<boolean>
-  createNewAccount: (name: string) => Promise<boolean>
-  importAccount: (name: string, mnemonic: string) => Promise<boolean>
-  deleteAccount: (accountId: number) => Promise<boolean>
-  renameAccount: (accountId: number, name: string) => Promise<void>
-  refreshAccounts: () => Promise<void>
-
-  // Token state
-  tokenBalances: TokenBalance[]
-  refreshTokens: () => Promise<void>
-  tokensSyncing: boolean
-
-  // Lock state
-  isLocked: boolean
-  lockWallet: () => void
-  unlockWallet: (password: string) => Promise<boolean>
-  autoLockMinutes: number
-  setAutoLockMinutes: (minutes: number) => void
-
-  // Network state
-  networkInfo: NetworkInfo | null
-  syncing: boolean
-  syncError: string | null
-  loading: boolean
-
-  // Settings
-  feeRateKB: number
-  setFeeRate: (rate: number) => void
-
-  // Session
-  sessionPassword: string | null
-  refreshContacts: () => Promise<void>
-
-  // Actions
-  performSync: (isRestore?: boolean, forceReset?: boolean) => Promise<void>
-  fetchData: () => Promise<void>
-  handleCreateWallet: (password: string) => Promise<string | null>
-  handleRestoreWallet: (mnemonic: string, password: string) => Promise<boolean>
-  handleImportJSON: (json: string, password: string) => Promise<boolean>
-  handleDeleteWallet: () => Promise<void>
-  handleSend: (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]) => Promise<{ success: boolean; txid?: string; error?: string }>
-  handleLock: (amountSats: number, blocks: number) => Promise<{ success: boolean; txid?: string; error?: string }>
-  handleUnlock: (lock: LockedUTXO) => Promise<{ success: boolean; txid?: string; error?: string }>
-  handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
-  handleListOrdinal: (ordinal: Ordinal, priceSats: number) => Promise<{ success: boolean; txid?: string; error?: string }>
-  handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<{ success: boolean; txid?: string; error?: string }>
-
-  // Account discovery (deferred after restore sync)
-  consumePendingDiscovery: () => { mnemonic: string; password: string; excludeAccountId?: number } | null
-}
-
-const WalletContext = createContext<WalletContextType | null>(null)
+// Backward-compatible merged type — useWallet() returns this
+type WalletContextType = WalletStateContextType & WalletActionsContextType
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function useWallet() {
-  const context = useContext(WalletContext)
-  if (!context) {
-    throw new Error('useWallet must be used within a WalletProvider')
-  }
-  return context
+export function useWallet(): WalletContextType {
+  const state = useWalletState()
+  const actions = useWalletActions()
+  return useMemo(() => ({ ...state, ...actions }), [state, actions])
 }
 
 interface WalletProviderProps {
@@ -241,7 +171,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleImportJSON,
     handleDeleteWallet,
     consumePendingDiscovery
-  } = useWalletActions({
+  } = useWalletActionsHook({
     setWallet,
     setIsLocked,
     setSessionPassword,
@@ -434,13 +364,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [wallet, knownUnlockedLocks, syncFetchData, detectLocks, setLocks])
 
   // Lock/unlock BSV - delegates to LocksContext
-  const handleLock = useCallback(async (amountSats: number, blocks: number): Promise<{ success: boolean; txid?: string; error?: string }> => {
-    if (!wallet) return { success: false, error: 'No wallet loaded' }
+  const handleLock = useCallback(async (amountSats: number, blocks: number): Promise<WalletResult> => {
+    if (!wallet) return { ok: false, error: 'No wallet loaded' }
     return locksHandleLock(wallet, amountSats, blocks, activeAccountId, fetchData)
   }, [wallet, activeAccountId, locksHandleLock, fetchData])
 
-  const handleUnlock = useCallback(async (lock: LockedUTXO): Promise<{ success: boolean; txid?: string; error?: string }> => {
-    if (!wallet) return { success: false, error: 'No wallet loaded' }
+  const handleUnlock = useCallback(async (lock: LockedUTXO): Promise<WalletResult> => {
+    if (!wallet) return { ok: false, error: 'No wallet loaded' }
     return locksHandleUnlock(wallet, lock, activeAccountId, fetchData)
   }, [wallet, activeAccountId, locksHandleUnlock, fetchData])
 
@@ -464,10 +394,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setFeeRateFromKB(rate)
   }, [])
 
-  const value: WalletContextType = useMemo(() => ({
-    // Wallet state
+  // Split into state (read-only) and actions (write operations)
+  const stateValue: WalletStateContextType = useMemo(() => ({
     wallet,
-    setWallet,
     balance,
     ordBalance,
     usdPrice,
@@ -478,45 +407,40 @@ export function WalletProvider({ children }: WalletProviderProps) {
     txHistory,
     basketBalances,
     contacts,
-
-    // Multi-account state
     accounts,
     activeAccount,
     activeAccountId,
+    tokenBalances,
+    tokensSyncing,
+    isLocked,
+    autoLockMinutes,
+    networkInfo,
+    syncing,
+    syncError,
+    loading,
+    feeRateKB,
+    sessionPassword
+  }), [
+    wallet, balance, ordBalance, usdPrice, utxos, ordinals, ordinalContentCache,
+    locks, txHistory, basketBalances, contacts, accounts, activeAccount, activeAccountId,
+    tokenBalances, tokensSyncing, isLocked, autoLockMinutes, networkInfo, syncing,
+    syncError, loading, feeRateKB, sessionPassword
+  ])
+
+  const actionsValue: WalletActionsContextType = useMemo(() => ({
+    setWallet,
     switchAccount,
     createNewAccount,
     importAccount,
     deleteAccount,
     renameAccount,
     refreshAccounts,
-
-    // Token state
-    tokenBalances,
     refreshTokens,
-    tokensSyncing,
-
-    // Lock state
-    isLocked,
     lockWallet,
     unlockWallet,
-    autoLockMinutes,
     setAutoLockMinutes,
-
-    // Network state
-    networkInfo,
-    syncing,
-    syncError,
-    loading,
-
-    // Settings
-    feeRateKB,
     setFeeRate,
-
-    // Session
-    sessionPassword,
     refreshContacts,
-
-    // Actions
     performSync,
     fetchData,
     handleCreateWallet,
@@ -531,20 +455,19 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleSendToken,
     consumePendingDiscovery
   }), [
-    wallet, setWallet, balance, ordBalance, usdPrice, utxos, ordinals, ordinalContentCache,
-    locks, txHistory, basketBalances, contacts, accounts, activeAccount, activeAccountId,
-    switchAccount, createNewAccount, importAccount, deleteAccount, renameAccount, refreshAccounts,
-    tokenBalances, refreshTokens, tokensSyncing, isLocked, lockWallet, unlockWallet,
-    autoLockMinutes, setAutoLockMinutes, networkInfo, syncing, syncError, loading,
-    feeRateKB, setFeeRate, sessionPassword, refreshContacts, performSync, fetchData, handleCreateWallet,
-    handleRestoreWallet, handleImportJSON, handleDeleteWallet, handleSend, handleLock,
-    handleUnlock, handleTransferOrdinal, handleListOrdinal, handleSendToken,
-    consumePendingDiscovery
+    setWallet, switchAccount, createNewAccount, importAccount, deleteAccount,
+    renameAccount, refreshAccounts, refreshTokens, lockWallet, unlockWallet,
+    setAutoLockMinutes, setFeeRate, refreshContacts, performSync, fetchData,
+    handleCreateWallet, handleRestoreWallet, handleImportJSON, handleDeleteWallet,
+    handleSend, handleLock, handleUnlock, handleTransferOrdinal, handleListOrdinal,
+    handleSendToken, consumePendingDiscovery
   ])
 
   return (
-    <WalletContext.Provider value={value}>
-      {children}
-    </WalletContext.Provider>
+    <WalletStateContext.Provider value={stateValue}>
+      <WalletActionsContext.Provider value={actionsValue}>
+        {children}
+      </WalletActionsContext.Provider>
+    </WalletStateContext.Provider>
   )
 }
