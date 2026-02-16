@@ -76,3 +76,8 @@
 **Problem:** 6 call sites across sync.ts, WalletContext.tsx, and TransactionDetailModal.tsx called these functions without accountId. This meant: (1) transaction detail modals could show wrong account's data, (2) label updates could corrupt labels globally, (3) lock labeling in WalletContext fetched/modified transactions across accounts.
 **Rule:** Multi-account repository functions that query by txid MUST require accountId as a non-optional parameter. Use `accountId: number` not `accountId?: number`. The TypeScript compiler then forces every caller to provide it — no silent fallbacks. For functions where schema lacks account_id (like transaction_labels), use a JOIN through the parent table.
 **Fix:** Made `getTransactionByTxid(txid, accountId: number)` required. Added accountId params to `getTransactionLabels` and `updateTransactionLabels` with JOIN-based ownership validation. Fixed all 6 callers.
+
+## Always Commit to Main Unless Told Otherwise
+**Date:** 2026-02-15
+**Context:** Reverted a commit to main unnecessarily when user said "no commit to the main branch" — they meant "no, commit to main" not "don't commit to main."
+**Rule:** Default workflow is committing directly to main. Only use feature branches if the user explicitly requests a different route.

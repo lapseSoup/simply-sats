@@ -134,6 +134,49 @@
 
 ---
 
+## Code Review Remediation (Feb 15 2026) ✅
+
+14 findings fixed from full 4-phase code review. Rating improved from 6.5/10 → 7.5/10.
+Baseline after fixes: 0 type errors, 0 lint errors, 938 tests passing.
+
+### Critical Fixes ✅
+- [x] #1: Serialize `withTransaction()` via promise queue — prevents concurrent DB transaction corruption (`connection.ts`)
+- [x] #2: Scope `getDerivedAddresses()` by `accountId` in multi-key send — prevents cross-account signing (`transactions.ts`)
+- [x] #3: Guard null `sessionPassword` in `deleteAccount` — prevents silent decrypt failure (`useAccountSwitching.ts`)
+- [x] #4: Validate fee rate API response (type, finiteness, sign) — prevents NaN/Infinity propagation (`feeService.ts`, `fees.ts`)
+
+### High Priority Fixes ✅
+- [x] #5: Await `invoke('clear_keys')` in `lockWallet` — keys confirmed cleared before UI shows locked (`useWalletLock.ts`)
+- [x] #6: Log `updateLockBlock` errors instead of silently swallowing (`WalletContext.tsx`)
+- [x] #8: Replace `|| 1` account ID coercion with null guards (`WalletContext.tsx`, `TransactionDetailModal.tsx`)
+- [x] #9: Validate broadcast txid as 64-char hex — rejects garbage responses (`transactions.ts`)
+
+### Medium/Low Fixes ✅
+- [x] #17: Reject negative input in `btcToSatoshis()` (`satoshiConversion.ts`)
+- [x] #18: Catch async `lockWallet` errors in visibility handler (`useWalletLock.ts`)
+- [x] #25: Use `crypto.getRandomValues()` instead of `Math.random()` for cert serials (`certificates.ts`)
+- [x] #30: Replace `any[]` with `unknown[]` + tuple destructuring in backup recovery (`backupRecovery.ts`)
+- [x] #31: Remove `never[]` type casts — cleaner interface in `useWalletActions` (`useWalletActions.ts`, `WalletContext.tsx`)
+- [x] #32: Extract shared `ensureColumn()` migration helper — dedup (`utxoRepository.ts`)
+
+### False Positives Identified (4 skipped)
+- #7 (lock contamination): Already guarded by functional updaters + version checks
+- #22 (context memoization): SyncContext and LocksContext already use `useMemo`
+- #34 (double fetchVersionRef increment): Intentional version-fencing pattern
+- #19 (UTXO tag insertion): Partial tags acceptable; errors already logged
+
+### Remaining — Requires Separate Sessions
+- [ ] #10: Increase PBKDF2 to 600K iterations with migration path for existing wallets
+- [ ] #11: Split WalletContext god object into WalletStateContext + WalletActionsContext + WalletSettingsContext
+- [ ] #12: Test coverage for 40+ untested files (hooks, services, contexts, DB repositories)
+- [ ] #13: Migrate error handling from ad-hoc `{success, error}` to `Result<T,E>` pattern
+- [ ] #14: Consolidate duplicated broadcast logic into single `broadcastService.ts`
+- [ ] #15: Scope sync lock per account to prevent cross-account send hangs
+- [ ] #20: Add auth checks at Tauri command level (not just HTTP layer)
+- [ ] #23: Move modal state to dedicated ModalContext to eliminate 33-prop drilling in AppModals
+
+---
+
 ## Completed Phases
 
 ### Phase 1: Domain Layer ✅
