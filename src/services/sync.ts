@@ -29,7 +29,9 @@ import {
   getTransactionLabels,
   updateTransactionLabels,
   addLockIfNotExists,
-  markLockUnlockedByTxid
+  markLockUnlockedByTxid,
+  getAllTransactions,
+  updateTransactionAmount
 } from './database'
 import { RATE_LIMITS } from './config'
 import { getWocClient, type WocTransaction } from '../infrastructure/api/wocClient'
@@ -474,6 +476,21 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
             syncLogger.info('Persisted lock during sync', {
               txid: txRef.tx_hash, vout: i, unlockBlock: parsed.unlockBlock
             })
+
+            // Check if this lock's UTXO has already been spent (i.e. already unlocked).
+            // After a 12-word restore, we may detect lock creation before we see the unlock tx.
+            // If the UTXO is spent, mark the lock as unlocked immediately.
+            try {
+              const spentResult = await wocClient.isOutputSpentSafe(txRef.tx_hash, i)
+              if (spentResult.ok && spentResult.value !== null) {
+                await markLockUnlockedByTxid(txRef.tx_hash, i, accountId)
+                syncLogger.info('Lock already spent on-chain — marked as unlocked', {
+                  txid: txRef.tx_hash, vout: i, spendingTxid: spentResult.value
+                })
+              }
+            } catch (_spentErr) {
+              // Best-effort — detectLockedUtxos will also check later
+            }
             break
           }
         } catch (lockErr) {
@@ -593,6 +610,62 @@ export async function syncAllAddresses(
 }
 
 /**
+ * Backfill NULL transaction amounts.
+ *
+ * After a 12-word restore the sync may store transactions with amount=NULL when
+ * the WoC API times out or rate-limits during the initial heavy sync burst.
+ * This function re-fetches transaction details and recalculates amounts for
+ * any transactions that still have NULL amounts.
+ *
+ * Safe to call repeatedly — only touches rows where amount IS NULL.
+ */
+async function backfillNullAmounts(
+  allWalletAddresses: string[],
+  accountId?: number
+): Promise<number> {
+  try {
+    // Get all transactions for this account (up to 200 — covers typical restore)
+    const allTxs = await getAllTransactions(200, accountId)
+    const nullAmountTxs = allTxs.filter(tx => tx.amount === undefined || tx.amount === null)
+
+    if (nullAmountTxs.length === 0) return 0
+
+    syncLogger.info(`[BACKFILL] Found ${nullAmountTxs.length} transactions with NULL amounts, recalculating...`)
+
+    const wocClient = getWocClient()
+    const primaryAddress = allWalletAddresses[0]
+    if (!primaryAddress) return 0
+
+    let fixed = 0
+    for (const tx of nullAmountTxs) {
+      try {
+        const txDetails = await wocClient.getTransactionDetails(tx.txid)
+        if (!txDetails) {
+          syncLogger.debug(`[BACKFILL] Could not fetch tx ${tx.txid.slice(0, 8)}... — skipping`)
+          continue
+        }
+
+        const amount = await calculateTxAmount(txDetails, primaryAddress, allWalletAddresses, accountId)
+        await updateTransactionAmount(tx.txid, amount, accountId)
+        fixed++
+        syncLogger.debug(`[BACKFILL] Fixed amount for ${tx.txid.slice(0, 8)}... → ${amount} sats`)
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 200))
+      } catch (e) {
+        syncLogger.warn(`[BACKFILL] Failed for ${tx.txid.slice(0, 8)}...`, { error: String(e) })
+      }
+    }
+
+    syncLogger.info(`[BACKFILL] Fixed ${fixed}/${nullAmountTxs.length} transaction amounts`)
+    return fixed
+  } catch (e) {
+    syncLogger.warn('[BACKFILL] backfillNullAmounts failed (non-fatal)', { error: String(e) })
+    return 0
+  }
+}
+
+/**
  * Full wallet sync - syncs all three address types plus derived addresses
  * Automatically cancels any previous sync in progress
  * @param walletAddress - Main wallet address
@@ -687,6 +760,12 @@ export async function syncWallet(
       } catch (e) {
         syncLogger.warn(`Failed to sync tx history for ${addr.slice(0,12)}...`, { error: String(e) })
       }
+    }
+
+    // Backfill any transactions that were stored with NULL amounts
+    // (common after 12-word restore when API rate limits cause failures)
+    if (!token.isCancelled) {
+      await backfillNullAmounts(allWalletAddresses, accountId)
     }
 
     // Update sync timestamps for derived addresses
