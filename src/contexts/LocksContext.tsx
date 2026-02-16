@@ -104,6 +104,20 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
     try {
       const unlockBlock = currentHeight + blocks
+
+      // Guard: prevent duplicate lock if same amount + unlockBlock was created recently
+      const DEDUP_WINDOW_MS = 30_000 // 30 seconds
+      const now = Date.now()
+      const recentDuplicate = locks.find(l =>
+        l.satoshis === amountSats &&
+        l.unlockBlock === unlockBlock &&
+        (now - l.createdAt) < DEDUP_WINDOW_MS
+      )
+      if (recentDuplicate) {
+        walletLogger.warn('Duplicate lock prevented', { amountSats, unlockBlock, existingTxid: recentDuplicate.txid })
+        return { success: false, error: 'A lock with this amount and duration was just created' }
+      }
+
       const walletUtxos = await getUTXOs(wallet.walletAddress)
 
       const result = await lockBSV(wallet.walletWif, amountSats, unlockBlock, walletUtxos, undefined, currentHeight, activeAccountId ?? undefined)
@@ -118,7 +132,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : 'Lock failed' }
     }
-  }, [networkInfo])
+  }, [networkInfo, locks])
 
   // Unlock a time-locked UTXO
   const handleUnlock = useCallback(async (

@@ -68,18 +68,8 @@ export function useWalletLock({
     walletLogger.debug('Session password state changed', { hasPassword: !!sessionPassword })
   }, [sessionPassword])
 
-  // Independent session password timeout — clears password after 30 minutes of inactivity
-  useEffect(() => {
-    if (!sessionPassword) return
-
-    const SESSION_PASSWORD_TTL_MS = 30 * 60 * 1000 // 30 minutes
-    const timer = setTimeout(() => {
-      walletLogger.info('Session password cleared — independent timeout reached (30 min)')
-      setSessionPassword(null)
-    }, SESSION_PASSWORD_TTL_MS)
-
-    return () => clearTimeout(timer)
-  }, [sessionPassword])
+  // Session password lifetime is governed by the auto-lock timer (which resets on user activity).
+  // No independent timeout needed — password is cleared when lockWallet() fires.
 
   // Lock wallet (clear keys from memory)
   const lockWallet = useCallback(() => {
