@@ -319,7 +319,14 @@ export function WalletProvider({ children }: WalletProviderProps) {
         if (fetchVersionRef.current !== version) return
 
         if (preloadedLocks && preloadedLocks.length > 0) {
-          setLocks(preloadedLocks)
+          // Merge DB locks with existing state (preserves optimistically-added locks)
+          setLocks(prev => {
+            const merged = new Map(prev.map(l => [`${l.txid}:${l.vout}`, l]))
+            for (const lock of preloadedLocks) {
+              merged.set(`${lock.txid}:${lock.vout}`, lock)
+            }
+            return Array.from(merged.values())
+          })
         }
 
         try {
@@ -350,7 +357,17 @@ export function WalletProvider({ children }: WalletProviderProps) {
                 createdAt: earlierCreatedAt
               }
             })
-            setLocks(mergedLocks)
+            // Merge detected locks with existing state (preserves optimistic locks not yet on-chain)
+            setLocks(prev => {
+              const detectedMap = new Map(mergedLocks.map(l => [`${l.txid}:${l.vout}`, l]))
+              for (const existing of prev) {
+                const key = `${existing.txid}:${existing.vout}`
+                if (!detectedMap.has(key)) {
+                  detectedMap.set(key, existing)
+                }
+              }
+              return Array.from(detectedMap.values())
+            })
 
             // Persist detected locks to DB
             for (const lock of mergedLocks) {

@@ -143,6 +143,9 @@ function WalletApp() {
     if (!wallet || activeAccountId === null) return
 
     const checkSync = async () => {
+      // Load DB data immediately so UI is populated while sync runs
+      await fetchData()
+
       const needsSync = await needsInitialSync([
         wallet.walletAddress,
         wallet.ordAddress,
@@ -158,7 +161,7 @@ function WalletApp() {
           await performSync(false)
         }
       }
-      // Always fetch data after sync (or directly from DB if already synced)
+      // Refresh data after sync to pick up new blockchain data
       await fetchData()
 
       // Run account discovery AFTER primary sync to avoid race conditions
