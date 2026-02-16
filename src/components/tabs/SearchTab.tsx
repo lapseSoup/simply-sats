@@ -256,7 +256,7 @@ export function SearchTab() {
                 <div className="tx-info">
                   <div className="tx-type">{getTxType(tx.amount)}</div>
                   <div className="tx-meta">
-                    <span className="tx-hash">{tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}</span>
+                    <span className="tx-hash" title={tx.tx_hash}>{tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}</span>
                     {tx.height > 0 && <span>• Block {tx.height.toLocaleString()}</span>}
                   </div>
                 </div>

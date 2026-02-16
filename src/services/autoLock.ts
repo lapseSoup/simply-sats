@@ -55,7 +55,7 @@ function updateActivity() {
  * @returns Cleanup function to stop auto-lock
  */
 export function initAutoLock(
-  onLock: () => void,
+  onLock: () => void | Promise<void>,
   inactivityLimitMs: number = DEFAULT_INACTIVITY_LIMIT
 ): () => void {
   // Clean up any existing listeners
@@ -77,7 +77,7 @@ export function initAutoLock(
     })
   }
 
-  // Check for inactivity every minute
+  // Check for inactivity every 15 seconds (reduces max overshoot from 59s to 14s)
   state.checkInterval = setInterval(() => {
     if (!state.isEnabled) return
 
@@ -85,9 +85,16 @@ export function initAutoLock(
 
     if (timeSinceActive >= state.inactivityLimit) {
       walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
-      onLock()
+      try {
+        // onLock may return a Promise (e.g. lockWallet) — catch to prevent unhandled rejections
+        Promise.resolve(onLock()).catch(err => {
+          walletLogger.error('[AutoLock] Lock callback failed', err)
+        })
+      } catch (err) {
+        walletLogger.error('[AutoLock] Lock callback threw synchronously', err)
+      }
     }
-  }, 60000) // Check every minute
+  }, 15000) // Check every 15 seconds
 
   walletLogger.info(`[AutoLock] Initialized with ${inactivityLimitMs / 60000} minute timeout`)
 
@@ -169,7 +176,7 @@ export function pauseAutoLock(): void {
 /**
  * Resume auto-lock after pause
  */
-export function resumeAutoLock(onLock: () => void): void {
+export function resumeAutoLock(onLock: () => void | Promise<void>): void {
   if (!state.isEnabled || state.checkInterval) return
 
   state.lastActiveTime = Date.now() // Reset timer on resume
@@ -181,9 +188,15 @@ export function resumeAutoLock(onLock: () => void): void {
 
     if (timeSinceActive >= state.inactivityLimit) {
       walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
-      onLock()
+      try {
+        Promise.resolve(onLock()).catch(err => {
+          walletLogger.error('[AutoLock] Lock callback failed', err)
+        })
+      } catch (err) {
+        walletLogger.error('[AutoLock] Lock callback threw synchronously', err)
+      }
     }
-  }, 60000)
+  }, 15000)
 
   walletLogger.debug('[AutoLock] Resumed')
 }

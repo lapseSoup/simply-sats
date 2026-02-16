@@ -74,7 +74,7 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
         onAccountSwitch?.()
       } else {
         walletLogger.error('Failed to switch account - session password may be missing')
-        showToast('Please unlock wallet to switch accounts')
+        showToast('Please unlock wallet to switch accounts', 'warning')
       }
       // fetchData is triggered automatically by App.tsx useEffect
       // when wallet + activeAccountId state updates after re-render

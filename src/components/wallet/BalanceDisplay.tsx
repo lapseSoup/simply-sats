@@ -1,10 +1,12 @@
 import { Lock } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
+import { useNetwork } from '../../contexts/NetworkContext'
 
 export function BalanceDisplay() {
   const { balance, ordBalance, locks } = useWallet()
   const { displayInSats, toggleDisplayUnit, formatBSVShort, formatUSD } = useUI()
+  const { syncing } = useNetwork()
 
   const totalBalance = balance + ordBalance
   const lockedBalance = locks.reduce((sum, l) => sum + l.satoshis, 0)
@@ -21,12 +23,12 @@ export function BalanceDisplay() {
       >
         {displayInSats ? (
           <>
-            <span className="balance-value" style={{ fontVariantNumeric: 'tabular-nums' }}>{totalBalance.toLocaleString()}</span>{' '}
+            <span className={`balance-value${syncing ? ' updating' : ''}`} style={{ fontVariantNumeric: 'tabular-nums' }}>{totalBalance.toLocaleString()}</span>{' '}
             <span className="balance-unit clickable">sats</span>
           </>
         ) : (
           <>
-            <span className="balance-value" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBSVShort(totalBalance)}</span>{' '}
+            <span className={`balance-value${syncing ? ' updating' : ''}`} style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBSVShort(totalBalance)}</span>{' '}
             <span className="balance-unit clickable">BSV</span>
           </>
         )}

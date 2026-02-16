@@ -140,11 +140,11 @@ export async function readExternalDatabase(dbPath: string): Promise<RecoveredAcc
  */
 export async function readBackupFolder(folderPath: string): Promise<RecoveredAccount[]> {
   // The .wallet folder contains simplysats.db
-  // Handle both Unix (/) and Windows (\) path separators
-  const hasTrailingSep = folderPath.endsWith('/') || folderPath.endsWith('\\')
-  const dbPath = hasTrailingSep
-    ? `${folderPath}simplysats.db`
-    : `${folderPath}/simplysats.db`
+  // Strip any trailing separator, then use the platform's native separator
+  const cleanPath = folderPath.replace(/[/\\]+$/, '')
+  // Use the separator present in the path (backslash for Windows, forward slash for Unix)
+  const sep = cleanPath.includes('\\') ? '\\' : '/'
+  const dbPath = `${cleanPath}${sep}simplysats.db`
 
   return readExternalDatabase(dbPath)
 }

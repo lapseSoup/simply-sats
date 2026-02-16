@@ -249,6 +249,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
       walletAddress: wallet.walletAddress.slice(0, 12) + '...'
     })
 
+    // Track partial failures so the user knows when data may be stale
+    const partialErrors: string[] = []
+
     try {
       const [defaultBal, derivedBal] = await Promise.all([
         getBalanceFromDatabase('default', activeAccountId),
@@ -278,6 +281,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       } catch (_e) {
         // On API failure, keep current React state — don't overwrite with stale cache
         syncLogger.warn('Failed to fetch ord balance from API, keeping current value')
+        partialErrors.push('ordinal balance')
       }
 
       // Get transaction history from DATABASE (scoped to account)
@@ -311,6 +315,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         }
       } catch (_e) {
         syncLogger.warn('Failed to preload locks from DB')
+        partialErrors.push('locks')
       }
 
       // Get ordinals - first from database (already synced), then supplement with API calls
@@ -387,6 +392,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache)
       } catch (e) {
         syncLogger.error('Failed to fetch ordinals', e)
+        partialErrors.push('ordinals')
       }
 
       // Fetch UTXOs and notify about lock detection
@@ -402,6 +408,12 @@ export function SyncProvider({ children }: SyncProviderProps) {
         })
       } catch (e) {
         syncLogger.error('Failed to fetch UTXOs', e)
+        partialErrors.push('UTXOs')
+      }
+
+      // Surface partial failures so the user knows data may be stale
+      if (partialErrors.length > 0) {
+        setSyncError(`Some data may be stale: failed to load ${partialErrors.join(', ')}`)
       }
     } catch (error) {
       setSyncError('Failed to load wallet data')

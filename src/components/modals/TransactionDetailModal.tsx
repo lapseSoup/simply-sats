@@ -129,7 +129,7 @@ export function TransactionDetailModal({
     if (success) {
       onLabelsUpdated?.()
     } else {
-      showToast('Failed to save label')
+      showToast('Failed to save label', 'error')
     }
   }
 
@@ -138,7 +138,7 @@ export function TransactionDetailModal({
     if (success) {
       onLabelsUpdated?.()
     } else {
-      showToast('Failed to remove label')
+      showToast('Failed to remove label', 'error')
     }
   }
 
@@ -159,7 +159,7 @@ export function TransactionDetailModal({
         <div className="tx-detail-section">
           <div className="tx-detail-row">
             <span className="tx-detail-label">Transaction ID</span>
-            <span className="tx-detail-value tx-detail-mono">
+            <span className="tx-detail-value tx-detail-mono" title={transaction.tx_hash}>
               {transaction.tx_hash.slice(0, 12)}...{transaction.tx_hash.slice(-8)}
             </span>
           </div>
@@ -182,7 +182,7 @@ export function TransactionDetailModal({
           {recipientAddress && (
             <div className="tx-detail-row">
               <span className="tx-detail-label">Sent To</span>
-              <span className="tx-detail-value tx-detail-mono">
+              <span className="tx-detail-value tx-detail-mono" title={recipientAddress}>
                 {recipientAddress.slice(0, 8)}...{recipientAddress.slice(-6)}
               </span>
             </div>

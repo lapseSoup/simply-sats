@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, memo } from 'react'
+import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react'
 import { Search, LayoutGrid, List as ListIcon, ChevronRight } from 'lucide-react'
 import { List } from 'react-window'
 import { useWallet } from '../../contexts/WalletContext'
@@ -41,17 +41,27 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
   // Note: _onTransferOrdinal is available for future use
   const { ordinals, ordinalContentCache, loading } = useWallet()
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [filterCategory, setFilterCategory] = useState<ContentCategory>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
+
+  // Debounce search input (250ms) to avoid filtering on every keystroke
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(value), 250)
+  }, [])
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
 
   // Filter and sort ordinals
   const filteredOrdinals = useMemo(() => {
     let result = [...ordinals]
 
     // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
+    if (debouncedSearch.trim()) {
+      const query = debouncedSearch.toLowerCase()
       result = result.filter(
         (ord) =>
           ord.origin.toLowerCase().includes(query) ||
@@ -78,7 +88,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
     // 'newest' keeps the default API order (newest first)
 
     return result
-  }, [ordinals, searchQuery, sortBy, filterCategory])
+  }, [ordinals, debouncedSearch, sortBy, filterCategory])
 
   // Count ordinals by category for filter badges
   const categoryCounts = useMemo(() => {
@@ -126,7 +136,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
             className="search-input"
             placeholder="Search by origin or content type..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
@@ -136,7 +146,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
           {searchQuery && (
             <button
               className="search-clear"
-              onClick={() => setSearchQuery('')}
+              onClick={() => { setSearchQuery(''); setDebouncedSearch('') }}
               aria-label="Clear search"
             >
               ×
@@ -207,6 +217,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
             No ordinals match your search criteria.
             <button className="btn-link" onClick={() => {
               setSearchQuery('')
+              setDebouncedSearch('')
               setFilterCategory('all')
             }}>
               Clear filters

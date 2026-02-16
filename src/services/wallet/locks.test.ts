@@ -174,7 +174,8 @@ vi.mock('../database', () => ({
     execute: vi.fn(async () => ({ rowsAffected: 1, lastInsertId: 1 }))
   })),
   addUTXO: vi.fn(async () => 42),
-  addLock: vi.fn(async () => 1)
+  addLock: vi.fn(async () => 1),
+  withTransaction: vi.fn(async (fn: () => Promise<void>) => fn())
 }))
 
 // ─── Mock wocClient ─────────────────────────────────────────────────
@@ -385,14 +386,15 @@ describe('locks service', () => {
       )
     })
 
-    it('should still succeed when post-broadcast tracking fails', async () => {
+    it('should throw with informative error when post-broadcast tracking fails', async () => {
       vi.mocked(recordSentTransaction).mockRejectedValueOnce(new Error('DB write failed'))
 
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      // Should NOT throw — tracking failure is logged and swallowed
-      const result = await lockBSV(TEST_WIF, 10_000, 900_000, utxos)
-      expect(result.txid).toBe('exec-broadcast-txid-001')
+      // Should throw — atomic transaction ensures all-or-nothing recording
+      await expect(lockBSV(TEST_WIF, 10_000, 900_000, utxos)).rejects.toThrow(
+        /Lock broadcast succeeded.*but failed to record locally/
+      )
     })
 
     it('should use the correct fee calculation', async () => {

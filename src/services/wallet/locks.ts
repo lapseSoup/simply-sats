@@ -30,7 +30,7 @@ import {
   recordSentTransaction,
   confirmUtxosSpent
 } from '../sync'
-import { markLockUnlockedByTxid, getDatabase, addUTXO, addLock } from '../database'
+import { markLockUnlockedByTxid, getDatabase, addUTXO, addLock, withTransaction } from '../database'
 import { walletLogger } from '../logger'
 
 // Re-export pure domain functions for backwards compatibility
@@ -201,63 +201,67 @@ export async function lockBSV(
     lockBlock
   }
 
-  // Track transaction and confirm spend
+  // CRITICAL: All post-broadcast DB writes must be atomic to prevent state divergence
+  // (matches the withTransaction() pattern in transactions.ts:recordTransactionResult)
   try {
-    await recordSentTransaction(
-      txid,
-      tx.toHex(),
-      `Locked ${satoshis} sats until block ${unlockBlock}`,
-      ['lock'],
-      -(satoshis + fee),  // Negative: locked amount + mining fee
-      accountId
-    )
-    // Confirm UTXOs as spent (updates from pending -> spent)
-    await confirmUtxosSpent(utxosToSpend, txid)
-  } catch (error) {
-    walletLogger.warn('Failed to track lock transaction', { error: String(error) })
-  }
-
-  // Best-effort: track change UTXO so balance stays correct until next sync
-  if (change > 0) {
-    try {
-      await addUTXO({
+    await withTransaction(async () => {
+      await recordSentTransaction(
         txid,
-        vout: tx.outputs.length - 1, // Change is always last output
-        satoshis: change,
-        lockingScript: new P2PKH().lock(fromAddress).toHex(),
-        address: fromAddress,
-        basket: 'default',
-        spendable: true,
+        tx.toHex(),
+        `Locked ${satoshis} sats until block ${unlockBlock}`,
+        ['lock'],
+        -(satoshis + fee),  // Negative: locked amount + mining fee
+        accountId
+      )
+      await confirmUtxosSpent(utxosToSpend, txid)
+
+      // Track change UTXO so balance stays correct until next sync
+      if (change > 0) {
+        try {
+          await addUTXO({
+            txid,
+            vout: tx.outputs.length - 1, // Change is always last output
+            satoshis: change,
+            lockingScript: new P2PKH().lock(fromAddress).toHex(),
+            address: fromAddress,
+            basket: 'default',
+            spendable: true,
+            createdAt: Date.now()
+          }, accountId)
+          walletLogger.debug('Lock change UTXO tracked', { txid, change })
+        } catch (error) {
+          const msg = String(error)
+          if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
+            walletLogger.debug('Lock change UTXO already exists (duplicate key)', { txid, change })
+          } else {
+            throw error
+          }
+        }
+      }
+
+      // Add lock UTXO and lock record
+      const utxoId = await addUTXO({
+        txid,
+        vout: 0,
+        satoshis,
+        lockingScript: timelockScript.toHex(),
+        basket: 'locks',
+        spendable: false,
         createdAt: Date.now()
       }, accountId)
-      walletLogger.debug('Lock change UTXO tracked', { txid, change })
-    } catch (error) {
-      walletLogger.warn('Failed to track lock change UTXO (will recover on next sync)', { error: String(error) })
-    }
-  }
 
-  // Add lock to database so it can be properly tracked for unlock
-  try {
-    const utxoId = await addUTXO({
-      txid,
-      vout: 0,
-      satoshis,
-      lockingScript: timelockScript.toHex(),
-      basket: 'locks',
-      spendable: false,
-      createdAt: Date.now()
-    }, accountId)
-
-    await addLock({
-      utxoId,
-      unlockBlock,
-      lockBlock,
-      ordinalOrigin: ordinalOrigin ?? undefined,
-      createdAt: Date.now()
-    }, accountId)
-    walletLogger.info('Added lock to database', { txid, vout: 0, unlockBlock })
+      await addLock({
+        utxoId,
+        unlockBlock,
+        lockBlock,
+        ordinalOrigin: ordinalOrigin ?? undefined,
+        createdAt: Date.now()
+      }, accountId)
+      walletLogger.info('Lock transaction tracked atomically', { txid, vout: 0, unlockBlock })
+    })
   } catch (error) {
-    walletLogger.warn('Failed to add lock to database', { error: String(error) })
+    walletLogger.error('CRITICAL: Failed to record lock transaction locally', error, { txid })
+    throw new Error(`Lock broadcast succeeded (txid: ${txid}) but failed to record locally. Your wallet may show incorrect balance until next sync.`)
   }
 
   return { txid, lockedUtxo }

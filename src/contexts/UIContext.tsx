@@ -4,9 +4,12 @@ import { uiLogger } from '../services/logger'
 import { UI } from '../config'
 import { satoshisToBtc } from '../utils/satoshiConversion'
 
-interface ToastItem {
+export type ToastType = 'success' | 'error' | 'warning' | 'info'
+
+export interface ToastItem {
   id: string
   message: string
+  type: ToastType
 }
 
 type Theme = 'dark' | 'light'
@@ -22,7 +25,8 @@ interface UIContextType {
   toasts: ToastItem[]
   copyFeedback: string | null // backward compat — returns latest toast message
   copyToClipboard: (text: string, feedback?: string) => Promise<void>
-  showToast: (message: string) => void
+  showToast: (message: string, type?: ToastType) => void
+  dismissToast: (id: string) => void
 
   // Format helpers
   formatBSVShort: (sats: number) => string
@@ -79,12 +83,19 @@ export function UIProvider({ children }: UIProviderProps) {
     localStorage.setItem('simply_sats_display_sats', String(newValue))
   }, [displayInSats])
 
-  const showToast = useCallback((message: string) => {
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
+
+  const showToast = useCallback((message: string, type: ToastType = 'success') => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    setToasts(prev => [...prev, { id, message }])
+    // Limit toast stack to 5 to prevent flooding
+    setToasts(prev => [...prev.slice(-4), { id, message, type }])
+    // Errors and warnings persist longer (6s) so users can read them
+    const duration = (type === 'error' || type === 'warning') ? 6000 : UI.TOAST_DURATION_MS
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id))
-    }, UI.TOAST_DURATION_MS)
+    }, duration)
   }, [])
 
   const copyToClipboard = useCallback(async (text: string, feedback = 'Copied!') => {
@@ -116,9 +127,10 @@ export function UIProvider({ children }: UIProviderProps) {
     copyFeedback,
     copyToClipboard,
     showToast,
+    dismissToast,
     formatBSVShort,
     formatUSD
-  }), [displayInSats, toggleDisplayUnit, theme, toggleTheme, toasts, copyFeedback, copyToClipboard, showToast, formatBSVShort, formatUSD])
+  }), [displayInSats, toggleDisplayUnit, theme, toggleTheme, toasts, copyFeedback, copyToClipboard, showToast, dismissToast, formatBSVShort, formatUSD])
 
   return (
     <UIContext.Provider value={value}>

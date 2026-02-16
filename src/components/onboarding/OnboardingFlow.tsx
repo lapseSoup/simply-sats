@@ -118,10 +118,10 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
       if (mnemonic) {
         onWalletCreated?.(mnemonic)
       } else {
-        showToast('Failed to create wallet')
+        showToast('Failed to create wallet', 'error')
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Error creating wallet')
+      showToast(err instanceof Error ? err.message : 'Error creating wallet', 'error')
     }
     setCreating(false)
   }

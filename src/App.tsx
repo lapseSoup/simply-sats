@@ -54,7 +54,7 @@ function WalletApp() {
     refreshAccounts
   } = useWallet()
 
-  const { copyFeedback, toasts, showToast } = useUI()
+  const { copyFeedback, toasts, showToast, dismissToast } = useUI()
   const {
     modal, openModal, closeModal,
     openAccountModal,
@@ -230,7 +230,7 @@ function WalletApp() {
       if (isOk(result)) {
         showToast(`Unlocked ${lock.satoshis.toLocaleString()} sats!`)
       } else {
-        showToast(result.error || 'Unlock failed')
+        showToast(result.error || 'Unlock failed', 'error')
       }
     }
 
@@ -265,7 +265,7 @@ function WalletApp() {
           onUnlock={unlockWallet}
           accountName={activeAccount?.name || 'Wallet'}
         />
-        <Toast message={copyFeedback} toasts={toasts} />
+        <Toast message={copyFeedback} toasts={toasts} onDismiss={dismissToast} />
       </>
     )
   }
@@ -305,7 +305,7 @@ function WalletApp() {
           )
         )}
 
-        <Toast message={copyFeedback} toasts={toasts} />
+        <Toast message={copyFeedback} toasts={toasts} onDismiss={dismissToast} />
       </>
     )
   }
@@ -379,7 +379,7 @@ function WalletApp() {
                 ]
                 showToast(lines.join(' | '))
               } catch (e) {
-                showToast(`Diagnostics failed: ${e instanceof Error ? e.message : String(e)}`)
+                showToast(`Diagnostics failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
               }
             }}
           >
@@ -424,7 +424,7 @@ function WalletApp() {
         onConfirmUnlock={handleConfirmUnlock}
       />
 
-      <Toast message={copyFeedback} toasts={toasts} />
+      <Toast message={copyFeedback} toasts={toasts} onDismiss={dismissToast} />
 
       <PaymentAlert
         payment={newPaymentAlert}

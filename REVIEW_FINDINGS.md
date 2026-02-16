@@ -123,3 +123,45 @@ The wallet demonstrates strong security engineering (proper AES-256-GCM, backend
 19. Increase PBKDF2 to 600K iterations with migration path
 20. Add auth checks at Tauri command level (not just HTTP layer)
 21. Evaluate SQLCipher for optional database encryption
+
+---
+
+# Review #2: Polish, Stability & Windows Compatibility — 2026-02-16
+
+**Scope**: Focused review on polish, stability, and Windows compatibility
+**Baseline**: 0 type errors, 0 lint errors, 1098 tests passing
+
+## Remediation Applied (12 items)
+
+| ID | Severity | Issue | File | Fix |
+|----|----------|-------|------|-----|
+| S1 | CRITICAL | Lock creation DB writes non-atomic | `locks.ts:205-258` | Wrapped in `withTransaction()` |
+| B1 | HIGH | Unhandled promise rejection in auto-lock | `autoLock.ts:81-90` | Added `.catch()` handler |
+| B2 | HIGH | SyncContext swallows errors silently | `SyncContext.tsx:252-409` | Aggregate partial errors via `syncError` |
+| B4 | LOW | Auto-lock timer 60s granularity | `autoLock.ts:81-90` | Reduced to 15s interval |
+| W1 | MEDIUM | Backup path hardcoded `/` | `backupRecovery.ts:147` | Platform-aware separator |
+| W2 | LOW | Missing .gitattributes | root | Created with LF normalization |
+| A2 | MEDIUM | Toast lacks severity types | `UIContext.tsx`, `Toast.tsx` | success/error/warning/info types |
+| P1 | LOW | No tab transition animations | `App.css` | CSS fade-in keyframe |
+| P2 | LOW | Balance update no visual feedback | `BalanceDisplay.tsx` | `.updating` class during sync |
+| P3 | LOW | No tooltips on truncated text | Multiple files | Added `title` attributes |
+| P4 | LOW | Toast no dismiss or hover-pause | `Toast.tsx` | Dismiss button, hover reveal |
+| P5 | LOW | Search not debounced | `OrdinalsTab.tsx` | 250ms debounce |
+
+## Windows Compatibility: 95/100
+
+Positive findings:
+- Rust uses `PathBuf`/`dirs` crate correctly everywhere
+- Tauri origins include `https://tauri.localhost` for Windows
+- Keyboard shortcuts use cross-platform key names
+- Font stack includes `Segoe UI`
+- NSIS installer config present
+- Icons include `.ico`
+
+## Post-Fix Verification
+
+```
+npm run typecheck  -> Clean
+npm run lint       -> 0 errors (3 warnings in coverage/)
+npm run test:run   -> 1098/1098 passing
+```

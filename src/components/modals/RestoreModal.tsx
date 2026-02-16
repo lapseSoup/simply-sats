@@ -50,7 +50,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
     try {
       const words = restoreMnemonic.trim().split(/\s+/)
       if (words.length !== 12) {
-        showToast('Please enter exactly 12 words')
+        showToast('Please enter exactly 12 words', 'warning')
         return
       }
       const success = await handleRestoreWallet(restoreMnemonic.trim(), password)
@@ -59,10 +59,10 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         // Account discovery is now deferred until after initial sync completes
         // (handled by App.tsx auto-sync effect via WalletContext.consumePendingDiscovery)
       } else {
-        showToast('Failed to restore wallet')
+        showToast('Failed to restore wallet', 'error')
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Invalid mnemonic. Please check your words.')
+      showToast(err instanceof Error ? err.message : 'Invalid mnemonic. Please check your words.', 'error')
     }
   }
 
@@ -84,10 +84,10 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       if (success) {
         onSuccess()
       } else {
-        showToast('Failed to import wallet')
+        showToast('Failed to import wallet', 'error')
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Invalid JSON backup. Please check the format.')
+      showToast(err instanceof Error ? err.message : 'Invalid JSON backup. Please check the format.', 'error')
     }
   }
 
@@ -111,7 +111,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
           const decrypted = await decrypt(raw.encrypted as EncryptedData, password)
           backup = JSON.parse(decrypted)
         } catch {
-          showToast('Failed to decrypt backup — wrong password?')
+          showToast('Failed to decrypt backup — wrong password?', 'error')
           return
         }
       } else {
@@ -119,7 +119,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       }
 
       if (backup.format !== 'simply-sats-full' || !backup.wallet) {
-        showToast('Invalid backup format. This should be a Simply Sats full backup file.')
+        showToast('Invalid backup format. This should be a Simply Sats full backup file.', 'error')
         return
       }
 
@@ -139,7 +139,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         setWallet(keys)
         setWalletKeys(keys)
       } else {
-        showToast('Backup does not contain wallet keys.')
+        showToast('Backup does not contain wallet keys.', 'error')
         return
       }
 
@@ -167,7 +167,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
           .catch(() => {}) // Silent failure — primary restore already succeeded
       }
     } catch (err) {
-      showToast('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'))
+      showToast('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'), 'error')
     }
   }
 

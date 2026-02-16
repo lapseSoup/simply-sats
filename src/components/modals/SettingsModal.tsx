@@ -120,7 +120,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       fetchData()
       showToast('Sender added!')
     } else {
-      showToast('Invalid: must be 66 hex chars')
+      showToast('Invalid: must be 66 hex chars', 'warning')
     }
   }
 
@@ -149,7 +149,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       setMessageBoxStatus('idle')
     } catch (_e) {
       setMessageBoxStatus('error')
-      showToast('MessageBox check failed')
+      showToast('MessageBox check failed', 'error')
     }
   }
 
@@ -183,7 +183,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   const handleExportEssentialBackup = async () => {
     if (!sessionPassword) {
-      showToast('Session password not available — try locking and unlocking first')
+      showToast('Session password not available — try locking and unlocking first', 'warning')
       return
     }
     try {
@@ -217,13 +217,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       }
     } catch (err) {
       console.error('Backup failed:', err)
-      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }
 
   const handleExportFullBackup = async () => {
     if (!sessionPassword) {
-      showToast('Session password not available — try locking and unlocking first')
+      showToast('Session password not available — try locking and unlocking first', 'warning')
       return
     }
     try {
@@ -258,7 +258,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       }
     } catch (err) {
       console.error('Backup failed:', err)
-      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }
 
@@ -276,14 +276,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       if (raw.format === 'simply-sats-backup-encrypted' && raw.encrypted) {
         // Encrypted backup — decrypt with session password
         if (!sessionPassword) {
-          showToast('Session password not available — try locking and unlocking first')
+          showToast('Session password not available — try locking and unlocking first', 'warning')
           return
         }
         try {
           const decrypted = await decrypt(raw.encrypted as EncryptedData, sessionPassword)
           backup = JSON.parse(decrypted)
         } catch {
-          showToast('Failed to decrypt backup — wrong password?')
+          showToast('Failed to decrypt backup — wrong password?', 'error')
           return
         }
       } else {
@@ -291,14 +291,14 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       }
 
       if (backup.format !== 'simply-sats-full' || !backup.database) {
-        showToast('Invalid backup format')
+        showToast('Invalid backup format', 'error')
         return
       }
       setPendingImportBackup(backup.database as DatabaseBackup)
       setShowImportConfirm({ utxos: backup.database.utxos.length, transactions: backup.database.transactions.length })
     } catch (err) {
       console.error('Import failed:', err)
-      showToast(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      showToast(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }
 
@@ -324,7 +324,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       await refreshCacheStats()
       showToast(`Cache resized! Saved ${formatCacheSize(saved)}`)
     } catch {
-      showToast('Failed to resize cache')
+      showToast('Failed to resize cache', 'error')
     }
     setCacheLoading(false)
     setShowCacheOptions(false)
@@ -337,7 +337,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       await refreshCacheStats()
       showToast('Image cache cleared!')
     } catch {
-      showToast('Failed to clear cache')
+      showToast('Failed to clear cache', 'error')
     }
     setCacheLoading(false)
     setShowCacheOptions(false)
@@ -350,7 +350,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       await refreshCacheStats()
       showToast('All cached content cleared!')
     } catch {
-      showToast('Failed to clear cache')
+      showToast('Failed to clear cache', 'error')
     }
     setCacheLoading(false)
     setShowCacheOptions(false)
@@ -362,7 +362,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   const executeExportKeys = async () => {
     if (!sessionPassword) {
-      showToast('Session password not available — try locking and unlocking first')
+      showToast('Session password not available — try locking and unlocking first', 'warning')
       setShowKeysWarning(false)
       return
     }
@@ -393,7 +393,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       }
     } catch (err) {
       console.error('Key export failed:', err)
-      showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
     setShowKeysWarning(false)
   }
@@ -431,7 +431,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     try {
       await handleDeleteWallet()
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Error deleting wallet')
+      showToast(err instanceof Error ? err.message : 'Error deleting wallet', 'error')
     }
     onClose()
   }
@@ -449,7 +449,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   <div className="settings-row-icon" aria-hidden="true"><Wallet size={16} strokeWidth={1.75} /></div>
                   <div className="settings-row-content">
                     <div className="settings-row-label">Payment Address</div>
-                    <div className="settings-row-value">{wallet?.walletAddress ? `${wallet.walletAddress.slice(0, 12)}...${wallet.walletAddress.slice(-6)}` : '—'}</div>
+                    <div className="settings-row-value" title={wallet?.walletAddress || ''}>{wallet?.walletAddress ? `${wallet.walletAddress.slice(0, 12)}...${wallet.walletAddress.slice(-6)}` : '—'}</div>
                   </div>
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><Copy size={16} strokeWidth={1.75} /></span>
@@ -459,7 +459,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   <div className="settings-row-icon" aria-hidden="true"><Palette size={16} strokeWidth={1.75} /></div>
                   <div className="settings-row-content">
                     <div className="settings-row-label">Ordinals Address</div>
-                    <div className="settings-row-value">{wallet?.ordAddress ? `${wallet.ordAddress.slice(0, 12)}...${wallet.ordAddress.slice(-6)}` : '—'}</div>
+                    <div className="settings-row-value" title={wallet?.ordAddress || ''}>{wallet?.ordAddress ? `${wallet.ordAddress.slice(0, 12)}...${wallet.ordAddress.slice(-6)}` : '—'}</div>
                   </div>
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><Copy size={16} strokeWidth={1.75} /></span>
@@ -469,7 +469,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   <div className="settings-row-icon" aria-hidden="true"><KeyRound size={16} strokeWidth={1.75} /></div>
                   <div className="settings-row-content">
                     <div className="settings-row-label">Identity Key</div>
-                    <div className="settings-row-value">{wallet?.identityPubKey ? `${wallet.identityPubKey.slice(0, 12)}...${wallet.identityPubKey.slice(-6)}` : '—'}</div>
+                    <div className="settings-row-value" title={wallet?.identityPubKey || ''}>{wallet?.identityPubKey ? `${wallet.identityPubKey.slice(0, 12)}...${wallet.identityPubKey.slice(-6)}` : '—'}</div>
                   </div>
                 </div>
                 <span className="settings-row-arrow" aria-hidden="true"><Copy size={16} strokeWidth={1.75} /></span>
