@@ -6,6 +6,7 @@ import {
 } from '../services/tokens'
 import { getUTXOs, getWifForOperation, type WalletKeys } from '../services/wallet'
 import { tokenLogger } from '../services/logger'
+import { err, type Result } from '../domain/types'
 
 interface TokensContextType {
   tokenBalances: TokenBalance[]
@@ -18,7 +19,7 @@ interface TokensContextType {
     protocol: 'bsv20' | 'bsv21',
     amount: string,
     toAddress: string
-  ) => Promise<{ success: boolean; txid?: string; error?: string }>
+  ) => Promise<Result<{ txid: string }, string>>
 }
 
 const TokensContext = createContext<TokensContextType | null>(null)
@@ -40,11 +41,13 @@ export function TokensProvider({ children }: TokensProviderProps) {
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([])
   const [tokensSyncing, setTokensSyncing] = useState(false)
   const tokensSyncingRef = useRef(false)
+  const lastRequestedAccountRef = useRef<number | null>(null)
 
   const resetTokens = useCallback(() => {
     setTokenBalances([])
     setTokensSyncing(false)
     tokensSyncingRef.current = false
+    lastRequestedAccountRef.current = null
   }, [])
 
   const refreshTokens = useCallback(async (wallet: WalletKeys, accountId: number) => {
@@ -52,6 +55,7 @@ export function TokensProvider({ children }: TokensProviderProps) {
     if (tokensSyncingRef.current) return
 
     tokensSyncingRef.current = true
+    lastRequestedAccountRef.current = accountId
     setTokensSyncing(true)
     try {
       const balances = await syncTokenBalances(
@@ -59,6 +63,11 @@ export function TokensProvider({ children }: TokensProviderProps) {
         wallet.walletAddress,
         wallet.ordAddress
       )
+      // Guard: discard results if a newer request was made for a different account
+      if (lastRequestedAccountRef.current !== accountId) {
+        tokenLogger.debug('Token sync result discarded — account changed during sync', { requestedAccount: accountId, currentAccount: lastRequestedAccountRef.current })
+        return
+      }
       setTokenBalances(balances)
       tokenLogger.info(`Synced ${balances.length} token balances`)
     } catch (e) {
@@ -75,12 +84,12 @@ export function TokensProvider({ children }: TokensProviderProps) {
     protocol: 'bsv20' | 'bsv21',
     amount: string,
     toAddress: string
-  ): Promise<{ success: boolean; txid?: string; error?: string }> => {
+  ): Promise<Result<{ txid: string }, string>> => {
     try {
       const fundingUtxos = await getUTXOs(wallet.walletAddress)
 
       if (fundingUtxos.length === 0) {
-        return { success: false, error: 'No funding UTXOs available for transfer fee' }
+        return err('No funding UTXOs available for transfer fee')
       }
 
       const walletWif = await getWifForOperation('wallet', 'sendToken', wallet)
@@ -99,8 +108,8 @@ export function TokensProvider({ children }: TokensProviderProps) {
       )
 
       return result
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Token transfer failed' }
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'Token transfer failed')
     }
   }, [])
 

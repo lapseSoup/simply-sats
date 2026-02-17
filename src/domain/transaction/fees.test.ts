@@ -54,6 +54,22 @@ describe('Fee Calculation', () => {
       const fee = feeFromBytes(1, 0.001)
       expect(fee).toBe(1)
     })
+
+    it('should throw on negative bytes', () => {
+      expect(() => feeFromBytes(-1, 0.1)).toThrow('invalid bytes')
+    })
+
+    it('should throw on NaN bytes', () => {
+      expect(() => feeFromBytes(NaN, 0.1)).toThrow('invalid bytes')
+    })
+
+    it('should throw on negative feeRate', () => {
+      expect(() => feeFromBytes(100, -1)).toThrow('invalid feeRate')
+    })
+
+    it('should throw on NaN feeRate', () => {
+      expect(() => feeFromBytes(100, NaN)).toThrow('invalid feeRate')
+    })
   })
 
   describe('calculateTxFee', () => {

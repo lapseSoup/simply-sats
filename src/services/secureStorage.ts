@@ -36,8 +36,8 @@ const getCrypto = () => globalThis.crypto
 let sessionKey: CryptoKey | null = null
 let sessionKeyCreatedAt: number = 0
 
-// CryptoKey TTL: 6 hours — forces periodic key rotation
-const SESSION_KEY_TTL_MS = 6 * 60 * 60 * 1000
+// CryptoKey TTL: 1 hour — forces periodic key rotation
+const SESSION_KEY_TTL_MS = 1 * 60 * 60 * 1000
 
 /**
  * Get or create session encryption key

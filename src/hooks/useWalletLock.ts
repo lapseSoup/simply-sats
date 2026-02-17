@@ -4,7 +4,7 @@
  * Extracted from WalletContext to reduce god-object complexity.
  */
 
-import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
+import { useState, useRef, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
 import type { WalletKeys } from '../services/wallet'
 import type { Account } from '../services/accounts'
 import { getAllAccounts, getActiveAccount } from '../services/accounts'
@@ -28,6 +28,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 import { setSessionPassword as setModuleSessionPassword, clearSessionPassword, NO_PASSWORD } from '../services/sessionPasswordStore'
 import { hasPassword } from '../services/wallet/storage'
+import { clearSessionKey } from '../services/secureStorage'
 
 interface UseWalletLockOptions {
   activeAccount: Account | null
@@ -63,13 +64,23 @@ export function useWalletLock({
     return saved ? parseInt(saved, 10) : 10
   })
 
-  // Session password - stored in memory only while wallet is unlocked
-  const [sessionPassword, setSessionPassword] = useState<string | null>(null)
+  // Session password — ref holds the actual value (invisible to React DevTools),
+  // counter state triggers re-renders when password changes so consumers update.
+  const sessionPasswordRef = useRef<string | null>(null)
+  const [_passwordVersion, setPasswordVersion] = useState(0)
 
-  // Debug: log when session password changes
+  const setSessionPassword = useCallback((value: SetStateAction<string | null>) => {
+    const newValue = typeof value === 'function' ? value(sessionPasswordRef.current) : value
+    sessionPasswordRef.current = newValue
+    setPasswordVersion(v => v + 1) // trigger re-render
+  }, [])
+
+  // Expose the actual password from the ref (not React state)
+  const sessionPassword = sessionPasswordRef.current
+
   useEffect(() => {
-    walletLogger.debug('Session password state changed', { hasPassword: !!sessionPassword })
-  }, [sessionPassword])
+    walletLogger.debug('Session password state changed', { hasPassword: sessionPasswordRef.current !== null })
+  }, [_passwordVersion])
 
   // Session password lifetime is governed by the auto-lock timer (which resets on user activity).
   // No independent timeout needed — password is cleared when lockWallet() fires.
@@ -86,6 +97,7 @@ export function useWalletLock({
     setWalletKeys(null)
     setSessionPassword(null)
     clearSessionPassword()
+    clearSessionKey()
     try {
       await invoke('clear_keys')
     } catch (e) {

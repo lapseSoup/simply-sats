@@ -14,7 +14,8 @@ const OP_ENDIF = 0x68
 const OP_0 = 0x00
 const OP_1 = 0x51
 import { tokenLogger } from './logger'
-import { getDatabase } from './database'
+import { ok, err, type Result } from '../domain/types'
+import { getDatabase, withTransaction } from './database'
 import { broadcastTransaction, calculateTxFee, type UTXO } from './wallet'
 import { gpOrdinalsApi } from '../infrastructure/api/clients'
 import type { TokenRow, TokenBalanceRow, TokenTransferRow, IdCheckRow, SqlParams } from './database-types'
@@ -110,21 +111,31 @@ export async function fetchTokenBalances(address: string): Promise<TokenBalance[
     const data: GPTokenBalance[] = result.value
     const balances: TokenBalance[] = []
 
-    for (const item of data) {
-      const ticker = item.tick || item.id || ''
-      const protocol = item.id ? 'bsv21' : 'bsv20'
+    // Batch all token upserts in a single transaction to avoid N+1 queries
+    const tokens: Token[] = await withTransaction(async () => {
+      const results: Token[] = []
+      for (const item of data) {
+        const ticker = item.tick || item.id || ''
+        const protocol = item.id ? 'bsv21' : 'bsv20'
 
-      // Ensure token exists in database
-      const token = await upsertToken({
-        ticker,
-        protocol,
-        contractTxid: item.id,
-        name: item.sym || ticker,
-        decimals: item.dec || 0,
-        iconUrl: item.icon,
-        verified: false,
-        createdAt: Date.now()
-      })
+        const token = await upsertToken({
+          ticker,
+          protocol,
+          contractTxid: item.id,
+          name: item.sym || ticker,
+          decimals: item.dec || 0,
+          iconUrl: item.icon,
+          verified: false,
+          createdAt: Date.now()
+        })
+        results.push(token)
+      }
+      return results
+    })
+
+    for (let i = 0; i < data.length; i++) {
+      const item = data[i]!
+      const token = tokens[i]!
 
       const confirmed = BigInt(item.all?.confirmed || '0')
       const pending = BigInt(item.all?.pending || '0')
@@ -657,15 +668,18 @@ export async function syncTokenBalances(
 
   const balances = Array.from(balanceMap.values())
 
-  // Update database
-  for (const balance of balances) {
-    if (balance.token.id) {
-      await updateTokenBalance(
-        accountId,
-        balance.token.id,
-        balance.total.toString()
-      )
-    }
+  // Batch all balance updates in a single transaction
+  const balancesToUpdate = balances.filter(b => b.token.id)
+  if (balancesToUpdate.length > 0) {
+    await withTransaction(async () => {
+      for (const balance of balancesToUpdate) {
+        await updateTokenBalance(
+          accountId,
+          balance.token.id!,
+          balance.total.toString()
+        )
+      }
+    })
   }
 
   return balances
@@ -815,7 +829,7 @@ export async function transferToken(
   fundingWif: string,
   fundingUtxos: UTXO[],
   changeAddress: string
-): Promise<{ success: boolean; txid?: string; error?: string }> {
+): Promise<Result<{ txid: string }, string>> {
   try {
     const tokenPrivateKey = PrivateKey.fromWif(tokenWif)
     const tokenPublicKey = tokenPrivateKey.toPublicKey()
@@ -836,10 +850,7 @@ export async function transferToken(
     const amountToSend = BigInt(amount)
 
     if (amountToSend > totalTokensAvailable) {
-      return {
-        success: false,
-        error: `Insufficient token balance. Have ${totalTokensAvailable}, need ${amountToSend}`
-      }
+      return err(`Insufficient token balance. Have ${totalTokensAvailable}, need ${amountToSend}`)
     }
 
     const tx = new Transaction()
@@ -885,10 +896,7 @@ export async function transferToken(
     }
 
     if (totalFunding < estimatedFee) {
-      return {
-        success: false,
-        error: `Insufficient BSV for fee (need ~${estimatedFee} sats)`
-      }
+      return err(`Insufficient BSV for fee (need ~${estimatedFee} sats)`)
     }
 
     // Add funding inputs
@@ -967,11 +975,11 @@ export async function transferToken(
 
     tokenLogger.info('Token transfer completed', { amount, ticker, toAddress, txid })
 
-    return { success: true, txid }
+    return ok({ txid })
   } catch (e) {
-    const error = e instanceof Error ? e.message : 'Token transfer failed'
+    const errorMsg = e instanceof Error ? e.message : 'Token transfer failed'
     tokenLogger.error('Transfer error', e)
-    return { success: false, error }
+    return err(errorMsg)
   }
 }
 
@@ -988,7 +996,7 @@ export async function sendToken(
   protocol: 'bsv20' | 'bsv21',
   amount: string,
   toAddress: string
-): Promise<{ success: boolean; txid?: string; error?: string }> {
+): Promise<Result<{ txid: string }, string>> {
   try {
     // Fetch token UTXOs from both addresses
     const [walletTokenUtxos, ordTokenUtxos] = await Promise.all([
@@ -1001,7 +1009,7 @@ export async function sendToken(
       .sort((a, b) => Number(BigInt(b.amt) - BigInt(a.amt)))
 
     if (allTokenUtxos.length === 0) {
-      return { success: false, error: 'No token UTXOs found' }
+      return err('No token UTXOs found')
     }
 
     // Determine which WIF to use based on where tokens are
@@ -1047,8 +1055,8 @@ export async function sendToken(
       changeAddress
     )
   } catch (e) {
-    const error = e instanceof Error ? e.message : 'Token send failed'
+    const errorMsg = e instanceof Error ? e.message : 'Token send failed'
     tokenLogger.error('Send error', e)
-    return { success: false, error }
+    return err(errorMsg)
   }
 }

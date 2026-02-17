@@ -23,12 +23,7 @@ export async function getBalance(address: string): Promise<number> {
  * Get balance from local database (BRC-100 method - faster!)
  */
 export async function getBalanceFromDB(basket?: string): Promise<number> {
-  try {
-    return await getBalanceFromDatabase(basket)
-  } catch (error) {
-    walletLogger.error('Database query failed in getBalanceFromDB — returning 0 (wallet may appear empty)', { basket, error: String(error) })
-    return 0
-  }
+  return getBalanceFromDatabase(basket)
 }
 
 /**
@@ -82,6 +77,7 @@ export async function calculateTxAmount(
   addressOrAddresses: string | string[]
 ): Promise<number> {
   if (!txDetails?.vin || !txDetails?.vout) return 0
+  if (!Array.isArray(txDetails.vout) || !Array.isArray(txDetails.vin)) return 0
 
   // Normalize to array
   const addresses = Array.isArray(addressOrAddresses) ? addressOrAddresses : [addressOrAddresses]
@@ -98,7 +94,10 @@ export async function calculateTxAmount(
   // Sum outputs to our addresses (received)
   for (const vout of txDetails.vout) {
     if (isOurAddress(vout.scriptPubKey?.addresses)) {
-      received += btcToSatoshis(vout.value)
+      const value = vout.value
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        received += btcToSatoshis(value)
+      }
     }
   }
 
@@ -106,15 +105,21 @@ export async function calculateTxAmount(
   for (const vin of txDetails.vin) {
     // First check if prevout is available (some APIs include it)
     if (vin.prevout && isOurAddress(vin.prevout.scriptPubKey?.addresses)) {
-      sent += btcToSatoshis(vin.prevout.value)
+      const value = vin.prevout.value
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        sent += btcToSatoshis(value)
+      }
     } else if (vin.txid && vin.vout !== undefined) {
       // Fetch the previous transaction to check if the spent output was ours
       try {
         const prevTx = await getTransactionDetails(vin.txid)
-        if (prevTx?.vout?.[vin.vout]) {
+        if (prevTx?.vout && Array.isArray(prevTx.vout) && prevTx.vout[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]!
           if (isOurAddress(prevOutput.scriptPubKey?.addresses)) {
-            sent += btcToSatoshis(prevOutput.value)
+            const value = prevOutput.value
+            if (typeof value === 'number' && Number.isFinite(value)) {
+              sent += btcToSatoshis(value)
+            }
           }
         }
       } catch {

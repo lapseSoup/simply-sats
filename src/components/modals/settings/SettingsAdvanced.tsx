@@ -191,8 +191,8 @@ export function SettingsAdvanced() {
             </div>
           )}
 
-          {/* Debug Invoice Finder */}
-          {getKnownSenders().length > 0 && !showDebugInput && (
+          {/* Debug Invoice Finder — dev builds only (S-4 security hardening) */}
+          {import.meta.env.DEV && getKnownSenders().length > 0 && !showDebugInput && (
             <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowDebugInput(true)} onKeyDown={handleKeyDown(() => setShowDebugInput(true))} aria-label="Debug invoice finder">
               <div className="settings-row-left">
                 <div className="settings-row-icon" aria-hidden="true"><Search size={16} strokeWidth={1.75} /></div>
@@ -204,7 +204,7 @@ export function SettingsAdvanced() {
               <span className="settings-row-arrow" aria-hidden="true"><ChevronRight size={16} strokeWidth={1.75} /></span>
             </div>
           )}
-          {showDebugInput && (
+          {import.meta.env.DEV && showDebugInput && (
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
               <label htmlFor="debug-address-input" className="sr-only">Target address</label>
               <input

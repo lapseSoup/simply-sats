@@ -55,15 +55,6 @@ export interface SweepEstimate {
   isDust: boolean
 }
 
-/**
- * Result of reading an external backup database
- */
-export interface BackupReadResult {
-  success: boolean
-  accounts: RecoveredAccount[]
-  error?: string
-}
-
 // ============================================
 // SQL.js Initialization
 // ============================================

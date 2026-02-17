@@ -352,17 +352,32 @@ export function registerExitCleanup(): () => void {
   }
   window.addEventListener('beforeunload', handler)
 
-  // Handle visibility change (optional - clear when tab is hidden for extended period)
-  // This is commented out as it may be too aggressive for some use cases
-  // window.addEventListener('visibilitychange', () => {
-  //   if (document.visibilityState === 'hidden') {
-  //     storage.clearPrivacySensitive()
-  //   }
-  // })
+  // Handle visibility change: clear privacy data after 5 minutes hidden
+  // Covers scenarios where beforeunload doesn't fire (crash, force-quit)
+  let hiddenTimer: ReturnType<typeof setTimeout> | null = null
+  const HIDDEN_CLEAR_DELAY_MS = 5 * 60 * 1000
 
-  // Return cleanup function to remove the listener
+  const visibilityHandler = () => {
+    if (document.visibilityState === 'hidden') {
+      hiddenTimer = setTimeout(() => {
+        storage.clearPrivacySensitive()
+        hiddenTimer = null
+      }, HIDDEN_CLEAR_DELAY_MS)
+    } else {
+      // Became visible again — cancel pending clear
+      if (hiddenTimer) {
+        clearTimeout(hiddenTimer)
+        hiddenTimer = null
+      }
+    }
+  }
+  document.addEventListener('visibilitychange', visibilityHandler)
+
+  // Return cleanup function to remove listeners
   return () => {
     window.removeEventListener('beforeunload', handler)
+    document.removeEventListener('visibilitychange', visibilityHandler)
+    if (hiddenTimer) clearTimeout(hiddenTimer)
   }
 }
 

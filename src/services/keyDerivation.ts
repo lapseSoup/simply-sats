@@ -249,12 +249,17 @@ export function getKnownSenders(): string[] {
 /**
  * Debug function to find the invoice number that produces a target address
  * This brute-forces through many possible invoice numbers to find a match
+ *
+ * SECURITY: Only available in development builds — gated behind import.meta.env.DEV
  */
 export function debugFindInvoiceNumber(
   receiverPrivateKey: PrivateKey,
   senderPubKeyHex: string,
   targetAddress: string
 ): { found: boolean; invoiceNumber?: string; testedCount: number } {
+  if (!import.meta.env.DEV) {
+    throw new Error('debugFindInvoiceNumber is only available in development builds')
+  }
   const senderPubKey = PublicKey.fromString(senderPubKeyHex)
   let testedCount = 0
 

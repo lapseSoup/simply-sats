@@ -413,7 +413,8 @@ describe('locks service', () => {
 
       expect(calculateLockFee).toHaveBeenCalledWith(
         1, // numInputs
-        expect.any(Number) // timelockScriptSize
+        expect.any(Number), // timelockScriptSize
+        0 // opReturnExtraBytes (no ordinal origin)
       )
     })
   })

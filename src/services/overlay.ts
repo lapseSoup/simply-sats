@@ -15,6 +15,7 @@ import { P2PKH } from '@bsv/sdk'
 import { overlayLogger } from './logger'
 import { broadcastTransaction } from '../infrastructure/api/broadcastService'
 import { getWocClient } from '../infrastructure/api/wocClient'
+import { ok, err, type Result } from '../domain/types'
 
 // Known overlay network nodes (can be expanded)
 const KNOWN_OVERLAY_NODES = [
@@ -474,7 +475,7 @@ export async function broadcastWithOverlay(
 ): Promise<{
   txid: string
   overlayResults: SubmitResult[]
-  minerBroadcast: { success: boolean; error?: string }
+  minerBroadcast: Result<void, string>
 }> {
   let txid = ''
 
@@ -486,16 +487,13 @@ export async function broadcastWithOverlay(
   }
 
   // Broadcast to miners via 4-endpoint cascade (WoC -> ARC -> ARC text -> mAPI)
-  let minerBroadcast: { success: boolean; error?: string } = { success: false }
+  let minerBroadcast: Result<void, string> = err('Not attempted')
   try {
     const minerTxid = await broadcastTransaction(rawTx)
     txid = txid || minerTxid
-    minerBroadcast = { success: true }
+    minerBroadcast = ok(undefined)
   } catch (error) {
-    minerBroadcast = {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    }
+    minerBroadcast = err(error instanceof Error ? error.message : 'Unknown error')
   }
 
   return { txid, overlayResults, minerBroadcast }

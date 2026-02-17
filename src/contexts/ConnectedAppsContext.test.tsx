@@ -120,7 +120,7 @@ describe('ConnectedAppsContext', () => {
 
       act(() => {
         const res = result.current.addTrustedOrigin('https://example.com')
-        expect(res.success).toBe(true)
+        expect(res.ok).toBe(true)
       })
 
       expect(result.current.trustedOrigins).toContain('https://example.com')
@@ -134,8 +134,10 @@ describe('ConnectedAppsContext', () => {
 
       act(() => {
         const res = result.current.addTrustedOrigin('not-a-url')
-        expect(res.success).toBe(false)
-        expect(res.error).toBeDefined()
+        expect(res.ok).toBe(false)
+        if (!res.ok) {
+          expect(res.error).toBeDefined()
+        }
       })
 
       expect(result.current.trustedOrigins).toEqual([])
@@ -153,7 +155,7 @@ describe('ConnectedAppsContext', () => {
 
       act(() => {
         const res = result.current.addTrustedOrigin('https://example.com')
-        expect(res.success).toBe(true) // No-op, still returns success
+        expect(res.ok).toBe(true) // No-op, still returns success
       })
 
       // Should not duplicate

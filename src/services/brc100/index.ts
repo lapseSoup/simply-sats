@@ -10,6 +10,11 @@
  * - cryptography.ts: Encrypt/decrypt
  * - script.ts: Script building utilities
  * - utils.ts: Helper functions
+ * - outputs.ts: Output resolution & discovery
+ * - locks.ts: Lock management
+ * - listener.ts: HTTP server event listener
+ * - certificates.ts: Certificate operations
+ * - actions.ts: Request handling, approval/rejection, tx building
  */
 
 // Re-export types
@@ -64,3 +69,36 @@ export {
   getIdentityKeyForApp,
   isInscriptionTransaction
 } from './utils'
+
+// Re-export output resolution & discovery
+export {
+  resolvePublicKey,
+  resolveListOutputs,
+  discoverByIdentityKey,
+  discoverByAttributes
+} from './outputs'
+
+// Re-export lock management
+export {
+  getLocks,
+  saveLockToDatabase,
+  removeLockFromDatabase,
+  createLockTransaction
+} from './locks'
+
+// Re-export HTTP server listener
+export { setupHttpServerListener } from './listener'
+
+// Re-export certificate operations
+export {
+  acquireCertificate,
+  listCertificates,
+  proveCertificate
+} from './certificates'
+
+// Re-export actions
+export {
+  handleBRC100Request,
+  approveRequest,
+  rejectRequest
+} from './actions'

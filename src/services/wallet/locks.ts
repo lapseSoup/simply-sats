@@ -96,6 +96,22 @@ export async function lockBSV(
   lockBlock?: number,
   accountId?: number
 ): Promise<{ txid: string; lockedUtxo: LockedUTXO }> {
+  if (!Number.isFinite(satoshis) || satoshis <= 0 || !Number.isInteger(satoshis)) {
+    throw new AppError(
+      `Invalid lock amount: ${satoshis} (must be a positive integer)`,
+      ErrorCodes.INVALID_AMOUNT,
+      { satoshis }
+    )
+  }
+
+  if (!Number.isFinite(unlockBlock) || unlockBlock <= 0 || !Number.isInteger(unlockBlock)) {
+    throw new AppError(
+      `Invalid unlock block: ${unlockBlock} (must be a positive integer)`,
+      ErrorCodes.INVALID_PARAMS,
+      { unlockBlock }
+    )
+  }
+
   const wif = await getWifForOperation('wallet', 'lockBSV')
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
@@ -130,7 +146,17 @@ export async function lockBSV(
   // Calculate fee using actual script size
   const numInputs = inputsToUse.length
   const timelockScriptSize = timelockScript.toBinary().length
-  const fee = calculateLockFee(numInputs, timelockScriptSize)
+
+  // Account for OP_RETURN output if ordinal origin is provided
+  // OP_RETURN output: 8 (value) + 1 (scriptlen varint) + script bytes
+  let opReturnExtraBytes = 0
+  if (ordinalOrigin) {
+    const opReturnScript = createWrootzOpReturn('lock', ordinalOrigin)
+    const opReturnScriptSize = opReturnScript.toBinary().length
+    opReturnExtraBytes = 8 + 1 + opReturnScriptSize // value + varint + script
+  }
+
+  const fee = calculateLockFee(numInputs, timelockScriptSize, opReturnExtraBytes)
   const change = totalInput - satoshis - fee
 
   if (change < 0) {
@@ -312,6 +338,15 @@ export async function unlockBSV(
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
 
+  // Validate lockingScript is valid hex before using it for fee calculation
+  if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
+    throw new AppError(
+      'Invalid locking script: not valid hex',
+      ErrorCodes.INVALID_PARAMS,
+      { scriptLength: lockedUtxo.lockingScript?.length }
+    )
+  }
+
   // Calculate fee for unlock transaction
   const lockingScriptSize = lockedUtxo.lockingScript.length / 2 // hex to bytes
   const unlockScriptSize = 73 + 34 + 180 + lockingScriptSize
@@ -482,6 +517,15 @@ export async function generateUnlockTxHex(
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
+
+  // Validate lockingScript is valid hex
+  if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
+    throw new AppError(
+      'Invalid locking script: not valid hex',
+      ErrorCodes.INVALID_PARAMS,
+      { scriptLength: lockedUtxo.lockingScript?.length }
+    )
+  }
 
   // Calculate fee for unlock transaction
   const lockingScriptSize = lockedUtxo.lockingScript.length / 2

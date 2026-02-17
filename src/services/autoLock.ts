@@ -10,13 +10,13 @@ import { walletLogger } from './logger'
 // Default inactivity limit in milliseconds (10 minutes)
 export const DEFAULT_INACTIVITY_LIMIT = 10 * 60 * 1000
 
-// Activity events to track
+// Activity events to track — intentional interactions only.
+// mousemove and scroll are excluded because passive cursor/scroll activity
+// should not prevent auto-lock from engaging (S-13 security hardening).
 const ACTIVITY_EVENTS = [
-  'mousemove',
   'mousedown',
   'keydown',
   'touchstart',
-  'scroll',
   'click'
 ] as const
 

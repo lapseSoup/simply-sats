@@ -157,8 +157,8 @@ export function calculateTxFee(numInputs: number, numOutputs: number, extraBytes
 /**
  * Calculate the exact fee for a lock transaction using actual script size - delegates to domain layer
  */
-export function calculateLockFee(numInputs: number, timelockScriptSize?: number): number {
-  return domainCalculateLockFee(numInputs, getFeeRate(), timelockScriptSize)
+export function calculateLockFee(numInputs: number, timelockScriptSize?: number, extraBytes?: number): number {
+  return domainCalculateLockFee(numInputs, getFeeRate(), timelockScriptSize, extraBytes)
 }
 
 /**

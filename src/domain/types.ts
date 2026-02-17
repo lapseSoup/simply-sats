@@ -169,12 +169,6 @@ export interface TransactionRecord {
   amount?: number
 }
 
-export interface SendResult {
-  success: boolean
-  txid?: string
-  error?: string
-}
-
 /** Common result type for wallet operations (send, lock, unlock, transfer, list) */
 export type WalletResult = Result<{ txid: string }, string>
 

@@ -69,11 +69,10 @@ describe('getBalanceFromDB', () => {
     expect(mockGetBalanceFromDatabase).toHaveBeenCalledWith('default')
   })
 
-  it('returns 0 on database error', async () => {
+  it('propagates database errors to caller', async () => {
     mockGetBalanceFromDatabase.mockRejectedValueOnce(new Error('DB failed'))
 
-    const result = await getBalanceFromDB()
-    expect(result).toBe(0)
+    await expect(getBalanceFromDB()).rejects.toThrow('DB failed')
   })
 
   it('passes basket parameter', async () => {

@@ -2,13 +2,14 @@
  * AccountModal Component
  *
  * Modal for creating new accounts, importing accounts from mnemonic,
- * and managing account settings.
+ * and managing account settings. Delegates to sub-components for each mode.
  */
 
-import { useState, useMemo } from 'react'
-import { validateMnemonic } from 'bip39'
+import { useState } from 'react'
 import { Modal } from '../shared/Modal'
-import { MnemonicInput } from '../forms/MnemonicInput'
+import { AccountCreateForm } from './AccountCreateForm'
+import { AccountImportForm } from './AccountImportForm'
+import { AccountManageList } from './AccountManageList'
 import type { Account } from '../../services/accounts'
 
 type ModalMode = 'create' | 'import' | 'manage' | 'settings'
@@ -39,376 +40,39 @@ export function AccountModal({
   onSwitchAccount
 }: AccountModalProps) {
   const [mode, setMode] = useState<ModalMode>(initialMode)
-  const [accountName, setAccountName] = useState('')
-  const [mnemonic, setMnemonic] = useState('')
-  const [accountCreated, setAccountCreated] = useState(false)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editName, setEditName] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
-
-  const resetState = () => {
-    setAccountName('')
-    setMnemonic('')
-    setAccountCreated(false)
-    setError('')
-    setLoading(false)
-    setEditingId(null)
-    setEditName('')
-    setConfirmDelete(null)
-  }
 
   const handleClose = () => {
-    resetState()
     onClose()
   }
-
-  const handleCreateAccount = async () => {
-    if (!accountName.trim()) {
-      setError('Please enter an account name')
-      return
-    }
-
-    setLoading(true)
-    setError('')
-
-    try {
-      const success = await onCreateAccount(accountName.trim())
-      if (success) {
-        setAccountCreated(true)
-      } else {
-        setError('Failed to create account')
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create account')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const isMnemonicValid = useMemo(() => {
-    const words = mnemonic.trim().split(/\s+/).filter(w => w.length > 0)
-    if (words.length !== 12) return false
-    return validateMnemonic(mnemonic.trim().toLowerCase())
-  }, [mnemonic])
-
-  const handleImportAccount = async () => {
-    if (!accountName.trim()) {
-      setError('Please enter an account name')
-      return
-    }
-
-    setLoading(true)
-    setError('')
-
-    try {
-      const success = await onImportAccount(accountName.trim(), mnemonic.trim())
-      if (success) {
-        handleClose()
-      } else {
-        setError('Failed to import account')
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to import account')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleDeleteAccount = async (accountId: number) => {
-    if (!onDeleteAccount) return
-
-    setLoading(true)
-    try {
-      const success = await onDeleteAccount(accountId)
-      if (success) {
-        setConfirmDelete(null)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete account')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleRename = async (accountId: number) => {
-    if (!onRenameAccount || !editName.trim()) return
-
-    try {
-      await onRenameAccount(accountId, editName.trim())
-      setEditingId(null)
-      setEditName('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename account')
-    }
-  }
-
-  const renderCreateMode = () => {
-    if (accountCreated) {
-      return (
-        <div className="account-modal-content">
-          <div className="success-icon">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <circle cx="24" cy="24" r="22" stroke="#22c55e" strokeWidth="4" />
-              <path d="M14 24L21 31L34 18" stroke="#22c55e" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <h3>Account Created!</h3>
-          <p className="modal-description">
-            Your new account has been created and is ready to use.
-            It shares the same recovery phrase as your other accounts.
-          </p>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleClose}
-          >
-            Done
-          </button>
-        </div>
-      )
-    }
-
-    return (
-      <div className="account-modal-content">
-        <h3>Add Account</h3>
-        <p className="modal-description">
-          Create a new account derived from your wallet.
-          All accounts share the same recovery phrase.
-        </p>
-
-        <div className="form-group">
-          <label htmlFor="account-name">Account Name</label>
-          <input
-            id="account-name"
-            type="text"
-            value={accountName}
-            onChange={e => setAccountName(e.target.value)}
-            placeholder="e.g., Savings, Trading, etc."
-            disabled={loading}
-            autoFocus
-          />
-        </div>
-
-        {error && <p className="error-message">{error}</p>}
-
-        <div className="button-row">
-          <button type="button" className="btn btn-secondary" onClick={handleClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleCreateAccount}
-            disabled={loading || !accountName.trim()}
-            aria-busy={loading}
-          >
-            {loading ? (
-              <>
-                <span className="spinner-small" aria-hidden="true" />
-                Creating...
-              </>
-            ) : 'Add Account'}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const renderImportMode = () => (
-    <div className="account-modal-content">
-      <h3>Import Account</h3>
-      <p className="modal-description">
-        Restore an account using your 12-word recovery phrase.
-      </p>
-
-      <div className="form-group">
-        <label htmlFor="import-name">Account Name</label>
-        <input
-          id="import-name"
-          type="text"
-          value={accountName}
-          onChange={e => setAccountName(e.target.value)}
-          placeholder="e.g., Restored Account"
-          disabled={loading}
-        />
-      </div>
-
-      <div className="form-group">
-        <label htmlFor="import-mnemonic">Recovery Phrase</label>
-        <MnemonicInput
-          value={mnemonic}
-          onChange={setMnemonic}
-          placeholder="Start typing your seed words..."
-        />
-      </div>
-
-      {error && <p className="error-message">{error}</p>}
-
-      <div className="button-row">
-        <button type="button" className="btn btn-secondary" onClick={handleClose}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleImportAccount}
-          disabled={loading || !accountName.trim() || !isMnemonicValid}
-          aria-busy={loading}
-        >
-          {loading ? (
-            <>
-              <span className="spinner-small" aria-hidden="true" />
-              Importing...
-            </>
-          ) : 'Import Account'}
-        </button>
-      </div>
-    </div>
-  )
-
-  const renderManageMode = () => (
-    <div className="account-modal-content">
-      <h3>Manage Accounts</h3>
-
-      <div className="account-list-manage">
-        {accounts.map(account => (
-          <div key={account.id} className={`account-item-manage ${account.id === activeAccountId ? 'active' : ''}`}>
-            {editingId === account.id ? (
-              <div className="edit-name-row">
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={e => setEditName(e.target.value)}
-                  placeholder="Account name"
-                  autoFocus
-                  aria-label="Rename account"
-                />
-                <button
-                  type="button"
-                  className="icon-button save"
-                  onClick={() => handleRename(account.id!)}
-                >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 8L6 11L13 4" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="icon-button cancel"
-                  onClick={() => { setEditingId(null); setEditName('') }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M4 4L12 12M12 4L4 12" />
-                  </svg>
-                </button>
-              </div>
-            ) : confirmDelete === account.id ? (
-              <div className="confirm-delete-row">
-                <span>Delete "{account.name}"?</span>
-                <button
-                  type="button"
-                  className="icon-button delete"
-                  onClick={() => handleDeleteAccount(account.id!)}
-                  disabled={loading}
-                >
-                  Yes
-                </button>
-                <button
-                  type="button"
-                  className="icon-button cancel"
-                  onClick={() => setConfirmDelete(null)}
-                >
-                  No
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="account-info-manage">
-                  <div className="account-avatar-manage">
-                    {account.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="account-details">
-                    <span className="account-name-manage">{account.name}</span>
-                    <span className="account-address-manage">
-                      {account.identityAddress.slice(0, 8)}...{account.identityAddress.slice(-6)}
-                    </span>
-                  </div>
-                  {account.id === activeAccountId && (
-                    <span className="active-badge">Active</span>
-                  )}
-                </div>
-                <div className="account-actions-manage">
-                  {account.id !== activeAccountId && onSwitchAccount && (
-                    <button
-                      type="button"
-                      className="icon-button"
-                      onClick={() => onSwitchAccount(account.id!)}
-                      title="Switch to this account"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M2 8H14M10 4L14 8L10 12" />
-                      </svg>
-                    </button>
-                  )}
-                  {onRenameAccount && (
-                    <button
-                      type="button"
-                      className="icon-button"
-                      onClick={() => { setEditingId(account.id!); setEditName(account.name) }}
-                      title="Rename account"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M11 2L14 5L5 14H2V11L11 2Z" />
-                      </svg>
-                    </button>
-                  )}
-                  {onDeleteAccount && accounts.length > 1 && (
-                    <button
-                      type="button"
-                      className="icon-button delete"
-                      onClick={() => setConfirmDelete(account.id!)}
-                      title="Delete account"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M3 4H13M6 4V2H10V4M5 4V14H11V4" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {error && <p className="error-message">{error}</p>}
-
-      <div className="button-row">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => setMode('create')}
-        >
-          + New Account
-        </button>
-      </div>
-
-      <button type="button" className="btn btn-secondary" onClick={handleClose}>
-        Close
-      </button>
-    </div>
-  )
 
   if (!isOpen) return null
 
   return (
     <Modal onClose={handleClose} title="Account">
       <div className="modal-content">
-        {mode === 'create' && renderCreateMode()}
-        {mode === 'import' && renderImportMode()}
-        {mode === 'manage' && renderManageMode()}
+        {mode === 'create' && (
+          <AccountCreateForm
+            onCreateAccount={onCreateAccount}
+            onClose={handleClose}
+          />
+        )}
+        {mode === 'import' && (
+          <AccountImportForm
+            onImportAccount={onImportAccount}
+            onClose={handleClose}
+          />
+        )}
+        {mode === 'manage' && (
+          <AccountManageList
+            accounts={accounts}
+            activeAccountId={activeAccountId}
+            onSwitchAccount={onSwitchAccount}
+            onRenameAccount={onRenameAccount}
+            onDeleteAccount={onDeleteAccount}
+            onCreateNew={() => setMode('create')}
+            onClose={handleClose}
+          />
+        )}
       </div>
 
       <style>{`

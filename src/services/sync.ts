@@ -9,6 +9,7 @@
 import { P2PKH } from '@bsv/sdk'
 import { BASKETS } from '../domain/types'
 import type { LockedUTXO } from './wallet/types'
+import type { DerivedAddress } from './database/types'
 import {
   addUTXO,
   markUTXOSpent,
@@ -179,6 +180,51 @@ async function fetchUtxosFromWoc(address: string): Promise<{ txid: string; vout:
  */
 function getLockingScript(address: string): string {
   return new P2PKH().lock(address).toHex()
+}
+
+// ---------------------------------------------------------------------------
+// Batched concurrency helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute an async function over a list of items in batches with controlled
+ * concurrency.  Uses `Promise.allSettled` so a single failure never aborts the
+ * remaining items.
+ *
+ * @param items - Items to process
+ * @param fn - Async function to apply to each item
+ * @param concurrency - Maximum number of items processed at once
+ * @param isCancelled - Optional cancellation predicate checked between batches
+ */
+async function batchWithConcurrency<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number,
+  isCancelled?: () => boolean
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = []
+  const totalBatches = Math.ceil(items.length / concurrency)
+  for (let i = 0; i < items.length; i += concurrency) {
+    if (isCancelled?.()) break
+    const batchNum = Math.floor(i / concurrency) + 1
+    syncLogger.debug(`[SYNC] Batch ${batchNum}/${totalBatches} (items ${i + 1}–${Math.min(i + concurrency, items.length)})`)
+    const batch = items.slice(i, i + concurrency)
+    const batchResults = await Promise.allSettled(batch.map(fn))
+    results.push(...batchResults)
+  }
+  return results
+}
+
+// ---------------------------------------------------------------------------
+// Transaction detail cache — prevents redundant API calls for the same parent
+// tx across multiple addresses within a single sync cycle.
+// Cleared at the end of every syncWallet() call.
+// ---------------------------------------------------------------------------
+const txDetailCache = new Map<string, WocTransaction>()
+
+/** Clear the per-sync tx detail cache (call after each sync cycle). */
+function clearTxDetailCache(): void {
+  txDetailCache.clear()
 }
 
 // Simple counter for debugging sync order
@@ -382,8 +428,13 @@ async function calculateTxAmount(
       }
 
       // Try 2: Fetch parent transaction from API (reliable, works after fresh sync)
+      //         Use txDetailCache to avoid refetching the same parent tx
       try {
-        const prevTx = await wocClient.getTransactionDetails(vin.txid)
+        let prevTx = txDetailCache.get(vin.txid) ?? null
+        if (!prevTx) {
+          prevTx = await wocClient.getTransactionDetails(vin.txid)
+          if (prevTx) txDetailCache.set(vin.txid, prevTx)
+        }
         if (prevTx?.vout?.[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]!
           if (isOurOutputMulti(prevOutput, allAddressSet, allLockingScripts)) {
@@ -565,7 +616,13 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
 }
 
 /**
- * Sync all wallet addresses
+ * Sync all wallet addresses using batched concurrency.
+ *
+ * Addresses are processed in batches of `RATE_LIMITS.maxConcurrentRequests`
+ * (default 3) with an inter-batch delay of `RATE_LIMITS.addressSyncDelay` to
+ * stay within WoC rate limits.  Each batch uses `Promise.allSettled` so a
+ * single address failure never aborts the rest.
+ *
  * @param addresses - List of addresses to sync
  * @param token - Optional cancellation token to abort the sync
  */
@@ -574,35 +631,49 @@ export async function syncAllAddresses(
   token?: CancellationToken
 ): Promise<SyncResult[]> {
   const results: SyncResult[] = []
+  const concurrency = RATE_LIMITS.maxConcurrentRequests
 
-  for (let i = 0; i < addresses.length; i++) {
-    // Check for cancellation before each address
+  const totalBatches = Math.ceil(addresses.length / concurrency)
+  syncLogger.debug(`[SYNC] syncAllAddresses: ${addresses.length} addresses in ~${totalBatches} batches (concurrency=${concurrency})`)
+
+  for (let i = 0; i < addresses.length; i += concurrency) {
+    // Check for cancellation before each batch
     if (token?.isCancelled) {
       syncLogger.debug('[SYNC] Cancelled - stopping address sync')
       break
     }
 
-    const addr = addresses[i]!
-    try {
-      // Add delay between requests to avoid rate limiting (429 errors)
-      // Use configurable delay from config
-      if (i > 0) {
-        if (token) {
-          await cancellableDelay(RATE_LIMITS.addressSyncDelay, token)
+    // Inter-batch delay (skip before the first batch)
+    if (i > 0) {
+      if (token) {
+        await cancellableDelay(RATE_LIMITS.addressSyncDelay, token)
+      } else {
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
+      }
+    }
+
+    const batch = addresses.slice(i, i + concurrency)
+    const batchNum = Math.floor(i / concurrency) + 1
+    syncLogger.debug(`[SYNC] Batch ${batchNum}/${totalBatches}: syncing ${batch.map(a => a.address.slice(0, 8)).join(', ')}...`)
+
+    const settled = await Promise.allSettled(
+      batch.map(addr => syncAddress(addr))
+    )
+
+    for (let j = 0; j < settled.length; j++) {
+      const outcome = settled[j]!
+      const addr = batch[j]!
+      if (outcome.status === 'fulfilled') {
+        results.push(outcome.value)
+        syncLogger.info(`Synced ${addr.basket}: ${outcome.value.newUtxos} new, ${outcome.value.spentUtxos} spent, ${outcome.value.totalBalance} sats`)
+      } else {
+        if (isCancellationError(outcome.reason)) {
+          syncLogger.debug('[SYNC] Cancelled during address sync')
+          // Don't break here — other addresses in the batch may have completed
         } else {
-          await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
+          syncLogger.error(`Failed to sync ${addr.address}:`, outcome.reason)
         }
       }
-      const result = await syncAddress(addr)
-      results.push(result)
-      syncLogger.info(`Synced ${addr.basket}: ${result.newUtxos} new, ${result.spentUtxos} spent, ${result.totalBalance} sats`)
-    } catch (error) {
-      if (isCancellationError(error)) {
-        syncLogger.debug('[SYNC] Cancelled during address sync')
-        break
-      }
-      syncLogger.error(`Failed to sync ${addr.address}:`, error)
-      // Continue with other addresses
     }
   }
 
@@ -614,8 +685,11 @@ export async function syncAllAddresses(
  *
  * After a 12-word restore the sync may store transactions with amount=NULL when
  * the WoC API times out or rate-limits during the initial heavy sync burst.
- * This function re-fetches transaction details and recalculates amounts for
- * any transactions that still have NULL amounts.
+ * This function re-fetches transaction details in batches and recalculates
+ * amounts for any transactions that still have NULL amounts.
+ *
+ * Uses `getTransactionDetailsBatch` for efficient concurrent fetching and
+ * the module-level `txDetailCache` to avoid redundant API calls.
  *
  * Safe to call repeatedly — only touches rows where amount IS NULL.
  */
@@ -636,25 +710,44 @@ async function backfillNullAmounts(
     const primaryAddress = allWalletAddresses[0]
     if (!primaryAddress) return 0
 
+    // --- Batch-fetch all missing tx details in one go ---
+    // Filter out txids that are already in the cache
+    const txidsToFetch = nullAmountTxs
+      .map(tx => tx.txid)
+      .filter(txid => !txDetailCache.has(txid))
+
+    if (txidsToFetch.length > 0) {
+      syncLogger.debug(`[BACKFILL] Batch-fetching ${txidsToFetch.length} tx details (concurrency=${RATE_LIMITS.maxConcurrentRequests})`)
+      const batchMap = await wocClient.getTransactionDetailsBatch(
+        txidsToFetch,
+        RATE_LIMITS.maxConcurrentRequests
+      )
+      // Merge into the module-level cache
+      for (const [txid, detail] of batchMap) {
+        txDetailCache.set(txid, detail)
+      }
+    }
+
+    // --- Calculate amounts using cached details ---
     let fixed = 0
-    for (const tx of nullAmountTxs) {
-      try {
-        const txDetails = await wocClient.getTransactionDetails(tx.txid)
+    const calcResults = await batchWithConcurrency(
+      nullAmountTxs,
+      async (tx) => {
+        const txDetails = txDetailCache.get(tx.txid) ?? null
         if (!txDetails) {
           syncLogger.debug(`[BACKFILL] Could not fetch tx ${tx.txid.slice(0, 8)}... — skipping`)
-          continue
+          return null
         }
-
         const amount = await calculateTxAmount(txDetails, primaryAddress, allWalletAddresses, accountId)
         await updateTransactionAmount(tx.txid, amount, accountId)
-        fixed++
         syncLogger.debug(`[BACKFILL] Fixed amount for ${tx.txid.slice(0, 8)}... → ${amount} sats`)
+        return { txid: tx.txid, amount }
+      },
+      RATE_LIMITS.maxConcurrentRequests
+    )
 
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 200))
-      } catch (e) {
-        syncLogger.warn(`[BACKFILL] Failed for ${tx.txid.slice(0, 8)}...`, { error: String(e) })
-      }
+    for (const r of calcResults) {
+      if (r.status === 'fulfilled' && r.value !== null) fixed++
     }
 
     syncLogger.info(`[BACKFILL] Fixed ${fixed}/${nullAmountTxs.length} transaction amounts`)
@@ -702,12 +795,16 @@ export async function syncWallet(
     }
 
     // Sync derived addresses FIRST (most important for correct balance)
-    let derivedAddresses
+    let derivedAddresses: DerivedAddress[]
     try {
       derivedAddresses = await getDerivedAddressesFromDB(accountId)
     } catch (e) {
       syncLogger.error('[SYNC] DB query failed: getDerivedAddressesFromDB', e)
       throw new Error(`Database query failed (derived addresses): ${e instanceof Error ? e.message : String(e)}`)
+    }
+    if (!Array.isArray(derivedAddresses)) {
+      syncLogger.warn('[SYNC] getDerivedAddressesFromDB returned non-array, defaulting to empty', { type: typeof derivedAddresses })
+      derivedAddresses = []
     }
     syncLogger.debug(`[SYNC] Found ${derivedAddresses.length} derived addresses in database`)
 
@@ -786,7 +883,8 @@ export async function syncWallet(
     }
     throw error
   } finally {
-    // Always release the lock when done
+    // Always release the lock and clear per-sync caches when done
+    clearTxDetailCache()
     releaseLock()
   }
 }

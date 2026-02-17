@@ -15,6 +15,19 @@ import { walletLogger } from './logger'
 
 // Rate limit configuration (matches Rust backend)
 const MAX_ATTEMPTS = 5
+const FALLBACK_LOCKOUT_MS = 5 * 60 * 1000 // 5 minutes
+
+// In-process fallback state for when Rust backend is unavailable
+const fallbackState = {
+  attempts: 0,
+  lockoutUntil: 0
+}
+
+/** Reset fallback state (for testing) */
+export function _resetFallbackState(): void {
+  fallbackState.attempts = 0
+  fallbackState.lockoutUntil = 0
+}
 
 interface CheckRateLimitResponse {
   is_limited: boolean
@@ -42,9 +55,15 @@ export async function checkUnlockRateLimit(): Promise<{ isLimited: boolean; rema
       remainingMs: response.remaining_ms
     }
   } catch (error) {
-    walletLogger.error('Failed to check rate limit', { error })
-    // Fail closed - block attempts if backend unavailable
-    return { isLimited: true, remainingMs: 30000 }
+    walletLogger.error('Failed to check rate limit — using JS fallback', { error })
+    // Fallback: use in-process rate limiter instead of blocking indefinitely
+    const now = Date.now()
+    if (now > fallbackState.lockoutUntil) {
+      fallbackState.attempts = 0
+    }
+    const isLimited = fallbackState.attempts >= MAX_ATTEMPTS
+    const remainingMs = isLimited ? Math.max(0, fallbackState.lockoutUntil - now) : 0
+    return { isLimited, remainingMs }
   }
 }
 
@@ -72,9 +91,18 @@ export async function recordFailedUnlockAttempt(): Promise<{ isLocked: boolean; 
       attemptsRemaining: response.attempts_remaining
     }
   } catch (error) {
-    walletLogger.error('Failed to record failed attempt', { error })
-    // Fail closed - assume locked if backend unavailable
-    return { isLocked: true, lockoutMs: 60000, attemptsRemaining: 0 }
+    walletLogger.error('Failed to record failed attempt — using JS fallback', { error })
+    // Fallback: use in-process rate limiter
+    fallbackState.attempts++
+    const isLocked = fallbackState.attempts >= MAX_ATTEMPTS
+    if (isLocked) {
+      fallbackState.lockoutUntil = Date.now() + FALLBACK_LOCKOUT_MS
+    }
+    return {
+      isLocked,
+      lockoutMs: isLocked ? FALLBACK_LOCKOUT_MS : 0,
+      attemptsRemaining: Math.max(0, MAX_ATTEMPTS - fallbackState.attempts)
+    }
   }
 }
 
@@ -83,6 +111,8 @@ export async function recordFailedUnlockAttempt(): Promise<{ isLocked: boolean; 
  * Resets the rate limit counter
  */
 export async function recordSuccessfulUnlock(): Promise<void> {
+  fallbackState.attempts = 0
+  fallbackState.lockoutUntil = 0
   try {
     await invoke('record_successful_unlock')
     walletLogger.debug('Unlock rate limit reset on success')

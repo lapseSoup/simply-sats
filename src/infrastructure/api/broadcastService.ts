@@ -254,5 +254,9 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
     return localTxid
   }
 
-  throw new Error(`Failed to broadcast: ${errors.join(' | ')}`)
+  // Log full errors for debugging, but sanitize the user-facing message
+  apiLogger.error('All broadcast endpoints failed', { errors })
+  // Extract only the reason (strip endpoint names and raw API responses)
+  const sanitized = errors.map(e => e.replace(/^(WoC|ARC[^:]*|mAPI):\s*/i, '').slice(0, 200))
+  throw new Error(`Broadcast failed: ${sanitized.join(' | ')}`)
 }

@@ -21,7 +21,7 @@ import {
   getSpendableUtxosFromDatabase
 } from '../services/sync'
 import { audit } from '../services/auditLog'
-import { ok, err, type WalletResult } from '../domain/types'
+import { ok, err, type Result, type WalletResult } from '../domain/types'
 
 interface UseWalletSendOptions {
   wallet: WalletKeys | null
@@ -34,7 +34,7 @@ interface UseWalletSendOptions {
     protocol: 'bsv20' | 'bsv21',
     amount: string,
     toAddress: string
-  ) => Promise<{ success: boolean; txid?: string; error?: string }>
+  ) => Promise<Result<{ txid: string }, string>>
 }
 
 interface UseWalletSendReturn {
@@ -208,10 +208,10 @@ export function useWalletSend({
 
     const result = await sendTokenAction(wallet, ticker, protocol, amount, toAddress)
 
-    if (result.success && result.txid) {
+    if (result.ok) {
       await fetchData()
       await refreshTokens()
-      return ok({ txid: result.txid })
+      return ok({ txid: result.value.txid })
     }
 
     return err(result.error || 'Token transfer failed')

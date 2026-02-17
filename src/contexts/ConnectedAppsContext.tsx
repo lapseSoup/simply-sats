@@ -11,6 +11,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo, t
 import { isValidOrigin, normalizeOrigin, validateOriginWithReason } from '../utils/validation'
 import { secureGetJSON, secureSetJSON, migrateToSecureStorage } from '../services/secureStorage'
 import { walletLogger } from '../services/logger'
+import { ok, err, type Result } from '../domain/types'
 
 interface ConnectedAppsContextType {
   // State
@@ -19,7 +20,7 @@ interface ConnectedAppsContextType {
   loading: boolean
 
   // Actions
-  addTrustedOrigin: (origin: string) => { success: boolean; error?: string }
+  addTrustedOrigin: (origin: string) => Result<void, string>
   removeTrustedOrigin: (origin: string) => void
   isTrustedOrigin: (origin: string) => boolean
   connectApp: (origin: string) => boolean
@@ -84,50 +85,54 @@ export function ConnectedAppsProvider({ children }: ConnectedAppsProviderProps) 
   }, [])
 
   // Add a trusted origin (with validation)
-  const addTrustedOrigin = useCallback((origin: string): { success: boolean; error?: string } => {
+  const addTrustedOrigin = useCallback((origin: string): Result<void, string> => {
     // Validate the origin
     const validationError = validateOriginWithReason(origin)
     if (validationError) {
       walletLogger.warn('Invalid origin rejected', { origin, error: validationError })
-      return { success: false, error: validationError }
+      return err(validationError)
     }
 
     if (!isValidOrigin(origin)) {
       walletLogger.warn('Invalid origin format', { origin })
-      return { success: false, error: 'Invalid origin format' }
+      return err('Invalid origin format')
     }
 
     const normalized = normalizeOrigin(origin)
 
     // Check if already trusted
     if (trustedOrigins.includes(normalized)) {
-      return { success: true } // Already trusted, no-op
+      return ok(undefined) // Already trusted, no-op
     }
 
     const newOrigins = [...trustedOrigins, normalized]
 
-    // Save to secure storage (async)
-    secureSetJSON('trusted_origins', newOrigins).catch(e => {
-      walletLogger.error('Failed to save trusted origins', e)
-    })
-
     setTrustedOrigins(newOrigins)
     walletLogger.info('Added trusted origin', { origin: normalized })
 
-    return { success: true }
+    // Persist to secure storage — revert on failure
+    secureSetJSON('trusted_origins', newOrigins).catch(e => {
+      walletLogger.error('Failed to save trusted origins — reverting', e)
+      setTrustedOrigins(prev => prev.filter(o => o !== normalized))
+    })
+
+    return ok(undefined)
   }, [trustedOrigins])
 
   // Remove a trusted origin
   const removeTrustedOrigin = useCallback((origin: string) => {
     const normalized = normalizeOrigin(origin)
+    const previousOrigins = trustedOrigins
     const newOrigins = trustedOrigins.filter(o => o !== normalized)
-
-    secureSetJSON('trusted_origins', newOrigins).catch(e => {
-      walletLogger.error('Failed to save trusted origins', e)
-    })
 
     setTrustedOrigins(newOrigins)
     walletLogger.info('Removed trusted origin', { origin: normalized })
+
+    // Persist — revert on failure
+    secureSetJSON('trusted_origins', newOrigins).catch(e => {
+      walletLogger.error('Failed to save trusted origins — reverting', e)
+      setTrustedOrigins(previousOrigins)
+    })
   }, [trustedOrigins])
 
   // Check if an origin is trusted
@@ -154,12 +159,14 @@ export function ConnectedAppsProvider({ children }: ConnectedAppsProviderProps) 
 
     const newApps = [...connectedApps, normalized]
 
-    secureSetJSON('connected_apps', newApps).catch(e => {
-      walletLogger.error('Failed to save connected apps', e)
-    })
-
     setConnectedApps(newApps)
     walletLogger.info('Connected app', { origin: normalized })
+
+    // Persist — revert on failure
+    secureSetJSON('connected_apps', newApps).catch(e => {
+      walletLogger.error('Failed to save connected apps — reverting', e)
+      setConnectedApps(prev => prev.filter(a => a !== normalized))
+    })
 
     return true
   }, [connectedApps])
@@ -167,14 +174,17 @@ export function ConnectedAppsProvider({ children }: ConnectedAppsProviderProps) 
   // Disconnect an app
   const disconnectApp = useCallback((origin: string) => {
     const normalized = normalizeOrigin(origin)
+    const previousApps = connectedApps
     const newApps = connectedApps.filter(app => app !== normalized)
-
-    secureSetJSON('connected_apps', newApps).catch(e => {
-      walletLogger.error('Failed to save connected apps', e)
-    })
 
     setConnectedApps(newApps)
     walletLogger.info('Disconnected app', { origin: normalized })
+
+    // Persist — revert on failure
+    secureSetJSON('connected_apps', newApps).catch(e => {
+      walletLogger.error('Failed to save connected apps — reverting', e)
+      setConnectedApps(previousApps)
+    })
   }, [connectedApps])
 
   // Check if an app is connected

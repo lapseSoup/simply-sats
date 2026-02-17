@@ -52,9 +52,18 @@ export async function broadcastTransaction(txOrHex: Transaction | string): Promi
 /**
  * Validate a send request — shared by sendBSV and sendBSVMultiKey
  */
+/** Maximum satoshis (21M BSV) — prevents accidental astronomical sends */
+const MAX_SATOSHIS = 21_000_000_00_000_000
+
 function validateSendRequest(toAddress: string, satoshis: number): void {
   if (!Number.isFinite(satoshis) || satoshis <= 0) {
     throw new InvalidAmountError(satoshis, 'Invalid amount')
+  }
+  if (!Number.isInteger(satoshis)) {
+    throw new InvalidAmountError(satoshis, 'Amount must be a whole number of satoshis')
+  }
+  if (satoshis > MAX_SATOSHIS) {
+    throw new InvalidAmountError(satoshis, 'Amount exceeds maximum BSV supply')
   }
   if (!isValidBSVAddress(toAddress)) {
     throw new InvalidAddressError(toAddress)

@@ -94,8 +94,11 @@ export function varintSize(n: number): number {
  * ```
  */
 export function feeFromBytes(bytes: number, feeRate: number): number {
-  if (!Number.isFinite(bytes) || bytes < 0 || !Number.isFinite(feeRate) || feeRate < 0) {
-    return 1 // Safe minimum fee
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    throw new Error(`feeFromBytes: invalid bytes (${bytes})`)
+  }
+  if (!Number.isFinite(feeRate) || feeRate < 0) {
+    throw new Error(`feeFromBytes: invalid feeRate (${feeRate})`)
   }
   return Math.max(1, Math.ceil(bytes * feeRate))
 }
@@ -141,6 +144,7 @@ export function calculateTxFee(
  * @param numInputs - Number of transaction inputs
  * @param feeRate - Fee rate in satoshis per byte
  * @param timelockScriptSize - Size of the timelock script (default: 1090 bytes)
+ * @param extraBytes - Additional bytes (e.g., for OP_RETURN outputs)
  * @returns Fee in satoshis
  *
  * @example
@@ -152,14 +156,15 @@ export function calculateTxFee(
 export function calculateLockFee(
   numInputs: number,
   feeRate: number,
-  timelockScriptSize: number = 1090
+  timelockScriptSize: number = 1090,
+  extraBytes: number = 0
 ): number {
   // Lock output: value (8) + varint for script length + script
   const lockOutputSize = 8 + varintSize(timelockScriptSize) + timelockScriptSize
   // Change output: standard P2PKH
   const changeOutputSize = P2PKH_OUTPUT_SIZE
 
-  const txSize = TX_OVERHEAD + (numInputs * P2PKH_INPUT_SIZE) + lockOutputSize + changeOutputSize
+  const txSize = TX_OVERHEAD + (numInputs * P2PKH_INPUT_SIZE) + lockOutputSize + changeOutputSize + extraBytes
   return feeFromBytes(txSize, feeRate)
 }
 

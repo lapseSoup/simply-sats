@@ -12,7 +12,8 @@ import {
   recordFailedUnlockAttempt,
   recordSuccessfulUnlock,
   getRemainingAttempts,
-  formatLockoutTime
+  formatLockoutTime,
+  _resetFallbackState
 } from './rateLimiter'
 
 // Mock Tauri invoke
@@ -26,6 +27,7 @@ const mockInvoke = vi.mocked(invoke)
 describe('Rate Limiter', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    _resetFallbackState()
   })
 
   describe('checkUnlockRateLimit', () => {
@@ -48,13 +50,14 @@ describe('Rate Limiter', () => {
       expect(result.remainingMs).toBe(5000)
     })
 
-    it('fails closed on backend error', async () => {
+    it('uses JS fallback on backend error (not locked on first call)', async () => {
       mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'))
 
       const result = await checkUnlockRateLimit()
 
-      expect(result.isLimited).toBe(true)
-      expect(result.remainingMs).toBe(30000)
+      // Fallback starts with 0 attempts — not limited yet
+      expect(result.isLimited).toBe(false)
+      expect(result.remainingMs).toBe(0)
     })
   })
 
@@ -88,14 +91,15 @@ describe('Rate Limiter', () => {
       expect(result.attemptsRemaining).toBe(3)
     })
 
-    it('fails closed on backend error', async () => {
+    it('uses JS fallback on backend error (first failure not locked)', async () => {
       mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'))
 
       const result = await recordFailedUnlockAttempt()
 
-      expect(result.isLocked).toBe(true)
-      expect(result.lockoutMs).toBe(60000)
-      expect(result.attemptsRemaining).toBe(0)
+      // Fallback: first failure = 1 attempt, need 5 to lock
+      expect(result.isLocked).toBe(false)
+      expect(result.lockoutMs).toBe(0)
+      expect(result.attemptsRemaining).toBe(4)
     })
   })
 

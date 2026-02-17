@@ -9,7 +9,7 @@
  * accounts" errors.
  */
 
-import { useCallback, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useRef, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
 import type { WalletKeys, LockedUTXO, Ordinal } from '../services/wallet'
 import type { Account } from '../services/accounts'
 import type { TxHistoryItem } from '../contexts/SyncContext'
@@ -111,7 +111,15 @@ export function useAccountSwitching({
   accounts
 }: UseAccountSwitchingOptions): UseAccountSwitchingReturn {
 
+  // Mutex to prevent concurrent account switches
+  const switchingRef = useRef(false)
+
   const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
+    if (switchingRef.current) {
+      walletLogger.warn('Account switch already in progress — ignoring concurrent request', { accountId })
+      return false
+    }
+    switchingRef.current = true
     _lastSwitchDiag = `START id=${accountId} accts=${accounts.length}`
     try {
       // Cancel any in-flight sync for the previous account before switching
@@ -247,6 +255,8 @@ export function useAccountSwitching({
       _lastSwitchDiag = `EXCEPTION: ${String(e).substring(0, 100)}`
       walletLogger.error('Error switching account', e)
       return false
+    } finally {
+      switchingRef.current = false
     }
   }, [accounts, accountsSwitchAccount, refreshAccounts, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
 
