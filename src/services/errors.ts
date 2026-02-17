@@ -32,7 +32,8 @@ export const ErrorCodes = {
   LOCK_NOT_SPENDABLE: -32014,
   UTXO_NOT_FOUND: -32015,
   SIGNATURE_ERROR: -32016,
-  TIMEOUT_ERROR: -32017
+  TIMEOUT_ERROR: -32017,
+  BROADCAST_SUCCEEDED_DB_FAILED: -32018
 } as const
 
 export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes]

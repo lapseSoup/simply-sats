@@ -169,7 +169,7 @@ async function recordTransactionResult(
     walletLogger.error('CRITICAL: Failed to confirm transaction locally', error, { txid })
     throw new AppError(
       `Transaction broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
-      ErrorCodes.DATABASE_ERROR,
+      ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
       { txid, originalError: error instanceof Error ? error.message : String(error) }
     )
   }
@@ -271,7 +271,9 @@ export async function sendBSVMultiKey(
 ): Promise<string> {
   validateSendRequest(toAddress, satoshis)
 
-  // Acquire sync lock to prevent concurrent sync from modifying UTXOs during send
+  // Acquire per-account sync lock to prevent concurrent sync from modifying UTXO state.
+  // This prevents the race condition where performSync() could revert pending-spend flags
+  // set by executeBroadcast() before the broadcast completes (BUG-4).
   const releaseLock = await acquireSyncLock(accountId ?? 1)
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
@@ -336,7 +338,7 @@ export async function consolidateUtxos(
     walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
     throw new AppError(
       `Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
-      ErrorCodes.DATABASE_ERROR,
+      ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
       { txid, originalError: error instanceof Error ? error.message : String(error) }
     )
   }

@@ -137,8 +137,9 @@ export function SendModal({ onClose }: SendModalProps) {
       onClose()
     } else {
       const errorMsg = result.error || 'Send failed'
-      // Broadcast succeeded but local DB write failed — tx is on-chain, close and warn via toast
-      if (errorMsg.includes('broadcast succeeded')) {
+      // Broadcast succeeded but local DB write failed — tx is on-chain, close and warn via toast.
+      // Detect via BROADCAST_SUCCEEDED_DB_FAILED error code or legacy "broadcast succeeded" substring.
+      if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
         showToast('Sent! Balance may take a moment to update.', 'warning')
         onClose()
       } else {

@@ -76,11 +76,20 @@ export function ActivityTab() {
   const { performSync, fetchData } = useWalletActions()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
 
-  // Sync on mount so pending transactions get their confirmed status updated
+  // Sync when mounted or when account changes so pending txs get updated status
   useEffect(() => {
-    performSync().then(() => fetchData()).catch(() => { /* best-effort */ })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    let cancelled = false
+    const run = async () => {
+      try {
+        await performSync()
+        if (!cancelled) await fetchData()
+      } catch {
+        // best-effort
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [activeAccountId, performSync, fetchData])
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
 
   // Fetch lock/unlock labels via hook (refreshes when txHistory or account changes)

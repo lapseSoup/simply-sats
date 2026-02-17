@@ -111,17 +111,22 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
 
   const handleSaveContact = async () => {
     if (newContactLabel.trim()) {
-      await addContact({
-        pubkey: senderPubKeyInput,
-        label: newContactLabel.trim(),
-        createdAt: Date.now()
-      })
-      const updated = await getContacts()
-      setLocalContacts(updated)
-      await refreshContacts()
-      setShowAddContact(false)
-      setNewContactLabel('')
-      showToast('Contact saved!')
+      try {
+        await addContact({
+          pubkey: senderPubKeyInput,
+          label: newContactLabel.trim(),
+          createdAt: Date.now()
+        })
+        const updated = await getContacts()
+        setLocalContacts(updated)
+        await refreshContacts()
+        setShowAddContact(false)
+        setNewContactLabel('')
+        showToast('Contact saved!')
+      } catch (e) {
+        uiLogger.error('Failed to save contact', e)
+        showToast('Failed to save contact', 'error')
+      }
     }
   }
 

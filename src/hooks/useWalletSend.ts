@@ -21,6 +21,7 @@ import {
   getSpendableUtxosFromDatabase
 } from '../services/sync'
 import { audit } from '../services/auditLog'
+import { walletLogger } from '../services/logger'
 import { ok, err, type Result, type WalletResult } from '../domain/types'
 
 interface UseWalletSendOptions {
@@ -95,8 +96,11 @@ export function useWalletSend({
                   address: derived.address
                 })
               }
-            } catch (_e) {
-              // Skip if can't get UTXOs for this address
+            } catch (e) {
+              walletLogger.warn('Failed to fetch derived address UTXOs, skipping', {
+                address: derived.address,
+                error: e instanceof Error ? e.message : String(e)
+              })
             }
           }
         }

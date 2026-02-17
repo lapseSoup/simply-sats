@@ -29,8 +29,14 @@ const UTXOSelectRow = memo(function UTXOSelectRow({
       onClick={() => onToggle(utxo)}
       role="checkbox"
       aria-checked={isSelected}
+      aria-label={`${utxo.satoshis.toLocaleString()} sats from ${utxo.txid.slice(0, 8)}...${utxo.vout}`}
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onToggle(utxo)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onToggle(utxo)
+        }
+      }}
     >
       <div className="coin-control-checkbox">
         <input
