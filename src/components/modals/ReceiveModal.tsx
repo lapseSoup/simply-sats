@@ -13,6 +13,7 @@ import {
 } from '../../services/database'
 import { deriveSenderAddress, deriveChildPrivateKey } from '../../services/keyDerivation'
 import { uiLogger } from '../../services/logger'
+import { BRC100 } from '../../config'
 
 interface ReceiveModalProps {
   onClose: () => void
@@ -42,7 +43,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       const identityWif = await getWifForOperation('identity', 'deriveReceiveAddress', wallet)
       const receiverPriv = PrivateKey.fromWif(identityWif)
       const senderPub = PublicKey.fromString(senderPubKey)
-      const invoiceNumber = `2-3241645161d8-simply-sats ${invoiceIndex}`
+      const invoiceNumber = `${BRC100.INVOICE_PREFIX} ${invoiceIndex}`
       return deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
     } catch (e) {
       uiLogger.error('Failed to derive address:', e)
@@ -61,7 +62,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       const identityWif = await getWifForOperation('identity', 'saveDerivedAddress', wallet)
       const receiverPriv = PrivateKey.fromWif(identityWif)
       const senderPub = PublicKey.fromString(senderPubKey)
-      const invoiceNumber = `2-3241645161d8-simply-sats ${invoiceIndex}`
+      const invoiceNumber = `${BRC100.INVOICE_PREFIX} ${invoiceIndex}`
       const childPrivKey = deriveChildPrivateKey(receiverPriv, senderPub, invoiceNumber)
 
       await addDerivedAddress({

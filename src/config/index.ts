@@ -191,6 +191,15 @@ export const API = {
 } as const
 
 // ============================================
+// BRC-100 Configuration
+// ============================================
+
+export const BRC100 = {
+  /** Invoice prefix for BRC-42/43 derived addresses (protocol-level identifier) */
+  INVOICE_PREFIX: '2-3241645161d8-simply-sats',
+} as const
+
+// ============================================
 // Feature Flags
 // ============================================
 
