@@ -24,7 +24,7 @@ export function SettingsBackup() {
   const [pendingImportBackup, setPendingImportBackup] = useState<DatabaseBackup | null>(null)
 
   const handleExportEssentialBackup = useCallback(async () => {
-    if (!wallet || !sessionPassword) {
+    if (!wallet || sessionPassword === null) {
       showToast('Session password not available \u2014 try locking and unlocking first', 'warning')
       return
     }
@@ -73,7 +73,7 @@ export function SettingsBackup() {
   }, [wallet, sessionPassword, showToast])
 
   const handleExportFullBackup = useCallback(async () => {
-    if (!wallet || !sessionPassword) {
+    if (!wallet || sessionPassword === null) {
       showToast('Session password not available \u2014 try locking and unlocking first', 'warning')
       return
     }
@@ -134,7 +134,7 @@ export function SettingsBackup() {
 
       let backup
       if (raw.format === 'simply-sats-backup-encrypted' && raw.encrypted) {
-        if (!sessionPassword) {
+        if (sessionPassword === null) {
           showToast('Session password not available \u2014 try locking and unlocking first', 'warning')
           return
         }

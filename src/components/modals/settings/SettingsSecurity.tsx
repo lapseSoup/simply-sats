@@ -50,7 +50,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
   }, [])
 
   const executeExportKeys = useCallback(async () => {
-    if (!wallet || !sessionPassword) {
+    if (!wallet || sessionPassword === null) {
       showToast('Session password not available \u2014 try locking and unlocking first', 'warning')
       setShowKeysWarning(false)
       return
