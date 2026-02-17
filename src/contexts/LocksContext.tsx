@@ -68,6 +68,12 @@ export function LocksProvider({ children }: LocksProviderProps) {
   const locksRef = useRef(locks)
   useEffect(() => { locksRef.current = locks }, [locks])
   const [knownUnlockedLocks, setKnownUnlockedLocks] = useState<Set<string>>(new Set())
+  const knownUnlockedLocksRef = useRef(knownUnlockedLocks)
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    knownUnlockedLocksRef.current = knownUnlockedLocks
+  }, [knownUnlockedLocks])
 
   // Add a lock key to known unlocked set
   const addKnownUnlockedLock = useCallback((key: string) => {
@@ -85,14 +91,14 @@ export function LocksProvider({ children }: LocksProviderProps) {
       const detectedLocks = await detectLockedUtxos(
         wallet.walletAddress,
         wallet.walletPubKey,
-        knownUnlockedLocks
+        knownUnlockedLocksRef.current
       )
       return detectedLocks
     } catch (e) {
       walletLogger.error('Failed to detect locks', e)
       return []
     }
-  }, [knownUnlockedLocks])
+  }, [])
 
   // Lock BSV for a number of blocks
   const handleLock = useCallback(async (
