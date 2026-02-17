@@ -53,7 +53,7 @@ export interface WalletActionsContextType {
   handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<WalletResult>
 
   // Account discovery (deferred after restore sync)
-  consumePendingDiscovery: () => { mnemonic: string; password: string; excludeAccountId?: number } | null
+  consumePendingDiscovery: () => { mnemonic: string; password: string | null; excludeAccountId?: number } | null
 }
 
 export const WalletActionsContext = createContext<WalletActionsContextType | null>(null)
