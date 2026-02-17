@@ -9,10 +9,13 @@ import { getDatabase } from './database'
 import { withTransaction } from './database/connection'
 import { encrypt, decrypt, type EncryptedData } from './crypto'
 import type { WalletKeys } from './wallet'
+import { isUnprotectedData } from './wallet/types'
+import { saveWallet, loadWallet } from './wallet/storage'
 import type { AccountRow, AccountSettingRow, IdCheckRow } from './database-types'
 import { validatePassword, DEFAULT_PASSWORD_REQUIREMENTS, LEGACY_PASSWORD_REQUIREMENTS } from './password-validation'
 import { accountLogger } from './logger'
 import { SECURITY } from '../config'
+import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 
 // Account type
 export interface Account {
@@ -63,26 +66,23 @@ export async function ensureAccountsTables(): Promise<void> {
 export async function createAccount(
   name: string,
   keys: WalletKeys,
-  password: string,
+  password: string | null,
   useLegacyRequirements = false,
   derivationIndex?: number
 ): Promise<number> {
-  // Password is required - no unencrypted storage allowed
-  if (!password) {
-    throw new Error('Password is required for wallet encryption')
-  }
-
-  // Validate password against requirements
-  const requirements = useLegacyRequirements ? LEGACY_PASSWORD_REQUIREMENTS : DEFAULT_PASSWORD_REQUIREMENTS
-  const validation = validatePassword(password, requirements)
-  if (!validation.isValid) {
-    throw new Error(validation.errors.join('. '))
+  // Password is optional — when null, keys are stored unprotected
+  if (password !== null) {
+    // Validate password against requirements
+    const requirements = useLegacyRequirements ? LEGACY_PASSWORD_REQUIREMENTS : DEFAULT_PASSWORD_REQUIREMENTS
+    const validation = validatePassword(password, requirements)
+    if (!validation.isValid) {
+      throw new Error(validation.errors.join('. '))
+    }
   }
 
   const database = getDatabase()
 
-  // Encrypt the wallet keys
-  const keysJson = JSON.stringify({
+  const keysObj = {
     mnemonic: keys.mnemonic,
     walletWif: keys.walletWif,
     walletAddress: keys.walletAddress,
@@ -93,11 +93,16 @@ export async function createAccount(
     identityWif: keys.identityWif,
     identityAddress: keys.identityAddress,
     identityPubKey: keys.identityPubKey
-  })
+  }
 
-  // Always encrypt - password is required (validated above)
-  const encryptedData = await encrypt(keysJson, password)
-  const encryptedKeysStr = JSON.stringify(encryptedData)
+  let encryptedKeysStr: string
+  if (password !== null) {
+    const encryptedData = await encrypt(JSON.stringify(keysObj), password)
+    encryptedKeysStr = JSON.stringify(encryptedData)
+  } else {
+    // Unprotected mode — store plaintext in structured format
+    encryptedKeysStr = JSON.stringify({ version: 0, mode: 'unprotected', keys: keysObj })
+  }
 
   // Deactivate all existing accounts
   await database.execute('UPDATE accounts SET is_active = 0')
@@ -265,18 +270,23 @@ export async function switchAccount(accountId: number): Promise<boolean> {
  */
 export async function getAccountKeys(
   account: Account,
-  password: string
+  password: string | null
 ): Promise<WalletKeys | null> {
-  // Password is required for all encrypted accounts
-  // Empty password is a security vulnerability - reject immediately
-  if (!password || password.trim().length === 0) {
-    accountLogger.error('Password is required to decrypt account keys')
-    return null
-  }
-
   try {
-    // All accounts should be encrypted - try to decrypt
-    const encryptedData = JSON.parse(account.encryptedKeys) as EncryptedData
+    const parsed = JSON.parse(account.encryptedKeys)
+
+    // Check for unprotected format first
+    if (isUnprotectedData(parsed)) {
+      return parsed.keys
+    }
+
+    // Encrypted format — password required
+    if (!password || password.trim().length === 0) {
+      accountLogger.error('Password is required to decrypt account keys')
+      return null
+    }
+
+    const encryptedData = parsed as EncryptedData
     const keysJson = await decrypt(encryptedData, password)
 
     // Lazy PBKDF2 migration: re-encrypt with current iterations if outdated
@@ -439,7 +449,7 @@ export async function updateAccountSetting<K extends keyof AccountSettings>(
  */
 export async function migrateToMultiAccount(
   existingKeys: WalletKeys,
-  password: string
+  password: string | null
 ): Promise<number | null> {
   try {
     // Check if already migrated
@@ -484,4 +494,66 @@ export async function exportAllAccounts(): Promise<Account[]> {
 export async function isAccountSystemInitialized(): Promise<boolean> {
   const accounts = await getAllAccounts()
   return accounts.length > 0
+}
+
+/**
+ * Retroactively encrypt all unprotected accounts with a password.
+ * Called when user sets a password in Settings after initially skipping it.
+ * Atomic — if any account fails, throws and makes no changes.
+ */
+export async function encryptAllAccounts(password: string): Promise<void> {
+  const validation = validatePassword(password, DEFAULT_PASSWORD_REQUIREMENTS)
+  if (!validation.isValid) {
+    throw new Error(validation.errors.join('. '))
+  }
+
+  const accounts = await getAllAccounts()
+  const updates: { accountId: number; encryptedKeysStr: string }[] = []
+
+  // Phase 1: Encrypt all unprotected accounts (no DB writes yet)
+  for (const account of accounts) {
+    const parsed = JSON.parse(account.encryptedKeys)
+    if (isUnprotectedData(parsed)) {
+      const keysJson = JSON.stringify(parsed.keys)
+      const encryptedData = await encrypt(keysJson, password)
+      updates.push({
+        accountId: account.id!,
+        encryptedKeysStr: JSON.stringify(encryptedData)
+      })
+    }
+  }
+
+  if (updates.length === 0) {
+    accountLogger.info('No unprotected accounts to encrypt')
+    return
+  }
+
+  // Phase 2: Write all updates atomically
+  const database = getDatabase()
+  await withTransaction(async () => {
+    for (const { accountId, encryptedKeysStr } of updates) {
+      await database.execute(
+        'UPDATE accounts SET encrypted_keys = $1 WHERE id = $2',
+        [encryptedKeysStr, accountId]
+      )
+    }
+  })
+
+  // Phase 3: Re-encrypt the secure storage blob (wallet's primary key store)
+  try {
+    const currentKeys = await loadWallet(null)
+    if (currentKeys) {
+      await saveWallet(currentKeys, password)
+      // saveWallet already sets HAS_PASSWORD = 'true'
+    } else {
+      accountLogger.warn('Could not load wallet keys for secure storage re-encryption')
+      localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, 'true')
+    }
+  } catch (storageError) {
+    // DB rows are already encrypted — log warning but don't fail
+    accountLogger.warn('Failed to re-encrypt secure storage blob', { error: String(storageError) })
+    localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, 'true')
+  }
+
+  accountLogger.info('Encrypted all accounts', { count: updates.length })
 }

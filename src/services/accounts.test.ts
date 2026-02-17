@@ -18,6 +18,7 @@ import {
   updateAccountSetting,
   getNextAccountNumber,
   isAccountSystemInitialized,
+  encryptAllAccounts,
   DEFAULT_ACCOUNT_SETTINGS
 } from './accounts'
 import type { WalletKeys } from './wallet'
@@ -105,6 +106,16 @@ vi.mock('./database', () => {
           })
           return { rowsAffected: 1 }
         }
+        if (query.includes('UPDATE accounts SET encrypted_keys = $1') && params) {
+          mockDb.db.accounts = mockDb.db.accounts.map((a: unknown) => {
+            const account = a as { id: number; encrypted_keys: string }
+            if (account.id === params[1]) {
+              return { ...account, encrypted_keys: params[0] }
+            }
+            return account
+          })
+          return { rowsAffected: 1 }
+        }
         if (query.includes('DELETE FROM accounts') && params) {
           mockDb.db.accounts = mockDb.db.accounts.filter((a: unknown) => (a as { id: number }).id !== params[0])
           return { rowsAffected: 1 }
@@ -146,6 +157,12 @@ vi.mock('./crypto', () => ({
   })
 }))
 
+// Mock wallet/storage module (used by encryptAllAccounts)
+vi.mock('./wallet/storage', () => ({
+  saveWallet: vi.fn(async () => {}),
+  loadWallet: vi.fn(async () => null)
+}))
+
 // Mock the database connection module (withTransaction)
 vi.mock('./database/connection', () => ({
   withTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
@@ -184,19 +201,23 @@ describe('Account Management Service', () => {
   describe('createAccount', () => {
     it('should reject empty passwords', async () => {
       const keys = createMockWalletKeys()
+      // Empty string fails validatePassword (too short + missing complexity)
       await expect(createAccount('Test Account', keys, '')).rejects.toThrow(
-        'Password is required for wallet encryption'
+        'Password must be at least 16 characters'
       )
     })
 
-    it('should reject null/undefined passwords', async () => {
+    it('should allow null password (creates unprotected account)', async () => {
       const keys = createMockWalletKeys()
-      await expect(createAccount('Test Account', keys, null as unknown as string)).rejects.toThrow(
-        'Password is required for wallet encryption'
-      )
-      await expect(createAccount('Test Account', keys, undefined as unknown as string)).rejects.toThrow(
-        'Password is required for wallet encryption'
-      )
+      const accountId = await createAccount('Unprotected', keys, null)
+      expect(accountId).toBeGreaterThan(0)
+
+      // Verify the stored format is unprotected
+      const account = await getAccountById(accountId)
+      const parsed = JSON.parse(account!.encryptedKeys)
+      expect(parsed.version).toBe(0)
+      expect(parsed.mode).toBe('unprotected')
+      expect(parsed.keys.mnemonic).toBe(keys.mnemonic)
     })
 
     it('should require password to meet minimum requirements', async () => {
@@ -366,12 +387,26 @@ describe('Account Management Service', () => {
       expect(decryptedKeys!.identityAddress).toBe(keys.identityAddress)
     })
 
-    it('should reject attempts to get keys without password (password always required)', async () => {
+    it('should return keys directly for unprotected accounts (no password needed)', async () => {
       const keys = createMockWalletKeys()
-      // Creating account without password should now fail
-      await expect(createAccount('Unencrypted', keys, '')).rejects.toThrow(
-        'Password is required for wallet encryption'
-      )
+      const accountId = await createAccount('Unprotected', keys, null)
+
+      const account = await getAccountById(accountId)
+      const decryptedKeys = await getAccountKeys(account!, null)
+
+      expect(decryptedKeys).not.toBeNull()
+      expect(decryptedKeys!.mnemonic).toBe(keys.mnemonic)
+      expect(decryptedKeys!.walletAddress).toBe(keys.walletAddress)
+    })
+
+    it('should require password for encrypted accounts', async () => {
+      const keys = createMockWalletKeys()
+      const accountId = await createAccount('Encrypted', keys, 'password12345', true)
+
+      const account = await getAccountById(accountId)
+      // Attempting to get keys without password should return null
+      const result = await getAccountKeys(account!, null)
+      expect(result).toBeNull()
     })
   })
 
@@ -501,6 +536,120 @@ describe('Account Management Service', () => {
       expect(DEFAULT_ACCOUNT_SETTINGS.feeRateKB).toBe(100)
       expect(DEFAULT_ACCOUNT_SETTINGS.autoLockMinutes).toBe(10)
       expect(DEFAULT_ACCOUNT_SETTINGS.trustedOrigins).toEqual([])
+    })
+  })
+
+  describe('encryptAllAccounts', () => {
+    it('should encrypt all unprotected accounts', async () => {
+      const keys1 = createMockWalletKeys('1')
+      const keys2 = createMockWalletKeys('2')
+
+      // Create two unprotected accounts
+      await createAccount('Account 1', keys1, null)
+      await createAccount('Account 2', keys2, null)
+
+      // Verify they are unprotected
+      let accounts = await getAllAccounts()
+      for (const account of accounts) {
+        const parsed = JSON.parse(account.encryptedKeys)
+        expect(parsed.version).toBe(0)
+        expect(parsed.mode).toBe('unprotected')
+      }
+
+      // Encrypt all accounts with a valid password (legacy-length works for encryptAllAccounts
+      // since it uses DEFAULT_PASSWORD_REQUIREMENTS which requires 16+ chars)
+      await encryptAllAccounts('StrongPassword1!')
+
+      // Verify they are now encrypted
+      accounts = await getAllAccounts()
+      for (const account of accounts) {
+        const parsed = JSON.parse(account.encryptedKeys)
+        expect(parsed.version).toBe(1)
+        expect(parsed.ciphertext).toBeDefined()
+      }
+    })
+
+    it('should skip already-encrypted accounts', async () => {
+      const keys1 = createMockWalletKeys('1')
+      const keys2 = createMockWalletKeys('2')
+
+      // Create one encrypted and one unprotected account
+      await createAccount('Encrypted', keys1, 'password12345', true)
+      await createAccount('Unprotected', keys2, null)
+
+      const accountsBefore = await getAllAccounts()
+      const encryptedBefore = accountsBefore.find(a => a.name === 'Encrypted')!
+      const originalEncryptedKeys = encryptedBefore.encryptedKeys
+
+      await encryptAllAccounts('StrongPassword1!')
+
+      const accountsAfter = await getAllAccounts()
+      const encryptedAfter = accountsAfter.find(a => a.name === 'Encrypted')!
+      const unprotectedAfter = accountsAfter.find(a => a.name === 'Unprotected')!
+
+      // Already-encrypted account should be unchanged
+      expect(encryptedAfter.encryptedKeys).toBe(originalEncryptedKeys)
+
+      // Previously-unprotected account should now be encrypted
+      const parsed = JSON.parse(unprotectedAfter.encryptedKeys)
+      expect(parsed.version).toBe(1)
+      expect(parsed.ciphertext).toBeDefined()
+    })
+
+    it('should validate password strength', async () => {
+      const keys = createMockWalletKeys()
+      await createAccount('Account', keys, null)
+
+      // Too short
+      await expect(encryptAllAccounts('short')).rejects.toThrow(
+        'Password must be at least 16 characters'
+      )
+
+      // Empty
+      await expect(encryptAllAccounts('')).rejects.toThrow(
+        'Password must be at least 16 characters'
+      )
+    })
+
+    it('should re-encrypt secure storage blob when wallet keys are loadable', async () => {
+      const { loadWallet, saveWallet } = await import('./wallet/storage')
+      const mockLoadWallet = vi.mocked(loadWallet)
+      const mockSaveWallet = vi.mocked(saveWallet)
+
+      const keys = createMockWalletKeys()
+      await createAccount('Unprotected', keys, null)
+
+      // Configure loadWallet to return keys (simulating unprotected wallet)
+      mockLoadWallet.mockResolvedValueOnce(keys)
+
+      await encryptAllAccounts('StrongPassword1!')
+
+      // Phase 3: saveWallet should be called to re-encrypt secure storage
+      expect(mockSaveWallet).toHaveBeenCalledWith(keys, 'StrongPassword1!')
+    })
+
+    it('should set HAS_PASSWORD flag even when loadWallet returns null', async () => {
+      const keys = createMockWalletKeys()
+      await createAccount('Unprotected', keys, null)
+
+      // loadWallet returns null by default in mock
+      await encryptAllAccounts('StrongPassword1!')
+
+      // HAS_PASSWORD flag should still be set
+      expect(localStorage.getItem('simply_sats_has_password')).toBe('true')
+    })
+
+    it('should do nothing when no unprotected accounts exist', async () => {
+      const keys = createMockWalletKeys()
+      await createAccount('Encrypted', keys, 'password12345', true)
+
+      // Should not throw — just logs and returns
+      await encryptAllAccounts('StrongPassword1!')
+
+      // Account keys should be unchanged
+      const accounts = await getAllAccounts()
+      const parsed = JSON.parse(accounts[0]!.encryptedKeys)
+      expect(parsed.version).toBe(1)
     })
   })
 })
