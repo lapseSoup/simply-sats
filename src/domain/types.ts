@@ -189,10 +189,13 @@ export interface LockedUTXO {
   txid: string
   vout: number
   satoshis: number
+  lockingScript: string
   unlockBlock: number
-  blocksRemaining: number
-  spendable: boolean
-  lockingScript?: string
+  publicKeyHex: string
+  createdAt: number
+  lockBlock?: number
+  /** Block height where tx was confirmed (from API, not stored in DB) */
+  confirmationBlock?: number
 }
 
 export interface LockedOutput {

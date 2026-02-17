@@ -21,11 +21,11 @@
     "fs:default",
     {
       "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "$APPDATA/**" }, { "path": "$DOWNLOAD/**" }, { "path": "$DESKTOP/**" }]
+      "allow": [{ "path": "$APPDATA/**" }]
     },
     {
       "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "$APPDATA/**" }, { "path": "$DOWNLOAD/**" }, { "path": "$DESKTOP/**" }]
+      "allow": [{ "path": "$APPDATA/**" }]
     },
     "core:webview:allow-create-webview-window"
   ]

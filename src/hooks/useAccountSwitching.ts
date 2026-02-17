@@ -152,9 +152,9 @@ export function useAccountSwitching({
       } else {
         // FALLBACK: If Rust has no mnemonic (shouldn't happen while wallet is unlocked),
         // try the password-based approach via the module-level session password store.
-        // Clear old account's session password before reading current one to prevent credential leakage.
-        clearSessionPassword()
+        // Read current password before clearing to prevent destroying the credential we need.
         const currentPassword = getSessionPassword()
+        clearSessionPassword()
         _lastSwitchDiag += ` | FALLBACK hasPwd=${!!currentPassword}`
         walletLogger.debug('Rust derivation unavailable, trying password fallback', {
           accountId,
