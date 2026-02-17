@@ -7,11 +7,10 @@ import { SECURITY } from '../../config'
 import { Modal } from '../shared/Modal'
 import { PasswordInput } from '../shared/PasswordInput'
 import { MnemonicInput } from '../forms/MnemonicInput'
-import { restoreWallet, importFromJSON } from '../../services/wallet'
+import { restoreWallet, importFromJSON, saveWallet, saveWalletUnprotected } from '../../services/wallet'
 import { importDatabase, type DatabaseBackup } from '../../services/database'
 import { decrypt, type EncryptedData } from '../../services/crypto'
 import { setWalletKeys } from '../../services/brc100'
-import { saveWallet } from '../../services/wallet'
 import { migrateToMultiAccount, getActiveAccount } from '../../services/accounts'
 import { discoverAccounts } from '../../services/accountDiscovery'
 import { setSessionPassword as setModuleSessionPassword } from '../../services/sessionPasswordStore'
@@ -32,8 +31,11 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [skipPassword, setSkipPassword] = useState(false)
+  const [showSkipWarning, setShowSkipWarning] = useState(false)
 
-  const validatePassword = (): boolean => {
+  const validatePasswordFields = (): boolean => {
+    if (skipPassword) return true
     if (password.length < SECURITY.MIN_PASSWORD_LENGTH) {
       setPasswordError(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
       return false
@@ -47,14 +49,15 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   }
 
   const handleRestoreFromMnemonic = async () => {
-    if (!validatePassword()) return
+    if (!validatePasswordFields()) return
     try {
       const words = restoreMnemonic.trim().split(/\s+/)
       if (words.length !== 12) {
         showToast('Please enter exactly 12 words', 'warning')
         return
       }
-      const success = await handleRestoreWallet(restoreMnemonic.trim(), password)
+      const pwd = skipPassword ? null : password
+      const success = await handleRestoreWallet(restoreMnemonic.trim(), pwd)
       if (success) {
         onSuccess()
         // Account discovery is now deferred until after initial sync completes
@@ -68,20 +71,25 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   }
 
   const handleRestoreFromJSON = async () => {
-    if (!validatePassword()) return
+    if (!validatePasswordFields()) return
     try {
       let jsonToImport = restoreJSON
+      const pwd = skipPassword ? null : password
       // Check if the pasted JSON is an encrypted key export
       try {
         const parsed = JSON.parse(restoreJSON)
         if (parsed.format === 'simply-sats-keys-encrypted' && parsed.encrypted) {
-          const decrypted = await decrypt(parsed.encrypted as EncryptedData, password)
+          if (!pwd) {
+            showToast('Encrypted backup requires a password to decrypt', 'error')
+            return
+          }
+          const decrypted = await decrypt(parsed.encrypted as EncryptedData, pwd)
           jsonToImport = decrypted
         }
       } catch {
         // Not valid JSON or decryption failed — let handleImportJSON handle the error
       }
-      const success = await handleImportJSON(jsonToImport, password)
+      const success = await handleImportJSON(jsonToImport, pwd)
       if (success) {
         onSuccess()
       } else {
@@ -93,7 +101,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   }
 
   const handleRestoreFromFullBackup = async () => {
-    if (!validatePassword()) return
+    if (!validatePasswordFields()) return
     try {
       const filePath = await open({
         filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -104,12 +112,18 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
 
       const json = await readTextFile(filePath)
       const raw = JSON.parse(json)
+      const pwd = skipPassword ? null : password
 
       let backup
       if (raw.format === 'simply-sats-backup-encrypted' && raw.encrypted) {
-        // Encrypted backup — decrypt with the password the user entered
+        // Encrypted backup — need a password to decrypt
+        if (!pwd) {
+          showToast('This backup file is encrypted. Please enter a password above to decrypt it.', 'error')
+          setSkipPassword(false)
+          return
+        }
         try {
-          const decrypted = await decrypt(raw.encrypted as EncryptedData, password)
+          const decrypted = await decrypt(raw.encrypted as EncryptedData, pwd)
           backup = JSON.parse(decrypted)
         } catch {
           showToast('Failed to decrypt backup — wrong password?', 'error')
@@ -124,26 +138,36 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         return
       }
 
+      const sessionPwd = pwd ?? ''
+
       // Restore wallet from backup with password
       if (backup.wallet.mnemonic) {
         const keys = await restoreWallet(backup.wallet.mnemonic)
-        await saveWallet(keys, password)
+        if (pwd !== null) {
+          await saveWallet(keys, pwd)
+        } else {
+          await saveWalletUnprotected(keys)
+        }
         // Create account in database for persistence across app restarts
-        await migrateToMultiAccount({ ...keys, mnemonic: backup.wallet.mnemonic }, password)
+        await migrateToMultiAccount({ ...keys, mnemonic: backup.wallet.mnemonic }, pwd)
         // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
         setWallet({ ...keys, mnemonic: '' })
         setWalletKeys(keys)
-        setSessionPassword(password)
-        setModuleSessionPassword(password)
+        setSessionPassword(sessionPwd)
+        setModuleSessionPassword(sessionPwd)
       } else if (backup.wallet.keys) {
         const keys = await importFromJSON(JSON.stringify(backup.wallet.keys))
-        await saveWallet(keys, password)
+        if (pwd !== null) {
+          await saveWallet(keys, pwd)
+        } else {
+          await saveWalletUnprotected(keys)
+        }
         // Create account in database for persistence across app restarts
-        await migrateToMultiAccount(keys, password)
+        await migrateToMultiAccount(keys, pwd)
         setWallet(keys)
         setWalletKeys(keys)
-        setSessionPassword(password)
-        setModuleSessionPassword(password)
+        setSessionPassword(sessionPwd)
+        setModuleSessionPassword(sessionPwd)
       } else {
         showToast('Backup does not contain wallet keys.', 'error')
         return
@@ -163,7 +187,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       // Discover additional accounts if mnemonic is available (non-blocking)
       if (backup.wallet.mnemonic) {
         const activeAfterRestore = await getActiveAccount()
-        discoverAccounts(backup.wallet.mnemonic, password, activeAfterRestore?.id)
+        discoverAccounts(backup.wallet.mnemonic, pwd, activeAfterRestore?.id)
           .then(async (found) => {
             if (found > 0) {
               await refreshAccounts()
@@ -226,33 +250,50 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   Type each word and use arrow keys + Enter to select from suggestions
                 </div>
               </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="restore-password">Create Password</label>
-                <PasswordInput
-                  id="restore-password"
-                  placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
-                  value={password}
-                  onChange={setPassword}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="restore-confirm-password">Confirm Password</label>
-                <PasswordInput
-                  id="restore-confirm-password"
-                  placeholder="Confirm your password"
-                  value={confirmPassword}
-                  onChange={setConfirmPassword}
-                />
-              </div>
-              {passwordError && (
-                <div className="form-error" role="alert">{passwordError}</div>
+              {!skipPassword && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="restore-password">Create Password</label>
+                    <PasswordInput
+                      id="restore-password"
+                      placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
+                      value={password}
+                      onChange={setPassword}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="restore-confirm-password">Confirm Password</label>
+                    <PasswordInput
+                      id="restore-confirm-password"
+                      placeholder="Confirm your password"
+                      value={confirmPassword}
+                      onChange={setConfirmPassword}
+                    />
+                  </div>
+                  {passwordError && (
+                    <div className="form-error" role="alert">{passwordError}</div>
+                  )}
+                </>
               )}
+              <button
+                className="btn btn-ghost btn-small"
+                onClick={() => {
+                  if (skipPassword) {
+                    setSkipPassword(false)
+                  } else {
+                    setShowSkipWarning(true)
+                  }
+                }}
+                type="button"
+              >
+                {skipPassword ? 'Set a password' : 'Skip password'}
+              </button>
               <button
                 className="btn btn-primary"
                 onClick={handleRestoreFromMnemonic}
-                disabled={!restoreMnemonic.trim() || !password || !confirmPassword}
+                disabled={!restoreMnemonic.trim() || (!skipPassword && (!password || !confirmPassword))}
               >
-                Restore Wallet
+                {skipPassword ? 'Restore Without Password' : 'Restore Wallet'}
               </button>
             </div>
           )}
@@ -273,33 +314,50 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   Supports Shaullet, 1Sat Ordinals, and Simply Sats backups
                 </div>
               </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="json-password">Create Password</label>
-                <PasswordInput
-                  id="json-password"
-                  placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
-                  value={password}
-                  onChange={setPassword}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="json-confirm-password">Confirm Password</label>
-                <PasswordInput
-                  id="json-confirm-password"
-                  placeholder="Confirm your password"
-                  value={confirmPassword}
-                  onChange={setConfirmPassword}
-                />
-              </div>
-              {passwordError && (
-                <div className="form-error" role="alert">{passwordError}</div>
+              {!skipPassword && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="json-password">Create Password</label>
+                    <PasswordInput
+                      id="json-password"
+                      placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
+                      value={password}
+                      onChange={setPassword}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="json-confirm-password">Confirm Password</label>
+                    <PasswordInput
+                      id="json-confirm-password"
+                      placeholder="Confirm your password"
+                      value={confirmPassword}
+                      onChange={setConfirmPassword}
+                    />
+                  </div>
+                  {passwordError && (
+                    <div className="form-error" role="alert">{passwordError}</div>
+                  )}
+                </>
               )}
+              <button
+                className="btn btn-ghost btn-small"
+                onClick={() => {
+                  if (skipPassword) {
+                    setSkipPassword(false)
+                  } else {
+                    setShowSkipWarning(true)
+                  }
+                }}
+                type="button"
+              >
+                {skipPassword ? 'Set a password' : 'Skip password'}
+              </button>
               <button
                 className="btn btn-primary"
                 onClick={handleRestoreFromJSON}
-                disabled={!restoreJSON.trim() || !password || !confirmPassword}
+                disabled={!restoreJSON.trim() || (!skipPassword && (!password || !confirmPassword))}
               >
-                Import Wallet
+                {skipPassword ? 'Import Without Password' : 'Import Wallet'}
               </button>
             </div>
           )}
@@ -312,37 +370,79 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                   Restore from a Simply Sats full backup file (.json) including wallet keys, UTXOs, and transaction history.
                 </div>
               </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="fullbackup-password">Create Password</label>
-                <PasswordInput
-                  id="fullbackup-password"
-                  placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
-                  value={password}
-                  onChange={setPassword}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="fullbackup-confirm-password">Confirm Password</label>
-                <PasswordInput
-                  id="fullbackup-confirm-password"
-                  placeholder="Confirm your password"
-                  value={confirmPassword}
-                  onChange={setConfirmPassword}
-                />
-              </div>
-              {passwordError && (
-                <div className="form-error" role="alert">{passwordError}</div>
+              {!skipPassword && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="fullbackup-password">Create Password</label>
+                    <PasswordInput
+                      id="fullbackup-password"
+                      placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
+                      value={password}
+                      onChange={setPassword}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="fullbackup-confirm-password">Confirm Password</label>
+                    <PasswordInput
+                      id="fullbackup-confirm-password"
+                      placeholder="Confirm your password"
+                      value={confirmPassword}
+                      onChange={setConfirmPassword}
+                    />
+                  </div>
+                  {passwordError && (
+                    <div className="form-error" role="alert">{passwordError}</div>
+                  )}
+                </>
               )}
+              <button
+                className="btn btn-ghost btn-small"
+                onClick={() => {
+                  if (skipPassword) {
+                    setSkipPassword(false)
+                  } else {
+                    setShowSkipWarning(true)
+                  }
+                }}
+                type="button"
+              >
+                {skipPassword ? 'Set a password' : 'Skip password'}
+              </button>
               <button
                 className="btn btn-primary"
                 onClick={handleRestoreFromFullBackup}
-                disabled={!password || !confirmPassword}
+                disabled={!skipPassword && (!password || !confirmPassword)}
               >
-                Select Backup File
+                {skipPassword ? 'Restore Without Password' : 'Select Backup File'}
               </button>
             </div>
           )}
         </div>
+      {showSkipWarning && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="skip-pwd-title">
+          <div className="modal-container modal-sm">
+            <h3 className="modal-title" id="skip-pwd-title">Skip Password?</h3>
+            <p className="modal-text">
+              Without a password, anyone with access to this computer can open your wallet and spend your funds.
+              You can set a password later in Settings.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowSkipWarning(false)}>
+                Go Back
+              </button>
+              <button className="btn btn-primary" onClick={() => {
+                setShowSkipWarning(false)
+                setSkipPassword(true)
+                setPassword('')
+                setConfirmPassword('')
+                setPasswordError('')
+              }}>
+                Continue Without Password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </Modal>
   )
 }
