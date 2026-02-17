@@ -49,6 +49,12 @@ interface UIProviderProps {
   children: ReactNode
 }
 
+/**
+ * Provides UI state: display units, toasts, clipboard, theme, and BSV/USD formatters.
+ *
+ * @requires NetworkProvider — must be an ancestor in the React tree.
+ *   UIProvider calls useNetwork() internally for USD price formatting.
+ */
 export function UIProvider({ children }: UIProviderProps) {
   const { usdPrice } = useNetwork()
 

@@ -36,7 +36,8 @@ export async function encryptECIES(
   recipientPubKey: string
 ): Promise<{ ciphertext: string; senderPublicKey: string }> {
   if (isTauri()) {
-    // Use key store — WIF never leaves Rust
+    // Use key store — WIF never leaves Rust.
+    // tauriInvoke throws on failure (no silent fallback to JS path).
     return tauriInvoke<{ ciphertext: string; senderPublicKey: string }>('encrypt_ecies_from_store', {
       plaintext,
       recipientPubKey,
@@ -45,7 +46,7 @@ export async function encryptECIES(
     })
   }
 
-  // JS fallback (browser dev mode)
+  // JS fallback — browser dev mode only (never reached in production Tauri build)
   // Derive shared secret using ECDH
   const senderPrivKey = PrivateKey.fromWif(keys.identityWif)
   const recipientPublicKey = PublicKey.fromString(recipientPubKey)
@@ -80,7 +81,8 @@ export async function decryptECIES(
   senderPubKey: string
 ): Promise<string> {
   if (isTauri()) {
-    // Use key store — WIF never leaves Rust
+    // Use key store — WIF never leaves Rust.
+    // tauriInvoke throws on failure (no silent fallback to JS path).
     return tauriInvoke<string>('decrypt_ecies_from_store', {
       ciphertextBytes: new Uint8Array(ciphertextBytes),
       senderPubKey,
@@ -88,7 +90,7 @@ export async function decryptECIES(
     })
   }
 
-  // JS fallback (browser dev mode)
+  // JS fallback — browser dev mode only (never reached in production Tauri build)
   // Derive shared secret using ECDH
   const recipientPrivKey = PrivateKey.fromWif(keys.identityWif)
   const senderPublicKey = PublicKey.fromString(senderPubKey)

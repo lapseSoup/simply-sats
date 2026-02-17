@@ -167,7 +167,7 @@ export function useAccountSwitching({
         // try the password-based approach via the module-level session password store.
         // Read current password before clearing to prevent destroying the credential we need.
         const currentPassword = getSessionPassword()
-        clearSessionPassword()
+        // Do NOT clear session password before the switch — if switch throws, wallet stays accessible.
         _lastSwitchDiag += ` | FALLBACK hasPwd=${!!currentPassword}`
         walletLogger.debug('Rust derivation unavailable, trying password fallback', {
           accountId,
@@ -178,9 +178,18 @@ export function useAccountSwitching({
           walletLogger.error('Cannot switch account — no mnemonic in Rust and no session password.')
           return false
         }
-        keys = await accountsSwitchAccount(accountId, currentPassword)
-        keysFromRust = false
-        _lastSwitchDiag += keys ? ' | pwd-keys OK' : ' | pwd-keys NULL'
+        try {
+          keys = await accountsSwitchAccount(accountId, currentPassword)
+          keysFromRust = false
+          _lastSwitchDiag += keys ? ' | pwd-keys OK' : ' | pwd-keys NULL'
+          // Only clear session password after successful switch
+          clearSessionPassword()
+        } catch (switchErr) {
+          // Leave session password intact so wallet remains accessible
+          _lastSwitchDiag += ' | pwd-switch THREW'
+          walletLogger.error('Account switch failed, session password preserved', switchErr)
+          throw switchErr
+        }
       }
 
       if (keys) {
