@@ -26,7 +26,10 @@ export {
   calculateMaxSend,
   calculateExactFee,
   feeFromBytes,
-  DEFAULT_FEE_RATE
+  DEFAULT_FEE_RATE,
+  P2PKH_INPUT_SIZE,
+  P2PKH_OUTPUT_SIZE,
+  TX_OVERHEAD
 } from '../domain/transaction/fees'
 
 export {

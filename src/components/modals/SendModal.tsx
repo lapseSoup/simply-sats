@@ -1,16 +1,14 @@
 import { useState, useCallback, useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
-import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { useUI } from '../../contexts/UIContext'
-import { calculateExactFee, calculateTxFee, calculateMaxSend } from '../../adapters/walletAdapter'
-import { P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../domain/transaction/fees'
+import { calculateExactFee, calculateTxFee, calculateMaxSend, isValidBSVAddress, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
+import { isOk } from '../../domain/types'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 import { CoinControlModal } from './CoinControlModal'
 import type { UTXO as DatabaseUTXO } from '../../services/database'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
-import { isOk } from '../../domain/types'
 
 interface SendModalProps {
   onClose: () => void
