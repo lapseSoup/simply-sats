@@ -40,7 +40,7 @@ export function SettingsBackup() {
       const identityWif = await getWifForOperation('identity', operationName, wallet!)
       const walletWif = await getWifForOperation('wallet', operationName, wallet!)
       const ordWif = await getWifForOperation('ordinals', operationName, wallet!)
-      const mnemonic = await invoke<string | null>('get_mnemonic')
+      const mnemonic = await invoke<string | null>('get_mnemonic_once')
 
       const fullBackup = {
         format: 'simply-sats-full',

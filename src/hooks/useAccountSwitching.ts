@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useRef, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
-import type { WalletKeys, LockedUTXO, Ordinal } from '../services/wallet'
+import type { WalletKeys, LockedUTXO, Ordinal, PublicWalletKeys } from '../services/wallet'
 import type { Account } from '../services/accounts'
 import type { TxHistoryItem } from '../contexts/SyncContext'
 import { getActiveAccount, switchAccount as switchAccountDb } from '../services/accounts'
@@ -29,7 +29,6 @@ import {
 import { walletLogger } from '../services/logger'
 import { invoke } from '@tauri-apps/api/core'
 import { getSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
-import { deriveWalletKeysForAccount } from '../domain/wallet'
 
 // Diagnostic: last failure reason (visible to UI for debugging)
 let _lastSwitchDiag = ''
@@ -63,30 +62,43 @@ interface UseAccountSwitchingReturn {
 }
 
 /**
- * Derive keys for an account from the Rust key store's mnemonic.
+ * Map PublicWalletKeys (from Rust) to WalletKeys (for React state).
+ * WIFs are left empty — all signing goes through Rust _from_store commands.
+ */
+function pubKeysToWalletKeys(pubKeys: PublicWalletKeys, accountIndex: number): WalletKeys {
+  return {
+    mnemonic: '',
+    walletType: pubKeys.walletType as 'yours',
+    walletWif: '',
+    walletAddress: pubKeys.walletAddress,
+    walletPubKey: pubKeys.walletPubKey,
+    ordWif: '',
+    ordAddress: pubKeys.ordAddress,
+    ordPubKey: pubKeys.ordPubKey,
+    identityWif: '',
+    identityAddress: pubKeys.identityAddress,
+    identityPubKey: pubKeys.identityPubKey,
+    accountIndex
+  }
+}
+
+/**
+ * Switch account keys entirely in Rust — mnemonic never leaves native memory.
  * Returns null if mnemonic is not available (wallet locked or cleared).
  */
 async function deriveKeysFromRust(account: Account): Promise<WalletKeys | null> {
   try {
-    _lastSwitchDiag = 'Rust: calling get_mnemonic...'
-    const mnemonic = await invoke<string | null>('get_mnemonic')
-    if (!mnemonic) {
-      _lastSwitchDiag = 'Rust: get_mnemonic returned NULL'
-      return null
-    }
-    _lastSwitchDiag = `Rust: got mnemonic (${mnemonic.split(' ').length} words), deriving...`
-
     const accountIndex = account.derivationIndex ?? ((account.id ?? 1) - 1)
-    const keys = await deriveWalletKeysForAccount(mnemonic, accountIndex)
-    if (!keys) {
-      _lastSwitchDiag = `Rust: derivation returned null for idx=${accountIndex}`
-      return null
-    }
+    _lastSwitchDiag = `Rust: calling switch_account_from_store idx=${accountIndex}...`
+
+    const pubKeys = await invoke<PublicWalletKeys>('switch_account_from_store', { accountIndex })
+    const keys = pubKeysToWalletKeys(pubKeys, accountIndex)
+
     _lastSwitchDiag = `Rust: OK addr=${keys.walletAddress?.substring(0, 8)}`
     return keys
   } catch (e) {
     _lastSwitchDiag = `Rust: THREW ${String(e).substring(0, 80)}`
-    walletLogger.warn('Failed to derive keys from Rust key store', { error: String(e) })
+    walletLogger.warn('Failed to switch account via Rust key store', { error: String(e) })
     return null
   }
 }
@@ -134,9 +146,10 @@ export function useAccountSwitching({
       }
       _lastSwitchDiag = `Found: id=${account.id} derivIdx=${account.derivationIndex}`
 
-      // PRIMARY PATH: Derive keys from Rust key store's mnemonic (no password needed).
-      // This bypasses all React state / closure issues with sessionPassword.
+      // PRIMARY PATH: switch_account_from_store derives + stores keys entirely in Rust.
+      // The mnemonic never leaves native memory.
       let keys = await deriveKeysFromRust(account)
+      let keysFromRust = !!keys
 
       if (keys) {
         // Rust-derived keys — update DB active account
@@ -166,6 +179,7 @@ export function useAccountSwitching({
           return false
         }
         keys = await accountsSwitchAccount(accountId, currentPassword)
+        keysFromRust = false
         _lastSwitchDiag += keys ? ' | pwd-keys OK' : ' | pwd-keys NULL'
       }
 
@@ -176,8 +190,10 @@ export function useAccountSwitching({
         setLocks([])
         resetSync()
 
-        // Store mnemonic in Rust key store before clearing from React state
-        await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? ((accountId ?? 1) - 1))
+        // Only store keys in Rust for fallback path — Rust path already stored them
+        if (!keysFromRust) {
+          await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? ((accountId ?? 1) - 1))
+        }
 
         // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
         setWallet({ ...keys, mnemonic: '' })

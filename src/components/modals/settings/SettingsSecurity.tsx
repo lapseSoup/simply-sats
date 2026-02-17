@@ -82,7 +82,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       const identityWif = await getWifForOperation('identity', 'exportKeys', wallet)
       const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet)
       const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet)
-      const mnemonic = await invoke<string | null>('get_mnemonic')
+      const mnemonic = await invoke<string | null>('get_mnemonic_once')
 
       const keyData = {
         format: 'simply-sats',
@@ -185,7 +185,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       const identityWif = await getWifForOperation('identity', 'exportKeys', wallet!)
       const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet!)
       const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet!)
-      const mnemonic = await invoke<string | null>('get_mnemonic')
+      const mnemonic = await invoke<string | null>('get_mnemonic_once')
 
       const keyData = {
         format: 'simply-sats',

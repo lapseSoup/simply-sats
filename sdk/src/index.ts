@@ -144,7 +144,7 @@ export class SimplySats {
 
   /**
    * Get a CSRF nonce for state-changing operations
-   * Required for: createSignature, createAction, lockBSV, unlockBSV
+   * Required for: getPublicKey, createSignature, createAction, lockBSV, unlockBSV
    */
   async getNonce(): Promise<string> {
     const result = await this.request<{ nonce: string }>('getNonce')
@@ -278,11 +278,13 @@ export class SimplySats {
 
   /**
    * Get public key from the wallet
+   * Note: This operation requires a CSRF nonce
    */
-  async getPublicKey(options: { identityKey?: boolean } = {}): Promise<string> {
+  async getPublicKey(options: { identityKey?: boolean; nonce?: string } = {}): Promise<string> {
+    const nonce = options.nonce || await this.getNonce()
     const result = await this.request<{ publicKey: string }>('getPublicKey', {
       identityKey: options.identityKey || false
-    })
+    }, nonce)
     return result.publicKey
   }
 

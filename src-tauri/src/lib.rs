@@ -21,10 +21,10 @@ mod secure_storage;
 mod transaction;
 
 use rate_limiter::{
-    SharedRateLimitState, RateLimitState,
+    SharedRateLimitManager, RateLimitManager,
     check_unlock_rate_limit, record_failed_unlock,
     record_successful_unlock, get_remaining_unlock_attempts,
-    load_persisted_state
+    load_persisted_state, get_or_create_integrity_key,
 };
 
 use secure_storage::{
@@ -539,9 +539,25 @@ pub fn run() {
     // Key store — holds WIFs in Rust-only memory (never exposed to JS)
     let key_store: key_store::SharedKeyStore = Arc::new(Mutex::new(key_store::KeyStoreInner::new()));
 
-    // Rate limiter state — initialized empty, loaded from disk in setup()
-    let rate_limit_state: SharedRateLimitState = Arc::new(Mutex::new(RateLimitState::new()));
-    let rate_limit_state_for_setup = rate_limit_state.clone();
+    // Rate limiter — generate/load per-installation HMAC key, then load persisted state.
+    // This happens before Tauri builder so the manager is ready for .manage().
+    let rate_limit_manager: SharedRateLimitManager = {
+        let integrity_key = match get_app_data_dir() {
+            Some(dir) => {
+                // Ensure directory exists (may already exist from pre_init_database)
+                let _ = std::fs::create_dir_all(&dir);
+                get_or_create_integrity_key(&dir)
+            }
+            None => {
+                log::warn!("[Security] Could not determine app data dir; using ephemeral HMAC key");
+                let key: Vec<u8> = (0..32).map(|_| rand::thread_rng().gen()).collect();
+                key
+            }
+        };
+        // State will be loaded from disk in setup() once the app handle is available
+        Arc::new(RateLimitManager::new(integrity_key, rate_limiter::RateLimitState::new()))
+    };
+    let rate_limit_manager_for_setup = rate_limit_manager.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -554,7 +570,7 @@ pub fn run() {
             .build())
         .manage(brc100_state)
         .manage(session_state)
-        .manage(rate_limit_state)
+        .manage(rate_limit_manager)
         .manage(key_store)
         .invoke_handler(tauri::generate_handler![
             respond_to_brc100,
@@ -591,8 +607,8 @@ pub fn run() {
             key_store::clear_keys,
             key_store::get_public_keys,
             key_store::has_keys,
-            key_store::get_mnemonic,
             key_store::get_mnemonic_once,
+            key_store::switch_account_from_store,
             key_store::sign_message_from_store,
             key_store::sign_data_from_store,
             key_store::encrypt_ecies_from_store,
@@ -607,11 +623,11 @@ pub fn run() {
             let brc100_state = brc100_state_for_server;
             let session_state = session_state_for_server;
 
-            // Load persisted rate limit state from disk
-            let persisted = load_persisted_state(&app_handle);
-            let rate_limit_for_load = rate_limit_state_for_setup.clone();
+            // Load persisted rate limit state from disk using the manager's integrity key
+            let manager = rate_limit_manager_for_setup.clone();
+            let persisted = load_persisted_state(&app_handle, &manager.integrity_key);
             tauri::async_runtime::block_on(async move {
-                let mut state = rate_limit_for_load.lock().await;
+                let mut state = manager.state.lock().await;
                 *state = persisted;
             });
 

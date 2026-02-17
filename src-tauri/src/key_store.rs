@@ -205,16 +205,6 @@ pub async fn has_keys(
     Ok(store.has_keys())
 }
 
-/// Get mnemonic for backup/export operations (does NOT clear from memory)
-/// Use this when you need the mnemonic multiple times (e.g., multiple backup exports)
-#[tauri::command]
-pub async fn get_mnemonic(
-    key_store: tauri::State<'_, SharedKeyStore>,
-) -> Result<Option<String>, String> {
-    let store = key_store.lock().await;
-    Ok(store.mnemonic.clone())
-}
-
 /// Get mnemonic once for temporary display, then clear it from memory
 /// Use this for one-time display operations (e.g., showing recovery phrase in UI)
 #[tauri::command]
@@ -229,6 +219,46 @@ pub async fn get_mnemonic_once(
     }
     store.mnemonic = None;
     Ok(mnemonic)
+}
+
+/// Switch to a different account by re-deriving keys from the stored mnemonic.
+/// The mnemonic never leaves Rust memory — only public keys are returned.
+/// This replaces the old pattern of `get_mnemonic` → JS derivation → `store_keys`.
+#[tauri::command]
+pub async fn switch_account_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    account_index: u32,
+) -> Result<PublicWalletKeys, String> {
+    let mut store = key_store.lock().await;
+    let mnemonic = store.mnemonic.clone()
+        .ok_or_else(|| "No mnemonic in key store — wallet may be locked".to_string())?;
+
+    // Use Zeroizing wrapper to ensure the clone is cleared after derivation
+    let mnemonic_for_derive = Zeroizing::new(mnemonic);
+    let full_keys = key_derivation::derive_wallet_keys_for_account((*mnemonic_for_derive).clone(), account_index)?;
+    drop(mnemonic_for_derive);
+
+    let pub_keys = PublicWalletKeys {
+        wallet_type: full_keys.wallet_type.clone(),
+        wallet_address: full_keys.wallet_address.clone(),
+        wallet_pub_key: full_keys.wallet_pub_key.clone(),
+        ord_address: full_keys.ord_address.clone(),
+        ord_pub_key: full_keys.ord_pub_key.clone(),
+        identity_address: full_keys.identity_address.clone(),
+        identity_pub_key: full_keys.identity_pub_key.clone(),
+    };
+
+    // Clear old keys and store newly derived ones
+    store.clear();
+    store.wallet_wif = Some(full_keys.wallet_wif);
+    store.ord_wif = Some(full_keys.ord_wif);
+    store.identity_wif = Some(full_keys.identity_wif);
+    // Restore the mnemonic (it was cleared by store.clear()) so future switches work
+    store.mnemonic = Some(full_keys.mnemonic);
+    store.pub_keys = Some(pub_keys.clone());
+
+    log::info!("Account switched in Rust key store (account_index: {})", account_index);
+    Ok(pub_keys)
 }
 
 /// Ensure keys are loaded before sensitive operations.

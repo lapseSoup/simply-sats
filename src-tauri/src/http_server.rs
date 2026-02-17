@@ -390,29 +390,17 @@ async fn handle_get_public_key(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let origin = extract_origin(&request);
-
-    if let Err(e) = validate_origin(&origin) {
-        return e;
-    }
-
-    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 1024).await {
-        Ok(bytes) => bytes,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid request body"
-        }))).into_response(),
-    };
-
-    let args: GetPublicKeyArgs = match serde_json::from_slice(&body_bytes) {
+    let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
-        Err(_) => GetPublicKeyArgs::default(),
+        Err(e) => return e,
     };
 
-    log::debug!("getPublicKey request: {:?}", args);
+    let parsed: GetPublicKeyArgs = serde_json::from_value(args)
+        .unwrap_or_default();
+
+    log::debug!("getPublicKey request: {:?}", parsed);
     forward_to_frontend(state, "getPublicKey", serde_json::json!({
-        "identityKey": args.identity_key.unwrap_or(false),
+        "identityKey": parsed.identity_key.unwrap_or(false),
     }), origin).await
 }
 

@@ -13,18 +13,9 @@ use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreExt;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use rand::Rng;
 
 type HmacSha256 = Hmac<Sha256>;
-
-/// HMAC key for rate limit state integrity verification.
-///
-/// SECURITY NOTE: This key is hardcoded and extractable from the binary.
-/// It provides defense-in-depth against casual tampering of the rate limit
-/// state file, but cannot prevent a determined attacker with binary access
-/// from forging valid HMACs. A stronger approach would derive this key from
-/// a device-specific secret stored in the OS keychain. Accepted trade-off
-/// for current threat model (local desktop app).
-const INTEGRITY_KEY: &[u8] = b"SimplySats-RateLimit-Integrity-K";
 
 /// Rate limit configuration constants
 const MAX_ATTEMPTS: u32 = 5;
@@ -144,18 +135,18 @@ struct PersistedRateLimitState {
 }
 
 /// Compute HMAC-SHA256 over serialized state JSON
-fn compute_state_hmac(state: &RateLimitState) -> String {
+fn compute_state_hmac(state: &RateLimitState, key: &[u8]) -> String {
     let json = serde_json::to_string(state).unwrap_or_default();
-    let mut mac = HmacSha256::new_from_slice(INTEGRITY_KEY)
+    let mut mac = HmacSha256::new_from_slice(key)
         .expect("HMAC can take key of any size");
     mac.update(json.as_bytes());
     hex::encode(mac.finalize().into_bytes())
 }
 
 /// Save rate limit state to persistent store with HMAC integrity
-fn persist_state(app: &tauri::AppHandle, state: &RateLimitState) {
+fn persist_state(app: &tauri::AppHandle, state: &RateLimitState, key: &[u8]) {
     if let Ok(store) = app.store(STORE_FILENAME) {
-        let hmac = compute_state_hmac(state);
+        let hmac = compute_state_hmac(state, key);
         let wrapper = PersistedRateLimitState {
             state: state.clone(),
             hmac,
@@ -166,12 +157,12 @@ fn persist_state(app: &tauri::AppHandle, state: &RateLimitState) {
 }
 
 /// Load rate limit state from persistent store, verifying HMAC integrity
-pub fn load_persisted_state(app: &tauri::AppHandle) -> RateLimitState {
+pub fn load_persisted_state(app: &tauri::AppHandle, key: &[u8]) -> RateLimitState {
     if let Ok(store) = app.store(STORE_FILENAME) {
         if let Some(value) = store.get(STORE_KEY) {
             // Try new format (with HMAC)
             if let Ok(wrapper) = serde_json::from_value::<PersistedRateLimitState>(value.clone()) {
-                let expected_hmac = compute_state_hmac(&wrapper.state);
+                let expected_hmac = compute_state_hmac(&wrapper.state, key);
                 if wrapper.hmac == expected_hmac {
                     return wrapper.state;
                 }
@@ -181,7 +172,7 @@ pub fn load_persisted_state(app: &tauri::AppHandle) -> RateLimitState {
             // Legacy migration: accept old format without HMAC, re-persist with HMAC on next save
             if let Ok(state) = serde_json::from_value::<RateLimitState>(value.clone()) {
                 log::info!("Migrating legacy rate limit state to HMAC-protected format");
-                persist_state(app, &state);
+                persist_state(app, &state, key);
                 return state;
             }
         }
@@ -189,7 +180,57 @@ pub fn load_persisted_state(app: &tauri::AppHandle) -> RateLimitState {
     RateLimitState::new()
 }
 
-pub type SharedRateLimitState = Arc<Mutex<RateLimitState>>;
+/// Generate or load the HMAC integrity key from the app data directory.
+///
+/// On first launch, generates a random 32-byte key and persists it to disk.
+/// On subsequent launches, reads the existing key. This prevents an attacker
+/// with binary access from forging valid HMACs to reset the lockout counter,
+/// since the key is unique per installation and not embedded in the binary.
+pub fn get_or_create_integrity_key(app_data_dir: &std::path::Path) -> Vec<u8> {
+    let key_path = app_data_dir.join(".rate-limit-key");
+
+    // Try to read existing key
+    if let Ok(key_bytes) = std::fs::read(&key_path) {
+        if key_bytes.len() == 32 {
+            return key_bytes;
+        }
+        log::warn!("[Security] Rate limit integrity key has unexpected length ({}), regenerating", key_bytes.len());
+    }
+
+    // Generate new random 32-byte key
+    let key: Vec<u8> = (0..32).map(|_| rand::thread_rng().gen()).collect();
+
+    // Ensure directory exists
+    if let Some(parent) = key_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    // Save to disk (best effort — if this fails, we'll regenerate next launch,
+    // which means any existing HMAC-protected state will fail verification and reset)
+    if let Err(e) = std::fs::write(&key_path, &key) {
+        log::error!("Failed to persist rate limit integrity key: {}", e);
+    }
+
+    key
+}
+
+/// Manages rate limiting state with per-installation HMAC integrity key.
+pub struct RateLimitManager {
+    pub(crate) state: Mutex<RateLimitState>,
+    pub(crate) integrity_key: Vec<u8>,
+}
+
+impl RateLimitManager {
+    /// Create a new RateLimitManager with the given integrity key and initial state.
+    pub fn new(integrity_key: Vec<u8>, initial_state: RateLimitState) -> Self {
+        Self {
+            state: Mutex::new(initial_state),
+            integrity_key,
+        }
+    }
+}
+
+pub type SharedRateLimitManager = Arc<RateLimitManager>;
 
 /// Response types for Tauri commands
 #[derive(Serialize, Deserialize)]
@@ -208,9 +249,9 @@ pub struct RecordFailedResponse {
 /// Tauri command: Check if unlock attempts are rate limited
 #[tauri::command]
 pub async fn check_unlock_rate_limit(
-    state: tauri::State<'_, SharedRateLimitState>,
+    manager: tauri::State<'_, SharedRateLimitManager>,
 ) -> Result<CheckRateLimitResponse, String> {
-    let mut rate_limit = state.lock().await;
+    let mut rate_limit = manager.state.lock().await;
     let (is_limited, remaining_ms) = rate_limit.check_limit();
     Ok(CheckRateLimitResponse {
         is_limited,
@@ -222,9 +263,9 @@ pub async fn check_unlock_rate_limit(
 #[tauri::command]
 pub async fn record_failed_unlock(
     app: tauri::AppHandle,
-    state: tauri::State<'_, SharedRateLimitState>,
+    manager: tauri::State<'_, SharedRateLimitManager>,
 ) -> Result<RecordFailedResponse, String> {
-    let mut rate_limit = state.lock().await;
+    let mut rate_limit = manager.state.lock().await;
     let (is_locked, lockout_ms, attempts_remaining) = rate_limit.record_failed();
 
     if is_locked {
@@ -235,7 +276,7 @@ pub async fn record_failed_unlock(
                   rate_limit.attempts, MAX_ATTEMPTS);
     }
 
-    persist_state(&app, &rate_limit);
+    persist_state(&app, &rate_limit, &manager.integrity_key);
 
     Ok(RecordFailedResponse {
         is_locked,
@@ -248,20 +289,20 @@ pub async fn record_failed_unlock(
 #[tauri::command]
 pub async fn record_successful_unlock(
     app: tauri::AppHandle,
-    state: tauri::State<'_, SharedRateLimitState>,
+    manager: tauri::State<'_, SharedRateLimitManager>,
 ) -> Result<(), String> {
-    let mut rate_limit = state.lock().await;
+    let mut rate_limit = manager.state.lock().await;
     rate_limit.record_success();
-    persist_state(&app, &rate_limit);
+    persist_state(&app, &rate_limit, &manager.integrity_key);
     Ok(())
 }
 
 /// Tauri command: Get remaining attempts before lockout
 #[tauri::command]
 pub async fn get_remaining_unlock_attempts(
-    state: tauri::State<'_, SharedRateLimitState>,
+    manager: tauri::State<'_, SharedRateLimitManager>,
 ) -> Result<u32, String> {
-    let mut rate_limit = state.lock().await;
+    let mut rate_limit = manager.state.lock().await;
     Ok(rate_limit.remaining_attempts())
 }
 
