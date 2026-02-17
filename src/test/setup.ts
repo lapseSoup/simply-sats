@@ -38,7 +38,8 @@ const localStorageMock = {
 
 Object.defineProperty(globalThis, 'localStorage', {
   value: localStorageMock,
-  writable: true
+  writable: true,
+  configurable: true
 })
 
 // Reset localStorage before each test
