@@ -206,8 +206,8 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
         }
 
         // WoC returns the txid as plain text, sometimes wrapped in quotes
-        const txid = await response.text()
-        return ok(txid.replace(/"/g, ''))
+        const txid = (await response.text()).replace(/"/g, '').trim()
+        return ok(txid)
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Unknown error'
         return err(createApiError('BROADCAST_ERROR', message))

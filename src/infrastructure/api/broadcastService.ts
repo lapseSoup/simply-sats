@@ -31,6 +31,21 @@ export function isTxAlreadyKnown(errorMessage: string): boolean {
   return TXN_ALREADY_KNOWN_PATTERNS.some(p => lower.includes(p.toLowerCase()))
 }
 
+/** Valid txid: exactly 64 hex characters */
+const TXID_RE = /^[0-9a-fA-F]{64}$/
+
+/**
+ * Return the first valid txid from the candidates, or undefined.
+ * Used to prefer the endpoint's response but safely fall back to localTxid
+ * when the endpoint returns a truncated or malformed string.
+ */
+function pickValidTxid(...candidates: (string | undefined)[]): string | undefined {
+  for (const c of candidates) {
+    if (c && TXID_RE.test(c)) return c
+  }
+  return undefined
+}
+
 /**
  * Broadcast a signed transaction hex to the BSV network.
  * Tries multiple endpoints in cascade for maximum reliability.
@@ -55,15 +70,27 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
           localTxid
         })
       }
-      apiLogger.info('WhatsOnChain broadcast successful')
-      return responseTxid || localTxid || ''
-    }
-    const errorMsg = result.error.message
-    apiLogger.warn('WoC broadcast failed', { error: errorMsg })
-    errors.push(`WoC: ${errorMsg}`)
-    if (isTxAlreadyKnown(errorMsg) && localTxid) {
-      apiLogger.info('WoC: txn-already-known — treating as success', { txid: localTxid })
-      return localTxid
+      // Prefer the endpoint's txid but fall back to localTxid if WoC
+      // returned a truncated or malformed response (network glitch, etc.)
+      const validTxid = pickValidTxid(responseTxid, localTxid)
+      if (validTxid) {
+        if (validTxid !== responseTxid) {
+          apiLogger.warn('WoC returned malformed txid, using local', { responseTxid, localTxid })
+        }
+        apiLogger.info('WhatsOnChain broadcast successful')
+        return validTxid
+      }
+      // Both invalid — unlikely but cascade to next endpoint
+      apiLogger.warn('WoC returned invalid txid and no localTxid available', { responseTxid })
+      errors.push(`WoC: invalid txid response: ${responseTxid?.substring(0, 80)}`)
+    } else {
+      const errorMsg = result.error.message
+      apiLogger.warn('WoC broadcast failed', { error: errorMsg })
+      errors.push(`WoC: ${errorMsg}`)
+      if (isTxAlreadyKnown(errorMsg) && localTxid) {
+        apiLogger.info('WoC: txn-already-known — treating as success', { txid: localTxid })
+        return localTxid
+      }
     }
   } catch (error) {
     const errorMsg = String(error)
@@ -95,8 +122,11 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       apiLogger.debug('ARC response', { txStatus: arcResult.txStatus, txid: arcResult.txid })
 
       if (arcResult.txid && (arcResult.txStatus === 'SEEN_ON_NETWORK' || arcResult.txStatus === 'ACCEPTED')) {
-        apiLogger.info('ARC broadcast successful', { txid: arcResult.txid })
-        return arcResult.txid
+        const validArcTxid = pickValidTxid(arcResult.txid, localTxid)
+        if (validArcTxid) {
+          apiLogger.info('ARC broadcast successful', { txid: validArcTxid })
+          return validArcTxid
+        }
       }
       const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
       apiLogger.warn('ARC rejected transaction', { error: errorMsg })
@@ -140,8 +170,11 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       apiLogger.debug('ARC (text) response', { txStatus: arcResult.txStatus, txid: arcResult.txid })
 
       if (arcResult.txid && (arcResult.txStatus === 'SEEN_ON_NETWORK' || arcResult.txStatus === 'ACCEPTED')) {
-        apiLogger.info('ARC (text) broadcast successful', { txid: arcResult.txid })
-        return arcResult.txid
+        const validArc2Txid = pickValidTxid(arcResult.txid, localTxid)
+        if (validArc2Txid) {
+          apiLogger.info('ARC (text) broadcast successful', { txid: validArc2Txid })
+          return validArc2Txid
+        }
       }
       const errorMsg = arcResult.detail || arcResult.extraInfo || arcResult.title || 'Unknown ARC error'
       errors.push(`ARC2: ${errorMsg}`)
@@ -182,8 +215,11 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       if (mResult.payload) {
         const payload = typeof mResult.payload === 'string' ? JSON.parse(mResult.payload) : mResult.payload
         if (payload.returnResult === 'success' && payload.txid) {
-          apiLogger.info('mAPI broadcast successful', { txid: payload.txid })
-          return payload.txid
+          const validMapiTxid = pickValidTxid(payload.txid, localTxid)
+          if (validMapiTxid) {
+            apiLogger.info('mAPI broadcast successful', { txid: validMapiTxid })
+            return validMapiTxid
+          }
         }
         const errorMsg = payload.resultDescription || payload.returnResult || 'Unknown mAPI error'
         errors.push(`mAPI: ${errorMsg}`)
