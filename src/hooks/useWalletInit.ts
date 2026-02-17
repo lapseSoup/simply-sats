@@ -29,6 +29,7 @@ import {
 import { walletLogger, uiLogger } from '../services/logger'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 import { setSessionPassword as setModuleSessionPassword } from '../services/sessionPasswordStore'
+import { hasPassword } from '../services/wallet/storage'
 
 interface UseWalletInitOptions {
   setWallet: (wallet: WalletKeys | null) => void
@@ -118,8 +119,28 @@ export function useWalletInit({
         if (!mounted) return
 
         if (allAccounts.length > 0) {
-          walletLogger.info('Found encrypted wallet with accounts, showing lock screen')
-          setIsLocked(true)
+          if (hasPassword()) {
+            walletLogger.info('Found encrypted wallet with accounts, showing lock screen')
+            setIsLocked(true)
+          } else {
+            // Passwordless wallet — load directly, no lock screen
+            walletLogger.info('Found unprotected wallet, loading directly')
+            try {
+              const keys = await loadWallet(null)
+              if (!mounted) return
+              if (keys) {
+                setWallet({ ...keys, mnemonic: '' })
+                setSessionPassword('')
+                setModuleSessionPassword('')
+              } else {
+                walletLogger.error('Failed to load unprotected wallet')
+                setIsLocked(true) // Fallback to lock screen
+              }
+            } catch (e) {
+              walletLogger.error('Error loading unprotected wallet', e)
+              setIsLocked(true) // Fallback
+            }
+          }
         } else {
           // No accounts yet - try loading with empty password (legacy unencrypted support)
           try {
