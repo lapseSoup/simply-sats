@@ -200,6 +200,21 @@ export const BRC100 = {
 } as const
 
 // ============================================
+// Lock Configuration
+// ============================================
+
+export const LOCK = {
+  /** Short lock warning: fewer than this many blocks (~1 hour at 10min/block) */
+  SHORT_LOCK_WARNING_BLOCKS: 6,
+
+  /** Long lock warning: more than this many blocks (~1 week at 10min/block) */
+  LONG_LOCK_WARNING_BLOCKS: 1008,
+
+  /** Average block time in milliseconds (10 minutes) */
+  BLOCK_TIME_MS: 10 * 60 * 1000,
+} as const
+
+// ============================================
 // Feature Flags
 // ============================================
 

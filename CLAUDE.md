@@ -111,7 +111,7 @@ Migrations: `src-tauri/migrations/` — append-only, DDL only (see Critical Less
 ## Security Model
 
 - AES-GCM 256-bit encryption for wallet keys (local storage only)
-- PBKDF2 key derivation: 100,000 iterations (OWASP 2024)
+- PBKDF2 key derivation: 600,000 iterations (OWASP 2025)
 - BIP-39 12-word seed phrases, BRC-42/43 derived addresses
 - Password: 14 char minimum, 16 recommended
 - Auto-lock: default 10min, max 60min

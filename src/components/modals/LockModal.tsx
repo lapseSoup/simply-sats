@@ -8,16 +8,12 @@ import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 import { isOk } from '../../domain/types'
-
-// Short lock warning threshold: less than 6 blocks (~1 hour)
-const SHORT_LOCK_WARNING_BLOCKS = 6
-// Long lock warning threshold: 1 week = ~1008 blocks (10 min per block)
-const LONG_LOCK_WARNING_BLOCKS = 1008
+import { LOCK } from '../../config'
 
 // Helper to calculate estimated unlock date - defined outside component to avoid render purity issues
 function calculateEstimatedUnlockDate(blocks: number): Date | null {
   if (blocks <= 0) return null
-  return new Date(Date.now() + blocks * 10 * 60 * 1000)
+  return new Date(Date.now() + blocks * LOCK.BLOCK_TIME_MS)
 }
 
 interface LockModalProps {
@@ -51,9 +47,9 @@ export function LockModal({ onClose }: LockModalProps) {
   const unlockBlock = currentHeight + blocks
 
   // Check if this is a short lock (< 1 hour)
-  const isShortLock = blocks > 0 && blocks < SHORT_LOCK_WARNING_BLOCKS
+  const isShortLock = blocks > 0 && blocks < LOCK.SHORT_LOCK_WARNING_BLOCKS
   // Check if this is a long lock (> 1 week)
-  const isLongLock = blocks > LONG_LOCK_WARNING_BLOCKS
+  const isLongLock = blocks > LOCK.LONG_LOCK_WARNING_BLOCKS
 
   // Estimate unlock time (average 10 min per block)
   const estimatedMinutes = blocks * 10
