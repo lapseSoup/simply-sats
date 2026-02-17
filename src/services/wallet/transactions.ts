@@ -110,7 +110,24 @@ export async function executeBroadcast(
       await rollbackPendingSpend(spentOutpoints)
       walletLogger.debug('Rolled back pending status for UTXOs')
     } catch (rollbackError) {
-      walletLogger.error('CRITICAL: Failed to rollback pending status', rollbackError)
+      // Rollback also failed — UTXOs are stuck in "pending spend" state.
+      // Surface this as a BROADCAST_SUCCEEDED_DB_FAILED-style error so the
+      // UI can warn the user their wallet may show incorrect balances until
+      // the next sync (which will clean up the stale pending status).
+      walletLogger.error('CRITICAL: Failed to rollback pending status — UTXOs stuck in pending state', rollbackError, {
+        txid: pendingTxid,
+        outpointCount: spentOutpoints.length
+      })
+      throw new AppError(
+        'Transaction failed and wallet state could not be fully restored. Your balance may appear incorrect until the next sync.',
+        ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
+        {
+          broadcastError: broadcastError instanceof Error ? broadcastError.message : String(broadcastError),
+          rollbackError: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          pendingTxid,
+          outpointCount: spentOutpoints.length
+        }
+      )
     }
     throw AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED)
   }
@@ -187,8 +204,15 @@ export async function sendBSV(
 ): Promise<string> {
   validateSendRequest(toAddress, satoshis)
 
+  // accountId is required to acquire the correct per-account sync lock.
+  // Defaulting to account 1 when accountId is undefined would silently lock
+  // the wrong account during a send, allowing a concurrent sync to corrupt state.
+  if (accountId === undefined) {
+    throw new AppError('accountId is required to send BSV', ErrorCodes.INVALID_STATE, { toAddress, satoshis })
+  }
+
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during send
-  const releaseLock = await acquireSyncLock(accountId ?? 1)
+  const releaseLock = await acquireSyncLock(accountId)
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
     if (!sufficient) {
@@ -271,10 +295,16 @@ export async function sendBSVMultiKey(
 ): Promise<string> {
   validateSendRequest(toAddress, satoshis)
 
+  // accountId is required to acquire the correct per-account sync lock.
+  // See sendBSV for rationale.
+  if (accountId === undefined) {
+    throw new AppError('accountId is required to send BSV (multi-key)', ErrorCodes.INVALID_STATE, { toAddress, satoshis })
+  }
+
   // Acquire per-account sync lock to prevent concurrent sync from modifying UTXO state.
   // This prevents the race condition where performSync() could revert pending-spend flags
   // set by executeBroadcast() before the broadcast completes (BUG-4).
-  const releaseLock = await acquireSyncLock(accountId ?? 1)
+  const releaseLock = await acquireSyncLock(accountId)
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
     if (!sufficient) {
@@ -304,8 +334,14 @@ export async function consolidateUtxos(
   utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>,
   accountId?: number
 ): Promise<{ txid: string; outputSats: number; fee: number }> {
+  // accountId is required to acquire the correct per-account sync lock.
+  // See sendBSV for rationale.
+  if (accountId === undefined) {
+    throw new AppError('accountId is required to consolidate UTXOs', ErrorCodes.INVALID_STATE, {})
+  }
+
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during consolidation
-  const releaseLock = await acquireSyncLock(accountId ?? 1)
+  const releaseLock = await acquireSyncLock(accountId)
   try {
   const feeRate = getFeeRate()
   const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })

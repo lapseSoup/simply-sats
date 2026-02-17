@@ -26,14 +26,27 @@ let cachedFeeRate: { rate: number; timestamp: number } | null = null
 const FEE_RATE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
 /**
+ * Read the user-set fee rate override from localStorage.
+ * Returns the clamped rate if a valid override exists, or null if none is set.
+ * Extracted to avoid duplicating this logic across getFeeRate/getFeeRateAsync.
+ */
+function getStoredFeeRate(): number | null {
+  const stored = localStorage.getItem(STORAGE_KEYS.FEE_RATE)
+  if (!stored) return null
+  const rate = parseFloat(stored)
+  if (Number.isFinite(rate) && rate > 0) {
+    return Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, rate))
+  }
+  return null
+}
+
+/**
  * Fetch current recommended fee rate from the network
  * Uses GorillaPool's fee quote endpoint
  */
 export async function fetchDynamicFeeRate(): Promise<number> {
-  // Check cache first
-  if (cachedFeeRate && Date.now() - cachedFeeRate.timestamp < FEE_RATE_CACHE_TTL) {
-    return cachedFeeRate.rate
-  }
+  // Check cache first (isCacheValid guards against backwards clock skew)
+  if (isCacheValid()) return cachedFeeRate!.rate
 
   try {
     // GorillaPool mAPI returns fee policies
@@ -74,24 +87,26 @@ export async function fetchDynamicFeeRate(): Promise<number> {
 }
 
 /**
+ * Check whether the dynamic fee-rate cache is still fresh.
+ * Guards against backwards clock skew by requiring a non-negative age.
+ */
+function isCacheValid(): boolean {
+  if (!cachedFeeRate) return false
+  const age = Date.now() - cachedFeeRate.timestamp
+  return age >= 0 && age < FEE_RATE_CACHE_TTL
+}
+
+/**
  * Get the current fee rate
  * Prefers user-set rate, then cached dynamic rate, then default
  * Always clamped to [MIN_FEE_RATE, MAX_FEE_RATE] for safety
  */
 export function getFeeRate(): number {
-  // Check for user override first
-  const stored = localStorage.getItem(STORAGE_KEYS.FEE_RATE)
-  if (stored) {
-    const rate = parseFloat(stored)
-    if (Number.isFinite(rate) && rate > 0) {
-      return Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, rate))
-    }
-  }
+  const userRate = getStoredFeeRate()
+  if (userRate !== null) return userRate
 
-  // Use cached dynamic rate if available
-  if (cachedFeeRate && Date.now() - cachedFeeRate.timestamp < FEE_RATE_CACHE_TTL) {
-    return cachedFeeRate.rate
-  }
+  // Use cached dynamic rate if available and fresh
+  if (isCacheValid()) return cachedFeeRate!.rate
 
   return DEFAULT_FEE_RATE
 }
@@ -100,12 +115,8 @@ export function getFeeRate(): number {
  * Get fee rate with optional async fetch of dynamic rate
  */
 export async function getFeeRateAsync(): Promise<number> {
-  // Check for user override first
-  const stored = localStorage.getItem(STORAGE_KEYS.FEE_RATE)
-  if (stored) {
-    const rate = parseFloat(stored)
-    if (!isNaN(rate) && rate > 0) return Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, rate))
-  }
+  const userRate = getStoredFeeRate()
+  if (userRate !== null) return userRate
 
   // Fetch dynamic rate
   return fetchDynamicFeeRate()
