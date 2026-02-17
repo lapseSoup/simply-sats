@@ -391,7 +391,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         setOrdinals(allOrdinals)
 
         // Cache ordinal metadata to DB and fetch missing content in background
-        cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache)
+        cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache, isCancelled ?? (() => false))
       } catch (e) {
         syncLogger.error('Failed to fetch ordinals', e)
         partialErrors.push('ordinals')
@@ -463,15 +463,18 @@ async function cacheOrdinalsInBackground(
   allOrdinals: Ordinal[],
   activeAccountId: number | null,
   contentCacheRef: React.MutableRefObject<Map<string, OrdinalContentEntry>>,
-  setOrdinalContentCache: React.Dispatch<React.SetStateAction<Map<string, OrdinalContentEntry>>>
+  setOrdinalContentCache: React.Dispatch<React.SetStateAction<Map<string, OrdinalContentEntry>>>,
+  isCancelled: () => boolean
 ): Promise<void> {
   // Guard: don't cache ordinals without a valid account ID (prevents cross-account contamination)
   if (!activeAccountId) return
 
   try {
     // 1. Save metadata to DB
+    if (isCancelled()) return
     const now = Date.now()
     for (const ord of allOrdinals) {
+      if (isCancelled()) return
       const cached: CachedOrdinal = {
         origin: ord.origin,
         txid: ord.txid,
@@ -487,6 +490,7 @@ async function cacheOrdinalsInBackground(
     syncLogger.debug('Cached ordinal metadata', { count: allOrdinals.length })
 
     // 2. Fetch missing content (up to 10 per cycle)
+    if (isCancelled()) return
     const toFetch: Ordinal[] = []
     for (const ord of allOrdinals) {
       if (contentCacheRef.current.has(ord.origin)) continue
@@ -503,6 +507,7 @@ async function cacheOrdinalsInBackground(
 
     let contentAdded = false
     for (const ord of toFetch) {
+      if (isCancelled()) return
       const content = await fetchOrdinalContent(ord.origin, ord.contentType)
       if (content) {
         // Save to DB

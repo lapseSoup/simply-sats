@@ -173,12 +173,13 @@ describe('Broadcast Service', () => {
       expect(mockGpMapiFetch).not.toHaveBeenCalled()
     })
 
-    it('should prefer WoC txid over localTxid', async () => {
+    it('should prefer localTxid when WoC returns different valid txid (S2: reject mismatch)', async () => {
       mockBroadcastTransactionSafe.mockResolvedValue(makeWocResult(true, VALID_TXID))
 
       const txid = await broadcastTransaction(TX_HEX, VALID_TXID_2)
 
-      expect(txid).toBe(VALID_TXID)
+      // Security: locally-computed TXID is trusted over endpoint response
+      expect(txid).toBe(VALID_TXID_2)
     })
 
     it('should use localTxid when WoC returns malformed txid', async () => {
@@ -411,14 +412,14 @@ describe('Broadcast Service', () => {
   // =========================================================================
 
   describe('txid validation', () => {
-    it('should use localTxid when WoC returns both valid but different txids', async () => {
-      // WoC returns valid txid, but different from local — uses WoC's txid
+    it('should prefer localTxid when WoC returns both valid but different txids (S2)', async () => {
+      // WoC returns valid txid, but different from local — security: use local
       mockBroadcastTransactionSafe.mockResolvedValue(makeWocResult(true, VALID_TXID))
 
       const txid = await broadcastTransaction(TX_HEX, VALID_TXID_2)
 
-      // pickValidTxid prefers the endpoint's txid
-      expect(txid).toBe(VALID_TXID)
+      // Locally-computed TXID is trusted over endpoint response
+      expect(txid).toBe(VALID_TXID_2)
     })
 
     it('should cascade when WoC returns invalid txid and no localTxid', async () => {

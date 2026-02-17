@@ -83,7 +83,7 @@ export function getFeeRate(): number {
   const stored = localStorage.getItem(STORAGE_KEYS.FEE_RATE)
   if (stored) {
     const rate = parseFloat(stored)
-    if (!isNaN(rate) && rate > 0) {
+    if (Number.isFinite(rate) && rate > 0) {
       return Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE, rate))
     }
   }

@@ -65,13 +65,14 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
     if (result.ok) {
       const responseTxid = result.value
       if (responseTxid && localTxid && responseTxid !== localTxid) {
-        apiLogger.error('TXID mismatch between WoC and local', {
+        apiLogger.error('TXID mismatch between WoC and local — using local', {
           broadcasterTxid: responseTxid,
           localTxid
         })
+        apiLogger.info('WhatsOnChain broadcast successful (local txid used due to mismatch)')
+        return localTxid
       }
-      // Prefer the endpoint's txid but fall back to localTxid if WoC
-      // returned a truncated or malformed response (network glitch, etc.)
+      // Fall back to localTxid if WoC returned a truncated or malformed response
       const validTxid = pickValidTxid(responseTxid, localTxid)
       if (validTxid) {
         if (validTxid !== responseTxid) {
@@ -122,6 +123,13 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       apiLogger.debug('ARC response', { txStatus: arcResult.txStatus, txid: arcResult.txid })
 
       if (arcResult.txid && (arcResult.txStatus === 'SEEN_ON_NETWORK' || arcResult.txStatus === 'ACCEPTED')) {
+        if (localTxid && arcResult.txid !== localTxid) {
+          apiLogger.error('TXID mismatch between ARC and local — using local', {
+            broadcasterTxid: arcResult.txid,
+            localTxid
+          })
+          return localTxid
+        }
         const validArcTxid = pickValidTxid(arcResult.txid, localTxid)
         if (validArcTxid) {
           apiLogger.info('ARC broadcast successful', { txid: validArcTxid })
@@ -215,6 +223,13 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       if (mResult.payload) {
         const payload = typeof mResult.payload === 'string' ? JSON.parse(mResult.payload) : mResult.payload
         if (payload.returnResult === 'success' && payload.txid) {
+          if (localTxid && payload.txid !== localTxid) {
+            apiLogger.error('TXID mismatch between mAPI and local — using local', {
+              broadcasterTxid: payload.txid,
+              localTxid
+            })
+            return localTxid
+          }
           const validMapiTxid = pickValidTxid(payload.txid, localTxid)
           if (validMapiTxid) {
             apiLogger.info('mAPI broadcast successful', { txid: validMapiTxid })
@@ -254,9 +269,30 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
     return localTxid
   }
 
-  // Log full errors for debugging, but sanitize the user-facing message
+  // Log full errors for debugging (internal only)
   apiLogger.error('All broadcast endpoints failed', { errors })
-  // Extract only the reason (strip endpoint names and raw API responses)
-  const sanitized = errors.map(e => e.replace(/^(WoC|ARC[^:]*|mAPI):\s*/i, '').slice(0, 200))
-  throw new Error(`Broadcast failed: ${sanitized.join(' | ')}`)
+
+  // User-facing message: whitelist known safe error patterns, strip infrastructure details
+  const SAFE_ERROR_PATTERNS = [
+    /txn-already-known/i,
+    /insufficient.*(?:fee|funds|priority)/i,
+    /dust/i,
+    /double.?spend/i,
+    /mandatory-script-verify-flag/i,
+    /non-mandatory-script-verify-flag/i,
+    /bad-txns-inputs-missingorspent/i,
+    /missing.?inputs/i,
+  ]
+
+  const sanitized = errors.map(e => {
+    const cleaned = e.replace(/^(WoC|ARC[^:]*|mAPI|GorillaPool|WhatsOnChain)[:\s]*/gi, '').trim()
+    for (const pattern of SAFE_ERROR_PATTERNS) {
+      const match = cleaned.match(pattern)
+      if (match) return match[0]
+    }
+    return 'broadcast rejected'
+  })
+
+  const uniqueReasons = [...new Set(sanitized)]
+  throw new Error(`Broadcast failed: ${uniqueReasons.join(', ')}`)
 }

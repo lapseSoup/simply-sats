@@ -113,8 +113,8 @@ export async function calculateTxAmount(
       // Fetch the previous transaction to check if the spent output was ours
       try {
         const prevTx = await getTransactionDetails(vin.txid)
-        if (prevTx?.vout && Array.isArray(prevTx.vout) && prevTx.vout[vin.vout]) {
-          const prevOutput = prevTx.vout[vin.vout]!
+        const prevOutput = prevTx?.vout && Array.isArray(prevTx.vout) ? prevTx.vout[vin.vout] : undefined
+        if (prevOutput) {
           if (isOurAddress(prevOutput.scriptPubKey?.addresses)) {
             const value = prevOutput.value
             if (typeof value === 'number' && Number.isFinite(value)) {

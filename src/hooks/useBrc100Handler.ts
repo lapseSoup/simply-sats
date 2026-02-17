@@ -61,14 +61,24 @@ export function useBrc100Handler({
 
     setRequestHandler(handleIncomingRequest)
 
+    let mounted = true
     let unlistenDeepLink: (() => void) | null = null
+    let unlistenHttp: (() => void) | null = null
+
     setupDeepLinkListener(handleIncomingRequest).then(unlisten => {
-      unlistenDeepLink = unlisten
+      if (mounted) {
+        unlistenDeepLink = unlisten
+      } else {
+        unlisten()
+      }
     })
 
-    let unlistenHttp: (() => void) | null = null
     setupHttpServerListener().then(unlisten => {
-      unlistenHttp = unlisten
+      if (mounted) {
+        unlistenHttp = unlisten
+      } else {
+        unlisten()
+      }
     })
 
     // Check for pending requests on mount
@@ -80,6 +90,7 @@ export function useBrc100Handler({
     }
 
     return () => {
+      mounted = false
       if (unlistenDeepLink) unlistenDeepLink()
       if (unlistenHttp) unlistenHttp()
     }

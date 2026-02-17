@@ -201,9 +201,9 @@ describe('Account Management Service', () => {
   describe('createAccount', () => {
     it('should reject empty passwords', async () => {
       const keys = createMockWalletKeys()
-      // Empty string fails validatePassword (too short + missing complexity)
+      // Empty string fails validatePassword (too short)
       await expect(createAccount('Test Account', keys, '')).rejects.toThrow(
-        'Password must be at least 16 characters'
+        'Password must be at least 14 characters'
       )
     })
 
@@ -222,9 +222,9 @@ describe('Account Management Service', () => {
 
     it('should require password to meet minimum requirements', async () => {
       const keys = createMockWalletKeys()
-      // With default requirements, needs 16+ chars with complexity
+      // With default requirements, needs 14+ chars (NIST-aligned)
       await expect(createAccount('Test Account', keys, 'short')).rejects.toThrow(
-        'Password must be at least 16 characters'
+        'Password must be at least 14 characters'
       )
       // Legacy mode only requires 12 chars
       await expect(createAccount('Test Account', keys, 'short', true)).rejects.toThrow(
@@ -556,8 +556,7 @@ describe('Account Management Service', () => {
         expect(parsed.mode).toBe('unprotected')
       }
 
-      // Encrypt all accounts with a valid password (legacy-length works for encryptAllAccounts
-      // since it uses DEFAULT_PASSWORD_REQUIREMENTS which requires 16+ chars)
+      // Encrypt all accounts with a valid password (14+ chars, NIST-aligned)
       await encryptAllAccounts('StrongPassword1!')
 
       // Verify they are now encrypted
@@ -602,12 +601,12 @@ describe('Account Management Service', () => {
 
       // Too short
       await expect(encryptAllAccounts('short')).rejects.toThrow(
-        'Password must be at least 16 characters'
+        'Password must be at least 14 characters'
       )
 
       // Empty
       await expect(encryptAllAccounts('')).rejects.toThrow(
-        'Password must be at least 16 characters'
+        'Password must be at least 14 characters'
       )
     })
 

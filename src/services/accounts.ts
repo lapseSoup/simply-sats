@@ -12,7 +12,7 @@ import type { WalletKeys } from './wallet'
 import { isUnprotectedData } from './wallet/types'
 import { saveWallet, loadWallet } from './wallet/storage'
 import type { AccountRow, AccountSettingRow, IdCheckRow } from './database-types'
-import { validatePassword, DEFAULT_PASSWORD_REQUIREMENTS, LEGACY_PASSWORD_REQUIREMENTS } from './password-validation'
+import { validatePassword } from '../utils/passwordValidation'
 import { accountLogger } from './logger'
 import { SECURITY } from '../config'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
@@ -72,11 +72,17 @@ export async function createAccount(
 ): Promise<number> {
   // Password is optional — when null, keys are stored unprotected
   if (password !== null) {
-    // Validate password against requirements
-    const requirements = useLegacyRequirements ? LEGACY_PASSWORD_REQUIREMENTS : DEFAULT_PASSWORD_REQUIREMENTS
-    const validation = validatePassword(password, requirements)
-    if (!validation.isValid) {
-      throw new Error(validation.errors.join('. '))
+    if (useLegacyRequirements) {
+      // Legacy migration path: accept existing passwords with old 12-char minimum.
+      // The UI already validated these when they were originally created.
+      if (password.length < 12) {
+        throw new Error('Password must be at least 12 characters')
+      }
+    } else {
+      const validation = validatePassword(password)
+      if (!validation.isValid) {
+        throw new Error(validation.errors.join('. '))
+      }
     }
   }
 
@@ -502,7 +508,7 @@ export async function isAccountSystemInitialized(): Promise<boolean> {
  * Atomic — if any account fails, throws and makes no changes.
  */
 export async function encryptAllAccounts(password: string): Promise<void> {
-  const validation = validatePassword(password, DEFAULT_PASSWORD_REQUIREMENTS)
+  const validation = validatePassword(password)
   if (!validation.isValid) {
     throw new Error(validation.errors.join('. '))
   }

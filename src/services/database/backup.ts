@@ -83,8 +83,9 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
     syncedAt: row.last_synced_at
   }))
 
-  // Get derived addresses
-  const derivedAddresses = await getDerivedAddresses()
+  // Get derived addresses (strip private keys — re-derivable from mnemonic via BRC-42/43)
+  const rawDerivedAddresses = await getDerivedAddresses()
+  const derivedAddresses = rawDerivedAddresses.map(addr => ({ ...addr, privateKeyWif: '' }))
 
   // Get contacts
   const contacts = await getContacts()

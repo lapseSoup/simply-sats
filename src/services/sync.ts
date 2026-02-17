@@ -580,7 +580,12 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
       if (!txLabel && txDetails.locktime > 500000) {
         const hasNLockTimeInput = txDetails.vin.some(v => v.sequence === 4294967294)
         if (hasNLockTimeInput) {
-          const totalOutput = txDetails.vout.reduce((sum, v) => sum + btcToSatoshis(v.value), 0)
+          const totalOutput = txDetails.vout.reduce((sum, v) => {
+            const sats = typeof v.value === 'number' && Number.isFinite(v.value)
+              ? btcToSatoshis(v.value)
+              : 0
+            return sum + sats
+          }, 0)
           txDescription = `Unlocked ${totalOutput.toLocaleString()} sats`
           txLabel = 'unlock'
           amount = totalOutput // Use actual received amount, not received-spent (which gives negative fee)

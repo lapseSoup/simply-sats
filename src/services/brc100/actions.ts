@@ -223,18 +223,20 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
       const params = getParams<UnlockBSVParams>(request)
       const outpoint = params.outpoints?.[0] || ''
 
-      // A3: Guard against concurrent unlock calls for the same outpoint
-      if (inflightUnlocks.has(outpoint)) {
-        response.error = { code: -32000, message: 'Unlock already in progress for this outpoint' }
+      // Guard against concurrent unlock calls for the same outpoint.
+      // Store the actual operation promise so a second caller can await it.
+      const existing = inflightUnlocks.get(outpoint)
+      if (existing) {
+        try {
+          await existing
+          response.error = { code: -32000, message: 'Unlock already completed for this outpoint' }
+        } catch {
+          response.error = { code: -32000, message: 'Previous unlock attempt failed for this outpoint' }
+        }
         break
       }
 
-      let resolveInflight!: () => void
-      const inflightPromise = new Promise<void>(res => { resolveInflight = res })
-      inflightUnlocks.set(outpoint, inflightPromise)
-      void inflightPromise
-
-      try {
+      const unlockOperation = (async () => {
         const currentHeight = await getCurrentBlockHeight()
         const locks = await getLocksFromDB(currentHeight)
 
@@ -242,19 +244,19 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
         const [txid, voutStr] = outpoint.split('.')
         if (!txid || voutStr === undefined) {
           response.error = { code: -32602, message: 'Invalid outpoint format, expected txid.vout' }
-          break
+          return
         }
         const voutParsed = parseInt(voutStr, 10)
-        if (isNaN(voutParsed)) {
-          response.error = { code: -32602, message: 'Invalid outpoint format, expected txid.vout' }
-          break
+        if (isNaN(voutParsed) || voutParsed < 0 || voutParsed > 0xFFFFFFFF) {
+          response.error = { code: -32602, message: 'Invalid outpoint vout index' }
+          return
         }
         const vout = voutParsed
         const lock = locks.find(l => l.utxo.txid === txid && l.utxo.vout === vout)
 
         if (!lock) {
           response.error = { code: -32000, message: 'Lock not found' }
-          break
+          return
         }
 
         if (currentHeight < lock.unlockBlock) {
@@ -262,7 +264,7 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
             code: -32000,
             message: `Lock not yet spendable. ${lock.unlockBlock - currentHeight} blocks remaining`
           }
-          break
+          return
         }
 
         // Build LockedUTXO for the unlock function
@@ -292,6 +294,12 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
           txid: unlockTxid,
           amount: lock.utxo.satoshis
         }
+      })()
+
+      inflightUnlocks.set(outpoint, unlockOperation)
+
+      try {
+        await unlockOperation
       } catch (error) {
         response.error = {
           code: -32000,
@@ -299,7 +307,6 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
         }
       } finally {
         inflightUnlocks.delete(outpoint)
-        resolveInflight()
       }
       break
     }
@@ -700,6 +707,9 @@ async function buildAndBroadcastAction(
 
   // Calculate total output amount
   const totalOutput = actionRequest.outputs.reduce((sum, o) => sum + o.satoshis, 0)
+  if (!Number.isSafeInteger(totalOutput)) {
+    throw new Error('Total output amount exceeds safe integer range')
+  }
 
   const tx = new Transaction()
 

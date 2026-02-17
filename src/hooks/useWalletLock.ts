@@ -25,7 +25,7 @@ import { setWalletKeys } from '../services/brc100'
 import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
 import { invoke } from '@tauri-apps/api/core'
-import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
+import { STORAGE_KEYS, storage } from '../infrastructure/storage/localStorage'
 import { setSessionPassword as setModuleSessionPassword, clearSessionPassword, NO_PASSWORD } from '../services/sessionPasswordStore'
 import { hasPassword } from '../services/wallet/storage'
 import { clearSessionKey } from '../services/secureStorage'
@@ -98,6 +98,7 @@ export function useWalletLock({
     setSessionPassword(null)
     clearSessionPassword()
     clearSessionKey()
+    storage.clearPrivacySensitive()
     try {
       await invoke('clear_keys')
     } catch (e) {
