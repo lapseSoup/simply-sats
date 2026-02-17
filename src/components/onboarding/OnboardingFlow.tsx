@@ -7,7 +7,7 @@ import { SECURITY } from '../../config'
 import { validatePassword, getPasswordStrengthLabel, getPasswordStrengthColor } from '../../utils/passwordValidation'
 
 interface OnboardingFlowProps {
-  onCreateWallet: (password: string) => Promise<string | null>
+  onCreateWallet: (password: string | null) => Promise<string | null>
   onRestoreClick: () => void
   onWalletCreated?: (mnemonic: string) => void
 }
@@ -45,6 +45,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [showSkipWarning, setShowSkipWarning] = useState(false)
   const { showToast } = useUI()
 
   // Password strength meter
@@ -115,6 +116,22 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
     setCreating(true)
     try {
       const mnemonic = await onCreateWallet(password)
+      if (mnemonic) {
+        onWalletCreated?.(mnemonic)
+      } else {
+        showToast('Failed to create wallet', 'error')
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Error creating wallet', 'error')
+    }
+    setCreating(false)
+  }
+
+  const handleSkipPassword = async () => {
+    setShowSkipWarning(false)
+    setCreating(true)
+    try {
+      const mnemonic = await onCreateWallet(null)
       if (mnemonic) {
         onWalletCreated?.(mnemonic)
       } else {
@@ -282,6 +299,35 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                   </>
                 )}
               </button>
+              <button
+                className="btn btn-ghost btn-small"
+                onClick={() => setShowSkipWarning(true)}
+                disabled={creating}
+                type="button"
+              >
+                Continue without password
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Skip Password Warning */}
+        {showSkipWarning && (
+          <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="skip-pwd-title">
+            <div className="modal-container modal-sm">
+              <h3 className="modal-title" id="skip-pwd-title">Skip Password?</h3>
+              <p className="modal-text">
+                Without a password, anyone with access to this computer can open your wallet and spend your funds.
+                You can set a password later in Settings.
+              </p>
+              <div className="modal-actions">
+                <button className="btn btn-secondary" onClick={() => setShowSkipWarning(false)}>
+                  Go Back
+                </button>
+                <button className="btn btn-primary" onClick={handleSkipPassword} disabled={creating}>
+                  {creating ? 'Creating...' : 'Continue Without Password'}
+                </button>
+              </div>
             </div>
           </div>
         )}
