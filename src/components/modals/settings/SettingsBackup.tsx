@@ -11,9 +11,12 @@ import { useWallet } from '../../../contexts/WalletContext'
 import { useUI } from '../../../contexts/UIContext'
 import { exportDatabase, exportDatabaseFull, importDatabase, type DatabaseBackup } from '../../../services/database'
 import { encrypt, decrypt, type EncryptedData } from '../../../services/crypto'
+import { NO_PASSWORD } from '../../../services/sessionPasswordStore'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'
+import { PasswordInput } from '../../shared/PasswordInput'
 import { BackupRecoveryModal } from '../BackupRecoveryModal'
 import { handleKeyDown } from './settingsKeyDown'
+import { SECURITY } from '../../../config'
 
 export function SettingsBackup() {
   const { wallet, sessionPassword, performSync } = useWallet()
@@ -22,105 +25,95 @@ export function SettingsBackup() {
   const [showBackupRecovery, setShowBackupRecovery] = useState(false)
   const [showImportConfirm, setShowImportConfirm] = useState<{ utxos: number; transactions: number } | null>(null)
   const [pendingImportBackup, setPendingImportBackup] = useState<DatabaseBackup | null>(null)
+  const [showBackupPasswordPrompt, setShowBackupPasswordPrompt] = useState(false)
+  const [backupPassword, setBackupPassword] = useState('')
+  const [confirmBackupPassword, setConfirmBackupPassword] = useState('')
+  const [backupPasswordError, setBackupPasswordError] = useState('')
+  const [pendingBackupType, setPendingBackupType] = useState<'essential' | 'full' | null>(null)
+
+  const executeBackupWithPassword = useCallback(async (password: string, type: 'essential' | 'full') => {
+    try {
+      if (type === 'full') showToast('Exporting full backup (including ordinal content)...')
+      const dbBackup = type === 'full' ? await exportDatabaseFull() : await exportDatabase()
+      const { getWifForOperation } = await import('../../../services/wallet')
+      const operationName = type === 'full' ? 'exportFullBackup' : 'exportBackup'
+      const identityWif = await getWifForOperation('identity', operationName, wallet!)
+      const walletWif = await getWifForOperation('wallet', operationName, wallet!)
+      const ordWif = await getWifForOperation('ordinals', operationName, wallet!)
+      const mnemonic = await invoke<string | null>('get_mnemonic')
+
+      const fullBackup = {
+        format: 'simply-sats-full',
+        wallet: {
+          mnemonic: mnemonic || null,
+          keys: {
+            identity: { wif: identityWif, pubKey: wallet!.identityPubKey },
+            payment: { wif: walletWif, address: wallet!.walletAddress },
+            ordinals: { wif: ordWif, address: wallet!.ordAddress }
+          }
+        },
+        database: dbBackup
+      }
+      const encrypted = await encrypt(JSON.stringify(fullBackup), password)
+      const encryptedBackup = {
+        format: 'simply-sats-backup-encrypted',
+        version: 1,
+        encrypted
+      }
+      const backupJson = JSON.stringify(encryptedBackup, null, 2)
+      const suffix = type === 'full' ? 'full' : 'essential'
+      const filePath = await save({
+        defaultPath: `simply-sats-backup-${suffix}-${new Date().toISOString().split('T')[0]}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      })
+      if (filePath) {
+        await writeTextFile(filePath, backupJson)
+        showToast(type === 'full' ? 'Full backup saved!' : 'Essential backup saved!')
+      }
+    } catch (err) {
+      console.error('Backup failed:', err)
+      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
+    }
+  }, [wallet, showToast])
 
   const handleExportEssentialBackup = useCallback(async () => {
-    if (!wallet || !sessionPassword) {
-      showToast('Session password not available \u2014 try locking and unlocking first', 'warning')
+    if (!wallet) return
+    if (sessionPassword === null || sessionPassword === NO_PASSWORD) {
+      setPendingBackupType('essential')
+      setShowBackupPasswordPrompt(true)
       return
     }
-    try {
-      const dbBackup = await exportDatabase()
-      // Retrieve WIFs from key store for backup (WIFs needed in backup file)
-      const { getWifForOperation } = await import('../../../services/wallet')
-      const identityWif = await getWifForOperation('identity', 'exportBackup', wallet)
-      const walletWif = await getWifForOperation('wallet', 'exportBackup', wallet)
-      const ordWif = await getWifForOperation('ordinals', 'exportBackup', wallet)
-
-      // Fetch mnemonic from Rust key store for backup (doesn't clear it)
-      const mnemonic = await invoke<string | null>('get_mnemonic')
-
-      const fullBackup = {
-        format: 'simply-sats-full',
-        wallet: {
-          mnemonic: mnemonic || null,
-          keys: {
-            identity: { wif: identityWif, pubKey: wallet.identityPubKey },
-            payment: { wif: walletWif, address: wallet.walletAddress },
-            ordinals: { wif: ordWif, address: wallet.ordAddress }
-          }
-        },
-        database: dbBackup
-      }
-      const encrypted = await encrypt(JSON.stringify(fullBackup), sessionPassword)
-      const encryptedBackup = {
-        format: 'simply-sats-backup-encrypted',
-        version: 1,
-        encrypted
-      }
-      const backupJson = JSON.stringify(encryptedBackup, null, 2)
-      const filePath = await save({
-        defaultPath: `simply-sats-backup-essential-${new Date().toISOString().split('T')[0]}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }]
-      })
-      if (filePath) {
-        await writeTextFile(filePath, backupJson)
-        showToast('Essential backup saved!')
-      }
-    } catch (err) {
-      console.error('Backup failed:', err)
-      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
-    }
-  }, [wallet, sessionPassword, showToast])
+    await executeBackupWithPassword(sessionPassword, 'essential')
+  }, [wallet, sessionPassword, executeBackupWithPassword])
 
   const handleExportFullBackup = useCallback(async () => {
-    if (!wallet || !sessionPassword) {
-      showToast('Session password not available \u2014 try locking and unlocking first', 'warning')
+    if (!wallet) return
+    if (sessionPassword === null || sessionPassword === NO_PASSWORD) {
+      setPendingBackupType('full')
+      setShowBackupPasswordPrompt(true)
       return
     }
-    try {
-      showToast('Exporting full backup (including ordinal content)...')
-      const dbBackup = await exportDatabaseFull()
-      // Retrieve WIFs from key store for backup
-      const { getWifForOperation } = await import('../../../services/wallet')
-      const identityWif = await getWifForOperation('identity', 'exportFullBackup', wallet)
-      const walletWif = await getWifForOperation('wallet', 'exportFullBackup', wallet)
-      const ordWif = await getWifForOperation('ordinals', 'exportFullBackup', wallet)
+    await executeBackupWithPassword(sessionPassword, 'full')
+  }, [wallet, sessionPassword, executeBackupWithPassword])
 
-      // Fetch mnemonic from Rust key store for backup (doesn't clear it)
-      const mnemonic = await invoke<string | null>('get_mnemonic')
-
-      const fullBackup = {
-        format: 'simply-sats-full',
-        wallet: {
-          mnemonic: mnemonic || null,
-          keys: {
-            identity: { wif: identityWif, pubKey: wallet.identityPubKey },
-            payment: { wif: walletWif, address: wallet.walletAddress },
-            ordinals: { wif: ordWif, address: wallet.ordAddress }
-          }
-        },
-        database: dbBackup
-      }
-      const encrypted = await encrypt(JSON.stringify(fullBackup), sessionPassword)
-      const encryptedBackup = {
-        format: 'simply-sats-backup-encrypted',
-        version: 1,
-        encrypted
-      }
-      const backupJson = JSON.stringify(encryptedBackup, null, 2)
-      const filePath = await save({
-        defaultPath: `simply-sats-backup-full-${new Date().toISOString().split('T')[0]}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }]
-      })
-      if (filePath) {
-        await writeTextFile(filePath, backupJson)
-        showToast('Full backup saved!')
-      }
-    } catch (err) {
-      console.error('Backup failed:', err)
-      showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
+  const handleBackupWithPassword = useCallback(async () => {
+    if (backupPassword.length < SECURITY.MIN_PASSWORD_LENGTH) {
+      setBackupPasswordError(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
+      return
     }
-  }, [wallet, sessionPassword, showToast])
+    if (backupPassword !== confirmBackupPassword) {
+      setBackupPasswordError('Passwords do not match')
+      return
+    }
+    if (pendingBackupType) {
+      await executeBackupWithPassword(backupPassword, pendingBackupType)
+    }
+    setShowBackupPasswordPrompt(false)
+    setBackupPassword('')
+    setConfirmBackupPassword('')
+    setBackupPasswordError('')
+    setPendingBackupType(null)
+  }, [backupPassword, confirmBackupPassword, pendingBackupType, executeBackupWithPassword])
 
   const handleImportBackup = useCallback(async () => {
     try {
@@ -134,7 +127,7 @@ export function SettingsBackup() {
 
       let backup
       if (raw.format === 'simply-sats-backup-encrypted' && raw.encrypted) {
-        if (!sessionPassword) {
+        if (sessionPassword === null) {
           showToast('Session password not available \u2014 try locking and unlocking first', 'warning')
           return
         }
@@ -235,6 +228,50 @@ export function SettingsBackup() {
           onConfirm={executeImportBackup}
           onCancel={() => { setShowImportConfirm(null); setPendingImportBackup(null) }}
         />
+      )}
+
+      {showBackupPasswordPrompt && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="backup-pwd-title">
+          <div className="modal-container modal-sm">
+            <h3 className="modal-title" id="backup-pwd-title">Backup Password</h3>
+            <p className="modal-text">
+              Enter a password to protect your backup file. You will need this password to restore from it.
+            </p>
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <PasswordInput
+                id="backup-password-input"
+                value={backupPassword}
+                onChange={setBackupPassword}
+                placeholder={`At least ${SECURITY.MIN_PASSWORD_LENGTH} characters`}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Confirm Password</label>
+              <PasswordInput
+                id="backup-password-confirm-input"
+                value={confirmBackupPassword}
+                onChange={setConfirmBackupPassword}
+                placeholder="Confirm password"
+              />
+            </div>
+            {backupPasswordError && <div className="form-error" role="alert">{backupPasswordError}</div>}
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => {
+                setShowBackupPasswordPrompt(false)
+                setBackupPassword('')
+                setConfirmBackupPassword('')
+                setBackupPasswordError('')
+                setPendingBackupType(null)
+              }}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={handleBackupWithPassword} disabled={!backupPassword || !confirmBackupPassword}>
+                Export Backup
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )

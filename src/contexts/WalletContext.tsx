@@ -21,6 +21,7 @@ import { useWalletInit } from '../hooks/useWalletInit'
 import { useWalletActions as useWalletActionsHook } from '../hooks/useWalletActions'
 import { useWalletSend } from '../hooks/useWalletSend'
 import { useAccountSwitching } from '../hooks/useAccountSwitching'
+import { hasPassword } from '../services/wallet/storage'
 
 // Split context objects
 import { WalletStateContext, useWalletState, type WalletStateContextType } from './WalletStateContext'
@@ -205,7 +206,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Initialize auto-lock when wallet is loaded
   useEffect(() => {
-    if (wallet && autoLockMinutes > 0) {
+    if (wallet && autoLockMinutes > 0 && hasPassword()) {
       walletLogger.debug('AutoLock initializing', { timeoutMinutes: autoLockMinutes })
       const cleanup = initAutoLock(lockWallet, minutesToMs(autoLockMinutes))
       return cleanup

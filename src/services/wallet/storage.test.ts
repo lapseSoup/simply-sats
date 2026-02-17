@@ -52,12 +52,14 @@ vi.mock('../../config', () => ({
 
 import {
   saveWallet,
+  saveWalletUnprotected,
   loadWallet,
   hasWallet,
+  hasPassword,
   clearWallet,
   changePassword,
 } from './storage'
-import type { WalletKeys } from './types'
+import { isUnprotectedData, type WalletKeys } from './types'
 import type { EncryptedData } from '../crypto'
 
 // ---------- Test fixtures ----------
@@ -270,5 +272,68 @@ describe('changePassword', () => {
     // No wallet in storage => loadWallet returns null
     await expect(changePassword(testPassword, 'new-long-password-14'))
       .rejects.toThrow('Wrong password or wallet not found')
+  })
+})
+
+// ---------- hasPassword ----------
+
+describe('hasPassword', () => {
+  it('defaults to true when flag is absent', () => {
+    expect(hasPassword()).toBe(true)
+  })
+
+  it('returns false when flag is "false"', () => {
+    localStorage.setItem('simply_sats_has_password', 'false')
+    expect(hasPassword()).toBe(false)
+  })
+
+  it('returns true when flag is "true"', () => {
+    localStorage.setItem('simply_sats_has_password', 'true')
+    expect(hasPassword()).toBe(true)
+  })
+})
+
+// ---------- isUnprotectedData ----------
+
+describe('isUnprotectedData', () => {
+  it('returns true for valid unprotected data', () => {
+    const data = { version: 0, mode: 'unprotected', keys: { mnemonic: 'test' } }
+    expect(isUnprotectedData(data)).toBe(true)
+  })
+
+  it('returns false for encrypted data', () => {
+    const data = { version: 1, ct: 'abc', iv: 'def', salt: 'ghi' }
+    expect(isUnprotectedData(data)).toBe(false)
+  })
+
+  it('returns false for null', () => {
+    expect(isUnprotectedData(null)).toBe(false)
+  })
+})
+
+// ---------- saveWalletUnprotected + loadWallet(null) ----------
+
+describe('saveWalletUnprotected + loadWallet', () => {
+  it('saves keys and sets hasPassword to false', async () => {
+    await saveWalletUnprotected(testKeys)
+    expect(hasPassword()).toBe(false)
+  })
+
+  it('loadWallet(null) retrieves unprotected keys', async () => {
+    await saveWalletUnprotected(testKeys)
+    const loaded = await loadWallet(null)
+    expect(loaded).not.toBeNull()
+    expect(loaded!.walletAddress).toBe(testKeys.walletAddress)
+    expect(loaded!.mnemonic).toBe(testKeys.mnemonic)
+  })
+
+  it('hasWallet returns true for unprotected wallet', async () => {
+    await saveWalletUnprotected(testKeys)
+    expect(await hasWallet()).toBe(true)
+  })
+
+  it('saveWallet sets hasPassword to true', async () => {
+    await saveWallet(testKeys, testPassword)
+    expect(hasPassword()).toBe(true)
   })
 })

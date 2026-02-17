@@ -19,6 +19,13 @@
  * lives in JS heap memory and is cleared when the wallet locks.
  */
 
+/**
+ * Sentinel value for "wallet is unlocked but no password was set."
+ * Distinct from null (locked) and any real password string.
+ * Note: empty string is falsy in JS — use `=== null` to check "no session."
+ */
+export const NO_PASSWORD = '' as const
+
 let _sessionPassword: string | null = null
 
 /** Store the session password (call after successful unlock). */

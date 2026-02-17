@@ -26,12 +26,13 @@ import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
 import { invoke } from '@tauri-apps/api/core'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
-import { setSessionPassword as setModuleSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
+import { setSessionPassword as setModuleSessionPassword, clearSessionPassword, NO_PASSWORD } from '../services/sessionPasswordStore'
+import { hasPassword } from '../services/wallet/storage'
 
 interface UseWalletLockOptions {
   activeAccount: Account | null
   activeAccountId: number | null
-  getKeysForAccount: (account: Account, password: string) => Promise<WalletKeys | null>
+  getKeysForAccount: (account: Account, password: string | null) => Promise<WalletKeys | null>
   refreshAccounts: () => Promise<void>
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
   setWalletState: Dispatch<SetStateAction<WalletKeys | null>>
@@ -75,6 +76,10 @@ export function useWalletLock({
 
   // Lock wallet (clear keys from memory)
   const lockWallet = useCallback(async () => {
+    if (!hasPassword()) {
+      walletLogger.debug('lockWallet no-op: no password set')
+      return
+    }
     walletLogger.info('Locking wallet')
     setIsLocked(true)
     setWalletState(null)
@@ -93,7 +98,7 @@ export function useWalletLock({
   useEffect(() => {
     // We can't check `wallet` here (it's not in our scope), so we rely on
     // isLocked as a proxy. When isLocked is true, there's nothing to lock.
-    if (isLocked) return
+    if (isLocked || !hasPassword()) return
 
     const HIDDEN_LOCK_DELAY_MS = 60_000 // 60 seconds
     let hiddenTimer: ReturnType<typeof setTimeout> | null = null
@@ -148,6 +153,24 @@ export function useWalletLock({
 
       if (!account) {
         walletLogger.error('No account found to unlock')
+        return false
+      }
+
+      // Unprotected path — no PBKDF2, no rate limiting
+      if (!hasPassword()) {
+        const keys = await getKeysForAccount(account, null)
+        if (keys) {
+          setWalletState(keys)
+          setWalletKeys(keys)
+          setIsLocked(false)
+          setSessionPassword(NO_PASSWORD)
+          setModuleSessionPassword(NO_PASSWORD)
+          resetInactivityTimer()
+          await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
+          await refreshAccounts()
+          walletLogger.info('Wallet unlocked (unprotected mode)')
+          return true
+        }
         return false
       }
 

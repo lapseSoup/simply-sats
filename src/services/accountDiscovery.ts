@@ -41,7 +41,7 @@ const DISCOVERY_GAP_LIMIT = 2
  */
 export async function discoverAccounts(
   mnemonic: string,
-  password: string,
+  password: string | null,
   restoreActiveAccountId?: number
 ): Promise<number> {
   const wocClient = createWocClient()

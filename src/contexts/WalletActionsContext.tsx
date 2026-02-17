@@ -39,9 +39,9 @@ export interface WalletActionsContextType {
   // Wallet lifecycle
   performSync: (isRestore?: boolean, forceReset?: boolean) => Promise<void>
   fetchData: () => Promise<void>
-  handleCreateWallet: (password: string) => Promise<string | null>
-  handleRestoreWallet: (mnemonic: string, password: string) => Promise<boolean>
-  handleImportJSON: (json: string, password: string) => Promise<boolean>
+  handleCreateWallet: (password: string | null) => Promise<string | null>
+  handleRestoreWallet: (mnemonic: string, password: string | null) => Promise<boolean>
+  handleImportJSON: (json: string, password: string | null) => Promise<boolean>
   handleDeleteWallet: () => Promise<void>
 
   // Wallet operations
@@ -53,7 +53,7 @@ export interface WalletActionsContextType {
   handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<WalletResult>
 
   // Account discovery (deferred after restore sync)
-  consumePendingDiscovery: () => { mnemonic: string; password: string; excludeAccountId?: number } | null
+  consumePendingDiscovery: () => { mnemonic: string; password: string | null; excludeAccountId?: number } | null
 }
 
 export const WalletActionsContext = createContext<WalletActionsContextType | null>(null)

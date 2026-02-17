@@ -7,13 +7,22 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
-import type { WalletKeys } from './types'
+import { isUnprotectedData, type UnprotectedWalletData, type WalletKeys } from './types'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData, type EncryptedData } from '../crypto'
 import { walletLogger } from '../logger'
 import { SECURITY } from '../../config'
 import { STORAGE_KEYS } from '../../infrastructure/storage/localStorage'
 
 const STORAGE_KEY = STORAGE_KEYS.WALLET
+
+/**
+ * Check if wallet has password protection.
+ * Reads from localStorage flag — synchronous, no async needed.
+ * Defaults to true (safe for existing wallets without the flag).
+ */
+export function hasPassword(): boolean {
+  return localStorage.getItem(STORAGE_KEYS.HAS_PASSWORD) !== 'false'
+}
 
 /**
  * Check if we're running in Tauri environment
@@ -97,6 +106,31 @@ async function migrateToSecureStorage(data: string): Promise<boolean> {
 }
 
 /**
+ * Save wallet keys WITHOUT encryption — plaintext in OS keychain.
+ * Used when user skips password during setup.
+ */
+export async function saveWalletUnprotected(keys: WalletKeys): Promise<void> {
+  const data: UnprotectedWalletData = {
+    version: 0,
+    mode: 'unprotected',
+    keys
+  }
+
+  const savedSecurely = await saveToSecureStorage(data as unknown as EncryptedData)
+
+  if (savedSecurely) {
+    localStorage.removeItem(STORAGE_KEY)
+    walletLogger.info('Wallet saved to secure storage (unprotected mode)')
+  } else {
+    // Fallback to localStorage (web/dev build)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    walletLogger.info('Wallet saved to localStorage (unprotected mode)')
+  }
+
+  localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, 'false')
+}
+
+/**
  * Save wallet keys with proper AES-GCM encryption
  *
  * @param keys - Wallet keys to save
@@ -121,6 +155,8 @@ export async function saveWallet(keys: WalletKeys, password: string): Promise<vo
     localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
     walletLogger.info('Wallet saved to localStorage')
   }
+
+  localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, 'true')
 }
 
 /**
@@ -129,14 +165,22 @@ export async function saveWallet(keys: WalletKeys, password: string): Promise<vo
  * Handles both new encrypted format and legacy base64 format.
  * If legacy format is detected, it will be migrated to the new format.
  *
- * @param password - Password for decryption
+ * @param password - Password for decryption (null for unprotected wallets)
  * @returns WalletKeys or null if not found
  * @throws Error if password is wrong or data is corrupted
  */
-export async function loadWallet(password: string): Promise<WalletKeys | null> {
+export async function loadWallet(password: string | null): Promise<WalletKeys | null> {
   // Try secure storage first (Tauri desktop)
   const secureData = await loadFromSecureStorage()
   if (secureData) {
+    // Check for unprotected format (version 0)
+    if (isUnprotectedData(secureData)) {
+      return secureData.keys
+    }
+    // Encrypted format — need password
+    if (!password) {
+      throw new Error('Password required for encrypted wallet')
+    }
     const decrypted = await decrypt(secureData, password)
     return JSON.parse(decrypted)
   }
@@ -149,7 +193,16 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
     // Try to parse as JSON (new format)
     const parsed = JSON.parse(stored)
 
+    // Check for unprotected format (version 0)
+    if (isUnprotectedData(parsed)) {
+      return parsed.keys
+    }
+
     if (isEncryptedData(parsed)) {
+      // Encrypted format — need password
+      if (!password) {
+        throw new Error('Password required for encrypted wallet')
+      }
       // New encrypted format - decrypt it
       const decrypted = await decrypt(parsed, password)
       const keys = JSON.parse(decrypted) as WalletKeys
@@ -165,6 +218,7 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
     }
 
     // If it's a plain object with wallet keys — this is a security violation
+    // (raw plaintext keys without the version 0 wrapper)
     if (parsed.mnemonic && parsed.walletWif) {
       walletLogger.error('SECURITY: Unencrypted wallet data found in localStorage. Removing.')
       localStorage.removeItem(STORAGE_KEY)
@@ -188,7 +242,10 @@ export async function loadWallet(password: string): Promise<WalletKeys | null> {
       localStorage.removeItem(STORAGE_KEY)
       walletLogger.warn('Removed legacy base64 wallet data from localStorage')
 
-      // Migrate to new encrypted format
+      // Migrate to new encrypted format (legacy wallets always had passwords)
+      if (!password) {
+        throw new Error('Password required for legacy wallet migration')
+      }
       const encryptedData = await migrateLegacyData(stored, password)
 
       // Try to save to secure storage

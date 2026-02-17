@@ -21,9 +21,9 @@ interface AccountsContextType {
   activeAccountId: number | null
 
   // Account actions
-  switchAccount: (accountId: number, password: string) => Promise<WalletKeys | null>
-  createNewAccount: (name: string, password: string) => Promise<WalletKeys | null>
-  importAccount: (name: string, mnemonic: string, password: string) => Promise<WalletKeys | null>
+  switchAccount: (accountId: number, password: string | null) => Promise<WalletKeys | null>
+  createNewAccount: (name: string, password: string | null) => Promise<WalletKeys | null>
+  importAccount: (name: string, mnemonic: string, password: string | null) => Promise<WalletKeys | null>
   deleteAccount: (accountId: number) => Promise<boolean>
   renameAccount: (accountId: number, name: string) => Promise<void>
   refreshAccounts: () => Promise<void>
@@ -35,7 +35,7 @@ interface AccountsContextType {
   setActiveAccountState: (account: Account | null, accountId: number | null) => void
 
   // Get keys for unlock
-  getKeysForAccount: (account: Account, password: string) => Promise<WalletKeys | null>
+  getKeysForAccount: (account: Account, password: string | null) => Promise<WalletKeys | null>
 }
 
 const AccountsContext = createContext<AccountsContextType | null>(null)
@@ -84,7 +84,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     }
   }, [])
 
-  const getKeysForAccount = useCallback(async (account: Account, password: string): Promise<WalletKeys | null> => {
+  const getKeysForAccount = useCallback(async (account: Account, password: string | null): Promise<WalletKeys | null> => {
     try {
       return await getAccountKeys(account, password)
     } catch (e) {
@@ -94,7 +94,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   }, [])
 
   // Switch account - returns keys if successful, null if failed
-  const switchAccount = useCallback(async (accountId: number, password: string): Promise<WalletKeys | null> => {
+  const switchAccount = useCallback(async (accountId: number, password: string | null): Promise<WalletKeys | null> => {
     try {
       const account = accounts.find(a => a.id === accountId)
       if (!account) {
@@ -124,7 +124,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   }, [accounts, refreshAccounts])
 
   // Create new account - derives from the same mnemonic with new account index
-  const createNewAccount = useCallback(async (name: string, password: string): Promise<WalletKeys | null> => {
+  const createNewAccount = useCallback(async (name: string, password: string | null): Promise<WalletKeys | null> => {
     try {
       // Get all accounts sorted by ID to find the original (first created) account
       const allAccounts = await getAllAccounts()
@@ -177,7 +177,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   }, [refreshAccounts])
 
   // Import account from external mnemonic
-  const importAccount = useCallback(async (name: string, mnemonic: string, password: string): Promise<WalletKeys | null> => {
+  const importAccount = useCallback(async (name: string, mnemonic: string, password: string | null): Promise<WalletKeys | null> => {
     try {
       const keys = await restoreWallet(mnemonic)
       // Use legacy password requirements since we're reusing the session password

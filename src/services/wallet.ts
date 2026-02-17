@@ -53,8 +53,10 @@ export {
 // Storage operations
 export {
   saveWallet,
+  saveWalletUnprotected,
   loadWallet,
   hasWallet,
+  hasPassword,
   clearWallet,
   changePassword
 } from './wallet/storage'
