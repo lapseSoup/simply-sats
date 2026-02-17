@@ -1,6 +1,6 @@
 # Simply Sats
 
-A simple, lightweight BSV wallet with BRC-100 support. Built with Tauri, React, and TypeScript.
+A simple, lightweight BSV wallet with BRC-100 support. Built with Tauri 2, React 19, and TypeScript 5.9.
 
 ## Features
 
@@ -16,9 +16,10 @@ A simple, lightweight BSV wallet with BRC-100 support. Built with Tauri, React, 
 - **Local database** - UTXOs tracked locally for fast balance queries
 - **Multi-account support** - Create multiple accounts from a single seed phrase
 - **Token tracking** - View BSV-20/BSV-21 token balances
-- **Auto-lock** - Automatically lock wallet after inactivity (configurable 5min to 1hr)
+- **Auto-lock** - Automatically lock wallet after inactivity (10min default, up to 60min or disabled)
 - **Overlay Network** - SHIP/SLAP broadcast support for transaction reliability
-- **AES-GCM encryption** - Wallet keys encrypted locally with your password
+- **AES-256-GCM encryption** - Wallet keys encrypted locally with PBKDF2-derived key (600k iterations)
+- **Optional password** - Leave blank for passwordless mode, or set a 14+ character password
 
 ## Derivation Paths
 
@@ -63,30 +64,45 @@ npm install
 npm run dev
 
 # Run as desktop app
-npm run tauri dev
+npm run tauri:dev
 
-# Build for production
-npm run tauri build
+# Build for production (creates DMG on macOS)
+npm run tauri:build
+
+# Run tests (1606 tests)
+npm run test:run
+
+# Type check
+npm run typecheck
+
+# Lint
+npm run lint
 ```
 
 ## Tech Stack
 
-- **Tauri** - Lightweight desktop app framework
-- **React** - UI framework
-- **TypeScript** - Type safety
-- **SQLite** - Local UTXO and transaction storage
+- **Tauri 2** - Lightweight desktop app framework (Rust backend, native webview)
+- **React 19** - UI framework
+- **TypeScript 5.9** - Type safety
+- **Rust / Axum** - Backend HTTP server (BRC-100 on port 3322)
+- **SQLite** - Local UTXO and transaction storage (sql.js WASM + Tauri plugin)
 - **@bsv/sdk** - BSV transaction building and key derivation
 - **WhatsOnChain API** - Blockchain data
-- **GorillaPool API** - 1Sat Ordinals data
+- **GorillaPool API** - 1Sat Ordinals and fee rate data
 
 ## Security
 
-- Private keys are encrypted locally with AES-GCM 256-bit encryption
+- Private keys encrypted with AES-256-GCM, PBKDF2-derived key (600,000 iterations, OWASP 2024)
 - No external servers besides WhatsOnChain/GorillaPool/ARC APIs for blockchain data
 - Recovery phrase is the only way to restore your wallet
 - Derived address private keys are computed from your seed phrase + sender's public key
-- Auto-lock feature locks wallet after configurable inactivity period (5min to 1hr, or disabled)
-- Password protection optional - leave blank if you prefer no password
+- Auto-lock after configurable inactivity period (10min default, up to 60min, or disabled)
+- Rate limiting: 5 unlock attempts max, then exponential backoff (1s base, 5min max)
+- Optional password — passwordless mode supported for convenience
+- CSRF nonces on all BRC-100 state-changing operations
+- DNS rebinding protection — BRC-100 HTTP server accepts localhost connections only
+
+For a full security model description see [docs/OVERVIEW.md](docs/OVERVIEW.md).
 
 ## License
 
