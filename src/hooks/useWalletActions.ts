@@ -11,6 +11,7 @@ import {
   restoreWallet,
   importFromJSON,
   saveWallet,
+  saveWalletUnprotected,
   clearWallet
 } from '../services/wallet'
 import {
@@ -44,12 +45,12 @@ interface UseWalletActionsOptions {
 }
 
 interface UseWalletActionsReturn {
-  handleCreateWallet: (password: string) => Promise<string | null>
-  handleRestoreWallet: (mnemonic: string, password: string) => Promise<boolean>
-  handleImportJSON: (json: string, password: string) => Promise<boolean>
+  handleCreateWallet: (password: string | null) => Promise<string | null>
+  handleRestoreWallet: (mnemonic: string, password: string | null) => Promise<boolean>
+  handleImportJSON: (json: string, password: string | null) => Promise<boolean>
   handleDeleteWallet: () => Promise<void>
-  pendingDiscoveryRef: MutableRefObject<{ mnemonic: string; password: string; excludeAccountId?: number } | null>
-  consumePendingDiscovery: () => { mnemonic: string; password: string; excludeAccountId?: number } | null
+  pendingDiscoveryRef: MutableRefObject<{ mnemonic: string; password: string | null; excludeAccountId?: number } | null>
+  consumePendingDiscovery: () => { mnemonic: string; password: string | null; excludeAccountId?: number } | null
 }
 
 export function useWalletActions({
@@ -66,22 +67,29 @@ export function useWalletActions({
   setAutoLockMinutesState
 }: UseWalletActionsOptions): UseWalletActionsReturn {
   // Stores pending account discovery params — consumed by App.tsx after initial sync completes
-  const pendingDiscoveryRef = useRef<{ mnemonic: string; password: string; excludeAccountId?: number } | null>(null)
+  const pendingDiscoveryRef = useRef<{ mnemonic: string; password: string | null; excludeAccountId?: number } | null>(null)
 
-  const handleCreateWallet = useCallback(async (password: string): Promise<string | null> => {
-    const validation = validatePassword(password)
-    if (!validation.isValid) {
-      throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+  const handleCreateWallet = useCallback(async (password: string | null): Promise<string | null> => {
+    if (password !== null) {
+      const validation = validatePassword(password)
+      if (!validation.isValid) {
+        throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+      }
     }
     try {
       const keys = await createWallet()
-      await saveWallet(keys, password)
+      if (password !== null) {
+        await saveWallet(keys, password)
+      } else {
+        await saveWalletUnprotected(keys)
+      }
       await migrateToMultiAccount(keys, password)
       await refreshAccounts()
       // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
       setWallet({ ...keys, mnemonic: '' })
-      setSessionPassword(password)
-      setModuleSessionPassword(password)
+      const sessionPwd = password ?? ''
+      setSessionPassword(sessionPwd)
+      setModuleSessionPassword(sessionPwd)
       audit.walletCreated()
       // Return mnemonic for display during onboarding
       return keys.mnemonic || null
@@ -91,20 +99,27 @@ export function useWalletActions({
     }
   }, [setWallet, setSessionPassword, refreshAccounts])
 
-  const handleRestoreWallet = useCallback(async (mnemonic: string, password: string): Promise<boolean> => {
-    const validation = validatePassword(password)
-    if (!validation.isValid) {
-      throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+  const handleRestoreWallet = useCallback(async (mnemonic: string, password: string | null): Promise<boolean> => {
+    if (password !== null) {
+      const validation = validatePassword(password)
+      if (!validation.isValid) {
+        throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+      }
     }
     try {
       const keys = await restoreWallet(mnemonic.trim())
-      await saveWallet(keys, password)
+      if (password !== null) {
+        await saveWallet(keys, password)
+      } else {
+        await saveWalletUnprotected(keys)
+      }
       await migrateToMultiAccount({ ...keys, mnemonic: mnemonic.trim() }, password)
       await refreshAccounts()
       // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
       setWallet({ ...keys, mnemonic: '' })
-      setSessionPassword(password)
-      setModuleSessionPassword(password)
+      const sessionPwd = password ?? ''
+      setSessionPassword(sessionPwd)
+      setModuleSessionPassword(sessionPwd)
       // Queue account discovery for after initial sync completes
       const activeAcc = await getActiveAccount()
       pendingDiscoveryRef.current = { mnemonic: mnemonic.trim(), password, excludeAccountId: activeAcc?.id }
@@ -116,19 +131,26 @@ export function useWalletActions({
     }
   }, [setWallet, setSessionPassword, refreshAccounts])
 
-  const handleImportJSON = useCallback(async (json: string, password: string): Promise<boolean> => {
-    const validation = validatePassword(password)
-    if (!validation.isValid) {
-      throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+  const handleImportJSON = useCallback(async (json: string, password: string | null): Promise<boolean> => {
+    if (password !== null) {
+      const validation = validatePassword(password)
+      if (!validation.isValid) {
+        throw new Error(validation.errors[0] || `Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+      }
     }
     try {
       const keys = await importFromJSON(json)
-      await saveWallet(keys, password)
+      if (password !== null) {
+        await saveWallet(keys, password)
+      } else {
+        await saveWalletUnprotected(keys)
+      }
       await migrateToMultiAccount(keys, password)
       await refreshAccounts()
       setWallet(keys)
-      setSessionPassword(password)
-      setModuleSessionPassword(password)
+      const sessionPwd = password ?? ''
+      setSessionPassword(sessionPwd)
+      setModuleSessionPassword(sessionPwd)
       return true
     } catch (err) {
       walletLogger.error('Failed to import JSON', err)
