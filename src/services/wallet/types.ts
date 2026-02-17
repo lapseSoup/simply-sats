@@ -26,6 +26,26 @@ export interface WalletKeys {
 }
 
 /**
+ * Unprotected wallet data — plaintext keys stored in OS keychain.
+ * Used when user opts out of password protection during setup.
+ * version: 0 distinguishes this from EncryptedData (version: 1).
+ */
+export interface UnprotectedWalletData {
+  version: 0
+  mode: 'unprotected'
+  keys: WalletKeys
+}
+
+/**
+ * Type guard for UnprotectedWalletData
+ */
+export function isUnprotectedData(data: unknown): data is UnprotectedWalletData {
+  if (typeof data !== 'object' || data === null) return false
+  const obj = data as Record<string, unknown>
+  return obj.version === 0 && obj.mode === 'unprotected' && typeof obj.keys === 'object'
+}
+
+/**
  * Key type for retrieving WIFs from the Rust key store.
  */
 export type KeyType = 'wallet' | 'ordinals' | 'identity'

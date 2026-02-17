@@ -26,6 +26,9 @@ export const STORAGE_KEYS = {
   // Security
   TRUSTED_ORIGINS: 'simply_sats_trusted_origins',
 
+  // Password protection flag
+  HAS_PASSWORD: 'simply_sats_has_password',
+
   // Wallet storage (encrypted)
   WALLET: 'simply_sats_wallet',
 
@@ -219,6 +222,18 @@ export const storage = {
     },
     clear(): void {
       localStorage.removeItem(STORAGE_KEYS.TRUSTED_ORIGINS)
+    }
+  },
+
+  hasPassword: {
+    get(): boolean {
+      return localStorage.getItem(STORAGE_KEYS.HAS_PASSWORD) !== 'false'
+    },
+    set(value: boolean): void {
+      localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, String(value))
+    },
+    clear(): void {
+      localStorage.removeItem(STORAGE_KEYS.HAS_PASSWORD)
     }
   },
 
