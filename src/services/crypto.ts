@@ -232,7 +232,13 @@ export async function decrypt(encryptedData: EncryptedData, password: string): P
   const iv = new Uint8Array(base64ToBuffer(encryptedData.iv))
   const salt = new Uint8Array(base64ToBuffer(encryptedData.salt))
 
-  const key = await deriveKey(password, salt, encryptedData.iterations)
+  // Security: enforce a minimum iteration count to prevent downgrade attacks.
+  // An attacker who can modify stored ciphertext could reduce iterations to weaken
+  // the key derivation. We clamp to PBKDF2_ITERATIONS so legitimate data always
+  // uses full strength, and tampered data doesn't get an easier brute-force path.
+  const iterations = Math.max(encryptedData.iterations, PBKDF2_ITERATIONS)
+
+  const key = await deriveKey(password, salt, iterations)
 
   try {
     const plaintext = await getCrypto().subtle.decrypt(

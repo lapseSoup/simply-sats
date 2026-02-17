@@ -39,6 +39,15 @@ async function saveToSecureStorage(data: EncryptedData): Promise<boolean> {
 
   try {
     await invoke('secure_storage_save', { data })
+
+    // Read-back verification: confirm the data was actually persisted.
+    // A silent save failure would leave the only copy in localStorage (plaintext).
+    const exists = await invoke<boolean>('secure_storage_exists')
+    if (!exists) {
+      walletLogger.error('SECURITY: Secure storage save reported success but read-back check failed')
+      return false
+    }
+
     return true
   } catch (error) {
     walletLogger.error('Failed to save to secure storage', { error })

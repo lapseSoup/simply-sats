@@ -327,7 +327,7 @@ describe('Transaction Service', () => {
 
       await expect(
         executeBroadcast('deadbeef', 'pending-123', outpoints)
-      ).rejects.toThrow('broadcast rejected')
+      ).rejects.toThrow('wallet state could not be fully restored')
 
       // Rollback was attempted
       expect(mockRollbackPendingSpend).toHaveBeenCalledWith(outpoints)
@@ -352,7 +352,7 @@ describe('Transaction Service', () => {
     })
 
     it('should send BSV successfully (happy path)', async () => {
-      const txid = await sendBSV(wif, VALID_ADDRESS, 5000, utxos)
+      const txid = await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
       expect(mockAcquireSyncLock).toHaveBeenCalled()
@@ -414,7 +414,7 @@ describe('Transaction Service', () => {
       })
 
       await expect(
-        sendBSV(wif, VALID_ADDRESS, 5000, utxos)
+        sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
       ).rejects.toThrow('Insufficient funds')
     })
 
@@ -427,7 +427,7 @@ describe('Transaction Service', () => {
       mockBuildP2PKHTx.mockRejectedValue(new Error('build failed'))
 
       await expect(
-        sendBSV(wif, VALID_ADDRESS, 5000, utxos)
+        sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
       ).rejects.toThrow('build failed')
 
       // Lock must still be released
@@ -452,7 +452,7 @@ describe('Transaction Service', () => {
     it('should record change UTXO when change > 0', async () => {
       mockBuildP2PKHTx.mockResolvedValue(makeBuiltTx({ change: 4800 }))
 
-      await sendBSV(wif, VALID_ADDRESS, 5000, utxos)
+      await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
 
       expect(mockAddUTXO).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -463,14 +463,14 @@ describe('Transaction Service', () => {
           basket: 'default',
           spendable: true,
         }),
-        undefined,
+        1,
       )
     })
 
     it('should NOT record change UTXO when change is 0', async () => {
       mockBuildP2PKHTx.mockResolvedValue(makeBuiltTx({ change: 0, numOutputs: 1 }))
 
-      await sendBSV(wif, VALID_ADDRESS, 5000, utxos)
+      await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
 
       expect(mockAddUTXO).not.toHaveBeenCalled()
     })
@@ -497,7 +497,7 @@ describe('Transaction Service', () => {
     })
 
     it('should send BSV multi-key successfully (happy path)', async () => {
-      const txid = await sendBSVMultiKey(changeWif, VALID_ADDRESS, 8000, extUtxos)
+      const txid = await sendBSVMultiKey(changeWif, VALID_ADDRESS, 8000, extUtxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
       expect(mockAcquireSyncLock).toHaveBeenCalled()
@@ -522,7 +522,7 @@ describe('Transaction Service', () => {
       })
 
       await expect(
-        sendBSVMultiKey(changeWif, VALID_ADDRESS, 999_999, extUtxos)
+        sendBSVMultiKey(changeWif, VALID_ADDRESS, 999_999, extUtxos, 1)
       ).rejects.toThrow('Insufficient funds')
     })
 
@@ -544,7 +544,7 @@ describe('Transaction Service', () => {
       mockBuildMultiKeyP2PKHTx.mockRejectedValue(new Error('signing error'))
 
       await expect(
-        sendBSVMultiKey(changeWif, VALID_ADDRESS, 5000, extUtxos)
+        sendBSVMultiKey(changeWif, VALID_ADDRESS, 5000, extUtxos, 1)
       ).rejects.toThrow('signing error')
 
       expect(mockReleaseLock).toHaveBeenCalled()
@@ -581,7 +581,7 @@ describe('Transaction Service', () => {
     })
 
     it('should consolidate UTXOs successfully', async () => {
-      const result = await consolidateUtxos(wif, utxoIds)
+      const result = await consolidateUtxos(wif, utxoIds, 1)
 
       expect(result.txid).toBe(MOCK_TXID)
       expect(result.outputSats).toBe(9850)
@@ -597,7 +597,7 @@ describe('Transaction Service', () => {
     })
 
     it('should record the consolidated UTXO at vout 0', async () => {
-      await consolidateUtxos(wif, utxoIds)
+      await consolidateUtxos(wif, utxoIds, 1)
 
       expect(mockAddUTXO).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -612,7 +612,7 @@ describe('Transaction Service', () => {
     })
 
     it('should confirm spent outpoints after broadcast', async () => {
-      await consolidateUtxos(wif, utxoIds)
+      await consolidateUtxos(wif, utxoIds, 1)
 
       const builtSpentOutpoints = makeBuiltConsolidationTx().spentOutpoints
       expect(mockConfirmUtxosSpent).toHaveBeenCalledWith(builtSpentOutpoints, MOCK_TXID)
@@ -628,7 +628,7 @@ describe('Transaction Service', () => {
         })
       )
 
-      const result = await consolidateUtxos(wif, singleUtxo)
+      const result = await consolidateUtxos(wif, singleUtxo, 1)
 
       expect(result.txid).toBe(MOCK_TXID)
       expect(result.outputSats).toBe(4850)
@@ -638,7 +638,7 @@ describe('Transaction Service', () => {
       mockBuildConsolidationTx.mockRejectedValue(new Error('build failed'))
 
       await expect(
-        consolidateUtxos(wif, utxoIds)
+        consolidateUtxos(wif, utxoIds, 1)
       ).rejects.toThrow('build failed')
 
       expect(mockReleaseLock).toHaveBeenCalled()
@@ -648,7 +648,7 @@ describe('Transaction Service', () => {
       mockAddUTXO.mockRejectedValue(new Error('UNIQUE constraint failed'))
 
       // Should NOT throw — duplicate is non-fatal
-      const result = await consolidateUtxos(wif, utxoIds)
+      const result = await consolidateUtxos(wif, utxoIds, 1)
       expect(result.txid).toBe(MOCK_TXID)
     })
 
@@ -656,7 +656,7 @@ describe('Transaction Service', () => {
       mockAddUTXO.mockRejectedValue(new Error('disk full'))
 
       await expect(
-        consolidateUtxos(wif, utxoIds)
+        consolidateUtxos(wif, utxoIds, 1)
       ).rejects.toThrow(/failed to record locally/)
     })
 
@@ -664,7 +664,7 @@ describe('Transaction Service', () => {
       mockRecordSentTransaction.mockRejectedValue(new Error('DB write error'))
 
       await expect(
-        consolidateUtxos(wif, utxoIds)
+        consolidateUtxos(wif, utxoIds, 1)
       ).rejects.toThrow(/broadcast succeeded.*failed to record locally/)
     })
   })

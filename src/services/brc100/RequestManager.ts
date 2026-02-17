@@ -29,8 +29,11 @@ export class RequestManager {
 
   constructor(ttlMs: number = 5 * 60 * 1000) {
     this.ttlMs = ttlMs
-    // Start cleanup interval
-    this.cleanupInterval = setInterval(() => this.cleanup(), this.ttlMs)
+    // Run cleanup at ttl/4 (max 60s) so stale requests are collected well before
+    // the full TTL elapses. Running at exactly ttlMs would let requests linger up
+    // to 2× TTL in the worst case.
+    const cleanupIntervalMs = Math.min(ttlMs / 4, 60_000)
+    this.cleanupInterval = setInterval(() => this.cleanup(), cleanupIntervalMs)
   }
 
   /**

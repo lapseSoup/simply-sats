@@ -44,6 +44,9 @@ export const SECURITY = {
 
   /** Maximum number of used nonces to track (memory management) */
   MAX_USED_NONCES: 1000,
+
+  /** Delay in ms before locking wallet when app is hidden (visibility change) */
+  HIDDEN_LOCK_DELAY_MS: 60_000, // 60 seconds
 } as const
 
 // ============================================

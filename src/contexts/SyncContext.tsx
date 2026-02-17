@@ -260,8 +260,13 @@ export function SyncProvider({ children }: SyncProviderProps) {
       ])
       if (isCancelled?.()) return
       const totalBalance = defaultBal + derivedBal
-      setBalance(totalBalance)
-      try { localStorage.setItem(STORAGE_KEYS.CACHED_BALANCE, String(totalBalance)) } catch { /* quota exceeded */ }
+      // Guard against NaN/Infinity from unexpected DB values — don't corrupt displayed balance
+      if (Number.isFinite(totalBalance)) {
+        setBalance(totalBalance)
+        try { localStorage.setItem(STORAGE_KEYS.CACHED_BALANCE, String(totalBalance)) } catch { /* quota exceeded */ }
+      } else {
+        syncLogger.warn('Skipping non-finite balance', { defaultBal, derivedBal })
+      }
       setSyncError(null)
 
       // Get ordinals balance from API (use allSettled so one failure doesn't lose the other)
@@ -277,8 +282,13 @@ export function SyncProvider({ children }: SyncProviderProps) {
         }
         const totalOrdBalance = ordBal + idBal
         if (isCancelled?.()) return
-        setOrdBalance(totalOrdBalance)
-        try { localStorage.setItem(STORAGE_KEYS.CACHED_ORD_BALANCE, String(totalOrdBalance)) } catch { /* quota exceeded */ }
+        // Guard against NaN/Infinity from API values
+        if (Number.isFinite(totalOrdBalance)) {
+          setOrdBalance(totalOrdBalance)
+          try { localStorage.setItem(STORAGE_KEYS.CACHED_ORD_BALANCE, String(totalOrdBalance)) } catch { /* quota exceeded */ }
+        } else {
+          syncLogger.warn('Skipping non-finite ord balance', { ordBal, idBal })
+        }
       } catch (_e) {
         // On API failure, keep current React state — don't overwrite with stale cache
         syncLogger.warn('Failed to fetch ord balance from API, keeping current value')

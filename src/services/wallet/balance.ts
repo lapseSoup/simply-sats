@@ -9,7 +9,6 @@ import {
   getSpendableUtxosFromDatabase,
   BASKETS
 } from '../sync'
-import { walletLogger } from '../logger'
 import { btcToSatoshis } from '../../utils/satoshiConversion'
 
 /**
@@ -30,18 +29,16 @@ export async function getBalanceFromDB(basket?: string): Promise<number> {
  * Get spendable UTXOs from local database
  */
 export async function getUTXOsFromDB(basket = BASKETS.DEFAULT): Promise<UTXO[]> {
-  try {
-    const dbUtxos = await getSpendableUtxosFromDatabase(basket)
-    return dbUtxos.map(u => ({
-      txid: u.txid,
-      vout: u.vout,
-      satoshis: u.satoshis,
-      script: u.lockingScript
-    }))
-  } catch (error) {
-    walletLogger.error('Database query failed in getUTXOsFromDB — returning empty array', { basket, error: String(error) })
-    return []
-  }
+  // Do NOT catch here — callers must distinguish "no UTXOs" (empty array) from
+  // "DB error" (thrown exception). Swallowing errors causes the UI to show
+  // "empty wallet" when the real problem is a database failure.
+  const dbUtxos = await getSpendableUtxosFromDatabase(basket)
+  return dbUtxos.map(u => ({
+    txid: u.txid,
+    vout: u.vout,
+    satoshis: u.satoshis,
+    script: u.lockingScript
+  }))
 }
 
 /**

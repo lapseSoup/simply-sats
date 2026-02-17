@@ -29,6 +29,7 @@ import { STORAGE_KEYS, storage } from '../infrastructure/storage/localStorage'
 import { setSessionPassword as setModuleSessionPassword, clearSessionPassword, NO_PASSWORD } from '../services/sessionPasswordStore'
 import { hasPassword } from '../services/wallet/storage'
 import { clearSessionKey } from '../services/secureStorage'
+import { SECURITY } from '../config'
 
 interface UseWalletLockOptions {
   activeAccount: Account | null
@@ -113,17 +114,21 @@ export function useWalletLock({
     // isLocked as a proxy. When isLocked is true, there's nothing to lock.
     if (isLocked || !hasPassword()) return
 
-    const HIDDEN_LOCK_DELAY_MS = 60_000 // 60 seconds
     let hiddenTimer: ReturnType<typeof setTimeout> | null = null
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        hiddenTimer = setTimeout(() => {
+        hiddenTimer = setTimeout(async () => {
           walletLogger.info('Locking wallet — app hidden for extended period')
-          lockWallet().catch(e => {
-            walletLogger.error('Failed to lock wallet on visibility change', { error: String(e) })
-          })
-        }, HIDDEN_LOCK_DELAY_MS)
+          try {
+            await lockWallet()
+          } catch (e) {
+            walletLogger.error('Failed to lock wallet on visibility change — forcing locked state for safety', { error: String(e) })
+            // Force locked state even if the async lock operation threw,
+            // so the UI never shows an unlocked wallet when locking failed.
+            setIsLocked(true)
+          }
+        }, SECURITY.HIDDEN_LOCK_DELAY_MS)
       } else {
         if (hiddenTimer) {
           clearTimeout(hiddenTimer)

@@ -10,6 +10,7 @@
 import initSqlJs from 'sql.js'
 import { readFile } from '@tauri-apps/plugin-fs'
 import { decrypt, type EncryptedData, isEncryptedData } from './crypto'
+import { validateMnemonic } from '../domain/wallet/validation'
 import { createAccount } from './accounts'
 import { getWocClient } from '../infrastructure/api/wocClient'
 import { calculateMaxSend, DEFAULT_FEE_RATE } from '../domain/transaction/fees'
@@ -175,6 +176,20 @@ export async function decryptBackupAccount(
   // Validate the decrypted keys have expected structure
   if (!keys.walletWif || !keys.walletAddress || !keys.mnemonic) {
     throw new Error('Decrypted keys missing required fields')
+  }
+
+  // Validate WIF is a real private key — a wrong password can produce garbage
+  // that passes the string existence check above but would silently corrupt the wallet.
+  try {
+    PrivateKey.fromWif(keys.walletWif)
+  } catch {
+    throw new Error('Decrypted keys contain an invalid WIF private key — wrong password or corrupted backup')
+  }
+
+  // Validate mnemonic is a proper BIP-39 phrase
+  const mnemonicResult = validateMnemonic(keys.mnemonic)
+  if (!mnemonicResult.isValid) {
+    throw new Error(`Decrypted keys contain an invalid mnemonic: ${mnemonicResult.error ?? 'unknown error'}`)
   }
 
   return keys

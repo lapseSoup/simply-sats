@@ -10,7 +10,7 @@ import {
   ConnectedAppsProvider,
   ModalProvider
 } from './contexts'
-import { ScreenReaderAnnounceProvider } from './components/shared'
+import { ScreenReaderAnnounceProvider, ErrorBoundary } from './components/shared'
 
 interface AppProvidersProps {
   children: ReactNode
@@ -32,29 +32,47 @@ interface AppProvidersProps {
  * - WalletProvider: Core wallet, aggregates all contexts for backward compatibility
  *
  * WARNING: Do not reorder NetworkProvider and UIProvider — UIProvider depends on NetworkProvider.
+ *
+ * Each provider is wrapped in its own ErrorBoundary so a crash in one provider
+ * doesn't bring down the entire application. Inner providers show targeted
+ * fallbacks; the outermost boundary is a last-resort catch-all.
  */
 export function AppProviders({ children }: AppProvidersProps) {
   return (
-    <ScreenReaderAnnounceProvider>
-      <NetworkProvider>
-        <UIProvider>
-          <ConnectedAppsProvider>
-            <AccountsProvider>
-              <TokensProvider>
-                <SyncProvider>
-                  <LocksProvider>
-                    <ModalProvider>
-                      <WalletProvider>
-                        {children}
-                      </WalletProvider>
-                    </ModalProvider>
-                  </LocksProvider>
-                </SyncProvider>
-              </TokensProvider>
-            </AccountsProvider>
-          </ConnectedAppsProvider>
-        </UIProvider>
-      </NetworkProvider>
-    </ScreenReaderAnnounceProvider>
+    <ErrorBoundary context="AppProviders">
+      <ScreenReaderAnnounceProvider>
+        <ErrorBoundary context="NetworkProvider">
+          <NetworkProvider>
+            <ErrorBoundary context="UIProvider">
+              <UIProvider>
+                <ConnectedAppsProvider>
+                  <ErrorBoundary context="AccountsProvider">
+                    <AccountsProvider>
+                      <TokensProvider>
+                        <ErrorBoundary context="SyncProvider">
+                          <SyncProvider>
+                            <ErrorBoundary context="LocksProvider">
+                              <LocksProvider>
+                                <ModalProvider>
+                                  <ErrorBoundary context="WalletProvider">
+                                    <WalletProvider>
+                                      {children}
+                                    </WalletProvider>
+                                  </ErrorBoundary>
+                                </ModalProvider>
+                              </LocksProvider>
+                            </ErrorBoundary>
+                          </SyncProvider>
+                        </ErrorBoundary>
+                      </TokensProvider>
+                    </AccountsProvider>
+                  </ErrorBoundary>
+                </ConnectedAppsProvider>
+              </UIProvider>
+            </ErrorBoundary>
+          </NetworkProvider>
+        </ErrorBoundary>
+      </ScreenReaderAnnounceProvider>
+    </ErrorBoundary>
   )
 }

@@ -44,7 +44,8 @@ describe('WocClient', () => {
     })
 
     it('should return 0 on error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+      // mockRejectedValue (not Once) — retry logic calls fetch up to WOC_MAX_RETRIES times
+      mockFetch.mockRejectedValue(new Error('Network error'))
 
       const height = await client.getBlockHeight()
 
@@ -52,9 +53,11 @@ describe('WocClient', () => {
     })
 
     it('should return 0 on non-ok response', async () => {
-      mockFetch.mockResolvedValueOnce({
+      // 5xx triggers retry — mock persistently so all retry attempts are handled
+      mockFetch.mockResolvedValue({
         ok: false,
-        status: 500
+        status: 500,
+        statusText: 'Internal Server Error'
       })
 
       const height = await client.getBlockHeight()
@@ -87,9 +90,11 @@ describe('WocClient', () => {
     })
 
     it('should return 0 on error', async () => {
-      mockFetch.mockResolvedValueOnce({
+      // 5xx triggers retry — mock persistently so all retry attempts are handled
+      mockFetch.mockResolvedValue({
         ok: false,
-        status: 500
+        status: 500,
+        statusText: 'Internal Server Error'
       })
 
       const balance = await client.getBalance('invalid')
@@ -98,7 +103,7 @@ describe('WocClient', () => {
     })
 
     it('should return 0 on network error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+      mockFetch.mockRejectedValue(new Error('Network error'))
 
       const balance = await client.getBalance('invalid')
 
@@ -138,7 +143,7 @@ describe('WocClient', () => {
     })
 
     it('should return empty array on error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+      mockFetch.mockRejectedValue(new Error('Network error'))
 
       const utxos = await client.getUtxos('invalid')
 
@@ -148,7 +153,8 @@ describe('WocClient', () => {
     it('should return empty array on non-ok response', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
-        status: 404
+        status: 404,
+        statusText: 'Not Found'
       })
 
       const utxos = await client.getUtxos('invalid')
@@ -186,7 +192,7 @@ describe('WocClient', () => {
     })
 
     it('should return empty array on error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+      mockFetch.mockRejectedValue(new Error('Network error'))
 
       const history = await client.getTransactionHistory('invalid')
 
@@ -194,9 +200,10 @@ describe('WocClient', () => {
     })
 
     it('should return empty array on non-ok response', async () => {
-      mockFetch.mockResolvedValueOnce({
+      mockFetch.mockResolvedValue({
         ok: false,
-        status: 500
+        status: 500,
+        statusText: 'Internal Server Error'
       })
 
       const history = await client.getTransactionHistory('invalid')
@@ -240,7 +247,7 @@ describe('WocClient', () => {
     })
 
     it('should return null on error', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+      mockFetch.mockRejectedValue(new Error('Network error'))
 
       const details = await client.getTransactionDetails('abc123')
 
@@ -250,7 +257,8 @@ describe('WocClient', () => {
     it('should return null on non-ok response', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
-        status: 404
+        status: 404,
+        statusText: 'Not Found'
       })
 
       const details = await client.getTransactionDetails('notfound')
@@ -299,8 +307,9 @@ describe('WocClient', () => {
       await expect(client.broadcastTransaction('invalid')).rejects.toThrow('Broadcast failed: Invalid transaction')
     })
 
-    it('should throw error on network failure', async () => {
-      mockFetch.mockRejectedValueOnce(new Error('Network error'))
+    it('should throw error on network failure after retries', async () => {
+      // mockRejectedValue (not Once) — retry logic calls fetch up to WOC_MAX_RETRIES times
+      mockFetch.mockRejectedValue(new Error('Network error'))
 
       await expect(client.broadcastTransaction('0100000001...')).rejects.toThrow('Network error')
     })

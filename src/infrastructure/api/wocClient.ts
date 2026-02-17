@@ -64,10 +64,20 @@ export interface WocClient {
  * Create a WhatsOnChain API client
  * Returns an object with methods - allows dependency injection
  */
+/** Maximum retry attempts for transient WoC API errors */
+const WOC_MAX_RETRIES = 3
+/** Base delay for exponential backoff (ms) */
+const WOC_RETRY_BASE_DELAY_MS = 500
+
 export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
   const cfg: WocConfig = { ...DEFAULT_WOC_CONFIG, ...config }
 
-  const fetchWithTimeout = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  /**
+   * Fetch with timeout + exponential backoff retry.
+   * Retries on network errors and 5xx server errors (transient failures).
+   * Does NOT retry on 4xx client errors (bad requests are not transient).
+   */
+  const fetchWithTimeout = async (url: string, options: RequestInit = {}, attempt = 0): Promise<Response> => {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), cfg.timeout)
 
@@ -76,7 +86,23 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
         ...options,
         signal: controller.signal
       })
+
+      // Retry on server errors (5xx) if we have attempts remaining
+      if (response.status >= 500 && attempt < WOC_MAX_RETRIES - 1) {
+        const delay = WOC_RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        return fetchWithTimeout(url, options, attempt + 1)
+      }
+
       return response
+    } catch (e) {
+      // Retry on network/timeout errors if we have attempts remaining
+      if (attempt < WOC_MAX_RETRIES - 1) {
+        const delay = WOC_RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        return fetchWithTimeout(url, options, attempt + 1)
+      }
+      throw e
     } finally {
       clearTimeout(timeoutId)
     }

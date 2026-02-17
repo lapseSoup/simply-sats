@@ -96,11 +96,10 @@ describe('getUTXOsFromDB', () => {
     expect(result[0]).toMatchObject({ txid: 'tx1', vout: 0, satoshis: 1000, script: 'ls1' })
   })
 
-  it('returns empty array on database error', async () => {
+  it('throws on database error (callers must handle DB failures explicitly)', async () => {
     mockGetSpendableUtxosFromDatabase.mockRejectedValueOnce(new Error('DB failed'))
 
-    const result = await getUTXOsFromDB()
-    expect(result).toEqual([])
+    await expect(getUTXOsFromDB()).rejects.toThrow('DB failed')
   })
 
   it('defaults to default basket', async () => {
