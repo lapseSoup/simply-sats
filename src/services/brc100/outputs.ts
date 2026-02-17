@@ -11,10 +11,28 @@ import {
   getUTXOsByBasket,
   getLocks as getLocksFromDB
 } from '../database'
+import type { Lock, UTXO } from '../database/types'
 import { BASKETS, getCurrentBlockHeight } from '../sync'
 import { lookupByTopic, TOPICS } from '../overlay'
 import { brc100Logger } from '../logger'
-import type { DiscoveredOutput } from './types'
+import type { DiscoveredOutput, ListedOutput, LockedOutput } from './types'
+
+/** Map a DB lock record to the canonical LockedOutput shape */
+export function formatLockedOutput(lock: Lock & { utxo: UTXO }, currentHeight: number): LockedOutput {
+  return {
+    outpoint: `${lock.utxo.txid}.${lock.utxo.vout}`,
+    txid: lock.utxo.txid,
+    vout: lock.utxo.vout,
+    satoshis: lock.utxo.satoshis,
+    unlockBlock: lock.unlockBlock,
+    tags: [
+      `unlock_${lock.unlockBlock}`,
+      ...(lock.ordinalOrigin ? [`ordinal_${lock.ordinalOrigin}`] : [])
+    ],
+    spendable: currentHeight >= lock.unlockBlock,
+    blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
+  }
+}
 
 /** Resolve the correct public key based on request params */
 export function resolvePublicKey(keys: WalletKeys, params: { identityKey?: boolean; forOrdinals?: boolean }): string {
@@ -30,7 +48,7 @@ export async function resolveListOutputs(params: {
   includeTags?: string[]
   limit?: number
   offset?: number
-}): Promise<{ outputs: Array<Record<string, unknown>>; totalOutputs: number }> {
+}): Promise<{ outputs: ListedOutput[]; totalOutputs: number }> {
   const basket = params.basket
   const includeSpent = params.includeSpent || false
   const includeTags = params.includeTags || []
@@ -41,17 +59,17 @@ export async function resolveListOutputs(params: {
 
   if (basket === 'wrootz_locks' || basket === 'locks') {
     const locks = await getLocksFromDB(currentHeight)
-    const outputs = locks.map(lock => ({
-      outpoint: `${lock.utxo.txid}.${lock.utxo.vout}`,
-      satoshis: lock.utxo.satoshis,
-      lockingScript: lock.utxo.lockingScript,
-      tags: [`unlock_${lock.unlockBlock}`, ...(lock.ordinalOrigin ? [`ordinal_${lock.ordinalOrigin}`] : [])],
-      spendable: currentHeight >= lock.unlockBlock,
-      customInstructions: JSON.stringify({
-        unlockBlock: lock.unlockBlock,
-        blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
-      })
-    }))
+    const outputs = locks.map(lock => {
+      const formatted = formatLockedOutput(lock, currentHeight)
+      return {
+        ...formatted,
+        lockingScript: lock.utxo.lockingScript,
+        customInstructions: JSON.stringify({
+          unlockBlock: lock.unlockBlock,
+          blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
+        })
+      }
+    })
     return { outputs, totalOutputs: outputs.length }
   }
 

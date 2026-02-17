@@ -118,11 +118,12 @@ describe('ConnectedAppsContext', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      act(() => {
-        const res = result.current.addTrustedOrigin('https://example.com')
-        expect(res.ok).toBe(true)
+      let res: Awaited<ReturnType<typeof result.current.addTrustedOrigin>>
+      await act(async () => {
+        res = await result.current.addTrustedOrigin('https://example.com')
       })
 
+      expect(res!.ok).toBe(true)
       expect(result.current.trustedOrigins).toContain('https://example.com')
       expect(mockSecureSetJSON).toHaveBeenCalledWith('trusted_origins', ['https://example.com'])
     })
@@ -132,14 +133,15 @@ describe('ConnectedAppsContext', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      act(() => {
-        const res = result.current.addTrustedOrigin('not-a-url')
-        expect(res.ok).toBe(false)
-        if (!res.ok) {
-          expect(res.error).toBeDefined()
-        }
+      let res: Awaited<ReturnType<typeof result.current.addTrustedOrigin>>
+      await act(async () => {
+        res = await result.current.addTrustedOrigin('not-a-url')
       })
 
+      expect(res!.ok).toBe(false)
+      if (!res!.ok) {
+        expect(res!.error).toBeDefined()
+      }
       expect(result.current.trustedOrigins).toEqual([])
     })
 
@@ -153,11 +155,12 @@ describe('ConnectedAppsContext', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      act(() => {
-        const res = result.current.addTrustedOrigin('https://example.com')
-        expect(res.ok).toBe(true) // No-op, still returns success
+      let res: Awaited<ReturnType<typeof result.current.addTrustedOrigin>>
+      await act(async () => {
+        res = await result.current.addTrustedOrigin('https://example.com')
       })
 
+      expect(res!.ok).toBe(true) // No-op, still returns success
       // Should not duplicate
       expect(result.current.trustedOrigins).toEqual(['https://example.com'])
       // Should not re-save (no new origin added)
@@ -174,8 +177,8 @@ describe('ConnectedAppsContext', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      act(() => {
-        result.current.removeTrustedOrigin('https://example.com')
+      await act(async () => {
+        await result.current.removeTrustedOrigin('https://example.com')
       })
 
       expect(result.current.trustedOrigins).toEqual(['https://other.com'])
@@ -188,8 +191,8 @@ describe('ConnectedAppsContext', () => {
       await waitFor(() => expect(result.current.loading).toBe(false))
 
       // Should not throw
-      act(() => {
-        result.current.removeTrustedOrigin('https://nonexistent.com')
+      await act(async () => {
+        await result.current.removeTrustedOrigin('https://nonexistent.com')
       })
 
       expect(result.current.trustedOrigins).toEqual([])
@@ -225,11 +228,12 @@ describe('ConnectedAppsContext', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      act(() => {
-        const success = result.current.connectApp('https://app.example.com')
-        expect(success).toBe(true)
+      let success: boolean
+      await act(async () => {
+        success = await result.current.connectApp('https://app.example.com')
       })
 
+      expect(success!).toBe(true)
       expect(result.current.connectedApps).toContain('https://app.example.com')
       expect(mockSecureSetJSON).toHaveBeenCalledWith('connected_apps', ['https://app.example.com'])
     })
@@ -239,11 +243,12 @@ describe('ConnectedAppsContext', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      act(() => {
-        const success = result.current.connectApp('invalid')
-        expect(success).toBe(false)
+      let success: boolean
+      await act(async () => {
+        success = await result.current.connectApp('invalid')
       })
 
+      expect(success!).toBe(false)
       expect(result.current.connectedApps).toEqual([])
     })
 
@@ -257,11 +262,12 @@ describe('ConnectedAppsContext', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      act(() => {
-        const success = result.current.connectApp('https://app.test')
-        expect(success).toBe(true)
+      let success: boolean
+      await act(async () => {
+        success = await result.current.connectApp('https://app.test')
       })
 
+      expect(success!).toBe(true)
       // Should not duplicate
       expect(result.current.connectedApps).toEqual(['https://app.test'])
     })
@@ -276,8 +282,8 @@ describe('ConnectedAppsContext', () => {
 
       await waitFor(() => expect(result.current.loading).toBe(false))
 
-      act(() => {
-        result.current.disconnectApp('https://app.test')
+      await act(async () => {
+        await result.current.disconnectApp('https://app.test')
       })
 
       expect(result.current.connectedApps).toEqual(['https://other.test'])

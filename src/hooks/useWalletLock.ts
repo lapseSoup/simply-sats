@@ -104,7 +104,7 @@ export function useWalletLock({
       walletLogger.warn('Failed to clear Rust key store', { error: String(e) })
     }
     audit.walletLocked(activeAccountId ?? undefined)
-  }, [activeAccountId, setWalletState])
+  }, [activeAccountId, setWalletState, setSessionPassword])
 
   // Lock wallet when app is hidden for extended period
   useEffect(() => {
@@ -143,14 +143,14 @@ export function useWalletLock({
   const unlockWallet = useCallback(async (password: string): Promise<boolean> => {
     const startTime = performance.now()
 
-    const rateLimit = await checkUnlockRateLimit()
-    if (rateLimit.isLimited) {
-      const timeStr = formatLockoutTime(rateLimit.remainingMs)
-      walletLogger.warn('Unlock blocked by rate limit', { remainingMs: rateLimit.remainingMs })
-      throw new Error(`Too many failed attempts. Please wait ${timeStr} before trying again.`)
-    }
-
     try {
+      const rateLimit = await checkUnlockRateLimit()
+      if (rateLimit.isLimited) {
+        const timeStr = formatLockoutTime(rateLimit.remainingMs)
+        walletLogger.warn('Unlock blocked by rate limit', { remainingMs: rateLimit.remainingMs })
+        throw new Error(`Too many failed attempts. Please wait ${timeStr} before trying again.`)
+      }
+
       let account = activeAccount
       if (!account) {
         walletLogger.debug('No active account in state, fetching from database...')
@@ -234,7 +234,7 @@ export function useWalletLock({
         await new Promise(resolve => setTimeout(resolve, UNLOCK_MIN_TIME_MS - elapsed))
       }
     }
-  }, [activeAccount, getKeysForAccount, refreshAccounts, storeKeysInRust, setWalletState])
+  }, [activeAccount, getKeysForAccount, refreshAccounts, storeKeysInRust, setWalletState, setSessionPassword])
 
   // Set auto-lock timeout
   const setAutoLockMinutes = useCallback((minutes: number) => {

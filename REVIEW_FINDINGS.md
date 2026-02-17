@@ -326,3 +326,181 @@ npm run typecheck  -> Clean
 npm run lint       -> 0 errors (3 warnings in coverage/)
 npm run test:run   -> 1098/1098 passing
 ```
+
+---
+
+# Review #5: Optional Password Merge + BRC-100 Refactor — 2026-02-16
+
+**Reviewer:** Claude Sonnet 4.5
+**Scope:** Staged changes — optional-password feature merge + BRC-100 module decomposition
+**Baseline:** TypeScript ✅ clean | Tests ✅ 1560 passing (64 suites) | Lint ⚠️ 2 warnings
+**Rating:** 7/10
+
+| Dimension | Score | Primary bottleneck |
+|---|---|---|
+| Security | 6/10 | Passwordless timing bypass (S1), session password not cleared on switch (S2) |
+| Correctness | 7/10 | Silent NaN on malformed outpoint (B1), async state race in ConnectedAppsContext (B2), broadcast-before-save (B7) |
+| Architecture | 7/10 | Massive switch-statement duplication (A1), memory leak in overlay (A2) |
+| Code Quality | 8/10 | Excellent infra layer; BRC-100 core modules lack test coverage |
+
+---
+
+## Tier 1 — Must Fix Before Release
+
+### S1 — No rate limiting or timing resistance in passwordless unlock path
+**Severity:** CRITICAL | **File:** `src/hooks/useWalletLock.ts` ~lines 171–187
+When `password === null`, the unlock short-circuits before rate-limit checks and the `UNLOCK_MIN_TIME_MS` delay.
+**Fix:** Apply `UNLOCK_MIN_TIME_MS` uniformly to all unlock paths regardless of password status.
+**Effort:** Quick fix (~1h)
+
+### S2 — Session password not cleared before account switch
+**Severity:** CRITICAL | **File:** `src/hooks/useAccountSwitching.ts` ~lines 155–166
+`_sessionPassword` is never explicitly cleared before new-account key derivation. Fallback path may reuse old credentials.
+**Fix:** Call `clearSessionPassword()` before initiating key derivation for the new account.
+**Effort:** Quick fix (~30min)
+
+### B1 — voutStr not validated after split → silent NaN → wrong UTXO targeted
+**Severity:** CRITICAL | **File:** `src/services/brc100/actions.ts` ~line 365
+`parseInt(voutStr!) || 0` silently becomes `0` for malformed outpoints. Unlock targets vout 0 instead of failing.
+**Fix:** Validate split result; return JSON-RPC `-32602` error on malformed outpoint.
+**Effort:** Quick fix (~30min)
+
+### B4 — Non-null assertion on optional `account.id`
+**Severity:** HIGH | **File:** `src/components/modals/AccountManageList.tsx` lines 84, 106, 140, 152, 164
+`account.id!` in five click handlers; `id` is `id?: number`. Runtime crash for any unpersisted account.
+**Fix:** Add `if (account.id === undefined) return` guard before each usage.
+**Effort:** Quick fix (~30min)
+
+### B7 — Broadcast before DB save — on-chain transaction with no local record if save fails
+**Severity:** HIGH | **File:** `src/services/brc100/locks.ts` ~lines 162–194
+`infraBroadcast()` called before `addUTXO()`/`saveLockToDatabase()`. DB failure leaves funds untracked.
+**Fix:** Save to DB first; broadcast only after successful write.
+**Effort:** Medium (~2h)
+
+### S6 — Derived WIF map not zeroed after send
+**Severity:** HIGH | **File:** `src/hooks/useWalletSend.ts` ~lines 60–103
+`derivedMap` (address → WIF) not cleared in a `finally` block. Private keys linger in heap.
+**Fix:** `try { ... } finally { derivedMap.clear() }`
+**Effort:** Quick fix (~15min)
+
+### S7 — useCallback missing `setSessionPassword` dependency
+**Severity:** MEDIUM | **File:** `src/hooks/useWalletLock.ts` lines 107, 237
+Two lint warnings for stale-closure risk.
+**Fix:** Add `setSessionPassword` to both dependency arrays.
+**Effort:** Quick fix (~10min)
+
+---
+
+## Tier 2 — Fix Before Next Release
+
+### A1 — Entire BRC-100 switch statement duplicated in handleBRC100Request and approveRequest
+**Severity:** HIGH (maintenance debt) | **File:** `src/services/brc100/actions.ts` ~lines 72–608
+Every bug fix and new request type requires two edits.
+**Fix:** Extract `executeApprovedRequest(request, keys)`. Both callers become thin wrappers.
+**Effort:** Medium refactor (~3h)
+
+### B2 — Optimistic state update + async revert races on persistence failure
+**Severity:** CRITICAL | **File:** `src/contexts/ConnectedAppsContext.tsx` lines 114–117, 132–135, 166–169, 184–187
+State updated before persistence; `.catch()` revert races with renders between update and revert.
+**Fix:** Flip to async/await — commit state only after successful persistence.
+**Effort:** Quick fix (~1h)
+
+### B3 — Auto-approve path executes ambiguously alongside Promise resolver
+**Severity:** CRITICAL | **File:** `src/services/brc100/actions.ts` ~lines 121–151
+`autoApprove=true` both stores a resolver and continues inline.
+**Fix:** Guard `pendingRequests.set()` behind `!autoApprove`; call `executeApprovedRequest()` directly when `autoApprove=true` (resolved as part of A1).
+**Effort:** Quick fix (part of A1)
+
+### A3 — Re-entrancy in unlockBSV — concurrent requests can double-spend
+**Severity:** HIGH | **File:** `src/services/brc100/actions.ts` ~lines 354–414
+Two concurrent unlock calls for the same outpoint both pass the spendability check and broadcast.
+**Fix:** Track in-flight outpoints in `Map<string, Promise<string>>`; return error if already in-flight.
+**Effort:** Quick fix (~1h)
+
+### B5 — Async brc100 event handler lacks outer try/catch
+**Severity:** HIGH | **File:** `src/services/brc100/listener.ts` lines 44–232
+Unhandled rejections propagate to Tauri's event system; request silently dropped.
+**Fix:** Wrap entire handler body in try/catch; send JSON-RPC error in catch.
+**Effort:** Quick fix (~30min)
+
+### B6 — Stale keys in approveRequest
+**Severity:** HIGH | **File:** `src/services/brc100/actions.ts` ~lines 183–208
+Keys captured at approval-request time; wallet may be re-locked or switched by execution time.
+**Fix:** Re-fetch `getWalletKeys()` inside `approveRequest`; validate identity key before signing.
+**Effort:** Quick fix (~30min)
+
+---
+
+## Tier 3 — Next Sprint
+
+| ID | Issue | File | Effort |
+|----|-------|------|--------|
+| S3 | Plaintext private keys in OS keychain (passwordless mode) | `wallet/storage.ts:112–131` | Medium (UI warning ~2h) |
+| S4 | No key rotation on password protection | `accounts.ts:517–522` | Medium (~3h) |
+| S5 | Rate-limiter fallback state lost on restart | `rateLimiter.ts:20–30` | Medium (~2h) |
+| A2 | Memory leak in overlay subscribeToTopic | `overlay.ts:508–528` | Quick fix (~1h) |
+| Q3 | No tests for core BRC-100 modules (actions, listener, locks, outputs) | — | Major (~8–10h) |
+| Q1 | `as unknown as T` casts in request params | `actions.ts:117,216,475` | Medium (~2h) |
+| Q2 | LockedOutput construction duplicated 3× | locks.ts, outputs.ts, listener.ts | Quick fix (~30min) |
+| A4 | Wallet-required type list hardcoded in listener | `listener.ts:69–83` | Quick fix (~30min) |
+| A5 | Two incompatible RequestManager adapter patterns | actions.ts, listener.ts | Quick fix (~30min) |
+| Q4 | `Record<string, unknown>` return type in resolveListOutputs | `outputs.ts:26–33` | Quick fix (~30min) |
+| Q5 | Non-Error values in logger calls | `actions.ts:99–112` | Quick fix (~20min) |
+
+---
+
+## What's Working Well
+
+- **Infrastructure layer is production-grade.** `broadcastService`, `localStorage`, and `requestCache` all have excellent test coverage and mature patterns.
+- **Cryptographic primitives sound.** PBKDF2-SHA256 600K iterations, AES-256-GCM, BIP-39/44/42/43, Rust-backed secure storage.
+- **BRC-100 module decomposition** from 1,500-line monolith into focused modules is architecturally correct.
+- **1,560 tests passing**, TypeScript strict mode clean.
+- **Audit log, rate limiter, overlay, and deeplink** all ship with comprehensive new test suites.
+
+## Post-Review Verification (Review #5)
+
+```
+npm run typecheck  -> Clean
+npm run lint       -> 0 errors (2 warnings in useWalletLock.ts, 3 in coverage/)
+npm run test:run   -> 1560/1560 passing
+```
+
+---
+
+## Remediation Applied (Review #5) — 2026-02-16
+
+All Tier 1 and Tier 2 issues fixed. Selected Tier 3 quick fixes applied. Verified clean.
+
+| ID | Issue | Status | Notes |
+|----|-------|--------|-------|
+| S1 | Passwordless unlock timing bypass | ✅ Fixed | Rate-limit check moved inside try block; UNLOCK_MIN_TIME_MS now enforced for all paths |
+| S2 | Session password not cleared on account switch | ✅ Fixed | `clearSessionPassword()` called before new-account key derivation |
+| S3 | Plaintext keys warning (passwordless) | ✅ Fixed | Amber HIGH RISK warning added above "Continue without password" in OnboardingFlow |
+| S5 | Rate-limiter fallback state lost on restart | ✅ Fixed | Fallback state persisted to localStorage; restored on module load |
+| S6 | Derived WIF map not cleared after send | ✅ Fixed | `derivedMap.clear()` in finally block in useWalletSend |
+| S7 | useCallback missing setSessionPassword dep | ✅ Fixed | Added to both dependency arrays; lint warnings cleared |
+| B1 | voutStr NaN → wrong UTXO targeted | ✅ Fixed | Explicit split validation; JSON-RPC -32602 on malformed outpoint |
+| B2 | Async state revert races in ConnectedAppsContext | ✅ Fixed | All 4 handlers converted to async/await; state only set after persistence |
+| B3 | Auto-approve Promise ambiguity (part of A1) | ✅ Fixed | Resolved as part of A1 refactor |
+| B4 | Non-null assertion on account.id | ✅ Fixed | `if (account.id === undefined) return` guard in all 5 handlers |
+| B5 | Async event handler lacks outer try/catch | ✅ Fixed | Outer catch sends JSON-RPC -32000 error response |
+| B6 | Stale keys in approveRequest | ✅ Fixed | Re-fetches current keys; validates identity key before signing |
+| B7 | Broadcast before DB save | ✅ Fixed | DB write (addUTXO + saveLock + addTx) now precedes infraBroadcast |
+| A1 | Duplicated switch in handleBRC100Request/approveRequest | ✅ Fixed | Extracted `executeApprovedRequest(request, keys)` |
+| A2 | Memory leak in overlay subscribeToTopic | ✅ Fixed | isSubscribed flag; try/catch in interval; idempotent cleanup |
+| A3 | Re-entrancy in unlockBSV | ✅ Fixed | inflightUnlocks Map tracks in-progress outpoints |
+| A4 | Wallet-required type list hardcoded | ✅ Fixed | WALLET_REQUIRED_TYPES const; Set-based check |
+| A5 | Two incompatible RequestManager adapters | ✅ Fixed | getPendingRequests() exported from actions.ts; listener.ts imports it |
+| Q1 | `as unknown as T` casts | ✅ Fixed | Replaced with `getParams<T>(request)` calls |
+| Q2 | LockedOutput construction duplicated 3× | ✅ Fixed | `formatLockedOutput()` extracted to outputs.ts; used in all 3 locations |
+| Q4 | Record<string, unknown> return type | ✅ Fixed | ListedOutput interface added; resolveListOutputs properly typed |
+| Q5 | Non-Error values in logger calls | ✅ Fixed | `toErrorMessage` pattern applied in 3 catch blocks |
+| S4 | Key rotation on password protection | 📋 Documented | Accepted limitation; documented in security model |
+
+## Post-Remediation Verification
+
+```
+npm run typecheck  -> ✅ Clean (0 errors)
+npm run lint       -> ✅ 0 errors, 3 warnings (pre-existing, coverage/ files only)
+npm run test:run   -> ✅ 1560/1560 passing
+```

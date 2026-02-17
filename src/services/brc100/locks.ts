@@ -20,6 +20,7 @@ import {
 import { BASKETS, getCurrentBlockHeight } from '../sync'
 import type { LockedOutput } from './types'
 import { getBlockHeight } from './utils'
+import { formatLockedOutput } from './outputs'
 import {
   createCLTVLockingScript,
   createWrootzOpReturn,
@@ -32,16 +33,7 @@ export async function getLocks(): Promise<LockedOutput[]> {
     const currentHeight = await getCurrentBlockHeight()
     const dbLocks = await getLocksFromDB(currentHeight)
 
-    return dbLocks.map(lock => ({
-      outpoint: `${lock.utxo.txid}.${lock.utxo.vout}`,
-      txid: lock.utxo.txid,
-      vout: lock.utxo.vout,
-      satoshis: lock.utxo.satoshis,
-      unlockBlock: lock.unlockBlock,
-      tags: [`unlock_${lock.unlockBlock}`, ...(lock.ordinalOrigin ? [`ordinal_${lock.ordinalOrigin}`] : [])],
-      spendable: currentHeight >= lock.unlockBlock,
-      blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
-    }))
+    return dbLocks.map(lock => formatLockedOutput(lock, currentHeight))
   } catch (error) {
     brc100Logger.error('Failed to get locks from database', error)
     return []
@@ -159,39 +151,37 @@ export async function createLockTransaction(
 
   await tx.sign()
 
+  // Derive txid before broadcast so we can save to DB first
+  const txid = tx.id('hex')
+
+  // Save UTXO and lock to database BEFORE broadcast so the record is never missing
+  const utxoId = await addUTXO({
+    txid,
+    vout: 0,
+    satoshis,
+    lockingScript,
+    basket: BASKETS.LOCKS,
+    spendable: false,
+    createdAt: Date.now(),
+    tags: ['lock', 'wrootz']
+  })
+
+  await saveLockToDatabase(utxoId, unlockBlock, ordinalOrigin)
+
+  // Also record the transaction
+  await addTransaction({
+    txid,
+    rawTx: tx.toHex(),
+    description: `Lock ${satoshis} sats until block ${unlockBlock}`,
+    createdAt: Date.now(),
+    status: 'pending',
+    labels: ['lock', 'wrootz']
+  })
+
+  brc100Logger.info('Lock saved to database', { txid, utxoId, unlockBlock })
+
   // Broadcast via infrastructure service (cascade: WoC -> ARC -> mAPI)
-  const txid = await infraBroadcast(tx.toHex(), tx.id('hex'))
-
-  // Save UTXO and lock to database
-  try {
-    const utxoId = await addUTXO({
-      txid,
-      vout: 0,
-      satoshis,
-      lockingScript,
-      basket: BASKETS.LOCKS,
-      spendable: false,
-      createdAt: Date.now(),
-      tags: ['lock', 'wrootz']
-    })
-
-    await saveLockToDatabase(utxoId, unlockBlock, ordinalOrigin)
-
-    // Also record the transaction
-    await addTransaction({
-      txid,
-      rawTx: tx.toHex(),
-      description: `Lock ${satoshis} sats until block ${unlockBlock}`,
-      createdAt: Date.now(),
-      status: 'pending',
-      labels: ['lock', 'wrootz']
-    })
-
-    brc100Logger.info('Lock saved to database', { txid, utxoId, unlockBlock })
-  } catch (error) {
-    brc100Logger.error('Failed to save lock to database', error)
-    // Transaction is already broadcast, so we continue
-  }
+  await infraBroadcast(tx.toHex(), txid)
 
   return { txid, unlockBlock }
 }

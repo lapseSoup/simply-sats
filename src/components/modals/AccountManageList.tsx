@@ -81,7 +81,7 @@ export function AccountManageList({
                 <button
                   type="button"
                   className="icon-button save"
-                  onClick={() => handleRename(account.id!)}
+                  onClick={() => { if (account.id === undefined) return; handleRename(account.id) }}
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M3 8L6 11L13 4" />
@@ -103,7 +103,7 @@ export function AccountManageList({
                 <button
                   type="button"
                   className="icon-button delete"
-                  onClick={() => handleDeleteAccount(account.id!)}
+                  onClick={() => { if (account.id === undefined) return; handleDeleteAccount(account.id) }}
                   disabled={loading}
                 >
                   Yes
@@ -137,7 +137,7 @@ export function AccountManageList({
                     <button
                       type="button"
                       className="icon-button"
-                      onClick={() => onSwitchAccount(account.id!)}
+                      onClick={() => { if (account.id === undefined) return; onSwitchAccount(account.id) }}
                       title="Switch to this account"
                     >
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
@@ -149,7 +149,7 @@ export function AccountManageList({
                     <button
                       type="button"
                       className="icon-button"
-                      onClick={() => { setEditingId(account.id!); setEditName(account.name) }}
+                      onClick={() => { if (account.id === undefined) return; setEditingId(account.id); setEditName(account.name) }}
                       title="Rename account"
                     >
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
@@ -161,7 +161,7 @@ export function AccountManageList({
                     <button
                       type="button"
                       className="icon-button delete"
-                      onClick={() => setConfirmDelete(account.id!)}
+                      onClick={() => { if (account.id === undefined) return; setConfirmDelete(account.id) }}
                       title="Delete account"
                     >
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">

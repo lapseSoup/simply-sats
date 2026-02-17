@@ -299,6 +299,20 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                   </>
                 )}
               </button>
+              <div
+                style={{
+                  padding: '8px 12px',
+                  background: 'rgba(234, 179, 8, 0.1)',
+                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                  borderRadius: '6px',
+                  color: 'var(--text-secondary)',
+                  fontSize: '12px',
+                  lineHeight: '1.4',
+                  textAlign: 'center'
+                }}
+              >
+                <strong style={{ color: 'rgb(202, 138, 4)' }}>HIGH RISK:</strong> Without a password, your private keys are stored without encryption. Anyone with access to your device may be able to access your funds.
+              </div>
               <button
                 className="btn btn-ghost btn-small"
                 onClick={() => setShowSkipWarning(true)}

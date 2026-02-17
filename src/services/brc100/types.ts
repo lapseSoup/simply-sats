@@ -145,3 +145,14 @@ export interface DiscoveredOutput {
 export function getParams<T>(request: BRC100Request): T {
   return (request.params || {}) as T
 }
+
+/** Output item returned by resolveListOutputs (listOutputs response) */
+export interface ListedOutput {
+  outpoint: string
+  satoshis: number
+  lockingScript: string
+  tags: string[]
+  spendable: boolean
+  /** Present only for lock outputs — JSON-encoded unlock metadata */
+  customInstructions?: string
+}

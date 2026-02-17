@@ -28,7 +28,7 @@ import {
 } from '../services/sync'
 import { walletLogger } from '../services/logger'
 import { invoke } from '@tauri-apps/api/core'
-import { getSessionPassword } from '../services/sessionPasswordStore'
+import { getSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 
 // Diagnostic: last failure reason (visible to UI for debugging)
@@ -152,6 +152,8 @@ export function useAccountSwitching({
       } else {
         // FALLBACK: If Rust has no mnemonic (shouldn't happen while wallet is unlocked),
         // try the password-based approach via the module-level session password store.
+        // Clear old account's session password before reading current one to prevent credential leakage.
+        clearSessionPassword()
         const currentPassword = getSessionPassword()
         _lastSwitchDiag += ` | FALLBACK hasPwd=${!!currentPassword}`
         walletLogger.debug('Rust derivation unavailable, trying password fallback', {

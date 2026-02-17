@@ -14,26 +14,32 @@ import {
   isValidBRC100RequestType,
   getParams,
   type BRC100Request,
-  type BRC100Response,
   type ListOutputsParams,
   type LockBSVParams,
   type UnlockBSVParams,
   type LockedOutput
 } from './types'
 import { getRequestManager } from './RequestManager'
+import { getPendingRequests } from './actions'
 import { getWalletKeys } from './state'
-import { resolvePublicKey, resolveListOutputs } from './outputs'
+import { resolvePublicKey, resolveListOutputs, formatLockedOutput } from './outputs'
+
+// Request types that require an active wallet to be loaded
+const WALLET_REQUIRED_TYPES = [
+  'getPublicKey',
+  'createSignature',
+  'createAction',
+  'listOutputs',
+  'lockBSV',
+  'unlockBSV',
+  'listLocks'
+] as const
 
 // Set up listener for HTTP server requests via Tauri events
 export async function setupHttpServerListener(): Promise<() => void> {
   const requestManager = getRequestManager()
 
-  // Legacy pendingRequests map - redirects to RequestManager
-  const pendingRequests = {
-    set: (id: string, value: { request: BRC100Request; resolve: (r: BRC100Response) => void; reject: (e: Error) => void }) => {
-      requestManager.add(id, value.request, value.resolve, value.reject)
-    }
-  }
+  const pendingRequests = getPendingRequests()
 
   try {
     const unlisten = await listen<{
@@ -67,9 +73,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
 
       // If no wallet is loaded, return error for requests that need it
       if (!getWalletKeys()) {
-        if (request.type === 'getPublicKey' || request.type === 'createSignature' ||
-            request.type === 'createAction' || request.type === 'listOutputs' ||
-            request.type === 'lockBSV' || request.type === 'unlockBSV' || request.type === 'listLocks') {
+        if ((WALLET_REQUIRED_TYPES as readonly string[]).includes(request.type)) {
           try {
             await invoke('respond_to_brc100', {
               requestId: request.id,
@@ -122,16 +126,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
           const currentHeight = await getCurrentBlockHeight()
           const locks = await getLocksFromDB(currentHeight)
 
-          const lockOutputs: LockedOutput[] = locks.map(lock => ({
-            outpoint: `${lock.utxo.txid}.${lock.utxo.vout}`,
-            txid: lock.utxo.txid,
-            vout: lock.utxo.vout,
-            satoshis: lock.utxo.satoshis,
-            unlockBlock: lock.unlockBlock,
-            tags: [`unlock_${lock.unlockBlock}`, ...(lock.ordinalOrigin ? [`ordinal_${lock.ordinalOrigin}`] : [])],
-            spendable: currentHeight >= lock.unlockBlock,
-            blocksRemaining: Math.max(0, lock.unlockBlock - currentHeight)
-          }))
+          const lockOutputs: LockedOutput[] = locks.map(lock => formatLockedOutput(lock, currentHeight))
 
           await invoke('respond_to_brc100', {
             requestId: request.id,
@@ -228,6 +223,14 @@ export async function setupHttpServerListener(): Promise<() => void> {
       }
       } catch (err) {
         brc100Logger.error('Error in event handler', err)
+        try {
+          await invoke('respond_to_brc100', {
+            requestId: event.payload.id,
+            response: { error: { code: -32000, message: 'Internal server error' } }
+          })
+        } catch (invokeErr) {
+          brc100Logger.error('Failed to send error response for unhandled exception', invokeErr)
+        }
       }
     })
 

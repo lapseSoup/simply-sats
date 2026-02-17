@@ -46,14 +46,22 @@ import {
   type GetTaggedKeysParams
 } from './types'
 import { getRequestManager } from './RequestManager'
+import { getWalletKeys } from './state'
 import { signData, verifyDataSignature } from './signing'
 import { convertToLockingScript } from './script'
 import { getBlockHeight, isInscriptionTransaction } from './utils'
 import { resolvePublicKey, resolveListOutputs } from './outputs'
 import { createLockTransaction } from './locks'
 
-// Get references needed by this module
-function getPendingRequests() {
+// A3: In-flight unlock operations — prevents double-spend from concurrent calls
+const inflightUnlocks = new Map<string, Promise<void>>()
+
+// ---------------------------------------------------------------------------
+// RequestManager adapter
+// ---------------------------------------------------------------------------
+
+/** Single adapter over RequestManager — used by both handleBRC100Request and approveRequest */
+export function getPendingRequests() {
   const requestManager = getRequestManager()
   return {
     get: (id: string) => requestManager.get(id),
@@ -68,6 +76,413 @@ function getPendingRequests() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Core execution logic (shared by handleBRC100Request and approveRequest)
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute an already-approved BRC-100 request and return the response.
+ * Called either directly (autoApprove) or after user approval (approveRequest).
+ */
+async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys): Promise<BRC100Response> {
+  const response: BRC100Response = { id: request.id }
+
+  switch (request.type) {
+    case 'getPublicKey': {
+      const params = getParams<GetPublicKeyParams>(request)
+      response.result = { publicKey: resolvePublicKey(keys, params) }
+      break
+    }
+
+    case 'createSignature': {
+      const sigRequest = getParams<SignatureRequest>(request)
+      // signData uses _from_store in Tauri; keys only needed for JS fallback
+      const signature = await signData(keys, sigRequest.data, 'identity')
+
+      // Defense-in-depth: verify our own signature before returning it
+      if (!await verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
+        throw new Error('Self-verification of signature failed')
+      }
+
+      response.result = { signature: Array.from(Buffer.from(signature, 'hex')) }
+      break
+    }
+
+    case 'createAction': {
+      const actionRequest = getParams<CreateActionRequest>(request)
+
+      // Check if this is a lock transaction (has wrootz_locks basket)
+      const hasLockOutput = actionRequest.outputs?.some(o => o.basket === 'wrootz_locks')
+
+      if (hasLockOutput) {
+        // Handle lock transaction
+        const lockOutput = actionRequest.outputs.find(o => o.basket === 'wrootz_locks')
+        if (!lockOutput) {
+          response.error = { code: -32000, message: 'No lock output found' }
+          break
+        }
+
+        // Parse unlock block from tags
+        const unlockTag = lockOutput.tags?.find(t => t.startsWith('unlock_'))
+        const ordinalTag = lockOutput.tags?.find(t => t.startsWith('ordinal_'))
+        const unlockBlock = unlockTag ? parseInt(unlockTag.replace('unlock_', '')) : 0
+        const ordinalOrigin = ordinalTag?.replace('ordinal_', '')
+
+        // Get current height to calculate blocks
+        const currentHeight = await getBlockHeight()
+        const blocks = unlockBlock - currentHeight
+
+        try {
+          const result = await createLockTransaction(keys, lockOutput.satoshis, blocks, ordinalOrigin)
+          response.result = {
+            txid: result.txid,
+            log: `Lock created until block ${result.unlockBlock}`
+          }
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Lock failed'
+          }
+        }
+      } else {
+        // Regular transaction - build and broadcast
+        try {
+          const result = await buildAndBroadcastAction(keys, actionRequest)
+          response.result = { txid: result.txid }
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Transaction failed'
+          }
+        }
+      }
+      break
+    }
+
+    case 'lockBSV': {
+      // Native lock using OP_PUSH_TX timelock
+      const params = getParams<LockBSVParams>(request)
+      const satoshis = params.satoshis as number
+      const blocks = params.blocks as number
+      const lockMetadata = { ordinalOrigin: params.ordinalOrigin, app: params.app }
+
+      try {
+        const currentHeight = await getCurrentBlockHeight()
+        const unlockBlock = currentHeight + blocks
+
+        // Get spendable UTXOs from database and convert to wallet UTXO format
+        const dbUtxos = await getSpendableUTXOs()
+        if (dbUtxos.length === 0) {
+          response.error = { code: -32000, message: 'No spendable UTXOs available' }
+          break
+        }
+
+        // Convert database UTXOs to wallet UTXOs (lockingScript -> script)
+        const walletUtxos = dbUtxos.map(u => ({
+          txid: u.txid,
+          vout: u.vout,
+          satoshis: u.satoshis,
+          script: u.lockingScript
+        }))
+
+        // Use the wallet's native lockBSV function (OP_PUSH_TX)
+        // Pass ordinalOrigin so it can be included as OP_RETURN in the same transaction
+        // lockBSV retrieves the WIF internally from the Rust key store
+        const result = await walletLockBSV(
+          satoshis,
+          unlockBlock,
+          walletUtxos,
+          lockMetadata.ordinalOrigin || undefined
+        )
+
+        // Determine basket based on app metadata or origin
+        // Use wrootz_locks for wrootz app, otherwise default to 'locks'
+        const isWrootzApp = lockMetadata.app === 'wrootz' || request.origin?.includes('wrootz')
+        const lockBasket = isWrootzApp ? 'wrootz_locks' : 'locks'
+
+        // First add the locked UTXO to the database
+        const utxoId = await addUTXO({
+          txid: result.txid,
+          vout: 0,
+          satoshis,
+          lockingScript: result.lockedUtxo.lockingScript,
+          basket: lockBasket,
+          spendable: false,
+          createdAt: Date.now()
+        })
+
+        // Then track the lock referencing that UTXO
+        await addLock({
+          utxoId,
+          unlockBlock,
+          ordinalOrigin: lockMetadata.ordinalOrigin || undefined,
+          createdAt: Date.now()
+        })
+
+        response.result = {
+          txid: result.txid,
+          unlockBlock,
+          lockedUtxo: result.lockedUtxo
+        }
+      } catch (error) {
+        response.error = {
+          code: -32000,
+          message: error instanceof Error ? error.message : 'Lock failed'
+        }
+      }
+      break
+    }
+
+    case 'unlockBSV': {
+      // Unlock a time-locked output
+      const params = getParams<UnlockBSVParams>(request)
+      const outpoint = params.outpoints?.[0] || ''
+
+      // A3: Guard against concurrent unlock calls for the same outpoint
+      if (inflightUnlocks.has(outpoint)) {
+        response.error = { code: -32000, message: 'Unlock already in progress for this outpoint' }
+        break
+      }
+
+      let resolveInflight!: () => void
+      const inflightPromise = new Promise<void>(res => { resolveInflight = res })
+      inflightUnlocks.set(outpoint, inflightPromise)
+      void inflightPromise
+
+      try {
+        const currentHeight = await getCurrentBlockHeight()
+        const locks = await getLocksFromDB(currentHeight)
+
+        // Find the lock by outpoint
+        const [txid, voutStr] = outpoint.split('.')
+        if (!txid || voutStr === undefined) {
+          response.error = { code: -32602, message: 'Invalid outpoint format, expected txid.vout' }
+          break
+        }
+        const voutParsed = parseInt(voutStr, 10)
+        if (isNaN(voutParsed)) {
+          response.error = { code: -32602, message: 'Invalid outpoint format, expected txid.vout' }
+          break
+        }
+        const vout = voutParsed
+        const lock = locks.find(l => l.utxo.txid === txid && l.utxo.vout === vout)
+
+        if (!lock) {
+          response.error = { code: -32000, message: 'Lock not found' }
+          break
+        }
+
+        if (currentHeight < lock.unlockBlock) {
+          response.error = {
+            code: -32000,
+            message: `Lock not yet spendable. ${lock.unlockBlock - currentHeight} blocks remaining`
+          }
+          break
+        }
+
+        // Build LockedUTXO for the unlock function
+        const lockedUtxo: LockedUTXO = {
+          txid: lock.utxo.txid,
+          vout: lock.utxo.vout,
+          satoshis: lock.utxo.satoshis,
+          lockingScript: lock.utxo.lockingScript,
+          unlockBlock: lock.unlockBlock,
+          publicKeyHex: keys.walletPubKey,
+          createdAt: Date.now()
+        }
+
+        // Use the wallet's native unlockBSV function
+        // unlockBSV retrieves the WIF internally from the Rust key store
+        const unlockTxid = await walletUnlockBSV(
+          lockedUtxo,
+          currentHeight
+        )
+
+        // Mark lock as unlocked in database (use lock.id, not txid/vout)
+        if (lock.id) {
+          await markLockUnlocked(lock.id)
+        }
+
+        response.result = {
+          txid: unlockTxid,
+          amount: lock.utxo.satoshis
+        }
+      } catch (error) {
+        response.error = {
+          code: -32000,
+          message: error instanceof Error ? error.message : 'Unlock failed'
+        }
+      } finally {
+        inflightUnlocks.delete(outpoint)
+        resolveInflight()
+      }
+      break
+    }
+
+    case 'encrypt': {
+      // ECIES encryption using counterparty's public key
+      const params = getParams<EncryptDecryptParams>(request)
+      const plaintext = params.plaintext ? new TextDecoder().decode(new Uint8Array(params.plaintext)) : undefined
+      const recipientPubKey = params.counterparty
+
+      if (!plaintext) {
+        response.error = { code: -32602, message: 'Missing plaintext parameter' }
+        break
+      }
+
+      if (!recipientPubKey) {
+        response.error = { code: -32602, message: 'Missing counterparty/publicKey parameter' }
+        break
+      }
+
+      // Validate public key format (compressed: 66 hex chars starting with 02/03, uncompressed: 130 hex chars starting with 04)
+      if (!/^(02|03)[0-9a-fA-F]{64}$/.test(recipientPubKey) && !/^04[0-9a-fA-F]{128}$/.test(recipientPubKey)) {
+        response.error = { code: -32602, message: 'Invalid public key format' }
+        break
+      }
+
+      try {
+        // Derive shared secret using ECDH
+        const identityWif = await getWifForOperation('identity', 'encrypt', keys)
+        const senderPrivKey = PrivateKey.fromWif(identityWif)
+        const recipientPublicKey = PublicKey.fromString(recipientPubKey)
+
+        // Use ECDH to derive shared secret
+        const sharedSecret = senderPrivKey.deriveSharedSecret(recipientPublicKey)
+        const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
+
+        // Encrypt using AES with the shared secret
+        const plaintextBytes = new TextEncoder().encode(plaintext)
+        const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
+        const encrypted = symmetricKey.encrypt(Array.from(plaintextBytes))
+
+        // Convert encrypted bytes to hex string
+        const encryptedHex = Array.from(encrypted as number[])
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('')
+
+        // Return as hex string along with sender's public key for decryption
+        response.result = {
+          ciphertext: encryptedHex,
+          senderPublicKey: keys.identityPubKey
+        }
+      } catch (error) {
+        response.error = {
+          code: -32000,
+          message: error instanceof Error ? error.message : 'Encryption failed'
+        }
+      }
+      break
+    }
+
+    case 'decrypt': {
+      // ECIES decryption using counterparty's public key
+      const params = getParams<EncryptDecryptParams>(request)
+      const ciphertext = params.ciphertext
+      const senderPubKey = params.counterparty
+
+      if (!ciphertext) {
+        response.error = { code: -32602, message: 'Missing ciphertext parameter' }
+        break
+      }
+
+      if (!senderPubKey) {
+        response.error = { code: -32602, message: 'Missing counterparty/senderPublicKey parameter' }
+        break
+      }
+
+      try {
+        // Derive shared secret using ECDH
+        const identityWif = await getWifForOperation('identity', 'decrypt', keys)
+        const recipientPrivKey = PrivateKey.fromWif(identityWif)
+        const senderPublicKey = PublicKey.fromString(senderPubKey)
+
+        // Use ECDH to derive shared secret
+        const sharedSecret = recipientPrivKey.deriveSharedSecret(senderPublicKey)
+        const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
+
+        // Convert ciphertext bytes to actual bytes for decryption
+        const ciphertextBytes = ciphertext as number[]
+
+        // Decrypt using AES with the shared secret
+        const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
+        const decrypted = symmetricKey.decrypt(ciphertextBytes)
+
+        // Return plaintext
+        const decryptedBytes = decrypted instanceof Uint8Array ? decrypted : new Uint8Array(decrypted as number[])
+        response.result = {
+          plaintext: new TextDecoder().decode(decryptedBytes)
+        }
+      } catch (error) {
+        response.error = {
+          code: -32000,
+          message: error instanceof Error ? error.message : 'Decryption failed'
+        }
+      }
+      break
+    }
+
+    case 'getTaggedKeys': {
+      // Derive tagged keys for app-specific use
+      const params = getParams<GetTaggedKeysParams>(request)
+      const label = params.tag
+      const keyIds = ['default']
+
+      if (!label) {
+        response.error = { code: -32602, message: 'Missing label parameter' }
+        break
+      }
+
+      try {
+        const identityWif = await getWifForOperation('identity', 'getTaggedKeys', keys)
+        const rootPrivKey = PrivateKey.fromWif(identityWif)
+        const derivedKeys: Array<{
+          keyId: string
+          publicKey: string
+          address: string
+          derivationPath: string
+        }> = []
+
+        for (const keyId of keyIds) {
+          const tag: DerivationTag = {
+            label,
+            id: keyId,
+            domain: request.origin
+          }
+
+          const derived = deriveTaggedKey(rootPrivKey, tag)
+          derivedKeys.push({
+            keyId,
+            publicKey: derived.publicKey,
+            address: derived.address,
+            derivationPath: derived.derivationPath
+          })
+        }
+
+        response.result = {
+          label,
+          keys: derivedKeys
+        }
+      } catch (error) {
+        response.error = {
+          code: -32000,
+          message: error instanceof Error ? error.message : 'Key derivation failed'
+        }
+      }
+      break
+    }
+
+    default:
+      response.error = { code: -32601, message: 'Method not found' }
+  }
+
+  return response
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 // Handle incoming BRC-100 request
 export async function handleBRC100Request(
   request: BRC100Request,
@@ -80,43 +495,65 @@ export async function handleBRC100Request(
 
   try {
     switch (request.type) {
-      case 'getPublicKey': {
-        const params = getParams<GetPublicKeyParams>(request)
-        response.result = { publicKey: resolvePublicKey(keys, params) }
-        break
-      }
-
-      case 'getHeight': {
-        const height = await getBlockHeight()
-        response.result = { height }
-        break
-      }
-
-      case 'listOutputs': {
-        const params = getParams<ListOutputsParams>(request)
-        try {
-          response.result = await resolveListOutputs(params)
-        } catch (error) {
-          brc100Logger.error('listOutputs error', error)
-          // Fallback to balance from database
-          try {
-            const balance = await getBalanceFromDB(params.basket || undefined)
-            response.result = {
-              outputs: [{ satoshis: balance, spendable: true }],
-              totalOutputs: balance > 0 ? 1 : 0
-            }
-          } catch (dbError) {
-            brc100Logger.error('getBalanceFromDB fallback also failed', dbError)
-            response.result = { outputs: [], totalOutputs: 0 }
+      // Fast-path: no approval needed, execute immediately
+      case 'getPublicKey':
+      case 'getHeight':
+      case 'listOutputs':
+      case 'getNetwork':
+      case 'getVersion':
+      case 'isAuthenticated': {
+        // These never require approval — handle inline for the fast path
+        switch (request.type) {
+          case 'getPublicKey': {
+            const params = getParams<GetPublicKeyParams>(request)
+            response.result = { publicKey: resolvePublicKey(keys, params) }
+            break
           }
+
+          case 'getHeight': {
+            const height = await getBlockHeight()
+            response.result = { height }
+            break
+          }
+
+          case 'listOutputs': {
+            const params = getParams<ListOutputsParams>(request)
+            try {
+              response.result = await resolveListOutputs(params)
+            } catch (error) {
+              brc100Logger.error('listOutputs error', error)
+              // Fallback to balance from database
+              try {
+                const balance = await getBalanceFromDB(params.basket || undefined)
+                response.result = {
+                  outputs: [{ satoshis: balance, spendable: true }],
+                  totalOutputs: balance > 0 ? 1 : 0
+                }
+              } catch (dbError) {
+                brc100Logger.error('getBalanceFromDB fallback also failed', dbError)
+                response.result = { outputs: [], totalOutputs: 0 }
+              }
+            }
+            break
+          }
+
+          case 'getNetwork':
+            response.result = { network: 'mainnet' }
+            break
+
+          case 'getVersion':
+            response.result = { version: '0.1.0' }
+            break
+
+          case 'isAuthenticated':
+            response.result = { authenticated: true }
+            break
         }
         break
       }
 
+      // createSignature: auto-approve executes directly, otherwise queue
       case 'createSignature': {
-        const sigRequest = request.params as unknown as SignatureRequest
-
-        // If not auto-approve, queue for user approval
         if (!autoApprove) {
           return new Promise((resolve, reject) => {
             pendingRequests.set(request.id, { request, resolve, reject })
@@ -126,22 +563,19 @@ export async function handleBRC100Request(
             }
           })
         }
-
-        // Sign with identity key by default
-        // signData uses _from_store in Tauri; keys only needed for JS fallback
-        const signature = await signData(keys, sigRequest.data, 'identity')
-
-        // Defense-in-depth: verify our own signature before returning it
-        if (!await verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
-          throw new Error('Self-verification of signature failed')
+        try {
+          return await executeApprovedRequest(request, keys)
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Unknown error'
+          }
+          return response
         }
-
-        response.result = { signature: Array.from(Buffer.from(signature, 'hex')) }
-        break
       }
 
+      // createAction: always requires user approval (even with autoApprove flag)
       case 'createAction': {
-        // Queue for user approval - transactions always need approval
         return new Promise((resolve, reject) => {
           pendingRequests.set(request.id, { request, resolve, reject })
           const handler = requestManager.getRequestHandler()
@@ -151,28 +585,34 @@ export async function handleBRC100Request(
         })
       }
 
-      case 'getNetwork': {
-        response.result = { network: 'mainnet' }
-        break
+      // All other approval-required types: queue if not auto-approve, execute directly if auto-approve
+      default: {
+        if (!autoApprove) {
+          return new Promise((resolve, reject) => {
+            pendingRequests.set(request.id, { request, resolve, reject })
+            const handler = requestManager.getRequestHandler()
+            if (handler) {
+              handler(request)
+            }
+          })
+        }
+        try {
+          return await executeApprovedRequest(request, keys)
+        } catch (error) {
+          response.error = {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Unknown error'
+          }
+          return response
+        }
       }
-
-      case 'getVersion': {
-        response.result = { version: '0.1.0' }
-        break
-      }
-
-      case 'isAuthenticated': {
-        response.result = { authenticated: true }
-        break
-      }
-
-      default:
-        response.error = { code: -32601, message: 'Method not found' }
     }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error'
+    brc100Logger.error('handleBRC100Request error', errorMessage)
     response.error = {
       code: -32000,
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: errorMessage
     }
   }
 
@@ -184,6 +624,28 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
   const pendingRequests = getPendingRequests()
   const pending = pendingRequests.get(requestId)
   if (!pending) return
+
+  // B6: Re-fetch current keys to guard against wallet re-lock or account switch
+  // between when the approval dialog opened and the user clicking "Approve".
+  const freshKeys = getWalletKeys()
+  if (freshKeys && freshKeys.identityPubKey === keys.identityPubKey) {
+    keys = freshKeys
+  } else if (freshKeys && freshKeys.identityPubKey !== keys.identityPubKey) {
+    pending.resolve({
+      id: requestId,
+      error: { code: -32002, message: 'Wallet state has changed since approval was initiated' }
+    })
+    pendingRequests.delete(requestId)
+    return
+  } else {
+    // No wallet loaded at all
+    pending.resolve({
+      id: requestId,
+      error: { code: -32002, message: 'No wallet loaded' }
+    })
+    pendingRequests.delete(requestId)
+    return
+  }
 
   const { request, resolve } = pending
 
@@ -203,373 +665,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
   }
 
   try {
-    const response: BRC100Response = { id: requestId }
-
-    switch (request.type) {
-      case 'getPublicKey': {
-        const params = getParams<GetPublicKeyParams>(request)
-        response.result = { publicKey: resolvePublicKey(keys, params) }
-        break
-      }
-
-      case 'createSignature': {
-        const sigRequest = request.params as unknown as SignatureRequest
-        // signData uses _from_store in Tauri; keys only needed for JS fallback
-        const signature = await signData(keys, sigRequest.data, 'identity')
-
-        // Defense-in-depth: verify our own signature before returning it
-        if (!await verifyDataSignature(keys.identityPubKey, sigRequest.data, signature)) {
-          throw new Error('Self-verification of signature failed')
-        }
-
-        response.result = { signature: Array.from(Buffer.from(signature, 'hex')) }
-        break
-      }
-
-      case 'createAction': {
-        const actionRequest = request.params as unknown as CreateActionRequest
-
-        // Check if this is a lock transaction (has wrootz_locks basket)
-        const hasLockOutput = actionRequest.outputs?.some(o => o.basket === 'wrootz_locks')
-
-        if (hasLockOutput) {
-          // Handle lock transaction
-          const lockOutput = actionRequest.outputs.find(o => o.basket === 'wrootz_locks')
-          if (!lockOutput) {
-            response.error = { code: -32000, message: 'No lock output found' }
-            break
-          }
-
-          // Parse unlock block from tags
-          const unlockTag = lockOutput.tags?.find(t => t.startsWith('unlock_'))
-          const ordinalTag = lockOutput.tags?.find(t => t.startsWith('ordinal_'))
-          const unlockBlock = unlockTag ? parseInt(unlockTag.replace('unlock_', '')) : 0
-          const ordinalOrigin = ordinalTag?.replace('ordinal_', '')
-
-          // Get current height to calculate blocks
-          const currentHeight = await getBlockHeight()
-          const blocks = unlockBlock - currentHeight
-
-          try {
-            const result = await createLockTransaction(keys, lockOutput.satoshis, blocks, ordinalOrigin)
-            response.result = {
-              txid: result.txid,
-              log: `Lock created until block ${result.unlockBlock}`
-            }
-          } catch (error) {
-            response.error = {
-              code: -32000,
-              message: error instanceof Error ? error.message : 'Lock failed'
-            }
-          }
-        } else {
-          // Regular transaction - build and broadcast
-          try {
-            const result = await buildAndBroadcastAction(keys, actionRequest)
-            response.result = { txid: result.txid }
-          } catch (error) {
-            response.error = {
-              code: -32000,
-              message: error instanceof Error ? error.message : 'Transaction failed'
-            }
-          }
-        }
-        break
-      }
-
-      case 'lockBSV': {
-        // Native lock using OP_PUSH_TX timelock
-        const params = getParams<LockBSVParams>(request)
-        const satoshis = params.satoshis as number
-        const blocks = params.blocks as number
-        const lockMetadata = { ordinalOrigin: params.ordinalOrigin, app: params.app }
-
-        try {
-          const currentHeight = await getCurrentBlockHeight()
-          const unlockBlock = currentHeight + blocks
-
-          // Get spendable UTXOs from database and convert to wallet UTXO format
-          const dbUtxos = await getSpendableUTXOs()
-          if (dbUtxos.length === 0) {
-            response.error = { code: -32000, message: 'No spendable UTXOs available' }
-            break
-          }
-
-          // Convert database UTXOs to wallet UTXOs (lockingScript -> script)
-          const walletUtxos = dbUtxos.map(u => ({
-            txid: u.txid,
-            vout: u.vout,
-            satoshis: u.satoshis,
-            script: u.lockingScript
-          }))
-
-          // Use the wallet's native lockBSV function (OP_PUSH_TX)
-          // Pass ordinalOrigin so it can be included as OP_RETURN in the same transaction
-          // lockBSV retrieves the WIF internally from the Rust key store
-          const result = await walletLockBSV(
-            satoshis,
-            unlockBlock,
-            walletUtxos,
-            lockMetadata.ordinalOrigin || undefined
-          )
-
-          // Determine basket based on app metadata or origin
-          // Use wrootz_locks for wrootz app, otherwise default to 'locks'
-          const isWrootzApp = lockMetadata.app === 'wrootz' || request.origin?.includes('wrootz')
-          const lockBasket = isWrootzApp ? 'wrootz_locks' : 'locks'
-
-          // First add the locked UTXO to the database
-          const utxoId = await addUTXO({
-            txid: result.txid,
-            vout: 0,
-            satoshis,
-            lockingScript: result.lockedUtxo.lockingScript,
-            basket: lockBasket,
-            spendable: false,
-            createdAt: Date.now()
-          })
-
-          // Then track the lock referencing that UTXO
-          await addLock({
-            utxoId,
-            unlockBlock,
-            ordinalOrigin: lockMetadata.ordinalOrigin || undefined,
-            createdAt: Date.now()
-          })
-
-          response.result = {
-            txid: result.txid,
-            unlockBlock,
-            lockedUtxo: result.lockedUtxo
-          }
-        } catch (error) {
-          response.error = {
-            code: -32000,
-            message: error instanceof Error ? error.message : 'Lock failed'
-          }
-        }
-        break
-      }
-
-      case 'unlockBSV': {
-        // Unlock a time-locked output
-        const params = getParams<UnlockBSVParams>(request)
-        const outpoint = params.outpoints?.[0] || ''
-
-        try {
-          const currentHeight = await getCurrentBlockHeight()
-          const locks = await getLocksFromDB(currentHeight)
-
-          // Find the lock by outpoint
-          const [txid, voutStr] = outpoint.split('.')
-          const vout = parseInt(voutStr!) || 0
-          const lock = locks.find(l => l.utxo.txid === txid && l.utxo.vout === vout)
-
-          if (!lock) {
-            response.error = { code: -32000, message: 'Lock not found' }
-            break
-          }
-
-          if (currentHeight < lock.unlockBlock) {
-            response.error = {
-              code: -32000,
-              message: `Lock not yet spendable. ${lock.unlockBlock - currentHeight} blocks remaining`
-            }
-            break
-          }
-
-          // Build LockedUTXO for the unlock function
-          const lockedUtxo: LockedUTXO = {
-            txid: lock.utxo.txid,
-            vout: lock.utxo.vout,
-            satoshis: lock.utxo.satoshis,
-            lockingScript: lock.utxo.lockingScript,
-            unlockBlock: lock.unlockBlock,
-            publicKeyHex: keys.walletPubKey,
-            createdAt: Date.now()
-          }
-
-          // Use the wallet's native unlockBSV function
-          // unlockBSV retrieves the WIF internally from the Rust key store
-          const unlockTxid = await walletUnlockBSV(
-            lockedUtxo,
-            currentHeight
-          )
-
-          // Mark lock as unlocked in database (use lock.id, not txid/vout)
-          if (lock.id) {
-            await markLockUnlocked(lock.id)
-          }
-
-          response.result = {
-            txid: unlockTxid,
-            amount: lock.utxo.satoshis
-          }
-        } catch (error) {
-          response.error = {
-            code: -32000,
-            message: error instanceof Error ? error.message : 'Unlock failed'
-          }
-        }
-        break
-      }
-
-      case 'encrypt': {
-        // ECIES encryption using counterparty's public key
-        const params = getParams<EncryptDecryptParams>(request)
-        const plaintext = params.plaintext ? new TextDecoder().decode(new Uint8Array(params.plaintext)) : undefined
-        const recipientPubKey = params.counterparty
-
-        if (!plaintext) {
-          response.error = { code: -32602, message: 'Missing plaintext parameter' }
-          break
-        }
-
-        if (!recipientPubKey) {
-          response.error = { code: -32602, message: 'Missing counterparty/publicKey parameter' }
-          break
-        }
-
-        // Validate public key format (compressed: 66 hex chars starting with 02/03, uncompressed: 130 hex chars starting with 04)
-        if (!/^(02|03)[0-9a-fA-F]{64}$/.test(recipientPubKey) && !/^04[0-9a-fA-F]{128}$/.test(recipientPubKey)) {
-          response.error = { code: -32602, message: 'Invalid public key format' }
-          break
-        }
-
-        try {
-          // Derive shared secret using ECDH
-          const identityWif = await getWifForOperation('identity', 'encrypt', keys)
-          const senderPrivKey = PrivateKey.fromWif(identityWif)
-          const recipientPublicKey = PublicKey.fromString(recipientPubKey)
-
-          // Use ECDH to derive shared secret
-          const sharedSecret = senderPrivKey.deriveSharedSecret(recipientPublicKey)
-          const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
-
-          // Encrypt using AES with the shared secret
-          const plaintextBytes = new TextEncoder().encode(plaintext)
-          const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
-          const encrypted = symmetricKey.encrypt(Array.from(plaintextBytes))
-
-          // Convert encrypted bytes to hex string
-          const encryptedHex = Array.from(encrypted as number[])
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('')
-
-          // Return as hex string along with sender's public key for decryption
-          response.result = {
-            ciphertext: encryptedHex,
-            senderPublicKey: keys.identityPubKey
-          }
-        } catch (error) {
-          response.error = {
-            code: -32000,
-            message: error instanceof Error ? error.message : 'Encryption failed'
-          }
-        }
-        break
-      }
-
-      case 'decrypt': {
-        // ECIES decryption using counterparty's public key
-        const params = getParams<EncryptDecryptParams>(request)
-        const ciphertext = params.ciphertext
-        const senderPubKey = params.counterparty
-
-        if (!ciphertext) {
-          response.error = { code: -32602, message: 'Missing ciphertext parameter' }
-          break
-        }
-
-        if (!senderPubKey) {
-          response.error = { code: -32602, message: 'Missing counterparty/senderPublicKey parameter' }
-          break
-        }
-
-        try {
-          // Derive shared secret using ECDH
-          const identityWif = await getWifForOperation('identity', 'decrypt', keys)
-          const recipientPrivKey = PrivateKey.fromWif(identityWif)
-          const senderPublicKey = PublicKey.fromString(senderPubKey)
-
-          // Use ECDH to derive shared secret
-          const sharedSecret = recipientPrivKey.deriveSharedSecret(senderPublicKey)
-          const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
-
-          // Convert ciphertext bytes to actual bytes for decryption
-          const ciphertextBytes = ciphertext as number[]
-
-          // Decrypt using AES with the shared secret
-          const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
-          const decrypted = symmetricKey.decrypt(ciphertextBytes)
-
-          // Return plaintext
-          const decryptedBytes = decrypted instanceof Uint8Array ? decrypted : new Uint8Array(decrypted as number[])
-          response.result = {
-            plaintext: new TextDecoder().decode(decryptedBytes)
-          }
-        } catch (error) {
-          response.error = {
-            code: -32000,
-            message: error instanceof Error ? error.message : 'Decryption failed'
-          }
-        }
-        break
-      }
-
-      case 'getTaggedKeys': {
-        // Derive tagged keys for app-specific use
-        const params = getParams<GetTaggedKeysParams>(request)
-        const label = params.tag
-        const keyIds = ['default']
-
-        if (!label) {
-          response.error = { code: -32602, message: 'Missing label parameter' }
-          break
-        }
-
-        try {
-          const identityWif = await getWifForOperation('identity', 'getTaggedKeys', keys)
-          const rootPrivKey = PrivateKey.fromWif(identityWif)
-          const derivedKeys: Array<{
-            keyId: string
-            publicKey: string
-            address: string
-            derivationPath: string
-          }> = []
-
-          for (const keyId of keyIds) {
-            const tag: DerivationTag = {
-              label,
-              id: keyId,
-              domain: request.origin
-            }
-
-            const derived = deriveTaggedKey(rootPrivKey, tag)
-            derivedKeys.push({
-              keyId,
-              publicKey: derived.publicKey,
-              address: derived.address,
-              derivationPath: derived.derivationPath
-            })
-          }
-
-          response.result = {
-            label,
-            keys: derivedKeys
-          }
-        } catch (error) {
-          response.error = {
-            code: -32000,
-            message: error instanceof Error ? error.message : 'Key derivation failed'
-          }
-        }
-        break
-      }
-
-      default:
-        response.error = { code: -32601, message: 'Method not found' }
-    }
+    const response = await executeApprovedRequest(request, keys)
 
     // Update action result with outcome
     try {
@@ -587,11 +683,12 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
     resolve(response)
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error'
     // Update action result with error
     try {
       await updateActionResult(requestId, {
         approved: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: errorMessage,
         completedAt: Date.now()
       })
     } catch (e) {
@@ -600,7 +697,7 @@ export async function approveRequest(requestId: string, keys: WalletKeys): Promi
 
     resolve({
       id: requestId,
-      error: { code: -32000, message: error instanceof Error ? error.message : 'Unknown error' }
+      error: { code: -32000, message: errorMessage }
     })
   }
 

@@ -512,16 +512,26 @@ export function subscribeToTopic(
   // Placeholder - full implementation would use WebSocket
   overlayLogger.info('Subscribed to topic', { topic })
 
+  let isSubscribed = true
+
   // Poll for updates every 30 seconds as fallback
   const interval = setInterval(async () => {
-    const result = await lookupByTopic(topic, 10, 0)
-    if (result && result.outputs.length > 0) {
-      result.outputs.forEach(output => callback(output))
+    // No-op if cleanup has already been called (guards against late-firing intervals)
+    if (!isSubscribed) return
+    try {
+      const result = await lookupByTopic(topic, 10, 0)
+      if (result && result.outputs.length > 0) {
+        result.outputs.forEach(output => callback(output))
+      }
+    } catch (error) {
+      overlayLogger.error('Error polling topic', { topic, error })
     }
   }, 30000)
 
-  // Return unsubscribe function
+  // Return idempotent unsubscribe function
   return () => {
+    if (!isSubscribed) return
+    isSubscribed = false
     clearInterval(interval)
     overlayLogger.info('Unsubscribed from topic', { topic })
   }

@@ -54,12 +54,12 @@ export function useWalletSend({
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
     if (!wallet) return err('No wallet loaded')
 
+    const derivedMap = new Map<string, string>() // address → WIF
     try {
       const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
 
       // Build a map of derived address → WIF for correct per-UTXO signing
       const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
-      const derivedMap = new Map<string, string>() // address → WIF
       for (const d of derivedAddrs) {
         if (d.privateKeyWif) {
           derivedMap.set(d.address, d.privateKeyWif)
@@ -117,6 +117,8 @@ export function useWalletSend({
       return ok({ txid })
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Send failed')
+    } finally {
+      derivedMap.clear()
     }
   }, [wallet, fetchData, activeAccountId])
 
