@@ -9,9 +9,9 @@
  * - rejectRequest: rejects pending requests
  */
 
-import { PrivateKey, P2PKH, Transaction, PublicKey, Hash, SymmetricKey } from '@bsv/sdk'
+import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import { brc100Logger } from '../logger'
-import type { WalletKeys, LockedUTXO, UTXO } from '../wallet'
+import type { WalletKeys, LockedUTXO } from '../wallet'
 import { getUTXOs, calculateTxFee, lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV, getWifForOperation } from '../wallet'
 import {
   getSpendableUTXOs,
@@ -47,6 +47,7 @@ import {
 import { getRequestManager } from './RequestManager'
 import { getWalletKeys } from './state'
 import { signData, verifyDataSignature } from './signing'
+import { encryptECIES, decryptECIES } from './cryptography'
 import { convertToLockingScript } from './script'
 import { selectCoins } from '../../domain/transaction/coinSelection'
 import { getBlockHeight, isInscriptionTransaction } from './utils'
@@ -305,6 +306,7 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
 
     case 'encrypt': {
       // ECIES encryption using counterparty's public key
+      // Delegates to cryptography.ts which uses Rust _from_store commands in Tauri
       const params = getParams<EncryptDecryptParams>(request)
       const plaintext = params.plaintext ? new TextDecoder().decode(new Uint8Array(params.plaintext)) : undefined
       const recipientPubKey = params.counterparty
@@ -326,29 +328,10 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
       }
 
       try {
-        // Derive shared secret using ECDH
-        const identityWif = await getWifForOperation('identity', 'encrypt', keys)
-        const senderPrivKey = PrivateKey.fromWif(identityWif)
-        const recipientPublicKey = PublicKey.fromString(recipientPubKey)
-
-        // Use ECDH to derive shared secret
-        const sharedSecret = senderPrivKey.deriveSharedSecret(recipientPublicKey)
-        const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
-
-        // Encrypt using AES with the shared secret
-        const plaintextBytes = new TextEncoder().encode(plaintext)
-        const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
-        const encrypted = symmetricKey.encrypt(Array.from(plaintextBytes))
-
-        // Convert encrypted bytes to hex string
-        const encryptedHex = Array.from(encrypted as number[])
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('')
-
-        // Return as hex string along with sender's public key for decryption
+        const result = await encryptECIES(keys, plaintext, recipientPubKey)
         response.result = {
-          ciphertext: encryptedHex,
-          senderPublicKey: keys.identityPubKey
+          ciphertext: result.ciphertext,
+          senderPublicKey: result.senderPublicKey
         }
       } catch (error) {
         response.error = {
@@ -361,6 +344,7 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
 
     case 'decrypt': {
       // ECIES decryption using counterparty's public key
+      // Delegates to cryptography.ts which uses Rust _from_store commands in Tauri
       const params = getParams<EncryptDecryptParams>(request)
       const ciphertext = params.ciphertext
       const senderPubKey = params.counterparty
@@ -376,27 +360,8 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
       }
 
       try {
-        // Derive shared secret using ECDH
-        const identityWif = await getWifForOperation('identity', 'decrypt', keys)
-        const recipientPrivKey = PrivateKey.fromWif(identityWif)
-        const senderPublicKey = PublicKey.fromString(senderPubKey)
-
-        // Use ECDH to derive shared secret
-        const sharedSecret = recipientPrivKey.deriveSharedSecret(senderPublicKey)
-        const sharedSecretHash = Hash.sha256(sharedSecret.encode(true))
-
-        // Convert ciphertext bytes to actual bytes for decryption
-        const ciphertextBytes = ciphertext as number[]
-
-        // Decrypt using AES with the shared secret
-        const symmetricKey = new SymmetricKey(Array.from(sharedSecretHash))
-        const decrypted = symmetricKey.decrypt(ciphertextBytes)
-
-        // Return plaintext
-        const decryptedBytes = decrypted instanceof Uint8Array ? decrypted : new Uint8Array(decrypted as number[])
-        response.result = {
-          plaintext: new TextDecoder().decode(decryptedBytes)
-        }
+        const plaintext = await decryptECIES(keys, ciphertext as number[], senderPubKey)
+        response.result = { plaintext }
       } catch (error) {
         response.error = {
           code: -32000,

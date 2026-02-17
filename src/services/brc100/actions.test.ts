@@ -85,6 +85,11 @@ vi.mock('./locks', () => ({
   createLockTransaction: vi.fn(),
 }))
 
+vi.mock('./cryptography', () => ({
+  encryptECIES: vi.fn().mockResolvedValue({ ciphertext: 'abcdef', senderPublicKey: '02' + 'c'.repeat(64) }),
+  decryptECIES: vi.fn().mockResolvedValue('decrypted text'),
+}))
+
 // Mock RequestManager as a simple in-memory store
 const requestStore = new Map<string, { request: unknown; resolve: (v: unknown) => void; reject: (e: Error) => void }>()
 
@@ -146,9 +151,8 @@ vi.mock('../keyDerivation', () => ({
 
 vi.mock('@bsv/sdk', () => ({
   PrivateKey: class {
-    static fromWif() { return { toPublicKey: () => ({ toAddress: () => '1TestAddr' }), deriveSharedSecret: () => ({ encode: () => new Uint8Array(33) }) } }
+    static fromWif() { return { toPublicKey: () => ({ toAddress: () => '1TestAddr' }) } }
   },
-  PublicKey: class { static fromString() { return {} } },
   P2PKH: class {
     lock() { return { toHex: () => 'lockscript' } }
     unlock() { return {} }
@@ -160,11 +164,6 @@ vi.mock('@bsv/sdk', () => ({
     toHex() { return 'rawtx' }
     id() { return 'txid123' }
     lockTime = 0
-  },
-  Hash: { sha256: () => new Uint8Array(32) },
-  SymmetricKey: class {
-    encrypt() { return new Uint8Array(16) }
-    decrypt() { return new Uint8Array(5) }
   },
 }))
 

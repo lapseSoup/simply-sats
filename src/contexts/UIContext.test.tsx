@@ -147,6 +147,59 @@ describe('UIContext', () => {
       // copyFeedback returns latest
       expect(result.current.copyFeedback).toBe('Second')
     })
+
+    it('dismisses a toast by id', () => {
+      const { result } = renderHook(() => useUI(), { wrapper })
+
+      act(() => result.current.showToast('Toast to dismiss'))
+      expect(result.current.toasts).toHaveLength(1)
+
+      const toastId = result.current.toasts[0]!.id
+      act(() => result.current.dismissToast(toastId))
+      expect(result.current.toasts).toHaveLength(0)
+      expect(result.current.copyFeedback).toBeNull()
+    })
+
+    it('only dismisses the targeted toast, leaving others intact', () => {
+      const { result } = renderHook(() => useUI(), { wrapper })
+
+      act(() => {
+        result.current.showToast('Keep me')
+        result.current.showToast('Remove me')
+      })
+      expect(result.current.toasts).toHaveLength(2)
+
+      const toastToRemove = result.current.toasts[1]!.id
+      act(() => result.current.dismissToast(toastToRemove))
+      expect(result.current.toasts).toHaveLength(1)
+      expect(result.current.toasts[0]!.message).toBe('Keep me')
+    })
+
+    it('limits toast stack to 5 entries', () => {
+      const { result } = renderHook(() => useUI(), { wrapper })
+
+      act(() => {
+        for (let i = 0; i < 7; i++) {
+          result.current.showToast(`Toast ${i}`)
+        }
+      })
+      expect(result.current.toasts.length).toBeLessThanOrEqual(5)
+    })
+
+    it('uses longer duration for error toasts', () => {
+      const { result } = renderHook(() => useUI(), { wrapper })
+
+      act(() => result.current.showToast('Error message', 'error'))
+      expect(result.current.toasts).toHaveLength(1)
+
+      // After 3s (normal duration), error toast should still be present
+      act(() => vi.advanceTimersByTime(3000))
+      expect(result.current.toasts).toHaveLength(1)
+
+      // After 6s total, error toast should be dismissed
+      act(() => vi.advanceTimersByTime(3000))
+      expect(result.current.toasts).toHaveLength(0)
+    })
   })
 
   describe('copyToClipboard', () => {
