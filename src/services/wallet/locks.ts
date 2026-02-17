@@ -94,7 +94,8 @@ export async function lockBSV(
   utxos: UTXO[],
   ordinalOrigin?: string,
   lockBlock?: number,
-  accountId?: number
+  accountId?: number,
+  basket?: string
 ): Promise<{ txid: string; lockedUtxo: LockedUTXO }> {
   if (!Number.isFinite(satoshis) || satoshis <= 0 || !Number.isInteger(satoshis)) {
     throw new AppError(
@@ -273,7 +274,7 @@ export async function lockBSV(
         vout: 0,
         satoshis,
         lockingScript: timelockScript.toHex(),
-        basket: 'locks',
+        basket: basket || 'locks',
         spendable: false,
         createdAt: Date.now()
       }, accountId)

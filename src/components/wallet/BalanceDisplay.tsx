@@ -1,9 +1,10 @@
+import { memo } from 'react'
 import { Lock } from 'lucide-react'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { useNetwork } from '../../contexts/NetworkContext'
 
-export function BalanceDisplay() {
+function BalanceDisplayComponent() {
   const { balance, ordBalance, locks } = useWalletState()
   const { displayInSats, toggleDisplayUnit, formatBSVShort, formatUSD } = useUI()
   const { syncing } = useNetwork()
@@ -48,3 +49,5 @@ export function BalanceDisplay() {
     </div>
   )
 }
+
+export const BalanceDisplay = memo(BalanceDisplayComponent)

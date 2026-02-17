@@ -7,7 +7,7 @@ import { isOk } from './domain/types'
 import { logger } from './services/logger'
 import { Toast, PaymentAlert, SkipLink } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
-import { Header, BalanceDisplay, BasketChips, QuickActions } from './components/wallet'
+import { Header, BalanceDisplay, QuickActions } from './components/wallet'
 import { RestoreModal, MnemonicModal, LockScreenModal, BackupVerificationModal } from './components/modals'
 import { FEATURES, SECURITY } from './config'
 import { OnboardingFlow } from './components/onboarding'
@@ -132,7 +132,9 @@ function WalletApp() {
     }
 
     let stopListener: (() => void) | undefined
-    setupListener().then(stop => { stopListener = stop })
+    setupListener()
+      .then(stop => { stopListener = stop })
+      .catch(err => logger.error('Failed to start payment listener', err))
 
     return () => {
       stopListener?.()
@@ -216,20 +218,20 @@ function WalletApp() {
 
   // Handlers
 
-  const handleAccountCreate = async (name: string): Promise<boolean> => {
+  const handleAccountCreate = useCallback(async (name: string): Promise<boolean> => {
     return await createNewAccount(name)
-  }
+  }, [createNewAccount])
 
-  const handleAccountImport = async (name: string, mnemonic: string): Promise<boolean> => {
+  const handleAccountImport = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
     return importAccount(name, mnemonic)
-  }
+  }, [importAccount])
 
-  const getUnlockableLocks = () => {
+  const getUnlockableLocks = useCallback(() => {
     const currentHeight = networkInfo?.blockHeight || 0
     return locks.filter(lock => currentHeight >= lock.unlockBlock)
-  }
+  }, [networkInfo?.blockHeight, locks])
 
-  const handleConfirmUnlock = async () => {
+  const handleConfirmUnlock = useCallback(async () => {
     if (!unlockConfirm) return
 
     const locksToUnlock = unlockConfirm === 'all' ? getUnlockableLocks() : [unlockConfirm]
@@ -246,17 +248,17 @@ function WalletApp() {
 
     setUnlocking(null)
     cancelUnlock()
-  }
+  }, [unlockConfirm, getUnlockableLocks, handleUnlock, showToast, setUnlocking, cancelUnlock])
 
-  const handleBrc100Approve = () => {
+  const handleBrc100Approve = useCallback(() => {
     handleApproveBRC100()
     closeModal()
-  }
+  }, [handleApproveBRC100, closeModal])
 
-  const handleBrc100Reject = () => {
+  const handleBrc100Reject = useCallback(() => {
     handleRejectBRC100()
     closeModal()
-  }
+  }, [handleRejectBRC100, closeModal])
 
   // Loading screen
   if (loading) {
@@ -338,8 +340,6 @@ function WalletApp() {
         onReceive={() => openModal('receive')}
       />
 
-      <BasketChips />
-
       {showBackupReminder && (
         <div className="backup-reminder-banner" role="alert">
           <span>🔒 It's been a while since you verified your recovery phrase.</span>
@@ -391,14 +391,21 @@ function WalletApp() {
               try {
                 const { diagnoseSyncHealth } = await import('./services/sync')
                 const health = await diagnoseSyncHealth(activeAccountId ?? undefined)
-                const lines = [
-                  `DB: ${health.dbConnected ? 'OK' : 'FAIL'}`,
-                  `API: ${health.apiReachable ? 'OK' : 'FAIL'}`,
-                  `Derived: ${health.derivedAddressQuery ? 'OK' : 'FAIL'}`,
-                  `UTXOs: ${health.utxoQuery ? 'OK' : 'FAIL'}`,
-                  ...health.errors
-                ]
-                showToast(lines.join(' | '))
+
+                // Show structured diagnostics
+                const dbStatus = health.dbConnected ? 'DB: Connected' : 'DB: FAILED'
+                const apiStatus = health.apiReachable ? 'API: Reachable' : 'API: FAILED'
+                const derivedStatus = health.derivedAddressQuery ? 'Derived Addresses: OK' : 'Derived Addresses: FAILED'
+                const utxoStatus = health.utxoQuery ? 'UTXOs: OK' : 'UTXOs: FAILED'
+
+                const allOk = health.dbConnected && health.apiReachable && health.derivedAddressQuery && health.utxoQuery
+                if (allOk && health.errors.length === 0) {
+                  showToast('All diagnostics passed — try syncing again', 'success')
+                } else {
+                  const failedItems = [dbStatus, apiStatus, derivedStatus, utxoStatus]
+                    .filter(s => s.includes('FAIL'))
+                  showToast(`Diagnostics: ${failedItems.join(', ')}${health.errors.length > 0 ? '. Errors: ' + health.errors.join(', ') : ''}`, 'error')
+                }
               } catch (e) {
                 showToast(`Diagnostics failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
               }

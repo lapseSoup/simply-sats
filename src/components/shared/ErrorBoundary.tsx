@@ -133,7 +133,7 @@ export class WalletErrorBoundary extends Component<
       return (
         <div className="error-boundary wallet-error" role="alert">
           <div className="error-boundary-content">
-            <Wallet className="error-icon" size={48} strokeWidth={2} color="#ef4444" />
+            <Wallet className="error-icon" size={48} strokeWidth={2} color="var(--error)" />
             <h2>Wallet Error</h2>
             <p className="error-message">{error.message}</p>
             <p className="error-hint">

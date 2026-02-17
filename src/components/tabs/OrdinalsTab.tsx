@@ -3,7 +3,7 @@ import { Search, LayoutGrid, List as ListIcon, ChevronRight } from 'lucide-react
 import { List } from 'react-window'
 import { useWalletState } from '../../contexts'
 import type { Ordinal } from '../../services/wallet'
-import { NoOrdinalsEmpty } from '../shared/EmptyState'
+import { EmptyState, NoOrdinalsEmpty } from '../shared/EmptyState'
 import { OrdinalsGridSkeleton } from '../shared/Skeleton'
 import { OrdinalImage } from '../shared/OrdinalImage'
 
@@ -210,20 +210,20 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
 
       {/* Ordinals Display */}
       {filteredOrdinals.length === 0 ? (
-        <div className="empty-state small">
-          <div className="empty-icon" aria-hidden="true"><Search size={24} strokeWidth={1.75} /></div>
-          <div className="empty-title">No Results</div>
-          <div className="empty-text">
-            No ordinals match your search criteria.
-            <button className="btn-link" onClick={() => {
+        <EmptyState
+          icon={<Search size={24} strokeWidth={1.75} />}
+          title="No Results"
+          description="No ordinals match your search criteria."
+          action={{
+            label: 'Clear Filters',
+            onClick: () => {
               setSearchQuery('')
               setDebouncedSearch('')
               setFilterCategory('all')
-            }}>
-              Clear filters
-            </button>
-          </div>
-        </div>
+            }
+          }}
+          size="small"
+        />
       ) : viewMode === 'grid' ? (
         <div className="ordinals-grid" role="list" aria-label="Ordinals collection">
           {filteredOrdinals.map((ord) => (

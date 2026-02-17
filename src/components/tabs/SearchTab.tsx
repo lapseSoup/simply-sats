@@ -4,6 +4,7 @@ import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../services/database'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
+import { EmptyState, NoSearchResultsEmpty } from '../shared/EmptyState'
 
 type SearchResult = {
   tx_hash: string
@@ -231,13 +232,16 @@ export function SearchTab() {
         )}
 
         {!searching && (query.trim() || selectedLabels.length > 0) && results.length === 0 && (
-          <div className="search-empty">No transactions found</div>
+          <NoSearchResultsEmpty />
         )}
 
         {!query.trim() && selectedLabels.length === 0 && (
-          <div className="search-empty">
-            Search transactions by label, TXID, or description
-          </div>
+          <EmptyState
+            icon={<Search size={32} strokeWidth={1.5} />}
+            title="Search Transactions"
+            description="Search by label, TXID, or description"
+            size="small"
+          />
         )}
 
         {results.length > 0 && (

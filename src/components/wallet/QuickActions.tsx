@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { ArrowUpRight, ArrowDownLeft } from 'lucide-react'
 
 interface QuickActionsProps {
@@ -5,7 +6,7 @@ interface QuickActionsProps {
   onReceive: () => void
 }
 
-export function QuickActions({ onSend, onReceive }: QuickActionsProps) {
+export const QuickActions = memo(function QuickActions({ onSend, onReceive }: QuickActionsProps) {
   return (
     <div className="quick-actions">
       <button
@@ -24,4 +25,4 @@ export function QuickActions({ onSend, onReceive }: QuickActionsProps) {
       </button>
     </div>
   )
-}
+})

@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 /**
  * SimplySatsLogo - Modern "S" with satoshi dots representing the smallest unit of Bitcoin
  */
@@ -5,14 +7,14 @@ interface SimplySatsLogoProps {
   size?: number
 }
 
-export function SimplySatsLogo({ size = 32 }: SimplySatsLogoProps) {
+export const SimplySatsLogo = memo(function SimplySatsLogo({ size = 32 }: SimplySatsLogoProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
       {/* Background circle dots representing satoshis */}
-      <circle cx="12" cy="12" r="3" fill="rgba(0,0,0,0.2)" />
-      <circle cx="52" cy="12" r="3" fill="rgba(0,0,0,0.2)" />
-      <circle cx="12" cy="52" r="3" fill="rgba(0,0,0,0.2)" />
-      <circle cx="52" cy="52" r="3" fill="rgba(0,0,0,0.2)" />
+      <circle cx="12" cy="12" r="3" fill="currentColor" opacity={0.15} />
+      <circle cx="52" cy="12" r="3" fill="currentColor" opacity={0.15} />
+      <circle cx="12" cy="52" r="3" fill="currentColor" opacity={0.15} />
+      <circle cx="52" cy="52" r="3" fill="currentColor" opacity={0.15} />
 
       {/* Main S shape - bold, modern, geometric */}
       <path
@@ -33,4 +35,4 @@ export function SimplySatsLogo({ size = 32 }: SimplySatsLogoProps) {
       <circle cx="32" cy="36" r="4" fill="#000" />
     </svg>
   )
-}
+})

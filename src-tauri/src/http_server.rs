@@ -425,7 +425,13 @@ fn extract_origin(request: &Request<Body>) -> Option<String> {
         .and_then(|s| {
             // Parse and reconstruct origin to prevent validation bypass
             match url::Url::parse(s) {
-                Ok(url) => Some(format!("{}://{}", url.scheme(), url.host_str().unwrap_or("unknown"))),
+                Ok(url) => {
+                    let host = url.host_str().unwrap_or("unknown");
+                    match url.port() {
+                        Some(port) => Some(format!("{}://{}:{}", url.scheme(), host, port)),
+                        None => Some(format!("{}://{}", url.scheme(), host)),
+                    }
+                }
                 Err(_) => {
                     log::warn!("Rejected unparseable origin header: {}", s);
                     None

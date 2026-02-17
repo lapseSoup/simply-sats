@@ -68,10 +68,12 @@ export function UIProvider({ children }: UIProviderProps) {
   }, [theme])
 
   const toggleTheme = useCallback(() => {
-    const newTheme: Theme = theme === 'dark' ? 'light' : 'dark'
-    setTheme(newTheme)
-    localStorage.setItem(STORAGE_KEYS.THEME, newTheme)
-  }, [theme])
+    setTheme(prev => {
+      const newTheme: Theme = prev === 'dark' ? 'light' : 'dark'
+      localStorage.setItem(STORAGE_KEYS.THEME, newTheme)
+      return newTheme
+    })
+  }, [])
 
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const toastTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
@@ -89,10 +91,12 @@ export function UIProvider({ children }: UIProviderProps) {
   const copyFeedback = toasts.length > 0 ? toasts[toasts.length - 1]!.message : null
 
   const toggleDisplayUnit = useCallback(() => {
-    const newValue = !displayInSats
-    setDisplayInSats(newValue)
-    localStorage.setItem(STORAGE_KEYS.DISPLAY_SATS, String(newValue))
-  }, [displayInSats])
+    setDisplayInSats(prev => {
+      const newValue = !prev
+      localStorage.setItem(STORAGE_KEYS.DISPLAY_SATS, String(newValue))
+      return newValue
+    })
+  }, [])
 
   const dismissToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id))

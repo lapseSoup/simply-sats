@@ -339,6 +339,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         const cachedOrdinals = await getCachedOrdinals(activeAccountId)
         const newCache = new Map<string, OrdinalContentEntry>()
         for (const cached of cachedOrdinals) {
+          if (isCancelled?.()) return
           // Load actual content for ordinals that have it cached
           const content = await getCachedOrdinalContent(cached.origin)
           if (content && (content.contentData || content.contentText)) {
@@ -402,6 +403,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         const utxoList = await getUTXOs(wallet.walletAddress)
         if (isCancelled?.()) return
         setUtxos(utxoList)
+        if (isCancelled?.()) return
         // Notify caller about UTXOs for lock detection
         onLocksDetected({
           utxos: utxoList,

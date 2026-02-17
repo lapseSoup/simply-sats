@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Shield, Zap, Gem, Lock, ChevronLeft, ChevronRight, Wallet, KeyRound } from 'lucide-react'
-import { SimplySatsLogo } from '../shared'
+import { SimplySatsLogo, Modal } from '../shared'
 import { PasswordInput } from '../shared/PasswordInput'
 import { useUI } from '../../contexts/UIContext'
 import { SECURITY } from '../../config'
@@ -192,7 +192,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                   onClick={() => setFeatureIndex(idx)}
                   role="tab"
                   aria-selected={idx === featureIndex}
-                  aria-label={`Feature ${idx + 1}`}
+                  aria-label={features[idx]!.title}
                 />
               ))}
             </div>
@@ -299,19 +299,8 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
                   </>
                 )}
               </button>
-              <div
-                style={{
-                  padding: '8px 12px',
-                  background: 'rgba(234, 179, 8, 0.1)',
-                  border: '1px solid rgba(234, 179, 8, 0.4)',
-                  borderRadius: '6px',
-                  color: 'var(--text-secondary)',
-                  fontSize: '12px',
-                  lineHeight: '1.4',
-                  textAlign: 'center'
-                }}
-              >
-                <strong style={{ color: 'rgb(202, 138, 4)' }}>HIGH RISK:</strong> Without a password, your private keys are stored without encryption. Anyone with access to your device may be able to access your funds.
+              <div className="onboarding-risk-banner">
+                <strong>HIGH RISK:</strong> Without a password, your private keys are stored without encryption. Anyone with access to your device may be able to access your funds.
               </div>
               <button
                 className="btn btn-ghost btn-small"
@@ -327,23 +316,24 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
 
         {/* Skip Password Warning */}
         {showSkipWarning && (
-          <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="skip-pwd-title">
-            <div className="modal-container modal-sm">
-              <h3 className="modal-title" id="skip-pwd-title">Skip Password?</h3>
-              <p className="modal-text">
-                Without a password, anyone with access to this computer can open your wallet and spend your funds.
-                You can set a password later in Settings.
-              </p>
-              <div className="modal-actions">
-                <button className="btn btn-secondary" onClick={() => setShowSkipWarning(false)}>
-                  Go Back
-                </button>
-                <button className="btn btn-primary" onClick={handleSkipPassword} disabled={creating}>
-                  {creating ? 'Creating...' : 'Continue Without Password'}
-                </button>
-              </div>
+          <Modal
+            title="Skip Password?"
+            onClose={() => setShowSkipWarning(false)}
+            size="sm"
+          >
+            <p className="modal-text">
+              Without a password, anyone with access to this computer can open your wallet and spend your funds.
+              You can set a password later in Settings.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowSkipWarning(false)}>
+                Go Back
+              </button>
+              <button className="btn btn-primary" onClick={handleSkipPassword} disabled={creating}>
+                {creating ? 'Creating...' : 'Continue Without Password'}
+              </button>
             </div>
-          </div>
+          </Modal>
         )}
       </div>
 

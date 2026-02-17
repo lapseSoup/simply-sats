@@ -475,7 +475,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
   const renderResult = () => (
     <div className="backup-recovery-content">
       <div className="success-icon">
-        <CircleCheck size={48} strokeWidth={1.5} color="#22c55e" />
+        <CircleCheck size={48} strokeWidth={1.5} color="var(--success)" />
       </div>
 
       <h3>Success!</h3>

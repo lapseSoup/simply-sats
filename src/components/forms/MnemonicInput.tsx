@@ -156,11 +156,11 @@ export function MnemonicInput({
 
   // Determine status color
   const getStatusColor = () => {
-    if (wordCount === 0) return 'var(--color-text-secondary, rgba(255, 255, 255, 0.5))'
-    if (invalidWords.length > 0) return 'var(--color-error, #ef4444)'
-    if (!isValidCount) return 'var(--color-warning, #eab308)'
-    if (isChecksumValid) return 'var(--color-success, #22c55e)'
-    return 'var(--color-error, #ef4444)' // Valid words but invalid checksum
+    if (wordCount === 0) return 'var(--text-secondary)'
+    if (invalidWords.length > 0) return 'var(--error)'
+    if (!isValidCount) return 'var(--warning)'
+    if (isChecksumValid) return 'var(--success)'
+    return 'var(--error)' // Valid words but invalid checksum
   }
 
   const getStatusMessage = () => {
@@ -307,8 +307,8 @@ export function MnemonicInput({
           height: 1.75rem;
           border-radius: 50%;
           border: none;
-          background: var(--color-surface, rgba(255, 255, 255, 0.1));
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+          background: var(--bg-surface-2);
+          color: var(--text-secondary);
           font-size: 1.25rem;
           line-height: 1;
           cursor: pointer;
@@ -319,16 +319,16 @@ export function MnemonicInput({
         }
 
         .mnemonic-clear-btn:hover {
-          background: var(--color-error, #ef4444);
+          background: var(--error);
           color: white;
         }
 
         .mnemonic-textarea.has-errors {
-          border-color: var(--color-error, #ef4444);
+          border-color: var(--error);
         }
 
         .mnemonic-textarea.is-valid {
-          border-color: var(--color-success, #22c55e);
+          border-color: var(--success);
         }
 
         .mnemonic-textarea.is-valid:focus {
@@ -355,7 +355,7 @@ export function MnemonicInput({
           font-family: monospace;
           font-weight: 500;
           padding: 0.125rem 0.5rem;
-          background: var(--color-surface, rgba(255, 255, 255, 0.05));
+          background: var(--bg-surface-2);
           border-radius: 0.25rem;
         }
 
@@ -364,7 +364,7 @@ export function MnemonicInput({
           flex-wrap: wrap;
           gap: 3px;
           padding: 6px;
-          background: var(--color-surface, rgba(255, 255, 255, 0.03));
+          background: var(--bg-surface-2);
           border-radius: 0.375rem;
           max-height: 80px;
           overflow-y: auto;
@@ -382,15 +382,15 @@ export function MnemonicInput({
         }
 
         .mnemonic-word-chip.valid {
-          background: rgba(34, 197, 94, 0.15);
-          color: var(--color-success, #22c55e);
-          border: 1px solid rgba(34, 197, 94, 0.3);
+          background: var(--success-bg);
+          color: var(--success);
+          border: 1px solid var(--success-border);
         }
 
         .mnemonic-word-chip.invalid {
-          background: rgba(239, 68, 68, 0.15);
-          color: var(--color-error, #ef4444);
-          border: 1px solid rgba(239, 68, 68, 0.3);
+          background: var(--error-bg);
+          color: var(--error);
+          border: 1px solid var(--error-border);
         }
 
         .mnemonic-word-number {
@@ -405,8 +405,8 @@ export function MnemonicInput({
           top: 100%;
           left: 0;
           right: 0;
-          background: var(--color-surface-2, #1a1a2e);
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+          background: var(--bg-surface-3);
+          border: 1px solid var(--border);
           border-radius: 0.5rem;
           margin-top: 0.25rem;
           max-height: 200px;
@@ -424,7 +424,7 @@ export function MnemonicInput({
 
         .mnemonic-suggestion:hover,
         .mnemonic-suggestion.selected {
-          background: var(--color-primary, #f7931a);
+          background: var(--accent);
           color: white;
         }
       `}</style>

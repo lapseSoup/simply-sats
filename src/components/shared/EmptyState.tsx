@@ -5,6 +5,7 @@
  * Supports different visual styles and optional call-to-action.
  */
 
+import { memo } from 'react'
 import type { ReactNode } from 'react'
 import {
   Inbox,
@@ -34,7 +35,7 @@ interface EmptyStateProps {
   className?: string
 }
 
-export function EmptyState({
+export const EmptyState = memo(function EmptyState({
   icon,
   title,
   description,
@@ -64,7 +65,7 @@ export function EmptyState({
       )}
     </div>
   )
-}
+})
 
 // Pre-configured empty states for common use cases
 

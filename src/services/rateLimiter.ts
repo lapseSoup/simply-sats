@@ -17,45 +17,18 @@ import { walletLogger } from './logger'
 const MAX_ATTEMPTS = 5
 const FALLBACK_LOCKOUT_MS = 5 * 60 * 1000 // 5 minutes
 
-// In-process fallback state for when Rust backend is unavailable
-const FALLBACK_STATE_KEY = 'rateLimiter_fallback'
-
+// In-memory fallback state for when Rust backend is unavailable.
+// Intentionally NOT persisted to localStorage to prevent XSS exfiltration.
+// Resets on page refresh — acceptable tradeoff for security.
 const fallbackState = {
   attempts: 0,
   lockoutUntil: 0
 }
 
-/** Persist fallback state to localStorage so lockouts survive app restarts */
-function persistFallbackState(): void {
-  try {
-    localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(fallbackState))
-  } catch (_err) {
-    // Storage failure must not break the rate limiter
-  }
-}
-
-/** Load persisted fallback state from localStorage on startup */
-function loadFallbackState(): void {
-  try {
-    const stored = localStorage.getItem(FALLBACK_STATE_KEY)
-    if (stored) {
-      const parsed = JSON.parse(stored) as { attempts?: number; lockoutUntil?: number }
-      if (typeof parsed.attempts === 'number') fallbackState.attempts = parsed.attempts
-      if (typeof parsed.lockoutUntil === 'number') fallbackState.lockoutUntil = parsed.lockoutUntil
-    }
-  } catch (_err) {
-    // Corrupted storage — leave defaults in place
-  }
-}
-
-// Initialise from storage at module load time
-loadFallbackState()
-
 /** Reset fallback state (for testing) */
 export function _resetFallbackState(): void {
   fallbackState.attempts = 0
   fallbackState.lockoutUntil = 0
-  persistFallbackState()
 }
 
 interface CheckRateLimitResponse {
@@ -84,13 +57,12 @@ export async function checkUnlockRateLimit(): Promise<{ isLimited: boolean; rema
       remainingMs: response.remaining_ms
     }
   } catch (error) {
-    walletLogger.error('Failed to check rate limit — using JS fallback', { error })
-    // Fallback: use in-process rate limiter instead of blocking indefinitely
+    walletLogger.error('SECURITY: Rust rate limiter unavailable, using in-memory fallback', { error })
+    // Fallback: use in-memory rate limiter instead of blocking indefinitely
     const now = Date.now()
     if (now > fallbackState.lockoutUntil && fallbackState.lockoutUntil !== 0) {
       fallbackState.attempts = 0
       fallbackState.lockoutUntil = 0
-      persistFallbackState()
     }
     const isLimited = fallbackState.attempts >= MAX_ATTEMPTS
     const remainingMs = isLimited ? Math.max(0, fallbackState.lockoutUntil - now) : 0
@@ -122,14 +94,13 @@ export async function recordFailedUnlockAttempt(): Promise<{ isLocked: boolean; 
       attemptsRemaining: response.attempts_remaining
     }
   } catch (error) {
-    walletLogger.error('Failed to record failed attempt — using JS fallback', { error })
-    // Fallback: use in-process rate limiter
+    walletLogger.error('SECURITY: Rust rate limiter unavailable, using in-memory fallback', { error })
+    // Fallback: use in-memory rate limiter
     fallbackState.attempts++
     const isLocked = fallbackState.attempts >= MAX_ATTEMPTS
     if (isLocked) {
       fallbackState.lockoutUntil = Date.now() + FALLBACK_LOCKOUT_MS
     }
-    persistFallbackState()
     return {
       isLocked,
       lockoutMs: isLocked ? FALLBACK_LOCKOUT_MS : 0,
@@ -145,7 +116,6 @@ export async function recordFailedUnlockAttempt(): Promise<{ isLocked: boolean; 
 export async function recordSuccessfulUnlock(): Promise<void> {
   fallbackState.attempts = 0
   fallbackState.lockoutUntil = 0
-  persistFallbackState()
   try {
     await invoke('record_successful_unlock')
     walletLogger.debug('Unlock rate limit reset on success')

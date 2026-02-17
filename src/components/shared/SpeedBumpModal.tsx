@@ -72,39 +72,39 @@ export function SpeedBumpModal({
   const getWarningColor = () => {
     switch (warningLevel) {
       case 'low':
-        return '#3b82f6' // blue
+        return 'var(--info)'
       case 'medium':
-        return '#eab308' // yellow
+        return 'var(--warning)'
       case 'high':
-        return '#ef4444' // red
+        return 'var(--error)'
       default:
-        return '#eab308'
+        return 'var(--warning)'
     }
   }
 
   const getWarningBg = () => {
     switch (warningLevel) {
       case 'low':
-        return 'rgba(59, 130, 246, 0.1)'
+        return 'var(--info-bg)'
       case 'medium':
-        return 'rgba(234, 179, 8, 0.1)'
+        return 'var(--warning-bg)'
       case 'high':
-        return 'rgba(239, 68, 68, 0.1)'
+        return 'var(--error-bg)'
       default:
-        return 'rgba(234, 179, 8, 0.1)'
+        return 'var(--warning-bg)'
     }
   }
 
   const getWarningBorder = () => {
     switch (warningLevel) {
       case 'low':
-        return 'rgba(59, 130, 246, 0.3)'
+        return 'var(--info-border)'
       case 'medium':
-        return 'rgba(234, 179, 8, 0.3)'
+        return 'var(--warning-border)'
       case 'high':
-        return 'rgba(239, 68, 68, 0.3)'
+        return 'var(--error-border)'
       default:
-        return 'rgba(234, 179, 8, 0.3)'
+        return 'var(--warning-border)'
     }
   }
 
@@ -209,7 +209,7 @@ export function SpeedBumpModal({
           margin: 0;
           font-size: 1.25rem;
           font-weight: 600;
-          color: var(--color-text, #fff);
+          color: var(--text-primary);
         }
 
         .warning-box {
@@ -228,7 +228,7 @@ export function SpeedBumpModal({
         .details-section {
           width: 100%;
           padding: 1rem;
-          background: var(--color-surface, rgba(255, 255, 255, 0.05));
+          background: var(--bg-surface-2);
           border-radius: 0.75rem;
           text-align: left;
         }
@@ -239,25 +239,25 @@ export function SpeedBumpModal({
 
         .type-confirm-label {
           font-size: 0.875rem;
-          color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));
+          color: var(--text-secondary);
           margin: 0 0 0.5rem 0;
         }
 
         .type-confirm-label code {
           padding: 0.125rem 0.375rem;
-          background: var(--color-surface, rgba(255, 255, 255, 0.1));
+          background: var(--bg-surface-2);
           border-radius: 0.25rem;
           font-family: monospace;
-          color: var(--color-text, #fff);
+          color: var(--text-primary);
         }
 
         .type-confirm-input {
           width: 100%;
           padding: 0.75rem;
-          background: var(--color-surface, rgba(255, 255, 255, 0.05));
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+          background: var(--bg-surface-2);
+          border: 1px solid var(--border);
           border-radius: 0.5rem;
-          color: var(--color-text, #fff);
+          color: var(--text-primary);
           font-size: 0.875rem;
           font-family: monospace;
           text-align: center;
@@ -266,11 +266,11 @@ export function SpeedBumpModal({
         }
 
         .type-confirm-input:focus {
-          border-color: var(--color-primary, #f7931a);
+          border-color: var(--accent);
         }
 
         .type-confirm-input.valid {
-          border-color: #22c55e;
+          border-color: var(--success);
         }
 
         .button-row {
@@ -292,22 +292,22 @@ export function SpeedBumpModal({
         }
 
         .primary-button {
-          background: linear-gradient(135deg, var(--color-primary, #f7931a), var(--color-secondary, #ff6b00));
+          background: linear-gradient(135deg, var(--accent), var(--accent-dark));
           border: none;
           color: white;
         }
 
         .primary-button.danger {
-          background: linear-gradient(135deg, #ef4444, #dc2626);
+          background: linear-gradient(135deg, var(--error), var(--error-dark, #dc2626));
         }
 
         .primary-button:hover:not(:disabled) {
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(247, 147, 26, 0.3);
+          box-shadow: 0 4px 12px var(--accent-glow);
         }
 
         .primary-button.danger:hover:not(:disabled) {
-          box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+          box-shadow: 0 4px 12px var(--error-glow, rgba(239, 68, 68, 0.3));
         }
 
         .primary-button:disabled {
@@ -318,12 +318,12 @@ export function SpeedBumpModal({
 
         .secondary-button {
           background: transparent;
-          border: 1px solid var(--color-border, rgba(255, 255, 255, 0.2));
-          color: var(--color-text, #fff);
+          border: 1px solid var(--border);
+          color: var(--text-primary);
         }
 
         .secondary-button:hover:not(:disabled) {
-          background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+          background: var(--bg-surface-3);
         }
 
         .secondary-button:disabled {

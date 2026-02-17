@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Settings } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
@@ -58,7 +58,7 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
     }
   }, [accounts, balance]) // Re-fetch when accounts change or when balance updates (after sync)
 
-  const handleSync = async () => {
+  const handleSync = useCallback(async () => {
     setManualSyncing(true)
     try {
       await performSync(false)
@@ -66,9 +66,9 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
     } finally {
       setManualSyncing(false)
     }
-  }
+  }, [performSync, fetchData])
 
-  const handleSwitchAccount = async (accountId: number) => {
+  const handleSwitchAccount = useCallback(async (accountId: number) => {
     if (accountId !== activeAccountId) {
       const success = await switchAccount(accountId)
       if (success) {
@@ -81,15 +81,15 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
       // fetchData is triggered automatically by App.tsx useEffect
       // when wallet + activeAccountId state updates after re-render
     }
-  }
+  }, [activeAccountId, switchAccount, onAccountSwitch, showToast])
 
   // Format balance for account preview
-  const formatBalance = (sats: number) => {
+  const formatBalance = useCallback((sats: number) => {
     if (sats >= 100000000) {
       return formatBSVShort(sats) + ' BSV'
     }
     return sats.toLocaleString() + ' sats'
-  }
+  }, [formatBSVShort])
 
   // Derive network status for indicator
   const networkStatus = !networkInfo ? 'offline' : 'online'
@@ -117,7 +117,6 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
                 <SimplySatsLogo size={18} />
               </div>
               Simply Sats
-              <span className="header-badge">BRC-100</span>
             </div>
           )}
         </div>

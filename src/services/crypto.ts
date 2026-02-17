@@ -209,9 +209,13 @@ export async function decrypt(encryptedData: EncryptedData, password: string): P
       // Only fallback to Web Crypto on Tauri invocation errors (command not found, etc.)
       // Re-throw all Rust-originated errors to avoid silent data corruption
       if (msg.includes('Decryption failed') || msg.includes('invalid password') ||
-          msg.includes('Invalid') || msg.includes('too large')) {
+          msg.includes('Invalid ciphertext') || msg.includes('Invalid base64') ||
+          msg.includes('Invalid salt') || msg.includes('Invalid IV') ||
+          msg.includes('too large')) {
         throw new Error('Decryption failed - invalid password or corrupted data')
       }
+      // Log unexpected Rust errors for debugging
+      cryptoLogger.warn('Unexpected Rust decrypt error pattern', { message: msg })
       cryptoLogger.error('Rust decrypt_data unavailable, falling back to Web Crypto', { error: e })
       if (!import.meta.env.DEV) {
         throw new Error('Decryption backend unavailable')

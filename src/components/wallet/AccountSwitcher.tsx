@@ -145,8 +145,8 @@ export function AccountSwitcher({
       </button>
 
       {isOpen && (
-        <div className="account-dropdown" role="listbox">
-          <div className="account-list">
+        <div className="account-dropdown">
+          <div className="account-list" role="listbox">
             {sortedAccounts.map(account => (
               <AccountItem
                 key={account.id}

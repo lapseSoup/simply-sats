@@ -84,6 +84,7 @@ export function initAutoLock(
     const timeSinceActive = Date.now() - state.lastActiveTime
 
     if (timeSinceActive >= state.inactivityLimit) {
+      state.isEnabled = false  // Prevent re-entry while lock is processing
       walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
       try {
         // onLock may return a Promise (e.g. lockWallet) — catch to prevent unhandled rejections
@@ -187,6 +188,7 @@ export function resumeAutoLock(onLock: () => void | Promise<void>): void {
     const timeSinceActive = Date.now() - state.lastActiveTime
 
     if (timeSinceActive >= state.inactivityLimit) {
+      state.isEnabled = false  // Prevent re-entry while lock is processing
       walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
       try {
         Promise.resolve(onLock()).catch(err => {

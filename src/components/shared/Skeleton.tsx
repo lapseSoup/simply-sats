@@ -5,6 +5,7 @@
  * Uses CSS animations for a smooth pulsing effect.
  */
 
+import { memo } from 'react'
 import type { CSSProperties } from 'react'
 
 interface SkeletonProps {
@@ -25,7 +26,7 @@ interface SkeletonProps {
 /**
  * Base skeleton component with customizable dimensions
  */
-export function Skeleton({
+export const Skeleton = memo(function Skeleton({
   width = '100%',
   height = '1em',
   borderRadius,
@@ -62,7 +63,7 @@ export function Skeleton({
       aria-hidden="true"
     />
   )
-}
+})
 
 /**
  * Skeleton for balance display

@@ -17,7 +17,6 @@ import {
   getSpendableUTXOs,
   addUTXO,
   markUTXOSpent,
-  addLock,
   getLocks as getLocksFromDB,
   markLockUnlocked,
   addTransaction,
@@ -185,39 +184,23 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
           script: u.lockingScript
         }))
 
-        // Use the wallet's native lockBSV function (OP_PUSH_TX)
-        // Pass ordinalOrigin so it can be included as OP_RETURN in the same transaction
-        // lockBSV retrieves the WIF internally from the Rust key store
-        const result = await walletLockBSV(
-          satoshis,
-          unlockBlock,
-          walletUtxos,
-          lockMetadata.ordinalOrigin || undefined
-        )
-
         // Determine basket based on app metadata or origin
         // Use wrootz_locks for wrootz app, otherwise default to 'locks'
         const isWrootzApp = lockMetadata.app === 'wrootz' || request.origin?.includes('wrootz')
         const lockBasket = isWrootzApp ? 'wrootz_locks' : 'locks'
 
-        // First add the locked UTXO to the database
-        const utxoId = await addUTXO({
-          txid: result.txid,
-          vout: 0,
+        // Use the wallet's native lockBSV function (OP_PUSH_TX)
+        // Pass ordinalOrigin so it can be included as OP_RETURN in the same transaction
+        // lockBSV handles all DB writes (addUTXO + addLock) atomically inside withTransaction()
+        const result = await walletLockBSV(
           satoshis,
-          lockingScript: result.lockedUtxo.lockingScript,
-          basket: lockBasket,
-          spendable: false,
-          createdAt: Date.now()
-        })
-
-        // Then track the lock referencing that UTXO
-        await addLock({
-          utxoId,
           unlockBlock,
-          ordinalOrigin: lockMetadata.ordinalOrigin || undefined,
-          createdAt: Date.now()
-        })
+          walletUtxos,
+          lockMetadata.ordinalOrigin || undefined,
+          undefined,  // lockBlock
+          undefined,  // accountId
+          lockBasket
+        )
 
         response.result = {
           txid: result.txid,
