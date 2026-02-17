@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, memo, useCallback, useMemo, type ReactNode
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
 import { useWalletState } from '../../contexts'
+import { useWalletActions } from '../../contexts/WalletActionsContext'
 import { useUI } from '../../contexts/UIContext'
 import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
@@ -72,7 +73,14 @@ const TransactionItem = memo(function TransactionItem({
 
 export function ActivityTab() {
   const { txHistory, locks, loading, activeAccountId } = useWalletState()
+  const { performSync, fetchData } = useWalletActions()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
+
+  // Sync on mount so pending transactions get their confirmed status updated
+  useEffect(() => {
+    performSync().then(() => fetchData()).catch(() => { /* best-effort */ })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
 
   // Fetch lock/unlock labels via hook (refreshes when txHistory or account changes)

@@ -13,14 +13,19 @@ vi.mock('../logger', () => ({
   walletLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }))
 
-// Mock localStorage
+// Mock localStorage — use Object.defineProperty so we can override the setup.ts mock
+// (vi.stubGlobal fails if the property was defined without configurable:true)
 const localStorageStore: Record<string, string> = {}
 const mockLocalStorage = {
   getItem: vi.fn((key: string) => localStorageStore[key] ?? null),
   setItem: vi.fn((key: string, value: string) => { localStorageStore[key] = value }),
   removeItem: vi.fn((key: string) => { delete localStorageStore[key] }),
 }
-vi.stubGlobal('localStorage', mockLocalStorage)
+Object.defineProperty(globalThis, 'localStorage', {
+  value: mockLocalStorage,
+  writable: true,
+  configurable: true,
+})
 
 import {
   getFeeRate,

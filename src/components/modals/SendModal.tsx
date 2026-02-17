@@ -136,7 +136,14 @@ export function SendModal({ onClose }: SendModalProps) {
       showToast(`Sent ${sendSats.toLocaleString()} sats!`)
       onClose()
     } else {
-      setSendError(result.error || 'Send failed')
+      const errorMsg = result.error || 'Send failed'
+      // Broadcast succeeded but local DB write failed — tx is on-chain, close and warn via toast
+      if (errorMsg.includes('broadcast succeeded')) {
+        showToast('Sent! Balance may take a moment to update.', 'warning')
+        onClose()
+      } else {
+        setSendError(errorMsg)
+      }
     }
 
     setSending(false)
