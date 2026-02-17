@@ -5,7 +5,7 @@
  * Extracted from LockScreenModal for reuse across the app.
  */
 
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 
 interface PasswordInputProps {
@@ -19,7 +19,7 @@ interface PasswordInputProps {
   autoFocus?: boolean
 }
 
-export function PasswordInput({
+export const PasswordInput = memo(function PasswordInput({
   id,
   value,
   onChange,
@@ -59,4 +59,4 @@ export function PasswordInput({
       </button>
     </div>
   )
-}
+})

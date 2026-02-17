@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { CircleDollarSign } from 'lucide-react'
 import type { PaymentNotification } from '../../services/messageBox'
 
@@ -6,7 +7,7 @@ interface PaymentAlertProps {
   onDismiss: () => void
 }
 
-export function PaymentAlert({ payment, onDismiss }: PaymentAlertProps) {
+export const PaymentAlert = memo(function PaymentAlert({ payment, onDismiss }: PaymentAlertProps) {
   if (!payment) return null
 
   return (
@@ -23,4 +24,4 @@ export function PaymentAlert({ payment, onDismiss }: PaymentAlertProps) {
       </div>
     </div>
   )
-}
+})

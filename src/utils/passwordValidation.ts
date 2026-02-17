@@ -18,6 +18,23 @@ export interface PasswordValidationResult {
 export const MIN_PASSWORD_LENGTH = 14
 export const RECOMMENDED_PASSWORD_LENGTH = 16
 
+/**
+ * Normalize l33t-speak substitutions to detect common password variants.
+ * Maps common character substitutions back to their letter equivalents.
+ */
+function normalizeLeetSpeak(password: string): string {
+  return password
+    .replace(/@/g, 'a')
+    .replace(/4/g, 'a')
+    .replace(/3/g, 'e')
+    .replace(/1/g, 'i')
+    .replace(/!/g, 'i')
+    .replace(/0/g, 'o')
+    .replace(/\$/g, 's')
+    .replace(/5/g, 's')
+    .replace(/7/g, 't')
+}
+
 // Common weak passwords to reject (keyboard patterns, common phrases, dictionary words)
 const COMMON_PASSWORDS = new Set([
   'password123456',
@@ -53,6 +70,33 @@ const COMMON_PASSWORDS = new Set([
   'supersecret1234',
   'administrator12',
   'rootpassword123',
+  // Repeated patterns
+  'aaaaaaaaaaaaaa',
+  '11111111111111',
+  '00000000000000',
+  // Passphrase patterns
+  'pleaseletmein1',
+  'iloveyouforever',
+  'letmeinletmein',
+  'passwordpassword',
+  'qwerty12345678',
+  'welcome12345678',
+  // Crypto-specific
+  'bitcoinwallet1',
+  'myseedphrase12',
+  'mywallet123456',
+  'walletpassword',
+  'cryptopassword',
+  'blockchainpass',
+  'privatekey12345',
+  // Sequence extensions
+  '12345678901234',
+  'abcdefghijklmnop',
+  'qwertyuiopasdfg',
+  // Common name-based
+  'iloveyoubaby12',
+  'sunshine1234567',
+  'princess1234567',
 ])
 
 /**
@@ -133,8 +177,9 @@ export function validatePassword(password: string): PasswordValidationResult {
     }
   }
 
-  // Common password check
-  if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+  // Common password check (also test l33t-speak normalized form)
+  const lower = password.toLowerCase()
+  if (COMMON_PASSWORDS.has(lower) || COMMON_PASSWORDS.has(normalizeLeetSpeak(lower))) {
     errors.push('This password is too common')
   }
 

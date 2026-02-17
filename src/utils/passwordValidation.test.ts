@@ -22,7 +22,7 @@ describe('validatePassword', () => {
     })
 
     it('accepts passwords at minimum length', () => {
-      const password = 'a'.repeat(MIN_PASSWORD_LENGTH)
+      const password = 'xK9mPw'.repeat(3).slice(0, MIN_PASSWORD_LENGTH)
       const result = validatePassword(password)
       expect(result.isValid).toBe(true)
     })
@@ -43,6 +43,12 @@ describe('validatePassword', () => {
     it('rejects common passwords', () => {
       const result = validatePassword('password123456')
       expect(result.isValid).toBe(false)
+      expect(result.errors).toContain('This password is too common')
+    })
+
+    it('should detect l33t-speak variants of common passwords', () => {
+      // 'p@$$w0rdp@$$w0rd' normalizes to 'passwordpassword' which is in the list
+      const result = validatePassword('p@$$w0rdp@$$w0rd')
       expect(result.errors).toContain('This password is too common')
     })
   })

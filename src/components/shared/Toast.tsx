@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Check, X, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import type { ToastItem } from '../../contexts/UIContext'
 
@@ -17,7 +17,7 @@ function ToastIcon({ type }: { type: ToastItem['type'] }) {
   }
 }
 
-export function Toast({ message, toasts, onDismiss }: ToastProps) {
+export const Toast = memo(function Toast({ message, toasts, onDismiss }: ToastProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
   // Queue mode: render stacked toasts
@@ -53,4 +53,4 @@ export function Toast({ message, toasts, onDismiss }: ToastProps) {
   return (
     <div className="copy-toast" role="status" aria-live="polite"><Check size={14} strokeWidth={2} /> {message}</div>
   )
-}
+})

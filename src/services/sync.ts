@@ -29,6 +29,8 @@ import {
   type UTXO as DBUtxo,
   getTransactionLabels,
   updateTransactionLabels,
+  getKnownTxids,
+  updateTransactionStatus,
   addLockIfNotExists,
   markLockUnlockedByTxid,
   getAllTransactions,
@@ -486,7 +488,16 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
   const history = historyResult.value.slice(0, limit)
   let newTxCount = 0
 
-  for (const txRef of history) {
+  // Skip already-known transactions to avoid wasteful API calls
+  const knownTxids = await getKnownTxids(accountId)
+  const newHistory = history.filter(txRef => !knownTxids.has(txRef.tx_hash))
+  syncLogger.debug('Incremental tx sync', {
+    total: history.length,
+    new: newHistory.length,
+    skipped: history.length - newHistory.length
+  })
+
+  for (const txRef of newHistory) {
     // Get transaction details to calculate amount
     const txDetails = await wocClient.getTransactionDetails(txRef.tx_hash)
 
@@ -620,6 +631,17 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
         }, accountId)
       } catch (_e) {
         // Best-effort: don't fail sync if labeling fails
+      }
+    }
+  }
+
+  // Update block heights for pending transactions that are now confirmed
+  for (const txRef of history) {
+    if (knownTxids.has(txRef.tx_hash) && txRef.height > 0) {
+      try {
+        await updateTransactionStatus(txRef.tx_hash, 'confirmed', txRef.height, accountId)
+      } catch (_e) {
+        // Ignore errors updating confirmed height
       }
     }
   }

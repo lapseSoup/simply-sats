@@ -129,7 +129,7 @@ describe('SendModal', () => {
   })
 
   it('shows error message when send fails', async () => {
-    mockHandleSend.mockResolvedValueOnce({ success: false, error: 'Insufficient funds' })
+    mockHandleSend.mockResolvedValueOnce({ ok: false, error: 'Insufficient funds' })
 
     render(<SendModal onClose={mockOnClose} />)
 
@@ -153,7 +153,7 @@ describe('SendModal', () => {
   })
 
   it('shows success toast and closes on successful send', async () => {
-    mockHandleSend.mockResolvedValueOnce({ success: true, txid: 'txid123' })
+    mockHandleSend.mockResolvedValueOnce({ ok: true, value: { txid: 'txid123' } })
 
     render(<SendModal onClose={mockOnClose} />)
 

@@ -236,11 +236,12 @@ describe('Deep Link Service', () => {
     const mockWallet = { walletAddress: '1TestAddr' } as never
 
     it('should parse deep link and call handleBRC100Request', async () => {
-      mockHandleBRC100Request.mockResolvedValue({ success: true })
+      const mockResponse = { id: 'test-req-id', result: { authenticated: true } }
+      mockHandleBRC100Request.mockResolvedValue(mockResponse)
 
       const result = await handleDeepLink('simplysats://auth?origin=TestApp', mockWallet)
 
-      expect(result).toEqual({ success: true })
+      expect(result).toEqual(mockResponse)
       expect(mockHandleBRC100Request).toHaveBeenCalledWith(
         expect.objectContaining({ type: 'isAuthenticated', origin: 'TestApp' }),
         mockWallet,
@@ -249,7 +250,8 @@ describe('Deep Link Service', () => {
     })
 
     it('should pass autoApprove flag', async () => {
-      mockHandleBRC100Request.mockResolvedValue({ ok: true })
+      const mockResponse = { id: 'test-req-id', result: { authenticated: true } }
+      mockHandleBRC100Request.mockResolvedValue(mockResponse)
 
       await handleDeepLink('simplysats://auth?origin=App', mockWallet, true)
 

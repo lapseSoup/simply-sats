@@ -56,6 +56,7 @@ export {
   searchTransactions,
   searchTransactionsByLabels,
   getPendingTransactionTxids,
+  getKnownTxids,
   deleteTransactionsForAccount
 } from './txRepository'
 

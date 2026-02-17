@@ -48,6 +48,7 @@ import { getRequestManager } from './RequestManager'
 import { getWalletKeys } from './state'
 import { signData, verifyDataSignature } from './signing'
 import { convertToLockingScript } from './script'
+import { selectCoins } from '../../domain/transaction/coinSelection'
 import { getBlockHeight, isInscriptionTransaction } from './utils'
 import { resolvePublicKey, resolveListOutputs } from './outputs'
 import { createLockTransaction } from './locks'
@@ -715,28 +716,41 @@ async function buildAndBroadcastAction(
     throw new Error(`Invalid output count: ${actionRequest.outputs.length} (must be 1-100)`)
   }
 
+  // SEC-3: Validate each output's satoshi value is a safe positive integer
+  for (const output of actionRequest.outputs) {
+    if (!Number.isFinite(output.satoshis) || !Number.isInteger(output.satoshis) || output.satoshis < 0) {
+      throw new Error(`Invalid output satoshi value: ${output.satoshis} (must be a non-negative integer)`)
+    }
+  }
+
+  // SEC-4: Validate locking scripts are valid hex and non-empty
+  for (const output of actionRequest.outputs) {
+    if (!output.lockingScript || typeof output.lockingScript !== 'string') {
+      throw new Error('Output missing lockingScript')
+    }
+    if (!/^[0-9a-fA-F]+$/.test(output.lockingScript) || output.lockingScript.length < 2) {
+      throw new Error('Output lockingScript must be valid hex (at least 1 byte)')
+    }
+  }
+
   // Calculate total output amount
   const totalOutput = actionRequest.outputs.reduce((sum, o) => sum + o.satoshis, 0)
 
   const tx = new Transaction()
 
-  // Collect inputs
-  const inputsToUse: UTXO[] = []
-  let totalInput = 0
+  // Use domain coin selection (smallest-first, proper fee buffer)
+  const numOutputs = actionRequest.outputs.length + 1 // outputs + change
+  const estimatedFee = calculateTxFee(Math.min(utxos.length, 3), numOutputs)
+  const selectionResult = selectCoins(utxos, totalOutput + estimatedFee)
 
-  for (const utxo of utxos) {
-    inputsToUse.push(utxo)
-    totalInput += utxo.satoshis
-
-    if (totalInput >= totalOutput + 200) break
-  }
-
-  if (totalInput < totalOutput) {
+  if (!selectionResult.sufficient) {
     throw new Error('Insufficient funds')
   }
 
-  // Calculate fee
-  const numOutputs = actionRequest.outputs.length + 1 // outputs + change
+  const inputsToUse = selectionResult.selected
+  const totalInput = selectionResult.total
+
+  // Recalculate fee with actual input count
   const fee = calculateTxFee(inputsToUse.length, numOutputs)
   const change = totalInput - totalOutput - fee
 

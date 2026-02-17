@@ -480,6 +480,21 @@ export async function getPendingTransactionTxids(accountId?: number): Promise<Se
 }
 
 /**
+ * Get all known transaction IDs for an account (or all accounts).
+ * Used for incremental sync to skip already-fetched transactions.
+ * @param accountId - If provided, only returns txids for this account
+ */
+export async function getKnownTxids(accountId?: number): Promise<Set<string>> {
+  const database = getDatabase()
+  const query = accountId != null
+    ? 'SELECT txid FROM transactions WHERE account_id = $1'
+    : 'SELECT txid FROM transactions'
+  const params = accountId != null ? [accountId] : []
+  const rows = await database.select<Array<{ txid: string }>>(query, params)
+  return new Set(rows.map(r => r.txid))
+}
+
+/**
  * Delete all transactions and their labels for a specific account.
  * Used for data cleanup — the sync process will rebuild correct data.
  * @param accountId - Account ID whose transactions to delete
