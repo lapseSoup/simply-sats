@@ -37,11 +37,11 @@ export function getLastSwitchDiag(): string { return _lastSwitchDiag }
 
 interface UseAccountSwitchingOptions {
   fetchVersionRef: MutableRefObject<number>
-  accountsSwitchAccount: (accountId: number, password: string) => Promise<WalletKeys | null>
-  accountsCreateNewAccount: (name: string, password: string) => Promise<WalletKeys | null>
-  accountsImportAccount: (name: string, mnemonic: string, password: string) => Promise<WalletKeys | null>
+  accountsSwitchAccount: (accountId: number, password: string | null) => Promise<WalletKeys | null>
+  accountsCreateNewAccount: (name: string, password: string | null) => Promise<WalletKeys | null>
+  accountsImportAccount: (name: string, mnemonic: string, password: string | null) => Promise<WalletKeys | null>
   accountsDeleteAccount: (accountId: number) => Promise<boolean>
-  getKeysForAccount: (account: Account, password: string) => Promise<WalletKeys | null>
+  getKeysForAccount: (account: Account, password: string | null) => Promise<WalletKeys | null>
   setWallet: (wallet: WalletKeys | null) => void
   setIsLocked: Dispatch<SetStateAction<boolean>>
   setLocks: (locks: LockedUTXO[]) => void
@@ -150,7 +150,7 @@ export function useAccountSwitching({
           accountId,
           hasSessionPassword: !!currentPassword
         })
-        if (!currentPassword) {
+        if (currentPassword === null) {
           _lastSwitchDiag += ' | NO PWD → FAIL'
           walletLogger.error('Cannot switch account — no mnemonic in Rust and no session password.')
           return false
@@ -252,7 +252,7 @@ export function useAccountSwitching({
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()
-    if (!currentPassword) {
+    if (currentPassword === null) {
       walletLogger.error('Cannot create account - no session password available')
       return false
     }
@@ -274,7 +274,7 @@ export function useAccountSwitching({
 
   const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()
-    if (!currentPassword) {
+    if (currentPassword === null) {
       walletLogger.error('Cannot import account - no session password available')
       return false
     }
@@ -311,7 +311,7 @@ export function useAccountSwitching({
         let keys = await deriveKeysFromRust(active)
         if (!keys) {
           const currentPassword = getSessionPassword()
-          if (currentPassword) {
+          if (currentPassword !== null) {
             keys = await getKeysForAccount(active, currentPassword)
           }
         }
