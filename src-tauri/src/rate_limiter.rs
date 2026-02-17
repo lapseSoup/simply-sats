@@ -207,9 +207,12 @@ pub fn get_or_create_integrity_key(app_data_dir: &std::path::Path) -> Vec<u8> {
 
     // Save to disk (best effort — if this fails, we'll regenerate next launch,
     // which means any existing HMAC-protected state will fail verification and reset)
-    if let Err(e) = std::fs::write(&key_path, &key) {
-        log::error!("Failed to persist rate limit integrity key: {}", e);
-    }
+    std::fs::write(&key_path, &key).unwrap_or_else(|e| {
+        // Failing to persist the integrity key is security-critical: without it,
+        // the rate limiter resets on every launch, enabling brute-force attacks.
+        log::error!("[Security] FATAL: Cannot persist rate limit integrity key: {}", e);
+        panic!("Cannot persist rate limit integrity key to {:?}: {}", key_path, e);
+    });
 
     key
 }

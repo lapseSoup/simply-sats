@@ -248,12 +248,11 @@ pub async fn switch_account_from_store(
         identity_pub_key: full_keys.identity_pub_key.clone(),
     };
 
-    // Clear old keys and store newly derived ones
-    store.clear();
+    // Atomic key swap: overwrite fields directly instead of clear() + restore.
+    // This prevents a crash between clear() and restore from leaving the store empty (BUG-3).
     store.wallet_wif = Some(full_keys.wallet_wif);
     store.ord_wif = Some(full_keys.ord_wif);
     store.identity_wif = Some(full_keys.identity_wif);
-    // Restore the mnemonic (it was cleared by store.clear()) so future switches work
     store.mnemonic = Some(full_keys.mnemonic);
     store.pub_keys = Some(pub_keys.clone());
 

@@ -61,14 +61,14 @@ impl SessionState {
         // Generate 48-character alphanumeric token using CSPRNG
         // 62 possible chars (a-z, A-Z, 0-9) = ~5.95 bits per char
         // 48 chars = ~286 bits of entropy (exceeds 256-bit security)
-        let token: String = rand::thread_rng()
+        let token: String = rand::rngs::OsRng
             .sample_iter(&Alphanumeric)
             .take(48)
             .map(char::from)
             .collect();
 
         // Generate separate CSRF secret for nonce generation
-        let csrf_secret: String = rand::thread_rng()
+        let csrf_secret: String = rand::rngs::OsRng
             .sample_iter(&Alphanumeric)
             .take(32)
             .map(char::from)
@@ -86,7 +86,7 @@ impl SessionState {
 
     /// Rotate the session token (call after state-changing operations or TTL expiry)
     pub fn rotate_token(&mut self) -> String {
-        self.token = rand::thread_rng()
+        self.token = rand::rngs::OsRng
             .sample_iter(&Alphanumeric)
             .take(48)
             .map(char::from)
@@ -114,7 +114,7 @@ impl SessionState {
             .unwrap_or_default()
             .as_secs();
 
-        let random: String = rand::thread_rng()
+        let random: String = rand::rngs::OsRng
             .sample_iter(&Alphanumeric)
             .take(16)
             .map(char::from)
@@ -555,7 +555,7 @@ pub fn run() {
             }
             None => {
                 log::warn!("[Security] Could not determine app data dir; using ephemeral HMAC key");
-                let key: Vec<u8> = (0..32).map(|_| rand::thread_rng().gen()).collect();
+                let key: Vec<u8> = (0..32).map(|_| rand::rngs::OsRng.gen()).collect();
                 key
             }
         };
