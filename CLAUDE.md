@@ -39,7 +39,7 @@ src/
 │   └── (standalone)   # crypto, keyDerivation, secureStorage, autoLock, rateLimiter, logger, sync, accounts
 ├── contexts/          # React Context state management (7 providers)
 ├── components/        # React UI (51 files): shared/, wallet/, tabs/, modals/, forms/, onboarding/
-├── hooks/             # Custom hooks: useKeyboardNav, useFocusTrap, useModalKeyboard, useNetworkStatus, useBRC100, useBrc100Handler
+├── hooks/             # Custom hooks: useKeyboardNav, useFocusTrap, useModalKeyboard, useBRC100, useBrc100Handler
 ├── adapters/          # Wallet adapter implementations
 ├── config/            # Centralized constants (src/config/index.ts)
 ├── utils/             # Utility functions

@@ -277,13 +277,26 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   }
 
   // Guard: If WoC returns zero UTXOs but we have local UTXOs for this address,
-  // this is likely an API issue (rate limit, temporary outage) rather than all
-  // UTXOs genuinely being spent. Skip spend-marking to prevent data loss.
+  // this could be an API issue (rate limit, temporary outage) OR a legitimate
+  // sweep where all UTXOs were spent. Distinguish by checking tx history:
+  // - If the address has transaction history → sweep is legitimate, allow spend-marking
+  // - If history check fails or returns empty → assume API issue, preserve UTXOs
   if (wocUtxos.length === 0 && existingMap.size > 0) {
-    syncLogger.warn(
-      `[SYNC #${syncId}] WoC returned 0 UTXOs but ${existingMap.size} exist locally for ${address.slice(0, 12)}... — skipping spend-marking`
+    const wocClient = getWocClient()
+    const historyResult = await wocClient.getTransactionHistorySafe(address)
+
+    if (!historyResult.ok || historyResult.value.length === 0) {
+      // History check failed or returned empty — likely an API outage, keep existing UTXOs
+      syncLogger.warn(
+        `[SYNC #${syncId}] WoC returned 0 UTXOs but ${existingMap.size} exist locally for ${address.slice(0, 12)}... — skipping spend-marking (no tx history to confirm sweep)`
+      )
+      return { address, basket, newUtxos: 0, spentUtxos: 0, totalBalance: 0 }
+    }
+
+    // History returned successfully with entries — the address was genuinely swept
+    syncLogger.info(
+      `[SYNC #${syncId}] WoC returned 0 UTXOs for ${address.slice(0, 12)}... with ${historyResult.value.length} tx history entries — address was swept, proceeding with spend-marking`
     )
-    return { address, basket, newUtxos: 0, spentUtxos: 0, totalBalance: 0 }
   }
 
   let newUtxos = 0

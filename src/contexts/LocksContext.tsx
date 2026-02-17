@@ -161,10 +161,12 @@ export function LocksProvider({ children }: LocksProviderProps) {
       const lockKey = `${lock.txid}:${lock.vout}`
       addKnownUnlockedLock(lockKey)
 
-      // Functional updater to avoid stale closure
+      await onComplete()
+
+      // Remove from state only AFTER onComplete succeeds — if it throws,
+      // the lock stays in state so the UI remains consistent
       setLocks(prev => prev.filter(l => l.txid !== lock.txid || l.vout !== lock.vout))
 
-      await onComplete()
       // Audit log lock release
       audit.lockReleased(txid, lock.satoshis, activeAccountId ?? undefined)
       return ok({ txid })

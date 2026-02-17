@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { BRC100Request } from '../services/brc100'
 import {
   setRequestHandler,
@@ -36,11 +36,18 @@ export function useBrc100Handler({
   const [brc100Request, setBrc100Request] = useState<BRC100Request | null>(null)
   const { connectedApps, connectApp, isTrustedOrigin } = useConnectedApps()
 
+  // Keep a ref to the latest isTrustedOrigin so the main effect doesn't
+  // tear down listeners every time a new origin is trusted.
+  const isTrustedOriginRef = useRef(isTrustedOrigin)
+  useEffect(() => {
+    isTrustedOriginRef.current = isTrustedOrigin
+  }, [isTrustedOrigin])
+
   // Set up BRC-100 request handler
   useEffect(() => {
     const handleIncomingRequest = async (request: BRC100Request) => {
       // Check if this is from a trusted origin (auto-approve)
-      const isTrusted = request.origin && isTrustedOrigin(request.origin)
+      const isTrusted = request.origin && isTrustedOriginRef.current(request.origin)
 
       if (isTrusted && wallet) {
         brc100Logger.info(`Auto-approving request from trusted origin: ${request.origin}`)
@@ -76,7 +83,7 @@ export function useBrc100Handler({
       if (unlistenDeepLink) unlistenDeepLink()
       if (unlistenHttp) unlistenHttp()
     }
-  }, [wallet, onRequestReceived, isTrustedOrigin])
+  }, [wallet, onRequestReceived])
 
   const handleApprove = useCallback(() => {
     if (!brc100Request || !wallet) return

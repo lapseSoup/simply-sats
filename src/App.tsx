@@ -5,7 +5,7 @@ import './App.css'
 import { useWallet, useUI, useModal } from './contexts'
 import { isOk } from './domain/types'
 import { logger } from './services/logger'
-import { Toast, PaymentAlert, SkipLink } from './components/shared'
+import { Toast, PaymentAlert, SkipLink, ErrorBoundary } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
 import { Header, BalanceDisplay, QuickActions } from './components/wallet'
 import { RestoreModal, MnemonicModal, LockScreenModal, BackupVerificationModal } from './components/modals'
@@ -192,7 +192,7 @@ function WalletApp() {
       }
     }
 
-    checkSync()
+    checkSync().catch(err => logger.error('Auto-sync check failed', err))
   }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, showToast])
 
   // Auto-clear mnemonic from memory after timeout (security)
@@ -464,9 +464,36 @@ function WalletApp() {
 
 function App() {
   return (
-    <AppProviders>
-      <WalletApp />
-    </AppProviders>
+    <ErrorBoundary
+      context="AppProviders"
+      fallback={(error, reset) => (
+        <div className="error-boundary" role="alert">
+          <div className="error-boundary-content">
+            <h2>Simply Sats failed to start</h2>
+            <p className="error-message">{error.message}</p>
+            <p className="error-hint">
+              Your funds are safe. This may be caused by database corruption or a missing resource.
+            </p>
+            <div className="error-actions">
+              <button type="button" className="error-retry-button" onClick={reset}>
+                Try Again
+              </button>
+              <button
+                type="button"
+                className="error-refresh-button"
+                onClick={() => window.location.reload()}
+              >
+                Reload App
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    >
+      <AppProviders>
+        <WalletApp />
+      </AppProviders>
+    </ErrorBoundary>
   )
 }
 
