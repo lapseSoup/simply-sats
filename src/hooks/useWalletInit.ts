@@ -63,7 +63,21 @@ export function useWalletInit({
         await migrateToSecureStorage()
         if (!mounted) return
 
-        await initDatabase()
+        // Retry DB init up to 3 times with backoff (ARCH-3: graceful degradation)
+        let initAttempts = 0
+        const MAX_INIT_ATTEMPTS = 3
+        while (initAttempts < MAX_INIT_ATTEMPTS) {
+          try {
+            await initDatabase()
+            break
+          } catch (dbErr) {
+            initAttempts++
+            uiLogger.error(`Database init failed (attempt ${initAttempts}/${MAX_INIT_ATTEMPTS})`, dbErr)
+            if (initAttempts >= MAX_INIT_ATTEMPTS) throw dbErr
+            if (!mounted) return
+            await new Promise(resolve => setTimeout(resolve, 500 * initAttempts))
+          }
+        }
         if (!mounted) return
         uiLogger.info('Database initialized successfully')
 

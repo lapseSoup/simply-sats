@@ -34,6 +34,19 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'warn',
     },
   },
+  // Components should use context hooks, not import directly from services/infrastructure.
+  // Warn for now (some edge cases like Header.tsx need multi-account balance fetching).
+  {
+    files: ['src/components/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['warn', {
+        patterns: [{
+          group: ['**/services/database*', '**/services/wallet*', '**/services/sync*', '**/infrastructure/**'],
+          message: 'Components should use context hooks (useWallet, useSync, etc.) instead of importing from services/infrastructure directly.',
+        }],
+      }],
+    },
+  },
   // Test files - more lenient
   {
     files: ['**/*.test.{ts,tsx}', '**/test/**/*.{ts,tsx}'],
