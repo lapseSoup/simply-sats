@@ -2,74 +2,253 @@
 
 **Date:** 2026-02-16
 **Status:** Approved
-**Decision:** Password is optional during wallet creation and all restore flows. Keys stored unencrypted in Tauri secure storage when no password is set.
+**Approach:** Dual-mode storage with explicit format flag (version 0 = unprotected, version 1 = encrypted)
 
 ## Problem
 
-All setup flows (create wallet, restore from seed/JSON/full backup) require a 14+ character password. This creates unnecessary friction for users who want quick access to their wallet and are comfortable with OS-level device security.
+All setup flows (create wallet, restore from seed/JSON/full backup) require a 14+ character password. This creates unnecessary friction for users who want quick access and trust their device's OS-level security (keychain).
 
-## Design
+## Design Overview
 
-### Core Principle
+Password becomes optional in all setup flows. Two explicit storage formats coexist:
 
-Password becomes optional everywhere. When skipped, wallet keys are stored as plaintext JSON in Tauri secure storage (OS keychain). When provided, everything works identically to today (AES-256-GCM encryption).
+- **Version 0 (unprotected):** Plaintext `WalletKeys` wrapped in `{ version: 0, mode: 'unprotected', keys }`, stored in Tauri secure storage (OS keychain)
+- **Version 1 (encrypted):** AES-256-GCM `EncryptedData` — existing format, unchanged
 
-### Affected Flows
+A localStorage flag `simply_sats_has_password` (`'true'` / `'false'`) drives all conditional behavior (lock screen, auto-lock, settings UI). Defaults to `'true'` for existing wallets.
 
-| Flow | File | Change |
-|------|------|--------|
-| Create Wallet | `OnboardingFlow.tsx` | Password step becomes optional, add "Skip" |
-| Restore Seed Phrase | `RestoreModal.tsx` | Password fields optional, add "Continue without password" |
-| Restore JSON Backup | `RestoreModal.tsx` | Same |
-| Restore Full Backup | `RestoreModal.tsx` | Same |
-| Lock Screen | `LockScreenModal.tsx` | Don't show if no password set |
-| Auto-lock | `autoLock.ts` | Disabled when no password |
-| Settings | `SettingsSecurity.tsx` | "Set Password" option when none exists |
+---
 
-### Storage Layer Changes
+## Section 1: Storage Format
 
-**`src/services/wallet/storage.ts`:**
-- `saveWallet(keys, password?)` — if no password, store keys as plaintext JSON
-- `loadWallet(password?)` — if no password, load plaintext JSON directly
-- `hasPassword()` — new function to check if wallet is password-protected
+### New type: `UnprotectedWalletData`
 
-**`src/services/crypto.ts`:**
-- No changes. Encryption functions only called when password is provided.
-
-**Storage format (no password):**
-```json
-{
-  "format": "simply-sats-keys-plaintext",
-  "version": 1,
-  "mnemonic": "...",
-  "walletWif": "...",
-  "ordWif": "...",
-  "identityWif": "...",
-  "walletAddress": "...",
-  "ordAddress": "...",
-  "identityAddress": "...",
-  "walletPubKey": "..."
+```ts
+interface UnprotectedWalletData {
+  version: 0
+  mode: 'unprotected'
+  keys: WalletKeys  // plaintext
 }
 ```
 
-### Behavioral Rules
+Alongside existing:
 
-1. **No password = no lock screen.** Auto-lock timer skipped. Wallet always open.
-2. **No password = no session password.** Account operations derive keys from Rust key store or use plaintext storage directly.
-3. **"Set Password" in Settings** encrypts existing plaintext keys, enables lock screen and auto-lock.
-4. **"Remove Password" NOT supported** — once set, password can only be changed, not removed. This prevents accidental downgrade of security.
-5. **Password strength unchanged** — 14+ chars minimum when a password is chosen.
+```ts
+interface EncryptedData {
+  version: 1  // (number, currently CURRENT_VERSION = 1)
+  ciphertext: string
+  iv: string
+  salt: string
+  iterations: number
+}
+```
 
-### Account Operations Without Password
+New type guard: `isUnprotectedData(data)` checks `version === 0 && mode === 'unprotected'`.
 
-- `switchAccount()` — already uses Rust key store as primary path. No change needed.
-- `createNewAccount()` / `importAccount()` — need to handle `password = undefined` by storing keys in plaintext.
-- `getAccountKeys()` — bypass decryption when no password set, read plaintext directly.
+**Where stored:** Tauri secure storage (OS keychain) — same IPC commands as encrypted data. The Rust `secure_storage_save`/`secure_storage_load` commands accept/return arbitrary JSON, so no Rust changes needed.
 
-### What Stays The Same
+**Detection flag:** `localStorage.getItem('simply_sats_has_password')` — synchronous read on startup, no async needed.
 
-- All encryption logic when password IS set
-- Password strength requirements (14+ chars)
-- Encrypted backup export (user provides password at export time)
+---
+
+## Section 2: Storage Layer (`storage.ts`)
+
+### `saveWalletUnprotected(keys)` — new function
+
+```ts
+async function saveWalletUnprotected(keys: WalletKeys): Promise<void>
+```
+
+- Wraps keys in `{ version: 0, mode: 'unprotected', keys }`
+- Saves to Tauri secure storage (falls back to localStorage for web builds)
+- Sets `simply_sats_has_password = 'false'` in localStorage
+
+### `saveWallet(keys, password)` — unchanged
+
+- Existing behavior: encrypt → save → set `simply_sats_has_password = 'true'`
+
+### `loadWallet(password)` — signature changes to `password: string | null`
+
+- If stored data is `UnprotectedWalletData` (version 0): return `keys` directly, ignore password
+- If stored data is `EncryptedData` (version 1): decrypt with password (existing behavior)
+- Current security violation check (rejects raw `{mnemonic, walletWif}`) replaced by version 0 check
+
+### `hasPassword()` — new function
+
+```ts
+function hasPassword(): boolean {
+  return localStorage.getItem('simply_sats_has_password') !== 'false'
+}
+```
+
+Safe default: `true` (existing wallets without the flag are password-protected).
+
+---
+
+## Section 3: Account Layer (`accounts.ts`)
+
+### `createAccount()` — password becomes `string | null`
+
+When `null`:
+- Skip password validation
+- Store `JSON.stringify({ version: 0, mode: 'unprotected', keys: keysJson })` in `encrypted_keys` column
+- Column name is a misnomer in this mode; renaming requires a migration — not worth it
+
+When `string`: everything works as today (encrypt → store).
+
+### `getAccountKeys()` — password becomes `string | null`
+
+- Parse `account.encryptedKeys` as JSON
+- If `version: 0, mode: 'unprotected'` → return `keys` directly
+- If `EncryptedData` (version 1) → decrypt with password
+- Current empty-password rejection bypassed when stored data is unprotected
+
+### `migrateToMultiAccount()` — passes `password: string | null` through
+
+### `encryptAllAccounts(password)` — new function
+
+Called by "Set Password" in Settings:
+
+```ts
+async function encryptAllAccounts(password: string): Promise<void>
+```
+
+- Iterates ALL accounts
+- For each with version 0: parse plaintext keys → encrypt with password → UPDATE row
+- Calls `saveWallet(keys, password)` to re-encrypt the secure storage blob
+- Sets `simply_sats_has_password = 'true'`
+- Atomic: if any account fails, rolls back — no partial state
+
+---
+
+## Section 4: Session Password & Lock Behavior
+
+### Session password sentinel
+
+```ts
+// sessionPasswordStore.ts
+export const NO_PASSWORD = '' as const
+```
+
+Semantics:
+- `sessionPassword === null` → locked / no active session
+- `sessionPassword === ''` (NO_PASSWORD) → unlocked, no password was set
+- `sessionPassword === 'actual-string'` → unlocked, password-protected
+
+**Important:** All `!sessionPassword` checks that mean "no active session" must change to `sessionPassword === null`. Empty string is falsy in JS.
+
+### `useWalletLock` changes
+
+- `lockWallet()` — no-op when `!hasPassword()`. Visibility-based lock also checks `hasPassword()`.
+- `unlockWallet(password)` — when stored data is version 0: load keys directly, skip PBKDF2 and rate limiting, set `sessionPassword = NO_PASSWORD`.
+- Auto-lock init guard: `wallet && autoLockMinutes > 0 && hasPassword()`.
+
+### `useWalletInit` changes (app startup)
+
+Current:
+1. `hasWallet()` → accounts exist → `setIsLocked(true)` → lock screen
+
+New:
+1. `hasWallet()` → accounts exist AND `hasPassword()` → `setIsLocked(true)` → lock screen
+2. `hasWallet()` → accounts exist AND `!hasPassword()` → `loadWallet(null)` → set wallet → `sessionPassword = NO_PASSWORD` → no lock screen
+
+### Lock screen gate (`App.tsx` line 271)
+
+No change needed: `isLocked && wallet === null`. For passwordless wallets, `isLocked` is never set to `true`.
+
+### Settings (`SettingsSecurity.tsx`)
+
+When `!hasPassword()`:
+- Hide "Auto-Lock Timer", "Lock Wallet Now"
+- Show "Set Password" row: "Enable lock screen and encryption"
+- On submit: `encryptAllAccounts(password)` → update `sessionPassword` → enable auto-lock at 10 min
+
+When `hasPassword()`:
+- Everything as today
+- Add "Change Password" row (currently missing)
+
+---
+
+## Section 5: UI Changes
+
+### OnboardingFlow (create wallet)
+
+Password step gains a "Skip — Continue without password" link below the Create Wallet button:
+- Shows one-time warning: "Without a password, anyone with access to this computer can spend your funds."
+- On confirm: calls `onCreateWallet(null)` — password param becomes `string | null`
+
+### RestoreModal (all three tabs)
+
+Each tab (Seed Phrase, JSON Backup, Full Backup):
+- Password/confirm fields remain visible but become optional
+- "Skip password" link below confirm field
+- Clicking it collapses the password section, changes button text to "Restore Without Password"
+- Same one-time warning
+
+### Export Keys (no wallet password)
+
+When `!hasPassword()` or `sessionPassword === NO_PASSWORD`:
+- Instead of encrypting with session password, show modal: "Enter a password to protect your exported keys"
+- Password + confirm fields
+- Encrypt export with that one-time password
+- Toast: "Keys exported — remember the password you used!"
+
+---
+
+## Section 6: Account Operations & Edge Cases
+
+### Account operations — password becomes `string | null`
+
+All operations that pass `password: string`:
+- `switchAccount(accountId, password)` → passes `null` when `!hasPassword()`
+- `createNewAccount(name, password)` → same
+- `importAccount(name, mnemonic, password)` → same
+- `discoverAccounts(mnemonic, password, excludeId)` → same
+
+The `sessionPassword` value (real password or `NO_PASSWORD`) flows through. `NO_PASSWORD = ''` is falsy, so all `!sessionPassword` checks must become `sessionPassword === null`.
+
+### Edge case: Mixed encryption state
+
+Cannot happen by design. Either ALL accounts are unprotected or ALL are encrypted. `encryptAllAccounts` is atomic.
+
+### Edge case: Encrypted backup file + no wallet password
+
+Restore flow prompts for backup file's encryption password (to decrypt the file). Wallet itself stores unprotected if user skipped wallet password. UI labels: "Backup file password" vs "Wallet password (optional)".
+
+### Edge case: "Remove Password"
+
+Not supported. Once set, password can only be changed. Prevents accidental security downgrade.
+
+---
+
+## Affected Files Summary
+
+| File | Change |
+|------|--------|
+| `src/services/wallet/storage.ts` | `saveWalletUnprotected()`, `loadWallet(null)`, `hasPassword()`, `UnprotectedWalletData` type |
+| `src/services/wallet/types.ts` | `UnprotectedWalletData` interface |
+| `src/services/accounts.ts` | `password: string \| null` throughout, `encryptAllAccounts()` |
+| `src/services/sessionPasswordStore.ts` | `NO_PASSWORD` constant |
+| `src/hooks/useWalletLock.ts` | Guard lock/auto-lock on `hasPassword()` |
+| `src/hooks/useWalletInit.ts` | Skip lock screen for passwordless wallets |
+| `src/hooks/useWalletActions.ts` | `password: string \| null` in create/restore/import |
+| `src/hooks/useAccountSwitching.ts` | Pass `null` password when unprotected |
+| `src/contexts/AccountsContext.tsx` | `password: string \| null` in interface |
+| `src/contexts/WalletContext.tsx` | Auto-lock guard adds `hasPassword()` |
+| `src/components/onboarding/OnboardingFlow.tsx` | "Skip password" link + warning |
+| `src/components/modals/RestoreModal.tsx` | Optional password fields + skip link |
+| `src/components/modals/settings/SettingsSecurity.tsx` | "Set Password" / "Change Password", conditional hide lock options, export password prompt |
+| `src/components/modals/LockScreenModal.tsx` | No changes needed |
+| `src/services/autoLock.ts` | No changes needed (guarded at call site) |
+| `src/services/crypto.ts` | No changes needed |
+| `src/services/accountDiscovery.ts` | `password: string \| null` |
+| `src/App.tsx` | No changes needed (lock gate works as-is) |
+
+## What Stays The Same
+
+- All encryption logic when password IS set — identical to today
+- Password strength requirements: 14+ chars when chosen
+- Encrypted backup export: user provides password at export time
 - BRC-100 operations
 - Rate limiting on unlock attempts (only applies when password exists)
+- Tauri secure storage Rust commands — no changes
