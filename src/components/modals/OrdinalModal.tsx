@@ -13,9 +13,13 @@ interface OrdinalModalProps {
   onClose: () => void
   onTransfer?: () => void
   onList?: () => void
+  // TODO: Enable onBuy once listPrice is supported on the Ordinal type.
+  // purchaseOrdinal() is implemented in src/services/wallet/marketplace.ts and
+  // ready to wire up once GorillaPool returns payout + listPrice in the API.
+  onBuy?: () => void
 }
 
-export function OrdinalModal({ ordinal, onClose, onTransfer, onList }: OrdinalModalProps) {
+export function OrdinalModal({ ordinal, onClose, onTransfer, onList, onBuy }: OrdinalModalProps) {
   const { copyToClipboard } = useUI()
 
   const openOnWoC = (txid: string) => {
@@ -123,8 +127,15 @@ export function OrdinalModal({ ordinal, onClose, onTransfer, onList }: OrdinalMo
             </button>
           </div>
         </div>
-        {(onList || onTransfer) && (
+        {(onList || onTransfer || onBuy) && (
           <div className="ordinal-actions">
+            {onBuy && (
+              // TODO: Show only when ordinal.listPrice > 0 once listPrice is
+              // available on the Ordinal type (requires GorillaPool API support).
+              <button className="btn btn-primary" onClick={onBuy}>
+                Buy
+              </button>
+            )}
             {onList && (
               <button className="btn btn-secondary" onClick={onList}>
                 List for Sale

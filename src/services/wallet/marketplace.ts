@@ -223,3 +223,87 @@ export async function cancelOrdinalListing(
   mpLogger.info('Ordinal listing cancelled', { txid })
   return txid
 }
+
+/**
+ * Purchase a listed ordinal by satisfying the OrdinalLock contract.
+ * The caller must supply the `payout` field (base64-encoded payment output
+ * script) that was embedded in the listing transaction — this is the
+ * counterpart to the seller's `payAddress` and `price` encoded on-chain.
+ *
+ * @param paymentWif    - WIF private key for the funding address
+ * @param paymentUtxos  - UTXOs available for paying the purchase price + fees
+ * @param ordAddress    - Address to receive the purchased ordinal
+ * @param listingUtxo   - The UTXO of the listed ordinal (the locked 1-sat output)
+ * @param payout        - Base64-encoded payment output script from the listing tx
+ * @param priceSats     - Expected price in satoshis (used to validate funding)
+ * @returns Transaction ID of the purchase
+ */
+export async function purchaseOrdinal(params: {
+  paymentWif: string
+  paymentUtxos: UTXO[]
+  ordAddress: string
+  listingUtxo: UTXO
+  payout: string
+  priceSats: number
+}): Promise<string> {
+  const { paymentWif, paymentUtxos, ordAddress, listingUtxo, payout, priceSats } = params
+
+  if (paymentUtxos.length === 0) {
+    throw new Error('No payment UTXOs available to purchase ordinal')
+  }
+
+  const { purchaseOrdListing } = await import('js-1sat-ord')
+  const paymentPk = PrivateKey.fromWif(paymentWif)
+
+  const fundingToUse = paymentUtxos.slice(0, 3)
+  const totalFunding = fundingToUse.reduce((s, u) => s + u.satoshis, 0)
+  if (totalFunding < priceSats) {
+    throw new Error(`Insufficient funds: need at least ${priceSats} sats, have ${totalFunding}`)
+  }
+
+  const utxosToSpend = [
+    { txid: listingUtxo.txid, vout: listingUtxo.vout },
+    ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout })),
+  ]
+
+  const pendingResult = await markUtxosPendingSpend(utxosToSpend, 'purchase-pending')
+  if (!pendingResult.ok) {
+    throw new Error(`Failed to mark UTXOs pending: ${pendingResult.error.message}`)
+  }
+
+  let txid: string
+  try {
+    const result = await purchaseOrdListing({
+      utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
+      listing: {
+        payout,
+        listingUtxo: toOrdUtxo(listingUtxo),
+      },
+      ordAddress,
+      paymentPk: paymentPk as AnyPrivateKey,
+      changeAddress: paymentPk.toPublicKey().toAddress(),
+    })
+    txid = await broadcastTransaction(result.tx as unknown as Transaction)
+  } catch (err) {
+    try { await rollbackPendingSpend(utxosToSpend) } catch { /* best-effort */ }
+    throw err
+  }
+
+  try {
+    await recordSentTransaction(
+      txid,
+      '',
+      `Purchased ordinal ${listingUtxo.txid.slice(0, 8)}... for ${priceSats} sats`,
+      ['ordinal', 'purchase']
+    )
+    const confirmResult = await confirmUtxosSpent(utxosToSpend, txid)
+    if (!confirmResult.ok) {
+      mpLogger.warn('Failed to confirm UTXOs spent after purchase', { txid, error: confirmResult.error.message })
+    }
+  } catch (err) {
+    mpLogger.warn('Failed to record purchase locally', { error: String(err) })
+  }
+
+  mpLogger.info('Ordinal purchased successfully', { txid, price: priceSats })
+  return txid
+}

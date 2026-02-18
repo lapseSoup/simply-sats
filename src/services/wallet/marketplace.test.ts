@@ -259,3 +259,18 @@ describe('Marketplace Service', () => {
     })
   })
 })
+
+describe('purchaseOrdinal', () => {
+  it('throws if no payment UTXOs', async () => {
+    // Dynamic import to pick up the updated module after vi.mock
+    const { purchaseOrdinal } = await import('./marketplace')
+    await expect(purchaseOrdinal({
+      paymentWif: 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy7Y',
+      paymentUtxos: [],
+      ordAddress: '1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf',
+      listingUtxo: { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' },
+      payout: 'dW5sb2Nrc2NyaXB0',
+      priceSats: 10000,
+    })).rejects.toThrow('No payment UTXOs')
+  })
+})
