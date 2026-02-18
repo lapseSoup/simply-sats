@@ -612,40 +612,7 @@ export async function buildMultiOutputP2PKHTx(
 
   const totalSent = outputs.reduce((sum, o) => sum + o.satoshis, 0)
 
-  // Delegate to Rust when running inside Tauri — use key store (WIF never leaves Rust)
-  if (isTauri()) {
-    const result = await tauriInvoke<{
-      rawTx: string
-      txid: string
-      fee: number
-      change: number
-      changeAddress: string
-      spentOutpoints: Array<{ txid: string; vout: number }>
-    }>('build_multi_output_p2pkh_tx_from_store', {
-      outputs,
-      selectedUtxos: selectedUtxos.map(u => ({
-        txid: u.txid,
-        vout: u.vout,
-        satoshis: u.satoshis,
-        script: u.script ?? '',
-      })),
-      totalInput,
-      feeRate,
-    })
-    return {
-      tx: null,
-      rawTx: result.rawTx,
-      txid: result.txid,
-      fee: result.fee,
-      change: result.change,
-      changeAddress: result.changeAddress,
-      numOutputs: result.change > 0 ? outputs.length + 1 : outputs.length,
-      spentOutpoints: result.spentOutpoints,
-      totalSent,
-    }
-  }
-
-  // JS fallback (browser dev mode / tests)
+  // JS implementation (Tauri path not used — multi-output is pure JS on all platforms)
   const privateKey = PrivateKey.fromWif(wif)
   const fromAddress = privateKey.toPublicKey().toAddress()
   const sourceLockingScript = new P2PKH().lock(fromAddress)

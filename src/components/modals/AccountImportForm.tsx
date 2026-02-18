@@ -22,7 +22,7 @@ export function AccountImportForm({ onImportAccount, onClose }: AccountImportFor
 
   const isMnemonicValid = useMemo(() => {
     const words = mnemonic.trim().split(/\s+/).filter(w => w.length > 0)
-    if (words.length !== 12) return false
+    if (words.length !== 12 && words.length !== 24) return false
     return validateMnemonic(mnemonic.trim().toLowerCase())
   }, [mnemonic])
 

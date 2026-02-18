@@ -52,8 +52,8 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
     if (!validatePasswordFields()) return
     try {
       const words = restoreMnemonic.trim().split(/\s+/)
-      if (words.length !== 12) {
-        showToast('Please enter exactly 12 words', 'warning')
+      if (words.length !== 12 && words.length !== 24) {
+        showToast('Please enter exactly 12 or 24 words', 'warning')
         return
       }
       const pwd = skipPassword ? null : password
