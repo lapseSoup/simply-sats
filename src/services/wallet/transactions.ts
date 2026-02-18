@@ -221,6 +221,11 @@ export async function sendBSV(
     return err(new AppError('accountId is required to send BSV', ErrorCodes.INVALID_STATE, { toAddress, satoshis }))
   }
 
+  // Reset inactivity timer BEFORE any async I/O so auto-lock cannot fire during broadcast.
+  // If auto-lock clears the Rust key store mid-send, account switching immediately after
+  // will fail even though the send succeeded.
+  resetInactivityTimer()
+
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during send
   const releaseLock = await acquireSyncLock(accountId)
   try {
@@ -367,6 +372,9 @@ export async function sendBSVMultiKey(
     return err(new AppError('accountId is required to send BSV (multi-key)', ErrorCodes.INVALID_STATE, { toAddress, satoshis }))
   }
 
+  // Reset inactivity timer BEFORE any async I/O so auto-lock cannot fire during broadcast.
+  resetInactivityTimer()
+
   // Acquire per-account sync lock to prevent concurrent sync from modifying UTXO state.
   // This prevents the race condition where performSync() could revert pending-spend flags
   // set by executeBroadcast() before the broadcast completes (BUG-4).
@@ -509,6 +517,9 @@ export async function sendBSVMultiOutput(
   if (accountId === undefined) {
     return err(new AppError('accountId is required to send BSV (multi-output)', ErrorCodes.INVALID_STATE, { outputs }))
   }
+
+  // Reset inactivity timer BEFORE any async I/O so auto-lock cannot fire during broadcast.
+  resetInactivityTimer()
 
   const releaseLock = await acquireSyncLock(accountId)
   try {

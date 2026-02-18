@@ -20,19 +20,23 @@ export async function getBalance(address: string): Promise<number> {
 
 /**
  * Get balance from local database (BRC-100 method - faster!)
+ * @param basket - Optional basket filter (e.g. 'default', 'derived')
+ * @param accountId - Account to scope query to. Omit only for account-agnostic contexts (e.g. BRC-100).
  */
-export async function getBalanceFromDB(basket?: string): Promise<number> {
-  return getBalanceFromDatabase(basket)
+export async function getBalanceFromDB(basket?: string, accountId?: number): Promise<number> {
+  return getBalanceFromDatabase(basket, accountId)
 }
 
 /**
  * Get spendable UTXOs from local database
+ * @param basket - Basket filter (defaults to 'default')
+ * @param accountId - Account to scope query to. Omit only for account-agnostic contexts.
  */
-export async function getUTXOsFromDB(basket = BASKETS.DEFAULT): Promise<UTXO[]> {
+export async function getUTXOsFromDB(basket = BASKETS.DEFAULT, accountId?: number): Promise<UTXO[]> {
   // Do NOT catch here — callers must distinguish "no UTXOs" (empty array) from
   // "DB error" (thrown exception). Swallowing errors causes the UI to show
   // "empty wallet" when the real problem is a database failure.
-  const dbUtxos = await getSpendableUtxosFromDatabase(basket)
+  const dbUtxos = await getSpendableUtxosFromDatabase(basket, accountId)
   return dbUtxos.map(u => ({
     txid: u.txid,
     vout: u.vout,

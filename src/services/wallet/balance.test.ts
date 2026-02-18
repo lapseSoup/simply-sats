@@ -66,7 +66,7 @@ describe('getBalanceFromDB', () => {
 
     const result = await getBalanceFromDB('default')
     expect(result).toBe(25000)
-    expect(mockGetBalanceFromDatabase).toHaveBeenCalledWith('default')
+    expect(mockGetBalanceFromDatabase).toHaveBeenCalledWith('default', undefined)
   })
 
   it('propagates database errors to caller', async () => {
@@ -79,7 +79,14 @@ describe('getBalanceFromDB', () => {
     mockGetBalanceFromDatabase.mockResolvedValueOnce(100)
 
     await getBalanceFromDB('derived')
-    expect(mockGetBalanceFromDatabase).toHaveBeenCalledWith('derived')
+    expect(mockGetBalanceFromDatabase).toHaveBeenCalledWith('derived', undefined)
+  })
+
+  it('passes accountId to scope query to a single account', async () => {
+    mockGetBalanceFromDatabase.mockResolvedValueOnce(5000)
+
+    await getBalanceFromDB('default', 2)
+    expect(mockGetBalanceFromDatabase).toHaveBeenCalledWith('default', 2)
   })
 })
 
@@ -106,7 +113,14 @@ describe('getUTXOsFromDB', () => {
     mockGetSpendableUtxosFromDatabase.mockResolvedValueOnce([])
 
     await getUTXOsFromDB()
-    expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('default')
+    expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('default', undefined)
+  })
+
+  it('passes accountId to scope query to a single account', async () => {
+    mockGetSpendableUtxosFromDatabase.mockResolvedValueOnce([])
+
+    await getUTXOsFromDB('default', 3)
+    expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('default', 3)
   })
 })
 

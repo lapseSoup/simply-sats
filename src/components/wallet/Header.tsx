@@ -69,7 +69,13 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
       } else {
         const diag = getLastSwitchDiag()
         walletLogger.error('Failed to switch account', { diag })
-        showToast('Failed to switch account. Please try again.', 'warning')
+        const isLocked = diag.toLowerCase().includes('mnemonic') || diag.toLowerCase().includes('locked') || diag.toLowerCase().includes('no pwd')
+        showToast(
+          isLocked
+            ? 'Please unlock your wallet to switch accounts.'
+            : 'Failed to switch account. Please try again.',
+          'warning'
+        )
       }
       // fetchData is triggered automatically by App.tsx useEffect
       // when wallet + activeAccountId state updates after re-render

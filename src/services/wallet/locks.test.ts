@@ -415,7 +415,7 @@ describe('locks service', () => {
       const errResult = await lockBSV(10_000, 900_000, utxos)
       expect(errResult.ok).toBe(false)
       if (errResult.ok) return
-      expect(errResult.error.message).toMatch(/Lock broadcast succeeded.*but failed to record locally/)
+      expect(errResult.error.message).toMatch(/Lock confirmed on-chain but local record failed/)
     })
 
     it('should use the correct fee calculation', async () => {
