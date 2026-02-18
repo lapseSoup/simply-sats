@@ -108,12 +108,16 @@ function WalletApp() {
     enabled: true
   })
 
-  // Keep refs to fetchData/performSync so effects don't re-trigger when
-  // their identity changes (detectLocks/syncFetchData identity changes)
+  // Keep refs to fetchData/performSync/refreshTokens so the checkSync effect
+  // doesn't re-trigger when their identities change. refreshTokens depends on
+  // [wallet, activeAccountId] so it gets a new identity on every restore/switch —
+  // if left in the effect dep array it causes an infinite sync loop.
   const fetchDataRef = useRef(fetchData)
   useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
   const performSyncRef = useRef(performSync)
   useEffect(() => { performSyncRef.current = performSync }, [performSync])
+  const refreshTokensRef = useRef(refreshTokens)
+  useEffect(() => { refreshTokensRef.current = refreshTokens }, [refreshTokens])
 
   // MessageBox listener for payments
   useEffect(() => {
@@ -183,7 +187,7 @@ function WalletApp() {
       }
 
       // Sync token balances as part of initial load
-      await refreshTokens()
+      await refreshTokensRef.current()
 
       // Run account discovery AFTER primary sync to avoid race conditions
       // (discoverAccounts changes activeAccountId which would discard fetchData results if concurrent)
@@ -217,7 +221,7 @@ function WalletApp() {
     }
 
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
-  }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, refreshTokens, showToast, setSyncPhase])
+  }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, showToast, setSyncPhase])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {
