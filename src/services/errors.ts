@@ -34,7 +34,8 @@ export const ErrorCodes = {
   SIGNATURE_ERROR: -32016,
   TIMEOUT_ERROR: -32017,
   BROADCAST_SUCCEEDED_DB_FAILED: -32018,
-  INVALID_STATE: -32019
+  INVALID_STATE: -32019,
+  UTXO_STUCK_IN_PENDING: -32020
 } as const
 
 export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes]

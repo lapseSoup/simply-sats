@@ -109,17 +109,16 @@ export async function executeBroadcast(
     walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)
     const rollbackResult = await rollbackPendingSpend(spentOutpoints)
     if (!rollbackResult.ok) {
-      // Rollback also failed — UTXOs are stuck in "pending spend" state.
-      // Surface this as a BROADCAST_SUCCEEDED_DB_FAILED-style error so the
-      // UI can warn the user their wallet may show incorrect balances until
-      // the next sync (which will clean up the stale pending status).
+      // Both broadcast AND rollback failed — UTXOs are stuck in pending state until next sync.
+      // Broadcast never succeeded, so UTXO_STUCK_IN_PENDING accurately describes the state
+      // (contrast with BROADCAST_SUCCEEDED_DB_FAILED which implies the tx IS on-chain).
       walletLogger.error('CRITICAL: Failed to rollback pending status — UTXOs stuck in pending state', rollbackResult.error, {
         txid: pendingTxid,
         outpointCount: spentOutpoints.length
       })
       throw new AppError(
         'Transaction failed and wallet state could not be fully restored. Your balance may appear incorrect until the next sync.',
-        ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
+        ErrorCodes.UTXO_STUCK_IN_PENDING,
         {
           broadcastError: broadcastError instanceof Error ? broadcastError.message : String(broadcastError),
           rollbackError: rollbackResult.error.message,
