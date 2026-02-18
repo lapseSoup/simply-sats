@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
 import { useAddressValidation } from '../../hooks/useAddressValidation'
@@ -16,13 +16,8 @@ interface SendModalProps {
 }
 
 export function SendModal({ onClose }: SendModalProps) {
-  const {
-    wallet,
-    balance,
-    utxos,
-    feeRateKB,
-    handleSend
-  } = useWallet()
+  const { wallet, balance, utxos, feeRateKB } = useWalletState()
+  const { handleSend } = useWalletActions()
   const { displayInSats, showToast, formatUSD } = useUI()
 
   const [sendAddress, setSendAddress] = useState('')

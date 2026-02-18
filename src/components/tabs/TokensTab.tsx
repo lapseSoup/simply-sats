@@ -8,7 +8,7 @@ import { useState, memo, useCallback, useMemo } from 'react'
 import { Search, RefreshCw } from 'lucide-react'
 import type { TokenBalance } from '../../services/tokens'
 import { formatTokenAmount } from '../../services/tokens'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
@@ -64,7 +64,8 @@ interface TokensTabProps {
 }
 
 export function TokensTab({ onRefresh }: TokensTabProps) {
-  const { tokenBalances, tokensSyncing: loading, refreshTokens, handleSendToken } = useWallet()
+  const { tokenBalances, tokensSyncing: loading } = useWalletState()
+  const { refreshTokens, handleSendToken } = useWalletActions()
   const { showToast } = useUI()
 
   const handleRefresh = async () => {

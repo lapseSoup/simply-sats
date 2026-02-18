@@ -10,7 +10,7 @@ import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { OrdinalImage } from '../shared/OrdinalImage'
 import type { Ordinal } from '../../services/wallet'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateTxFee } from '../../services/wallet/fees'
 import { isOk } from '../../domain/types'
@@ -24,7 +24,8 @@ export function OrdinalListModal({
   ordinal,
   onClose
 }: OrdinalListModalProps) {
-  const { handleListOrdinal, feeRateKB } = useWallet()
+  const { feeRateKB } = useWalletState()
+  const { handleListOrdinal } = useWalletActions()
   const { showToast } = useUI()
 
   // Listing fee: 1 ordinal input + 1-2 funding inputs, 2 outputs (locked ordinal + change)

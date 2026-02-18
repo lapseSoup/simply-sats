@@ -9,7 +9,7 @@ import {
   ClipboardCheck,
   ChevronRight
 } from 'lucide-react'
-import { useWallet } from '../../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { encrypt } from '../../../services/crypto'
 import { hasPassword } from '../../../services/wallet/storage'
@@ -26,13 +26,8 @@ interface SettingsSecurityProps {
 }
 
 export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
-  const {
-    wallet,
-    sessionPassword,
-    autoLockMinutes,
-    setAutoLockMinutes,
-    lockWallet
-  } = useWallet()
+  const { wallet, sessionPassword, autoLockMinutes } = useWalletState()
+  const { setAutoLockMinutes, lockWallet } = useWalletActions()
   const { showToast } = useUI()
 
   const [showKeysWarning, setShowKeysWarning] = useState(false)

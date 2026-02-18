@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, memo } from 'react'
 import { Flame, Snowflake, Clock, Lightbulb, ArrowUp, ArrowDown } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { useUtxoManagement } from '../../hooks/useUtxoManagement'
@@ -74,7 +74,8 @@ const UTXORow = memo(function UTXORow({
 })
 
 export function UTXOsTab() {
-  const { fetchData, activeAccountId } = useWallet()
+  const { activeAccountId } = useWalletState()
+  const { fetchData } = useWalletActions()
   const { formatUSD } = useUI()
 
   const [selectedUtxos, setSelectedUtxos] = useState<Set<string>>(new Set())

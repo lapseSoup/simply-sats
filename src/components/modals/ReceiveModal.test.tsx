@@ -12,16 +12,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ReceiveModal } from './ReceiveModal'
 
-// Mock the wallet context
-vi.mock('../../contexts/WalletContext', () => ({
-  useWallet: () => ({
+// Mock the wallet contexts
+vi.mock('../../contexts', () => ({
+  useWalletState: () => ({
     wallet: {
       walletAddress: '1WalletAddress123',
       ordAddress: '1OrdAddress456',
       identityPubKey: '02abc123pubkey456',
       identityWif: 'testWif123'
     },
-    contacts: []
+    contacts: [],
+    activeAccountId: null
+  }),
+  useWalletActions: () => ({
+    refreshContacts: vi.fn()
   })
 }))
 

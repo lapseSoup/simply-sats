@@ -8,7 +8,7 @@ import {
   Plus,
   ChevronRight
 } from 'lucide-react'
-import { useWallet } from '../../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../../services/keyDerivation'
 import { checkForPayments, getPaymentNotifications } from '../../../services/messageBox'
@@ -17,7 +17,8 @@ import { UTXOsTab } from '../../tabs/UTXOsTab'
 import { handleKeyDown } from './settingsKeyDown'
 
 export function SettingsAdvanced() {
-  const { wallet, performSync, fetchData } = useWallet()
+  const { wallet } = useWalletState()
+  const { performSync, fetchData } = useWalletActions()
   const { showToast } = useUI()
 
   const [showSenderInput, setShowSenderInput] = useState(false)

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { CircleCheck, AlertTriangle } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { consolidateUtxos, getWifForOperation } from '../../services/wallet'
 import { calculateTxFee } from '../../services/wallet'
@@ -14,7 +14,8 @@ interface ConsolidateModalProps {
 }
 
 export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModalProps) {
-  const { wallet, fetchData } = useWallet()
+  const { wallet } = useWalletState()
+  const { fetchData } = useWalletActions()
   const { formatUSD } = useUI()
   const [status, setStatus] = useState<'preview' | 'confirming' | 'success' | 'error'>('preview')
   const [error, setError] = useState<string | null>(null)
