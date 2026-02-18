@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { UTXO, ExtendedUTXO } from './types'
+import { DbError } from '../errors'
 
 // ---------------------------------------------------------------------------
 // Hoisted mock state
@@ -229,7 +230,7 @@ describe('Transaction Service', () => {
     mockConfirmUtxosSpent.mockResolvedValue({ ok: true, value: undefined })
     mockRollbackPendingSpend.mockResolvedValue({ ok: true, value: undefined })
     mockRecordSentTransaction.mockResolvedValue(undefined)
-    mockAddUTXO.mockResolvedValue(1)
+    mockAddUTXO.mockResolvedValue({ ok: true, value: 1 })
     mockGetDerivedAddresses.mockResolvedValue([])
     mockGetSpendableUtxosFromDatabase.mockResolvedValue([])
     mockReleaseLock.mockReset()
@@ -686,7 +687,7 @@ describe('Transaction Service', () => {
     })
 
     it('should suppress duplicate key errors on addUTXO', async () => {
-      mockAddUTXO.mockRejectedValue(new Error('UNIQUE constraint failed'))
+      mockAddUTXO.mockResolvedValue({ ok: false, error: new DbError('UNIQUE constraint failed', 'CONSTRAINT') })
 
       // Should NOT return err — duplicate is non-fatal
       const result = await consolidateUtxos(wif, utxoIds, 1)
@@ -696,7 +697,7 @@ describe('Transaction Service', () => {
     })
 
     it('should return err Result on unexpected addUTXO error', async () => {
-      mockAddUTXO.mockRejectedValue(new Error('disk full'))
+      mockAddUTXO.mockResolvedValue({ ok: false, error: new DbError('disk full', 'QUERY_FAILED') })
 
       const result = await consolidateUtxos(wif, utxoIds, 1)
       expect(result.ok).toBe(false)

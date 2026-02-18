@@ -202,6 +202,7 @@ describe('BRC-100 Actions', () => {
     requestStore.clear()
     mockRecordActionRequest.mockResolvedValue(undefined)
     mockUpdateActionResult.mockResolvedValue(undefined)
+    mockAddUTXO.mockResolvedValue({ ok: true, value: 1 })
   })
 
   // =========================================================================

@@ -171,7 +171,7 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
 
     return ok(utxoId)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'addUTXO'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -226,7 +226,7 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true, acc
 
     return ok(utxos)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'getUTXOsByBasket'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -265,7 +265,7 @@ export async function getSpendableUTXOs(accountId?: number): Promise<Result<UTXO
       tags: []
     })))
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'getSpendableUTXOs'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -298,7 +298,7 @@ export async function getSpendableUTXOsByAddress(address: string): Promise<Resul
       tags: []
     })))
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'getSpendableUTXOsByAddress'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -322,7 +322,7 @@ export async function markUTXOSpent(txid: string, vout: number, spentTxid: strin
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'markUTXOSpent'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -355,7 +355,7 @@ export async function markUtxosPendingSpend(
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'markUtxosPendingSpend'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -383,7 +383,7 @@ export async function confirmUtxosSpent(
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'confirmUtxosSpent'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -408,7 +408,7 @@ export async function rollbackPendingSpend(
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'rollbackPendingSpend'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -443,7 +443,7 @@ export async function getPendingUtxos(timeoutMs: number = 300000): Promise<Resul
       pendingSince: row.pending_since
     })))
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'getPendingUtxos'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -466,7 +466,7 @@ export async function getUtxoByOutpoint(txid: string, vout: number, accountId?: 
     const rows = await database.select<{ satoshis: number }[]>(query, params)
     return ok(rows[0] ?? null)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'getUtxoByOutpoint'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -504,7 +504,7 @@ export async function getBalanceFromDB(basket?: string, accountId?: number): Pro
     const result = await database.select<BalanceSumRow[]>(query, params)
     return ok(result[0]?.total || 0)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'getBalanceFromDB'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -554,7 +554,7 @@ export async function getAllUTXOs(accountId?: number): Promise<Result<UTXO[], Db
 
     return ok(utxos)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'getAllUTXOs'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -589,7 +589,7 @@ export async function toggleUtxoFrozen(
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'toggleUtxoFrozen'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -632,7 +632,7 @@ export async function repairUTXOs(accountId?: number): Promise<Result<number, Db
 
     return ok(fixed)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'repairUTXOs'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -647,7 +647,7 @@ export async function clearUtxosForAccount(accountId: number): Promise<Result<vo
     await database.execute('DELETE FROM utxos WHERE account_id = $1', [accountId])
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'clearUtxosForAccount'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -716,6 +716,6 @@ export async function reassignAccountData(targetAccountId: number): Promise<Resu
       return ok(totalFixed)
     })
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'reassignAccountData'))
+    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
   }
 }

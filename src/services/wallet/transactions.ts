@@ -164,27 +164,27 @@ async function recordTransactionResult(
       // Track change UTXO atomically so balance stays correct until next sync
       // Use final txid (from broadcaster), NOT pendingTxid — broadcaster may return different txid
       if (change > 0) {
-        try {
-          await addUTXO({
-            txid,
-            vout: numOutputs - 1,
-            satoshis: change,
-            lockingScript: p2pkhLockingScriptHex(changeAddress),
-            address: changeAddress,
-            basket: 'default',
-            spendable: true,
-            createdAt: Date.now()
-          }, accountId)
-          walletLogger.debug('Change UTXO tracked', { txid, change })
-        } catch (error) {
-          const msg = String(error)
+        const addChangeResult = await addUTXO({
+          txid,
+          vout: numOutputs - 1,
+          satoshis: change,
+          lockingScript: p2pkhLockingScriptHex(changeAddress),
+          address: changeAddress,
+          basket: 'default',
+          spendable: true,
+          createdAt: Date.now()
+        }, accountId)
+        if (!addChangeResult.ok) {
+          const msg = addChangeResult.error.message
           if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
             // Duplicate key is expected if UTXO was already synced — non-fatal
             walletLogger.debug('Change UTXO already exists (duplicate key)', { txid, change })
           } else {
             // Unexpected DB error — re-throw so the outer withTransaction() can handle it
-            throw error
+            throw addChangeResult.error
           }
+        } else {
+          walletLogger.debug('Change UTXO tracked', { txid, change })
         }
       }
     })
@@ -401,16 +401,16 @@ export async function consolidateUtxos(
           )
         }
         // Track consolidated UTXO atomically — use final txid from broadcaster
-        try {
-          await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
-          walletLogger.debug('Consolidated UTXO tracked', { txid, outputSats })
-        } catch (error) {
-          const msg = String(error)
+        const addConsolidateResult = await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
+        if (!addConsolidateResult.ok) {
+          const msg = addConsolidateResult.error.message
           if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
             walletLogger.debug('Consolidated UTXO already exists (duplicate key)', { txid, outputSats })
           } else {
-            throw error
+            throw addConsolidateResult.error
           }
+        } else {
+          walletLogger.debug('Consolidated UTXO tracked', { txid, outputSats })
         }
       })
       walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })

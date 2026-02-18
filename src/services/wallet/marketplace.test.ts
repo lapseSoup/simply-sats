@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { DbError } from '../errors'
 
 // Mock js-1sat-ord before importing marketplace
 vi.mock('js-1sat-ord', () => ({
@@ -155,7 +156,7 @@ describe('Marketplace Service', () => {
     })
 
     it('should throw if UTXOs cannot be marked pending', async () => {
-      mockMarkPending.mockResolvedValue({ ok: false, error: { message: 'DB error' } })
+      mockMarkPending.mockResolvedValue({ ok: false, error: new DbError('DB error', 'QUERY_FAILED') })
 
       await expect(
         listOrdinal(
