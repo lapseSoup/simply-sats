@@ -437,6 +437,56 @@ export class SimplySats {
     return this.request<ListLocksResult>('listLocks')
   }
 
+  // ==================== Extended Wallet Methods ====================
+
+  /**
+   * Get current USD exchange rate for BSV.
+   *
+   * Note: Requires Simply Sats server with getExchangeRate endpoint support.
+   */
+  async getExchangeRate(): Promise<{ rate: number; currency: string }> {
+    return this.request<{ rate: number; currency: string }>('getExchangeRate')
+  }
+
+  /**
+   * Get token balance for a specific ticker.
+   *
+   * @param ticker - Token ticker symbol (e.g. "PEPE")
+   *
+   * Note: Requires Simply Sats server with getTokenBalance endpoint support.
+   */
+  async getTokenBalance(ticker: string): Promise<{ ticker: string; balance: string; decimals: number }> {
+    return this.request<{ ticker: string; balance: string; decimals: number }>('getTokenBalance', { ticker })
+  }
+
+  /**
+   * Encrypt data using the wallet identity key.
+   *
+   * @param options.data - Plaintext string to encrypt
+   * @param options.pubKey - Optional recipient public key (defaults to own identity key)
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
+   *
+   * Note: Requires Simply Sats server with encrypt endpoint support.
+   */
+  async encrypt(options: { data: string; pubKey?: string; nonce?: string }): Promise<{ encryptedData: string }> {
+    const nonce = options.nonce ?? (await this.getNonce())
+    return this.request<{ encryptedData: string }>('encrypt', { ...options, nonce })
+  }
+
+  /**
+   * Decrypt data using the wallet identity key.
+   *
+   * @param options.encryptedData - Encrypted string to decrypt
+   * @param options.pubKey - Optional sender public key (defaults to own identity key)
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
+   *
+   * Note: Requires Simply Sats server with decrypt endpoint support.
+   */
+  async decrypt(options: { encryptedData: string; pubKey?: string; nonce?: string }): Promise<{ data: string }> {
+    const nonce = options.nonce ?? (await this.getNonce())
+    return this.request<{ data: string }>('decrypt', { ...options, nonce })
+  }
+
   // ==================== Convenience Methods ====================
 
   /**
