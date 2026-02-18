@@ -45,9 +45,8 @@ interface UseAccountSwitchingOptions {
   setIsLocked: Dispatch<SetStateAction<boolean>>
   setLocks: (locks: LockedUTXO[]) => void
   setOrdinals: (ordinals: Ordinal[]) => void
-  setBalance: (balance: number) => void
   setTxHistory: (history: TxHistoryItem[]) => void
-  resetSync: () => void
+  resetSync: (initialBalance?: number) => void
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
   refreshAccounts: () => Promise<void>
   wallet: WalletKeys | null
@@ -114,7 +113,6 @@ export function useAccountSwitching({
   setIsLocked,
   setLocks,
   setOrdinals,
-  setBalance,
   setTxHistory,
   resetSync,
   storeKeysInRust,
@@ -195,9 +193,23 @@ export function useAccountSwitching({
       if (keys) {
         // Invalidate any in-flight fetchData callbacks from the previous account
         fetchVersionRef.current += 1
-        // Clear stale state from previous account before setting new wallet
         setLocks([])
-        resetSync()
+
+        // Preload new account balance from DB BEFORE reset — this ensures resetSync
+        // initialises balance to the correct value, never showing 0 for a funded account.
+        let preloadedBalance = 0
+        try {
+          const [defaultBal, derivedBal] = await Promise.all([
+            getBalanceFromDatabase('default', accountId),
+            getBalanceFromDatabase('derived', accountId)
+          ])
+          preloadedBalance = defaultBal + derivedBal
+        } catch (_e) {
+          // Best-effort — 0 is acceptable if DB read fails
+        }
+
+        // Reset stale state, atomically initialising balance to the new account's value
+        resetSync(preloadedBalance)
 
         // Only store keys in Rust for fallback path — Rust path already stored them
         if (!keysFromRust) {
@@ -218,8 +230,10 @@ export function useAccountSwitching({
           walletLogger.warn('Failed to rotate session for account', { accountId, error: String(e) })
         }
 
-        // Preload locks from DB instantly
+        // Preload remaining data from DB
         const preloadVersion = fetchVersionRef.current
+
+        // Preload locks from DB instantly
         try {
           const dbLocks = await getLocksFromDB(0, accountId)
           if (fetchVersionRef.current !== preloadVersion) {
@@ -236,19 +250,6 @@ export function useAccountSwitching({
           const dbOrdinals = await getOrdinalsFromDatabase(accountId)
           if (fetchVersionRef.current === preloadVersion && dbOrdinals.length > 0) {
             setOrdinals(dbOrdinals)
-          }
-        } catch (_e) {
-          // Best-effort
-        }
-
-        // Preload balance from DB
-        try {
-          const [defaultBal, derivedBal] = await Promise.all([
-            getBalanceFromDatabase('default', accountId),
-            getBalanceFromDatabase('derived', accountId)
-          ])
-          if (fetchVersionRef.current === preloadVersion) {
-            setBalance(defaultBal + derivedBal)
           }
         } catch (_e) {
           // Best-effort
@@ -286,7 +287,7 @@ export function useAccountSwitching({
     } finally {
       switchingRef.current = false
     }
-  }, [accounts, accountsSwitchAccount, refreshAccounts, setWallet, setLocks, setOrdinals, setBalance, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
+  }, [accounts, accountsSwitchAccount, refreshAccounts, setWallet, setLocks, setOrdinals, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()

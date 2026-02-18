@@ -73,7 +73,7 @@ interface SyncContextType {
   setOrdBalance: (balance: number) => void
 
   // Actions
-  resetSync: () => void
+  resetSync: (initialBalance?: number) => void
   performSync: (
     wallet: WalletKeys,
     activeAccountId: number | null,
@@ -118,28 +118,18 @@ export function SyncProvider({ children }: SyncProviderProps) {
     derived: 0,
     locks: 0
   })
-  const [balance, setBalance] = useState<number>(() => {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CACHED_BALANCE)
-      return cached ? parseInt(cached, 10) : 0
-    } catch { return 0 }
-  })
-  const [ordBalance, setOrdBalance] = useState<number>(() => {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CACHED_ORD_BALANCE)
-      return cached ? parseInt(cached, 10) : 0
-    } catch { return 0 }
-  })
+  const [balance, setBalance] = useState<number>(0)
+  const [ordBalance, setOrdBalance] = useState<number>(0)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [ordinalContentCache, setOrdinalContentCache] = useState<Map<string, OrdinalContentEntry>>(new Map())
   const contentCacheRef = useRef<Map<string, OrdinalContentEntry>>(new Map())
 
-  const resetSync = useCallback(() => {
+  const resetSync = useCallback((initialBalance = 0) => {
     setUtxos([])
     setOrdinals([])
     setTxHistory([])
     setBasketBalances({ default: 0, ordinals: 0, identity: 0, derived: 0, locks: 0 })
-    setBalance(0)
+    setBalance(initialBalance)
     setOrdBalance(0)
     setSyncError(null)
     setOrdinalContentCache(new Map())
@@ -215,7 +205,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
         const totalBalance = defaultBal + derivedBal
         setBalance(totalBalance)
-        try { localStorage.setItem(STORAGE_KEYS.CACHED_BALANCE, String(totalBalance)) } catch { /* quota exceeded */ }
+        try { localStorage.setItem(`${STORAGE_KEYS.CACHED_BALANCE}_${accountId}`, String(totalBalance)) } catch { /* quota exceeded */ }
       } catch (e) {
         syncLogger.error('Failed to get basket balances', e)
       }
@@ -274,7 +264,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       // Guard against NaN/Infinity from unexpected DB values — don't corrupt displayed balance
       if (Number.isFinite(totalBalance)) {
         setBalance(totalBalance)
-        try { localStorage.setItem(STORAGE_KEYS.CACHED_BALANCE, String(totalBalance)) } catch { /* quota exceeded */ }
+        try { localStorage.setItem(`${STORAGE_KEYS.CACHED_BALANCE}_${activeAccountId}`, String(totalBalance)) } catch { /* quota exceeded */ }
       } else {
         syncLogger.warn('Skipping non-finite balance', { defaultBal, derivedBal })
       }
@@ -296,7 +286,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         // Guard against NaN/Infinity from API values
         if (Number.isFinite(totalOrdBalance)) {
           setOrdBalance(totalOrdBalance)
-          try { localStorage.setItem(STORAGE_KEYS.CACHED_ORD_BALANCE, String(totalOrdBalance)) } catch { /* quota exceeded */ }
+          try { localStorage.setItem(`${STORAGE_KEYS.CACHED_ORD_BALANCE}_${activeAccountId}`, String(totalOrdBalance)) } catch { /* quota exceeded */ }
         } else {
           syncLogger.warn('Skipping non-finite ord balance', { ordBal, idBal })
         }
