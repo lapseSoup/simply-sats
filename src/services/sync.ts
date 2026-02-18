@@ -838,6 +838,61 @@ async function backfillNullAmounts(
 }
 
 /**
+ * Resolve pending transactions that were missed by the history-limit slice.
+ *
+ * `syncTransactionHistory` only fetches the most recent N transactions per
+ * address.  If a pending transaction (e.g. an unlock tx) was broadcast when
+ * the wallet already had ≥N prior transactions, the history slice doesn't
+ * include it and `updateTransactionStatus` is never called — so it stays
+ * "Pending" forever even after on-chain confirmation.
+ *
+ * This function queries all pending txids from the DB and, for each one,
+ * checks WoC directly.  If confirmed (blockheight > 0), it updates the DB.
+ *
+ * Safe to call repeatedly — only touches rows where status='pending'.
+ */
+async function resolvePendingTransactions(accountId?: number): Promise<void> {
+  try {
+    const pendingResult = await getPendingTransactionTxids(accountId)
+    if (!pendingResult.ok) {
+      syncLogger.warn('[RESOLVE_PENDING] Failed to query pending txids', { error: pendingResult.error.message })
+      return
+    }
+
+    const pendingTxids = [...pendingResult.value]
+    if (pendingTxids.length === 0) return
+
+    syncLogger.debug(`[RESOLVE_PENDING] Checking ${pendingTxids.length} pending transaction(s)`)
+
+    const wocClient = getWocClient()
+
+    for (const txid of pendingTxids) {
+      try {
+        const detailResult = await wocClient.getTransactionDetailsSafe(txid)
+        if (!detailResult.ok) {
+          syncLogger.debug(`[RESOLVE_PENDING] Could not fetch details for ${txid.slice(0, 8)}... (non-fatal)`, { error: detailResult.error.message })
+          continue
+        }
+
+        const txDetails = detailResult.value
+        if (txDetails.blockheight && txDetails.blockheight > 0) {
+          const updateResult = await updateTransactionStatus(txid, 'confirmed', txDetails.blockheight, accountId)
+          if (updateResult.ok) {
+            syncLogger.info(`[RESOLVE_PENDING] Resolved pending tx → confirmed`, { txid: txid.slice(0, 8) + '...', blockheight: txDetails.blockheight })
+          } else {
+            syncLogger.warn(`[RESOLVE_PENDING] Failed to update status for ${txid.slice(0, 8)}...`, { error: updateResult.error.message })
+          }
+        }
+      } catch (e) {
+        syncLogger.debug(`[RESOLVE_PENDING] Error checking ${txid.slice(0, 8)}... (non-fatal)`, { error: String(e) })
+      }
+    }
+  } catch (e) {
+    syncLogger.warn('[RESOLVE_PENDING] resolvePendingTransactions failed (non-fatal)', { error: String(e) })
+  }
+}
+
+/**
  * Full wallet sync - syncs all three address types plus derived addresses
  * Automatically cancels any previous sync in progress
  * @param walletAddress - Main wallet address
@@ -950,6 +1005,14 @@ export async function syncWallet(
     // (common after 12-word restore when API rate limits cause failures)
     if (!token.isCancelled) {
       await backfillNullAmounts(allWalletAddresses, accountId)
+    }
+
+    // Resolve pending transactions that may have been missed by the history limit.
+    // The history sync slices to the most recent N txs per address — transactions
+    // broadcast just before older ones fill the limit (e.g. unlock after 30 prior txs)
+    // may not appear in the sliced window and never get status updated to confirmed.
+    if (!token.isCancelled) {
+      await resolvePendingTransactions(accountId)
     }
 
     // Update sync timestamps for derived addresses
