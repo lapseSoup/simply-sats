@@ -25,7 +25,7 @@ interface AccountsContextType {
   createNewAccount: (name: string, password: string | null) => Promise<WalletKeys | null>
   importAccount: (name: string, mnemonic: string, password: string | null) => Promise<WalletKeys | null>
   deleteAccount: (accountId: number) => Promise<boolean>
-  renameAccount: (accountId: number, name: string) => Promise<void>
+  renameAccount: (accountId: number, name: string) => Promise<boolean>
   refreshAccounts: () => Promise<void>
 
   // Reset all account state (for wallet deletion)
@@ -219,12 +219,19 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   }, [refreshAccounts])
 
   // Rename account
-  const renameAccount = useCallback(async (accountId: number, name: string): Promise<void> => {
-    const result = await updateAccountName(accountId, name)
-    if (!result.ok) {
-      accountLogger.error('Failed to rename account', result.error)
+  const renameAccount = useCallback(async (accountId: number, name: string): Promise<boolean> => {
+    try {
+      const result = await updateAccountName(accountId, name)
+      if (!result.ok) {
+        accountLogger.error('Failed to rename account', result.error)
+        return false
+      }
+      await refreshAccounts()
+      return true
+    } catch (e) {
+      accountLogger.error('Failed to rename account', e)
+      return false
     }
-    await refreshAccounts()
   }, [refreshAccounts])
 
   const value: AccountsContextType = useMemo(() => ({

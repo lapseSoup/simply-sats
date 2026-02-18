@@ -21,7 +21,7 @@ export interface WalletActionsContextType {
   createNewAccount: (name: string) => Promise<boolean>
   importAccount: (name: string, mnemonic: string) => Promise<boolean>
   deleteAccount: (accountId: number) => Promise<boolean>
-  renameAccount: (accountId: number, name: string) => Promise<void>
+  renameAccount: (accountId: number, name: string) => Promise<boolean>
   refreshAccounts: () => Promise<void>
 
   // Token actions

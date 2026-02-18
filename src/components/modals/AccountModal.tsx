@@ -23,7 +23,7 @@ interface AccountModalProps {
   onCreateAccount: (name: string) => Promise<boolean> // Returns success (accounts derived from same seed)
   onImportAccount: (name: string, mnemonic: string) => Promise<boolean>
   onDeleteAccount?: (accountId: number) => Promise<boolean>
-  onRenameAccount?: (accountId: number, name: string) => Promise<void>
+  onRenameAccount?: (accountId: number, name: string) => Promise<boolean>
   onSwitchAccount?: (accountId: number) => void
 }
 

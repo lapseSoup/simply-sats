@@ -12,7 +12,7 @@ interface AccountManageListProps {
   accounts: Account[]
   activeAccountId?: number | null
   onSwitchAccount?: (accountId: number) => void
-  onRenameAccount?: (accountId: number, name: string) => Promise<void>
+  onRenameAccount?: (accountId: number, name: string) => Promise<boolean>
   onDeleteAccount?: (accountId: number) => Promise<boolean>
   onCreateNew: () => void
   onClose: () => void
@@ -36,12 +36,12 @@ export function AccountManageList({
   const handleRename = async (accountId: number) => {
     if (!onRenameAccount || !editName.trim()) return
 
-    try {
-      await onRenameAccount(accountId, editName.trim())
+    const success = await onRenameAccount(accountId, editName.trim())
+    if (success) {
       setEditingId(null)
       setEditName('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename account')
+    } else {
+      setError('Failed to rename account')
     }
   }
 
