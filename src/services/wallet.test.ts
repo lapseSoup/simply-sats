@@ -36,8 +36,11 @@ describe('Wallet Service', () => {
 
   describe('createWallet', () => {
     it('should create a new wallet with valid keys', async () => {
-      const wallet = await createWallet()
+      const result = await createWallet()
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const wallet = result.value
       expect(wallet).toBeDefined()
       expect(wallet.mnemonic).toBeDefined()
       expect(wallet.mnemonic.split(' ')).toHaveLength(12)
@@ -59,9 +62,14 @@ describe('Wallet Service', () => {
     })
 
     it('should generate unique wallets each time', async () => {
-      const wallet1 = await createWallet()
-      const wallet2 = await createWallet()
+      const r1 = await createWallet()
+      const r2 = await createWallet()
 
+      expect(r1.ok).toBe(true)
+      expect(r2.ok).toBe(true)
+      if (!r1.ok || !r2.ok) return
+      const wallet1 = r1.value
+      const wallet2 = r2.value
       expect(wallet1.mnemonic).not.toBe(wallet2.mnemonic)
       expect(wallet1.walletAddress).not.toBe(wallet2.walletAddress)
     })
@@ -69,8 +77,11 @@ describe('Wallet Service', () => {
 
   describe('restoreWallet', () => {
     it('should restore wallet from valid mnemonic', async () => {
-      const wallet = await restoreWallet(TEST_MNEMONIC)
+      const result = await restoreWallet(TEST_MNEMONIC)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const wallet = result.value
       expect(wallet.mnemonic).toBe(TEST_MNEMONIC)
       expect(wallet.walletType).toBe('yours')
       expect(wallet.walletAddress).toBeDefined()
@@ -78,9 +89,14 @@ describe('Wallet Service', () => {
     })
 
     it('should produce deterministic keys from same mnemonic', async () => {
-      const wallet1 = await restoreWallet(TEST_MNEMONIC)
-      const wallet2 = await restoreWallet(TEST_MNEMONIC)
+      const r1 = await restoreWallet(TEST_MNEMONIC)
+      const r2 = await restoreWallet(TEST_MNEMONIC)
 
+      expect(r1.ok).toBe(true)
+      expect(r2.ok).toBe(true)
+      if (!r1.ok || !r2.ok) return
+      const wallet1 = r1.value
+      const wallet2 = r2.value
       expect(wallet1.walletWif).toBe(wallet2.walletWif)
       expect(wallet1.walletAddress).toBe(wallet2.walletAddress)
       expect(wallet1.walletPubKey).toBe(wallet2.walletPubKey)
@@ -89,40 +105,54 @@ describe('Wallet Service', () => {
     })
 
     it('should normalize mnemonic (lowercase, trim spaces)', async () => {
-      const wallet1 = await restoreWallet(TEST_MNEMONIC)
-      const wallet2 = await restoreWallet('  ' + TEST_MNEMONIC.toUpperCase() + '  ')
+      const r1 = await restoreWallet(TEST_MNEMONIC)
+      const r2 = await restoreWallet('  ' + TEST_MNEMONIC.toUpperCase() + '  ')
 
-      expect(wallet1.walletAddress).toBe(wallet2.walletAddress)
+      expect(r1.ok).toBe(true)
+      expect(r2.ok).toBe(true)
+      if (!r1.ok || !r2.ok) return
+      expect(r1.value.walletAddress).toBe(r2.value.walletAddress)
     })
 
     it('should handle multiple spaces between words', async () => {
       const normalMnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
       const spacedMnemonic = 'abandon  abandon   abandon    abandon abandon abandon abandon abandon abandon abandon abandon about'
 
-      const wallet1 = await restoreWallet(normalMnemonic)
-      const wallet2 = await restoreWallet(spacedMnemonic)
+      const r1 = await restoreWallet(normalMnemonic)
+      const r2 = await restoreWallet(spacedMnemonic)
 
-      expect(wallet1.walletAddress).toBe(wallet2.walletAddress)
+      expect(r1.ok).toBe(true)
+      expect(r2.ok).toBe(true)
+      if (!r1.ok || !r2.ok) return
+      expect(r1.value.walletAddress).toBe(r2.value.walletAddress)
     })
 
     it('should throw error for invalid mnemonic', async () => {
-      await expect(restoreWallet(TEST_MNEMONIC_INVALID)).rejects.toThrow('Invalid mnemonic phrase')
+      const result = await restoreWallet(TEST_MNEMONIC_INVALID)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid mnemonic phrase')
     })
 
     it('should throw error for empty mnemonic', async () => {
-      await expect(restoreWallet('')).rejects.toThrow()
+      const result = await restoreWallet('')
+      expect(result.ok).toBe(false)
     })
 
     it('should throw error for wrong word count', async () => {
-      await expect(restoreWallet('abandon abandon abandon')).rejects.toThrow()
+      const result = await restoreWallet('abandon abandon abandon')
+      expect(result.ok).toBe(false)
     })
   })
 
   describe('importFromShaullet', () => {
     it('should import from Shaullet backup with mnemonic', async () => {
       const backup = JSON.stringify({ mnemonic: TEST_MNEMONIC })
-      const wallet = await importFromShaullet(backup)
+      const result = await importFromShaullet(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const wallet = result.value
       expect(wallet.mnemonic).toBe(TEST_MNEMONIC)
       expect(wallet.walletType).toBe('yours')
     })
@@ -131,8 +161,11 @@ describe('Wallet Service', () => {
       // This is a test WIF (not real funds!)
       const testWif = 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D'
       const backup = JSON.stringify({ keys: { wif: testWif } })
-      const wallet = await importFromShaullet(backup)
+      const result = await importFromShaullet(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const wallet = result.value
       expect(wallet.mnemonic).toBe('')
       expect(wallet.walletWif).toBe(testWif)
       // When importing from WIF only, same key is used for all purposes
@@ -142,19 +175,28 @@ describe('Wallet Service', () => {
 
     it('should throw for invalid Shaullet format', async () => {
       const badBackup = JSON.stringify({ foo: 'bar' })
-      await expect(importFromShaullet(badBackup)).rejects.toThrow('Invalid Shaullet backup format')
+      const result = await importFromShaullet(badBackup)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid Shaullet backup format')
     })
 
     it('should throw for invalid JSON', async () => {
-      await expect(importFromShaullet('not json')).rejects.toThrow('Invalid JSON format')
+      const result = await importFromShaullet('not json')
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid JSON format')
     })
   })
 
   describe('importFrom1SatOrdinals', () => {
     it('should import from 1Sat backup with mnemonic', async () => {
       const backup = JSON.stringify({ mnemonic: TEST_MNEMONIC })
-      const wallet = await importFrom1SatOrdinals(backup)
+      const result = await importFrom1SatOrdinals(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const wallet = result.value
       expect(wallet.mnemonic).toBe(TEST_MNEMONIC)
     })
 
@@ -162,37 +204,52 @@ describe('Wallet Service', () => {
       const testPayWif = 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D'
       const testOrdWif = 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn'
       const backup = JSON.stringify({ payPk: testPayWif, ordPk: testOrdWif })
-      const wallet = await importFrom1SatOrdinals(backup)
+      const result = await importFrom1SatOrdinals(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const wallet = result.value
       expect(wallet.walletWif).toBe(testPayWif)
       expect(wallet.ordWif).toBe(testOrdWif)
     })
 
     it('should throw for invalid 1Sat format', async () => {
       const badBackup = JSON.stringify({ foo: 'bar' })
-      await expect(importFrom1SatOrdinals(badBackup)).rejects.toThrow('Invalid 1Sat Ordinals backup format')
+      const result = await importFrom1SatOrdinals(badBackup)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid 1Sat Ordinals backup format')
     })
   })
 
   describe('importFromJSON', () => {
     it('should auto-detect Shaullet format', async () => {
       const backup = JSON.stringify({ mnemonic: TEST_MNEMONIC })
-      const wallet = await importFromJSON(backup)
+      const result = await importFromJSON(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const wallet = result.value
       expect(wallet.mnemonic).toBe(TEST_MNEMONIC)
     })
 
     it('should auto-detect 1Sat Ordinals format', async () => {
       const testWif = 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D'
       const backup = JSON.stringify({ payPk: testWif })
-      const wallet = await importFromJSON(backup)
+      const result = await importFromJSON(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const wallet = result.value
       expect(wallet.walletWif).toBe(testWif)
     })
 
     it('should throw for unknown format', async () => {
       const backup = JSON.stringify({ unknownField: 'value' })
-      await expect(importFromJSON(backup)).rejects.toThrow('Unknown backup format')
+      const result = await importFromJSON(backup)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Unknown backup format')
     })
   })
 
@@ -552,7 +609,10 @@ describe('Wallet Service', () => {
   describe('verifyMnemonicMatchesWallet', () => {
     it('should return valid: true when mnemonic matches wallet address', async () => {
       // Create wallet from known mnemonic
-      const wallet = await restoreWallet(TEST_MNEMONIC)
+      const restoreResult = await restoreWallet(TEST_MNEMONIC)
+      expect(restoreResult.ok).toBe(true)
+      if (!restoreResult.ok) return
+      const wallet = restoreResult.value
 
       // Import the verification function
       const { verifyMnemonicMatchesWallet } = await import('./wallet/core')
@@ -566,7 +626,10 @@ describe('Wallet Service', () => {
 
     it('should return valid: false when mnemonic does not match wallet address', async () => {
       // Create wallet from known mnemonic
-      const wallet = await restoreWallet(TEST_MNEMONIC)
+      const restoreResult = await restoreWallet(TEST_MNEMONIC)
+      expect(restoreResult.ok).toBe(true)
+      if (!restoreResult.ok) return
+      const wallet = restoreResult.value
 
       // Import the verification function
       const { verifyMnemonicMatchesWallet } = await import('./wallet/core')
@@ -589,7 +652,10 @@ describe('Wallet Service', () => {
     })
 
     it('should normalize mnemonic before verification', async () => {
-      const wallet = await restoreWallet(TEST_MNEMONIC)
+      const restoreResult = await restoreWallet(TEST_MNEMONIC)
+      expect(restoreResult.ok).toBe(true)
+      if (!restoreResult.ok) return
+      const wallet = restoreResult.value
       const { verifyMnemonicMatchesWallet } = await import('./wallet/core')
 
       // Test with uppercase and extra spaces

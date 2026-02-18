@@ -295,11 +295,13 @@ describe('locks service', () => {
 
       const result = await lockBSV(10_000, 900_000, utxos)
 
-      expect(result.txid).toBe('exec-broadcast-txid-001')
-      expect(result.lockedUtxo).toBeDefined()
-      expect(result.lockedUtxo.satoshis).toBe(10_000)
-      expect(result.lockedUtxo.unlockBlock).toBe(900_000)
-      expect(result.lockedUtxo.vout).toBe(0)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value.txid).toBe('exec-broadcast-txid-001')
+      expect(result.value.lockedUtxo).toBeDefined()
+      expect(result.value.lockedUtxo.satoshis).toBe(10_000)
+      expect(result.value.lockedUtxo.unlockBlock).toBe(900_000)
+      expect(result.value.lockedUtxo.vout).toBe(0)
 
       // Verify executeBroadcast was called
       expect(executeBroadcast).toHaveBeenCalledOnce()
@@ -309,20 +311,24 @@ describe('locks service', () => {
       expect(confirmUtxosSpent).toHaveBeenCalledOnce()
     })
 
-    it('should throw "Insufficient funds" when total input < satoshis', async () => {
+    it('should return err "Insufficient funds" when total input < satoshis', async () => {
       const utxos = [createTestUTXO({ satoshis: 500 })]
 
-      await expect(lockBSV(10_000, 900_000, utxos))
-        .rejects.toThrow('Insufficient funds')
+      const errResult = await lockBSV(10_000, 900_000, utxos)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toContain('Insufficient funds')
     })
 
-    it('should throw when funds cover amount but not fees', async () => {
+    it('should return err when funds cover amount but not fees', async () => {
       // calculateLockFee returns 300, so need 10_000 + 300 = 10_300 total
       // Provide exactly 10_000 — not enough for fee
       const utxos = [createTestUTXO({ satoshis: 10_000 })]
 
-      await expect(lockBSV(10_000, 900_000, utxos))
-        .rejects.toThrow('Insufficient funds')
+      const errResult = await lockBSV(10_000, 900_000, utxos)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toContain('Insufficient funds')
     })
 
     it('should select multiple UTXOs to cover amount + fee', async () => {
@@ -335,16 +341,21 @@ describe('locks service', () => {
       // Lock 5_000 sats, fee = 300 => need 5_500 (threshold is satoshis + 500)
       // First two UTXOs = 7_000 >= 5_500, so it should stop there
       const result = await lockBSV(5_000, 900_000, utxos)
-      expect(result.txid).toBe('exec-broadcast-txid-001')
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value.txid).toBe('exec-broadcast-txid-001')
     })
 
-    it('should handle broadcast failure by propagating error', async () => {
+    it('should handle broadcast failure by returning err Result', async () => {
       vi.mocked(executeBroadcast).mockRejectedValueOnce(new Error('Broadcast failed'))
 
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await expect(lockBSV(10_000, 900_000, utxos))
-        .rejects.toThrow('Broadcast failed')
+      const result = await lockBSV(10_000, 900_000, utxos)
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error.message).toContain('Broadcast failed')
+      }
     })
 
     it('should add change UTXO to database when change > 0', async () => {
@@ -400,10 +411,11 @@ describe('locks service', () => {
 
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      // Should throw — atomic transaction ensures all-or-nothing recording
-      await expect(lockBSV(10_000, 900_000, utxos)).rejects.toThrow(
-        /Lock broadcast succeeded.*but failed to record locally/
-      )
+      // Should return err — atomic transaction ensures all-or-nothing recording
+      const errResult = await lockBSV(10_000, 900_000, utxos)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toMatch(/Lock broadcast succeeded.*but failed to record locally/)
     })
 
     it('should use the correct fee calculation', async () => {
@@ -425,8 +437,11 @@ describe('locks service', () => {
     it('should unlock successfully when block height is reached', async () => {
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 870_000 })
 
-      const txid = await unlockBSV(lockedUtxo, 870_001)
+      const result = await unlockBSV(lockedUtxo, 870_001)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const txid = result.value
       expect(txid).toBe('broadcast-txid-001')
       expect(broadcastTransaction).toHaveBeenCalledOnce()
       expect(recordSentTransaction).toHaveBeenCalledOnce()
@@ -440,8 +455,10 @@ describe('locks service', () => {
     it('should throw when block height not reached', async () => {
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 900_000 })
 
-      await expect(unlockBSV(lockedUtxo, 870_000))
-        .rejects.toThrow('Cannot unlock yet. Current block: 870000, Unlock block: 900000')
+      const errResult = await unlockBSV(lockedUtxo, 870_000)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toContain('Cannot unlock yet. Current block: 870000, Unlock block: 900000')
     })
 
     it('should throw when UTXO is already pending in another transaction', async () => {
@@ -449,8 +466,10 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await expect(unlockBSV(lockedUtxo, 870_000))
-        .rejects.toThrow('This lock is already being processed in another transaction')
+      const errResult = await unlockBSV(lockedUtxo, 870_000)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toContain('This lock is already being processed in another transaction')
     })
 
     it('should proceed when UTXO spending_status is null (not pending)', async () => {
@@ -458,8 +477,10 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(lockedUtxo, 870_000)
-      expect(txid).toBe('broadcast-txid-001')
+      const result = await unlockBSV(lockedUtxo, 870_000)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value).toBe('broadcast-txid-001')
     })
 
     it('should proceed when UTXO is not found in database at all', async () => {
@@ -467,16 +488,20 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(lockedUtxo, 870_000)
-      expect(txid).toBe('broadcast-txid-001')
+      const result = await unlockBSV(lockedUtxo, 870_000)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value).toBe('broadcast-txid-001')
     })
 
-    it('should throw when output sats would be <= 0 (fee exceeds locked amount)', async () => {
+    it('should return err when output sats would be <= 0 (fee exceeds locked amount)', async () => {
       // feeFromBytes returns 200, so if satoshis <= 200 we get outputSats <= 0
       const lockedUtxo = createTestLockedUTXO({ satoshis: 100 })
 
-      await expect(unlockBSV(lockedUtxo, 900_001))
-        .rejects.toThrow('Insufficient funds')
+      const errResult = await unlockBSV(lockedUtxo, 900_001)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toContain('Insufficient funds')
     })
 
     it('should handle broadcast failure with already-spent recovery', async () => {
@@ -488,8 +513,10 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(lockedUtxo, 870_000)
-      expect(txid).toBe('spending-txid-xyz')
+      const result = await unlockBSV(lockedUtxo, 870_000)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value).toBe('spending-txid-xyz')
       expect(markLockUnlockedByTxid).toHaveBeenCalled()
     })
 
@@ -503,8 +530,10 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await expect(unlockBSV(lockedUtxo, 870_000))
-        .rejects.toThrow('Network error')
+      const errResult = await unlockBSV(lockedUtxo, 870_000)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toContain('Network error')
     })
 
     it('should re-throw broadcast error when spent-check API fails', async () => {
@@ -517,14 +546,17 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await expect(unlockBSV(lockedUtxo, 870_000))
-        .rejects.toThrow('Broadcast error')
+      const errResult = await unlockBSV(lockedUtxo, 870_000)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toContain('Broadcast error')
     })
 
     it('should pass accountId to markLockUnlockedByTxid', async () => {
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await unlockBSV(lockedUtxo, 870_000, 7)
+      const result = await unlockBSV(lockedUtxo, 870_000, 7)
+      expect(result.ok).toBe(true)
 
       expect(markLockUnlockedByTxid).toHaveBeenCalledWith(
         lockedUtxo.txid,
@@ -538,8 +570,10 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(lockedUtxo, 870_000)
-      expect(txid).toBe('broadcast-txid-001')
+      const result = await unlockBSV(lockedUtxo, 870_000)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value).toBe('broadcast-txid-001')
     })
 
     it('should still return txid when mark-unlock database call fails', async () => {
@@ -547,14 +581,17 @@ describe('locks service', () => {
 
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      const txid = await unlockBSV(lockedUtxo, 870_000)
-      expect(txid).toBe('broadcast-txid-001')
+      const result = await unlockBSV(lockedUtxo, 870_000)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value).toBe('broadcast-txid-001')
     })
 
     it('should use feeFromBytes for fee calculation', async () => {
       const lockedUtxo = createTestLockedUTXO({ unlockBlock: 800_000 })
 
-      await unlockBSV(lockedUtxo, 870_000)
+      const result = await unlockBSV(lockedUtxo, 870_000)
+      expect(result.ok).toBe(true)
 
       expect(feeFromBytes).toHaveBeenCalledWith(expect.any(Number))
     })
@@ -591,17 +628,21 @@ describe('locks service', () => {
 
       const result = await generateUnlockTxHex(lockedUtxo)
 
-      expect(result.txHex).toBe('deadbeef')
-      expect(result.txid).toBe('mock-txid-abc123')
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value.txHex).toBe('deadbeef')
+      expect(result.value.txid).toBe('mock-txid-abc123')
       // outputSats = 50_000 - 200 (feeFromBytes) = 49_800
-      expect(result.outputSats).toBe(49_800)
+      expect(result.value.outputSats).toBe(49_800)
     })
 
     it('should throw when locked amount cannot cover fee', async () => {
       const lockedUtxo = createTestLockedUTXO({ satoshis: 50 })
 
-      await expect(generateUnlockTxHex(lockedUtxo))
-        .rejects.toThrow('Insufficient funds to cover unlock fee')
+      const errResult = await generateUnlockTxHex(lockedUtxo)
+      expect(errResult.ok).toBe(false)
+      if (errResult.ok) return
+      expect(errResult.error.message).toContain('Insufficient funds')
     })
 
     it('should not broadcast or record anything (dry run)', async () => {

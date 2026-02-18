@@ -179,7 +179,12 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   // Import account from external mnemonic
   const importAccount = useCallback(async (name: string, mnemonic: string, password: string | null): Promise<WalletKeys | null> => {
     try {
-      const keys = await restoreWallet(mnemonic)
+      const restoreResult = await restoreWallet(mnemonic)
+      if (!restoreResult.ok) {
+        accountLogger.error('Failed to restore wallet for import', restoreResult.error)
+        return null
+      }
+      const keys = restoreResult.value
       // Use legacy password requirements since we're reusing the session password
       const accountId = await createAccount(name, keys, password, true)
       if (!accountId) return null

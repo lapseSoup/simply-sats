@@ -200,7 +200,7 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
         // Use the wallet's native lockBSV function (OP_PUSH_TX)
         // Pass ordinalOrigin so it can be included as OP_RETURN in the same transaction
         // lockBSV handles all DB writes (addUTXO + addLock) atomically inside withTransaction()
-        const result = await walletLockBSV(
+        const lockResult = await walletLockBSV(
           satoshis,
           unlockBlock,
           walletUtxos,
@@ -210,10 +210,18 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
           lockBasket
         )
 
+        if (!lockResult.ok) {
+          response.error = {
+            code: lockResult.error.code,
+            message: lockResult.error.message
+          }
+          break
+        }
+
         response.result = {
-          txid: result.txid,
+          txid: lockResult.value.txid,
           unlockBlock,
-          lockedUtxo: result.lockedUtxo
+          lockedUtxo: lockResult.value.lockedUtxo
         }
       } catch (error) {
         response.error = {
@@ -286,10 +294,18 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
 
         // Use the wallet's native unlockBSV function
         // unlockBSV retrieves the WIF internally from the Rust key store
-        const unlockTxid = await walletUnlockBSV(
+        const unlockResult = await walletUnlockBSV(
           lockedUtxo,
           currentHeight
         )
+
+        if (!unlockResult.ok) {
+          response.error = {
+            code: unlockResult.error.code,
+            message: unlockResult.error.message
+          }
+          return
+        }
 
         // Mark lock as unlocked in database (use lock.id, not txid/vout)
         if (lock.id) {
@@ -297,7 +313,7 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
         }
 
         response.result = {
-          txid: unlockTxid,
+          txid: unlockResult.value,
           amount: lock.utxo.satoshis
         }
       })()

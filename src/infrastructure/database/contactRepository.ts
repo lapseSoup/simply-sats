@@ -6,6 +6,9 @@
 
 import { getDatabase } from './connection'
 import { dbLogger } from '../../services/logger'
+import { DbError } from '../../services/errors'
+import type { Result } from '../../domain/types'
+import { ok, err } from '../../domain/types'
 import type { Contact } from './types'
 import type { ContactRow } from './row-types'
 
@@ -47,28 +50,32 @@ export async function addContact(contact: Omit<Contact, 'id'>): Promise<number> 
 /**
  * Get all contacts
  */
-export async function getContacts(): Promise<Contact[]> {
+export async function getContacts(): Promise<Result<Contact[], DbError>> {
   const database = getDatabase()
 
   try {
     const rows = await database.select<ContactRow[]>('SELECT * FROM contacts ORDER BY label ASC')
 
-    return rows.map(row => ({
+    return ok(rows.map(row => ({
       id: row.id,
       pubkey: row.pubkey,
       label: row.label,
       createdAt: row.created_at
-    }))
-  } catch (_e) {
-    // Table may not exist yet
-    return []
+    })))
+  } catch (e) {
+    return err(new DbError(
+      `getContacts failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
   }
 }
 
 /**
  * Get a contact by pubkey
+ * Returns ok(null) when not found, err(DbError) on database failure.
  */
-export async function getContactByPubkey(pubkey: string): Promise<Contact | null> {
+export async function getContactByPubkey(pubkey: string): Promise<Result<Contact | null, DbError>> {
   const database = getDatabase()
 
   try {
@@ -77,17 +84,21 @@ export async function getContactByPubkey(pubkey: string): Promise<Contact | null
       [pubkey]
     )
 
-    if (rows.length === 0) return null
+    if (rows.length === 0) return ok(null)
 
     const row = rows[0]!
-    return {
+    return ok({
       id: row.id,
       pubkey: row.pubkey,
       label: row.label,
       createdAt: row.created_at
-    }
-  } catch (_e) {
-    return null
+    })
+  } catch (e) {
+    return err(new DbError(
+      `getContactByPubkey failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
   }
 }
 

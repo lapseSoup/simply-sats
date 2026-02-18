@@ -285,3 +285,19 @@ export function withErrorHandling<
   }) as T
 }
 
+
+/**
+ * Database-specific error for Result<T, DbError> return types.
+ * Distinguishes between query failures, not-found, and connection issues.
+ * Used in repository functions that return Result<T | null, DbError>.
+ */
+export class DbError extends Error {
+  constructor(
+    message: string,
+    public readonly code: 'NOT_FOUND' | 'QUERY_FAILED' | 'CONSTRAINT' | 'CONNECTION',
+    public readonly cause?: unknown
+  ) {
+    super(message)
+    this.name = 'DbError'
+  }
+}

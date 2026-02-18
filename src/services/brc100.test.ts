@@ -40,7 +40,9 @@ const TEST_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon a
 let _testWalletKeys: WalletKeys | null = null
 async function getTestKeys(): Promise<WalletKeys> {
   if (!_testWalletKeys) {
-    _testWalletKeys = await restoreWallet(TEST_MNEMONIC)
+    const result = await restoreWallet(TEST_MNEMONIC)
+    if (!result.ok) throw result.error
+    _testWalletKeys = result.value
   }
   return _testWalletKeys
 }

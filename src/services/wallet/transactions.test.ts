@@ -352,9 +352,11 @@ describe('Transaction Service', () => {
     })
 
     it('should send BSV successfully (happy path)', async () => {
-      const txid = await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
+      const result = await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
 
-      expect(txid).toBe(MOCK_TXID)
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error('Expected ok result')
+      expect(result.value.txid).toBe(MOCK_TXID)
       expect(mockAcquireSyncLock).toHaveBeenCalled()
       expect(mockReleaseLock).toHaveBeenCalled()
       expect(mockIsValidBSVAddress).toHaveBeenCalledWith(VALID_ADDRESS)
@@ -370,52 +372,63 @@ describe('Transaction Service', () => {
       expect(mockResetInactivityTimer).toHaveBeenCalled()
     })
 
-    it('should throw on invalid BSV address', async () => {
+    it('should return err on invalid BSV address', async () => {
       mockIsValidBSVAddress.mockReturnValue(false)
 
-      await expect(
-        sendBSV(wif, 'invalid-address', 5000, utxos)
-      ).rejects.toThrow('Invalid BSV address')
+      const result = await sendBSV(wif, 'invalid-address', 5000, utxos)
 
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Invalid BSV address/)
       // Should not attempt coin selection or broadcast
       expect(mockSelectCoins).not.toHaveBeenCalled()
       expect(mockInfraBroadcast).not.toHaveBeenCalled()
     })
 
-    it('should throw on zero amount', async () => {
-      await expect(
-        sendBSV(wif, VALID_ADDRESS, 0, utxos)
-      ).rejects.toThrow('Invalid amount')
+    it('should return err on zero amount', async () => {
+      const result = await sendBSV(wif, VALID_ADDRESS, 0, utxos)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Invalid amount/)
     })
 
-    it('should throw on negative amount', async () => {
-      await expect(
-        sendBSV(wif, VALID_ADDRESS, -100, utxos)
-      ).rejects.toThrow('Invalid amount')
+    it('should return err on negative amount', async () => {
+      const result = await sendBSV(wif, VALID_ADDRESS, -100, utxos)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Invalid amount/)
     })
 
-    it('should throw on NaN amount', async () => {
-      await expect(
-        sendBSV(wif, VALID_ADDRESS, NaN, utxos)
-      ).rejects.toThrow('Invalid amount')
+    it('should return err on NaN amount', async () => {
+      const result = await sendBSV(wif, VALID_ADDRESS, NaN, utxos)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Invalid amount/)
     })
 
-    it('should throw on Infinity amount', async () => {
-      await expect(
-        sendBSV(wif, VALID_ADDRESS, Infinity, utxos)
-      ).rejects.toThrow('Invalid amount')
+    it('should return err on Infinity amount', async () => {
+      const result = await sendBSV(wif, VALID_ADDRESS, Infinity, utxos)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Invalid amount/)
     })
 
-    it('should throw on insufficient funds', async () => {
+    it('should return err on insufficient funds', async () => {
       mockSelectCoins.mockReturnValue({
         selected: [],
         total: 0,
         sufficient: false,
       })
 
-      await expect(
-        sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
-      ).rejects.toThrow('Insufficient funds')
+      const result = await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Insufficient funds/)
     })
 
     it('should release sync lock even when an error occurs', async () => {
@@ -426,18 +439,21 @@ describe('Transaction Service', () => {
       })
       mockBuildP2PKHTx.mockRejectedValue(new Error('build failed'))
 
-      await expect(
-        sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
-      ).rejects.toThrow('build failed')
+      const result = await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 1)
 
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/build failed/)
       // Lock must still be released
       expect(mockReleaseLock).toHaveBeenCalled()
     })
 
     it('should pass accountId to recordTransactionResult', async () => {
-      const txid = await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 42)
+      const result = await sendBSV(wif, VALID_ADDRESS, 5000, utxos, 42)
 
-      expect(txid).toBe(MOCK_TXID)
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error('Expected ok result')
+      expect(result.value.txid).toBe(MOCK_TXID)
       // recordSentTransaction is called inside recordTransactionResult -> withTransaction
       expect(mockRecordSentTransaction).toHaveBeenCalledWith(
         MOCK_TXID,
@@ -497,9 +513,11 @@ describe('Transaction Service', () => {
     })
 
     it('should send BSV multi-key successfully (happy path)', async () => {
-      const txid = await sendBSVMultiKey(changeWif, VALID_ADDRESS, 8000, extUtxos, 1)
+      const result = await sendBSVMultiKey(changeWif, VALID_ADDRESS, 8000, extUtxos, 1)
 
-      expect(txid).toBe(MOCK_TXID)
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error('Expected ok result')
+      expect(result.value.txid).toBe(MOCK_TXID)
       expect(mockAcquireSyncLock).toHaveBeenCalled()
       expect(mockReleaseLock).toHaveBeenCalled()
       expect(mockSelectCoinsMultiKey).toHaveBeenCalledWith(extUtxos, 8000)
@@ -514,45 +532,53 @@ describe('Transaction Service', () => {
       expect(mockResetInactivityTimer).toHaveBeenCalled()
     })
 
-    it('should throw on insufficient funds', async () => {
+    it('should return err on insufficient funds', async () => {
       mockSelectCoinsMultiKey.mockReturnValue({
         selected: [],
         total: 0,
         sufficient: false,
       })
 
-      await expect(
-        sendBSVMultiKey(changeWif, VALID_ADDRESS, 999_999, extUtxos, 1)
-      ).rejects.toThrow('Insufficient funds')
+      const result = await sendBSVMultiKey(changeWif, VALID_ADDRESS, 999_999, extUtxos, 1)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Insufficient funds/)
     })
 
-    it('should throw on invalid address', async () => {
+    it('should return err on invalid address', async () => {
       mockIsValidBSVAddress.mockReturnValue(false)
 
-      await expect(
-        sendBSVMultiKey(changeWif, 'bad-addr', 5000, extUtxos)
-      ).rejects.toThrow('Invalid BSV address')
+      const result = await sendBSVMultiKey(changeWif, 'bad-addr', 5000, extUtxos)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Invalid BSV address/)
     })
 
-    it('should throw on zero amount', async () => {
-      await expect(
-        sendBSVMultiKey(changeWif, VALID_ADDRESS, 0, extUtxos)
-      ).rejects.toThrow('Invalid amount')
+    it('should return err on zero amount', async () => {
+      const result = await sendBSVMultiKey(changeWif, VALID_ADDRESS, 0, extUtxos)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/Invalid amount/)
     })
 
     it('should release sync lock on error', async () => {
       mockBuildMultiKeyP2PKHTx.mockRejectedValue(new Error('signing error'))
 
-      await expect(
-        sendBSVMultiKey(changeWif, VALID_ADDRESS, 5000, extUtxos, 1)
-      ).rejects.toThrow('signing error')
+      const result = await sendBSVMultiKey(changeWif, VALID_ADDRESS, 5000, extUtxos, 1)
 
+      expect(result.ok).toBe(false)
+      if (result.ok) throw new Error('Expected error result')
+      expect(result.error.message).toMatch(/signing error/)
       expect(mockReleaseLock).toHaveBeenCalled()
     })
 
     it('should pass accountId through to recording', async () => {
-      await sendBSVMultiKey(changeWif, VALID_ADDRESS, 5000, extUtxos, 7)
+      const result = await sendBSVMultiKey(changeWif, VALID_ADDRESS, 5000, extUtxos, 7)
 
+      expect(result.ok).toBe(true)
       expect(mockRecordSentTransaction).toHaveBeenCalledWith(
         MOCK_TXID,
         'deadbeef',

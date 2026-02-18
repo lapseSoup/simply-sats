@@ -34,6 +34,8 @@ import {
 import { markLockUnlockedByTxid, getDatabase, addUTXO, addLock, withTransaction } from '../database'
 import { walletLogger } from '../logger'
 import { AppError, ErrorCodes, InsufficientFundsError } from '../errors'
+import type { Result } from '../../domain/types'
+import { ok, err } from '../../domain/types'
 
 // Re-export pure domain functions for backwards compatibility
 import {
@@ -96,21 +98,21 @@ export async function lockBSV(
   lockBlock?: number,
   accountId?: number,
   basket?: string
-): Promise<{ txid: string; lockedUtxo: LockedUTXO }> {
+): Promise<Result<{ txid: string; lockedUtxo: LockedUTXO }, AppError>> {
   if (!Number.isFinite(satoshis) || satoshis <= 0 || !Number.isInteger(satoshis)) {
-    throw new AppError(
+    return err(new AppError(
       `Invalid lock amount: ${satoshis} (must be a positive integer)`,
       ErrorCodes.INVALID_AMOUNT,
       { satoshis }
-    )
+    ))
   }
 
   if (!Number.isFinite(unlockBlock) || unlockBlock <= 0 || !Number.isInteger(unlockBlock)) {
-    throw new AppError(
+    return err(new AppError(
       `Invalid unlock block: ${unlockBlock} (must be a positive integer)`,
       ErrorCodes.INVALID_PARAMS,
       { unlockBlock }
-    )
+    ))
   }
 
   const wif = await getWifForOperation('wallet', 'lockBSV')
@@ -141,7 +143,7 @@ export async function lockBSV(
   }
 
   if (totalInput < satoshis) {
-    throw new InsufficientFundsError(satoshis, totalInput)
+    return err(new InsufficientFundsError(satoshis, totalInput))
   }
 
   // Calculate fee using actual script size
@@ -161,7 +163,7 @@ export async function lockBSV(
   const change = totalInput - satoshis - fee
 
   if (change < 0) {
-    throw new InsufficientFundsError(satoshis + fee, totalInput)
+    return err(new InsufficientFundsError(satoshis + fee, totalInput))
   }
 
   // Add inputs
@@ -217,7 +219,15 @@ export async function lockBSV(
   const pendingTxid = tx.id('hex')
 
   // Mark pending → broadcast → rollback on failure (shared pattern)
-  const txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
+  let txid: string
+  try {
+    txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
+  } catch (broadcastError) {
+    return err(new AppError(
+      broadcastError instanceof Error ? broadcastError.message : 'Broadcast failed',
+      ErrorCodes.BROADCAST_FAILED
+    ))
+  }
 
   const lockedUtxo: LockedUTXO = {
     txid,
@@ -290,14 +300,14 @@ export async function lockBSV(
     })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to record lock transaction locally', error, { txid })
-    throw new AppError(
+    return err(new AppError(
       `Lock broadcast succeeded (txid: ${txid}) but failed to record locally. Your wallet may show incorrect balance until next sync.`,
       ErrorCodes.DATABASE_ERROR,
       { txid, originalError: error instanceof Error ? error.message : String(error) }
-    )
+    ))
   }
 
-  return { txid, lockedUtxo }
+  return ok({ txid, lockedUtxo })
 }
 
 /**
@@ -310,14 +320,14 @@ export async function unlockBSV(
   lockedUtxo: LockedUTXO,
   currentBlockHeight: number,
   accountId?: number
-): Promise<string> {
+): Promise<Result<string, AppError>> {
   // Check block height for user feedback
   if (currentBlockHeight < lockedUtxo.unlockBlock) {
-    throw new AppError(
+    return err(new AppError(
       `Cannot unlock yet. Current block: ${currentBlockHeight}, Unlock block: ${lockedUtxo.unlockBlock}`,
       ErrorCodes.LOCK_NOT_SPENDABLE,
       { currentBlockHeight, unlockBlock: lockedUtxo.unlockBlock, blocksRemaining: lockedUtxo.unlockBlock - currentBlockHeight }
-    )
+    ))
   }
 
   // Check if this UTXO is already being spent in another transaction
@@ -327,11 +337,11 @@ export async function unlockBSV(
     [lockedUtxo.txid, lockedUtxo.vout]
   )
   if (utxoCheck.length > 0 && utxoCheck[0]!.spending_status === 'pending') {
-    throw new AppError(
+    return err(new AppError(
       'This lock is already being processed in another transaction',
       ErrorCodes.LOCK_NOT_SPENDABLE,
       { txid: lockedUtxo.txid, vout: lockedUtxo.vout }
-    )
+    ))
   }
 
   const wif = await getWifForOperation('wallet', 'unlockBSV')
@@ -341,11 +351,11 @@ export async function unlockBSV(
 
   // Validate lockingScript is valid hex before using it for fee calculation
   if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
-    throw new AppError(
+    return err(new AppError(
       'Invalid locking script: not valid hex',
       ErrorCodes.INVALID_PARAMS,
       { scriptLength: lockedUtxo.lockingScript?.length }
-    )
+    ))
   }
 
   // Calculate fee for unlock transaction
@@ -356,7 +366,7 @@ export async function unlockBSV(
   const outputSats = lockedUtxo.satoshis - fee
 
   if (outputSats <= 0) {
-    throw new InsufficientFundsError(fee, lockedUtxo.satoshis)
+    return err(new InsufficientFundsError(fee, lockedUtxo.satoshis))
   }
 
   // Parse the locking script
@@ -463,11 +473,11 @@ export async function unlockBSV(
       } catch (_markErr) {
         walletLogger.warn('Failed to mark lock as unlocked after spent-check', { error: String(_markErr) })
       }
-      return spentResult.value // Return the spending txid
+      return ok(spentResult.value) // Return the spending txid
     }
 
     // UTXO is genuinely unspent and broadcast failed — real failure
-    throw AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED)
+    return err(AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED))
   }
 
   // Happy path: broadcast succeeded — record and mark atomically
@@ -492,7 +502,7 @@ export async function unlockBSV(
     )
   }
 
-  return txid
+  return ok(txid)
 }
 
 /**
@@ -513,7 +523,7 @@ export async function getCurrentBlockHeight(): Promise<number> {
  */
 export async function generateUnlockTxHex(
   lockedUtxo: LockedUTXO
-): Promise<{ txHex: string; txid: string; outputSats: number }> {
+): Promise<Result<{ txHex: string; txid: string; outputSats: number }, AppError>> {
   const wif = await getWifForOperation('wallet', 'generateUnlockTxHex')
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
@@ -521,11 +531,11 @@ export async function generateUnlockTxHex(
 
   // Validate lockingScript is valid hex
   if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
-    throw new AppError(
+    return err(new AppError(
       'Invalid locking script: not valid hex',
       ErrorCodes.INVALID_PARAMS,
       { scriptLength: lockedUtxo.lockingScript?.length }
-    )
+    ))
   }
 
   // Calculate fee for unlock transaction
@@ -536,7 +546,11 @@ export async function generateUnlockTxHex(
   const outputSats = lockedUtxo.satoshis - fee
 
   if (outputSats <= 0) {
-    throw new Error(`Insufficient funds to cover unlock fee (need ${fee} sats)`)
+    return err(new AppError(
+      `Insufficient funds to cover unlock fee (need ${fee} sats)`,
+      ErrorCodes.INSUFFICIENT_FUNDS,
+      { fee, available: lockedUtxo.satoshis }
+    ))
   }
 
   // Parse the locking script
@@ -605,11 +619,11 @@ export async function generateUnlockTxHex(
 
   await tx.sign()
 
-  return {
+  return ok({
     txHex: tx.toHex(),
     txid: tx.id('hex'),
     outputSats
-  }
+  })
 }
 
 /**

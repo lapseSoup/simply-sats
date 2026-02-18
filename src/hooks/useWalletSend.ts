@@ -115,7 +115,11 @@ export function useWalletSend({
         return true
       })
 
-      const txid = await sendBSVMultiKey(walletWif, address, amountSats, deduplicatedUtxos, activeAccountId ?? undefined)
+      const sendResult = await sendBSVMultiKey(walletWif, address, amountSats, deduplicatedUtxos, activeAccountId ?? undefined)
+      if (!sendResult.ok) {
+        return err(sendResult.error.message)
+      }
+      const { txid } = sendResult.value
       await fetchData()
       audit.transactionSent(txid, amountSats, activeAccountId ?? undefined)
       return ok({ txid })

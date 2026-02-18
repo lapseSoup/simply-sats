@@ -6,6 +6,9 @@
 
 import { getDatabase } from './connection'
 import { dbLogger } from '../../services/logger'
+import { DbError } from '../../services/errors'
+import type { Result } from '../../domain/types'
+import { ok, err } from '../../domain/types'
 import type { DerivedAddress } from './types'
 import type { DerivedAddressRow, CountRow } from './row-types'
 
@@ -114,9 +117,10 @@ export async function getDerivedAddresses(accountId?: number): Promise<DerivedAd
 }
 
 /**
- * Get a derived address by its address string
+ * Get a derived address by its address string.
+ * Returns ok(null) when not found, err(DbError) on database failure.
  */
-export async function getDerivedAddressByAddress(address: string): Promise<DerivedAddress | null> {
+export async function getDerivedAddressByAddress(address: string): Promise<Result<DerivedAddress | null, DbError>> {
   const database = getDatabase()
 
   try {
@@ -125,10 +129,10 @@ export async function getDerivedAddressByAddress(address: string): Promise<Deriv
       [address]
     )
 
-    if (rows.length === 0) return null
+    if (rows.length === 0) return ok(null)
 
     const row = rows[0]!
-    return {
+    return ok({
       id: row.id,
       address: row.address,
       senderPubkey: row.sender_pubkey,
@@ -137,9 +141,13 @@ export async function getDerivedAddressByAddress(address: string): Promise<Deriv
       label: row.label ?? undefined,
       createdAt: row.created_at,
       lastSyncedAt: row.last_synced_at ?? undefined
-    }
-  } catch (_e) {
-    return null
+    })
+  } catch (e) {
+    return err(new DbError(
+      `getDerivedAddressByAddress failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
   }
 }
 
