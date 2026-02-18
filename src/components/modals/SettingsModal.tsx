@@ -10,6 +10,7 @@ import {
   SettingsAdvanced,
   SettingsTrustedOrigins,
   SettingsConnectedApps,
+  SettingsNetwork,
   SettingsDangerZone
 } from './settings'
 
@@ -28,6 +29,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         <SettingsWallet />
         <SettingsAppearance />
         <SettingsTransactions />
+        <SettingsNetwork />
         <SettingsSecurity onClose={onClose} />
         <SettingsBackup />
         <SettingsCache />
