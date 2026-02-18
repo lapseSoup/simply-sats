@@ -8,7 +8,7 @@ import { isOk } from '../../domain/types'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 import { CoinControlModal } from './CoinControlModal'
-import type { UTXO as DatabaseUTXO } from '../../services/database'
+import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 
 interface SendModalProps {

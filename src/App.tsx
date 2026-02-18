@@ -18,7 +18,7 @@ import { AppTabNav, AppTabContent, type Tab } from './AppTabs'
 import type { PaymentNotification } from './services/messageBox'
 import { loadNotifications, startPaymentListener } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
-import { getDerivedAddresses } from './services/database'
+import { getDerivedAddresses } from './infrastructure/database'
 import { needsInitialSync } from './services/sync'
 import { discoverAccounts } from './services/accountDiscovery'
 // import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive

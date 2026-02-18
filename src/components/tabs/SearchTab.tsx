@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Search, X, ArrowDownLeft, ArrowUpRight, Circle } from 'lucide-react'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../services/database'
+import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../infrastructure/database'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 import { EmptyState, NoSearchResultsEmpty } from '../shared/EmptyState'
 

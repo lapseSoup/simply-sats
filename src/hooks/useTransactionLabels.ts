@@ -11,7 +11,7 @@ import {
   updateTransactionLabels,
   getTopLabels,
   getTransactionsByLabel
-} from '../services/database'
+} from '../infrastructure/database'
 import { uiLogger } from '../services/logger'
 
 interface UseTransactionLabelsOptions {

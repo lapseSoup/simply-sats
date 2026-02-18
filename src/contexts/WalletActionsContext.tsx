@@ -9,7 +9,7 @@
 
 import { createContext, useContext } from 'react'
 import type { WalletKeys, LockedUTXO, Ordinal } from '../services/wallet'
-import type { UTXO as DatabaseUTXO } from '../services/database'
+import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import type { WalletResult } from '../domain/types'
 
 export interface WalletActionsContextType {

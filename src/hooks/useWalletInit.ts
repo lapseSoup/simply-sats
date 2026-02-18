@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
 import type { WalletKeys } from '../services/wallet'
-import type { Contact } from '../services/database'
+import type { Contact } from '../infrastructure/database'
 import {
   loadWallet,
   hasWallet
@@ -18,7 +18,7 @@ import {
   ensureContactsTable,
   getContacts,
   deleteTransactionsForAccount
-} from '../services/database'
+} from '../infrastructure/database'
 import {
   getAllAccounts,
   migrateToMultiAccount

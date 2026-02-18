@@ -20,7 +20,7 @@ import {
 } from '../services/accounts'
 import {
   clearDatabase
-} from '../services/database'
+} from '../infrastructure/database'
 import {
   clearAllSimplySatsStorage
 } from '../services/secureStorage'

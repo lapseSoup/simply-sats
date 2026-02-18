@@ -1,7 +1,7 @@
 import { useState, useMemo, memo, useCallback } from 'react'
 import { useUI } from '../../contexts/UIContext'
 import { calculateTxFee } from '../../services/wallet'
-import type { UTXO as DatabaseUTXO } from '../../services/database'
+import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { useUtxoManagement } from '../../hooks/useUtxoManagement'
 import { Modal } from '../shared/Modal'
 
