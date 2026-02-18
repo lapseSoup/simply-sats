@@ -365,53 +365,53 @@ export async function consolidateUtxos(
   wif: string,
   utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>,
   accountId?: number
-): Promise<{ txid: string; outputSats: number; fee: number }> {
+): Promise<Result<{ txid: string; outputSats: number; fee: number }, AppError>> {
   // accountId is required to acquire the correct per-account sync lock.
   // See sendBSV for rationale.
   if (accountId === undefined) {
-    throw new AppError('accountId is required to consolidate UTXOs', ErrorCodes.INVALID_STATE, {})
+    return err(new AppError('accountId is required to consolidate UTXOs', ErrorCodes.INVALID_STATE, {}))
   }
 
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during consolidation
   const releaseLock = await acquireSyncLock(accountId)
   try {
-  const feeRate = getFeeRate()
-  const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })
-  const { rawTx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
-  const totalInput = utxoIds.reduce((sum, u) => sum + u.satoshis, 0)
+    const feeRate = getFeeRate()
+    const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })
+    const { rawTx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
+    const totalInput = utxoIds.reduce((sum, u) => sum + u.satoshis, 0)
 
-  resetInactivityTimer()
-  const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    resetInactivityTimer()
+    const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
 
-  // Record — consolidation uses vout 0 (single output), not last output
-  try {
-    await withTransaction(async () => {
-      await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
-      await confirmUtxosSpent(spentOutpoints, txid)
-      // Track consolidated UTXO atomically — use final txid from broadcaster
-      try {
-        await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
-        walletLogger.debug('Consolidated UTXO tracked', { txid, outputSats })
-      } catch (error) {
-        const msg = String(error)
-        if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
-          walletLogger.debug('Consolidated UTXO already exists (duplicate key)', { txid, outputSats })
-        } else {
-          throw error
+    // Record — consolidation uses vout 0 (single output), not last output
+    try {
+      await withTransaction(async () => {
+        await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
+        await confirmUtxosSpent(spentOutpoints, txid)
+        // Track consolidated UTXO atomically — use final txid from broadcaster
+        try {
+          await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
+          walletLogger.debug('Consolidated UTXO tracked', { txid, outputSats })
+        } catch (error) {
+          const msg = String(error)
+          if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
+            walletLogger.debug('Consolidated UTXO already exists (duplicate key)', { txid, outputSats })
+          } else {
+            throw error
+          }
         }
-      }
-    })
-    walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })
-  } catch (error) {
-    walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
-    throw new AppError(
-      `Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
-      ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
-      { txid, originalError: error instanceof Error ? error.message : String(error) }
-    )
-  }
+      })
+      walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })
+    } catch (error) {
+      walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
+      return err(new AppError(
+        `Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
+        ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
+        { txid, originalError: error instanceof Error ? error.message : String(error) }
+      ))
+    }
 
-  return { txid, outputSats, fee }
+    return ok({ txid, outputSats, fee })
   } finally {
     releaseLock()
   }

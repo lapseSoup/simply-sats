@@ -14,7 +14,7 @@ interface ConsolidateModalProps {
 }
 
 export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModalProps) {
-  const { wallet } = useWalletState()
+  const { wallet, activeAccountId } = useWalletState()
   const { fetchData } = useWalletActions()
   const { formatUSD } = useUI()
   const [status, setStatus] = useState<'preview' | 'confirming' | 'success' | 'error'>('preview')
@@ -45,30 +45,39 @@ export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModal
     setStatus('confirming')
     setError(null)
 
+    // Prepare UTXOs for consolidation
+    const utxoIds = utxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.lockingScript
+    }))
+
+    let walletWif: string
     try {
-      // Prepare UTXOs for consolidation
-      const utxoIds = utxos.map(u => ({
-        txid: u.txid,
-        vout: u.vout,
-        satoshis: u.satoshis,
-        script: u.lockingScript
-      }))
-
-      const walletWif = await getWifForOperation('wallet', 'consolidateUTXOs', wallet)
-      const result = await consolidateUtxos(walletWif, utxoIds)
-
-      setTxid(result.txid)
-      setStatus('success')
-
-      // Refresh wallet data
-      await fetchData()
-
-      uiLogger.info('Consolidation successful', { txid: result.txid })
-    } catch (err) {
-      uiLogger.error('Consolidation failed', err)
-      setError(err instanceof Error ? err.message : 'Consolidation failed')
+      walletWif = await getWifForOperation('wallet', 'consolidateUTXOs', wallet)
+    } catch (e) {
+      uiLogger.error('Failed to get WIF for consolidation', e)
+      setError(e instanceof Error ? e.message : 'Failed to access wallet key')
       setStatus('error')
+      return
     }
+
+    const result = await consolidateUtxos(walletWif, utxoIds, activeAccountId ?? undefined)
+    if (!result.ok) {
+      uiLogger.error('Consolidation failed', result.error)
+      setError(result.error.message)
+      setStatus('error')
+      return
+    }
+
+    setTxid(result.value.txid)
+    setStatus('success')
+
+    // Refresh wallet data
+    await fetchData()
+
+    uiLogger.info('Consolidation successful', { txid: result.value.txid })
   }
 
   const handleDone = () => {
