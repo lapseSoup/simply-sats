@@ -256,3 +256,14 @@ export type UIConfig = typeof UI
 export type StorageKeys = typeof STORAGE_KEYS
 export type ApiConfig = typeof API
 export type FeatureFlags = typeof FEATURES
+
+// Known tokens — pre-registered for display even before user holds them
+export const KNOWN_TOKENS = {
+  MNEE: {
+    ticker: 'MNEE',
+    protocol: 'bsv21' as const,
+    name: 'MNEE USD',
+    decimals: 2,
+    // contractTxid will be populated when GorillaPool returns it
+  },
+} as const
