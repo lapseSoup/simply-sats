@@ -166,7 +166,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
         accountLogger.error('Failed to create account in database', createResult.error)
         return null
       }
-      const accountId = createResult.value
+      const _accountId = createResult.value
 
       await refreshAccounts()
       accountLogger.info(`Created derived account: ${name} at index ${newAccountIndex}`)
