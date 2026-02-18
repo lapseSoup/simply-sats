@@ -7,4 +7,4 @@
  */
 
 // Re-export everything from the database module
-export * from './database/index'
+export * from '../infrastructure/database'
