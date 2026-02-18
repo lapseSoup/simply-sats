@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { feeFromBytes } from '../../services/wallet'
+import { feeFromBytes } from '../../adapters/walletAdapter'
 import type { BRC100Request, CreateActionRequest } from '../../services/brc100'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useKeyboardNav } from '../../hooks/useKeyboardNav'
