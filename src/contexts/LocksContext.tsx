@@ -18,7 +18,7 @@ interface LocksContextType {
   locks: LockedUTXO[]
   knownUnlockedLocks: Set<string>
   /** Ref to knownUnlockedLocks — always current, safe to read inside stale closures */
-  knownUnlockedLocksRef: MutableRefObject<Set<string>>
+  knownUnlockedLocksRef: Readonly<MutableRefObject<Set<string>>>
 
   // State setters
   setLocks: (locks: SetStateAction<LockedUTXO[]>) => void
