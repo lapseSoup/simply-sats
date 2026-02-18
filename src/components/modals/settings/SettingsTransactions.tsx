@@ -1,8 +1,9 @@
 import { Fuel } from 'lucide-react'
-import { useWallet } from '../../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../../contexts'
 
 export function SettingsTransactions() {
-  const { feeRateKB, setFeeRate } = useWallet()
+  const { feeRateKB } = useWalletState()
+  const { setFeeRate } = useWalletActions()
 
   return (
     <div className="settings-section">

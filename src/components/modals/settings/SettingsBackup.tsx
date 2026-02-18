@@ -7,7 +7,7 @@ import {
   Download,
   ChevronRight
 } from 'lucide-react'
-import { useWallet } from '../../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { exportDatabase, exportDatabaseFull, importDatabase, type DatabaseBackup } from '../../../infrastructure/database'
 import { encrypt, decrypt, type EncryptedData } from '../../../services/crypto'
@@ -19,7 +19,8 @@ import { handleKeyDown } from './settingsKeyDown'
 import { SECURITY } from '../../../config'
 
 export function SettingsBackup() {
-  const { wallet, sessionPassword, performSync } = useWallet()
+  const { wallet, sessionPassword } = useWalletState()
+  const { performSync } = useWalletActions()
   const { showToast } = useUI()
 
   const [showBackupRecovery, setShowBackupRecovery] = useState(false)

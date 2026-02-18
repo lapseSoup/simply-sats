@@ -11,7 +11,7 @@ import { useState, useCallback } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { CircleCheck } from 'lucide-react'
 import { Modal } from '../shared/Modal'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import {
   readExternalDatabase,
@@ -40,7 +40,8 @@ interface BackupRecoveryModalProps {
 // ============================================
 
 export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
-  const { wallet, refreshAccounts } = useWallet()
+  const { wallet } = useWalletState()
+  const { refreshAccounts } = useWalletActions()
   const { showToast } = useUI()
 
   // Modal state

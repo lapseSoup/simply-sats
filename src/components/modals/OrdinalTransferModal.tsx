@@ -10,7 +10,7 @@ import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { OrdinalImage } from '../shared/OrdinalImage'
 import type { Ordinal } from '../../services/wallet'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateTxFee } from '../../services/wallet/fees'
 import { isOk } from '../../domain/types'
@@ -25,7 +25,8 @@ export function OrdinalTransferModal({
   ordinal,
   onClose
 }: OrdinalTransferModalProps) {
-  const { handleTransferOrdinal, feeRateKB } = useWallet()
+  const { feeRateKB } = useWalletState()
+  const { handleTransferOrdinal } = useWalletActions()
   const { showToast } = useUI()
 
   // Calculate estimated fee dynamically based on current fee rate
