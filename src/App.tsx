@@ -27,6 +27,9 @@ import { discoverAccounts } from './services/accountDiscovery'
 const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'search']
 
 function WalletApp() {
+  // App.tsx is the top-level orchestrator and legitimately needs both wallet state
+  // and actions for lifecycle management, routing, and modal control. useWallet()
+  // is the intentional exception; all other components use useWalletState/useWalletActions.
   const {
     wallet,
     loading,
