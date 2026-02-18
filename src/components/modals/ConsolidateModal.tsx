@@ -4,7 +4,7 @@ import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { consolidateUtxos, getWifForOperation } from '../../services/wallet'
 import { calculateTxFee } from '../../services/wallet'
-import type { UTXO as DatabaseUTXO } from '../../services/database'
+import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { uiLogger } from '../../services/logger'
 
 interface ConsolidateModalProps {

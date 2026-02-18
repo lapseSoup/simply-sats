@@ -6,7 +6,7 @@
 
 import { useCallback } from 'react'
 import type { WalletKeys, UTXO, Ordinal, ExtendedUTXO } from '../services/wallet'
-import type { UTXO as DatabaseUTXO } from '../services/database'
+import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import {
   getUTXOs,
   sendBSVMultiKey,
@@ -16,7 +16,7 @@ import {
 import { listOrdinal } from '../services/wallet/marketplace'
 import {
   getDerivedAddresses
-} from '../services/database'
+} from '../infrastructure/database'
 import {
   getSpendableUtxosFromDatabase
 } from '../services/sync'

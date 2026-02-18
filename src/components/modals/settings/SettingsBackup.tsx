@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useWallet } from '../../../contexts/WalletContext'
 import { useUI } from '../../../contexts/UIContext'
-import { exportDatabase, exportDatabaseFull, importDatabase, type DatabaseBackup } from '../../../services/database'
+import { exportDatabase, exportDatabaseFull, importDatabase, type DatabaseBackup } from '../../../infrastructure/database'
 import { encrypt, decrypt, type EncryptedData } from '../../../services/crypto'
 import { NO_PASSWORD } from '../../../services/sessionPasswordStore'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'

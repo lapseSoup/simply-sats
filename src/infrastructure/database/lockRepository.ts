@@ -5,9 +5,9 @@
  */
 
 import { getDatabase } from './connection'
-import { dbLogger } from '../logger'
+import { dbLogger } from '../../services/logger'
 import type { Lock, UTXO } from './types'
-import type { LockRow, LockWithUTXORow } from '../database-types'
+import type { LockRow, LockWithUTXORow } from './row-types'
 
 /**
  * Add a time-locked output

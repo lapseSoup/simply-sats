@@ -1,10 +1,3 @@
-/**
- * Database Service for Simply Sats
- *
- * This file re-exports from the modular database implementation.
- * Import from here for backward compatibility, or import directly
- * from src/services/database/ for specific functionality.
- */
-
-// Re-export everything from the database module
-export * from './database/index'
+// Backward-compatibility shim — re-exports the database infrastructure layer
+// so that existing service-layer imports continue to work unchanged.
+export * from '../infrastructure/database'

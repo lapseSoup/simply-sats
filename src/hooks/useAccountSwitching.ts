@@ -19,7 +19,7 @@ import {
   getLocks as getLocksFromDB,
   getAllTransactions,
   type Transaction
-} from '../services/database'
+} from '../infrastructure/database'
 import {
   getOrdinalsFromDatabase,
   getBalanceFromDatabase,

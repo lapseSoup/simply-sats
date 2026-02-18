@@ -6,7 +6,7 @@
 
 import { getDatabase } from './connection'
 import type { Transaction } from './types'
-import type { TransactionRow, SqlParams } from '../database-types'
+import type { TransactionRow, SqlParams } from './row-types'
 
 /**
  * Add a new transaction (won't overwrite if exists)

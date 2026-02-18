@@ -4,7 +4,7 @@ import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { SimplySatsLogo } from '../shared/SimplySatsLogo'
 import { AccountSwitcher } from './AccountSwitcher'
-import { getBalanceFromDB } from '../../services/database'
+import { getBalanceFromDB } from '../../infrastructure/database'
 import { walletLogger } from '../../services/logger'
 import { getLastSwitchDiag } from '../../hooks/useAccountSwitching'
 

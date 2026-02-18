@@ -7,9 +7,9 @@
  */
 
 import { getDatabase } from './connection'
-import { dbLogger } from '../logger'
+import { dbLogger } from '../../services/logger'
 import type { CachedOrdinal } from './types'
-import type { OrdinalCacheRow, OrdinalCacheStatsRow } from '../database-types'
+import type { OrdinalCacheRow, OrdinalCacheStatsRow } from './row-types'
 
 /**
  * Ensure ordinal_cache table exists (for imports/upgrades)

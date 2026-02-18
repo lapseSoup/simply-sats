@@ -10,7 +10,7 @@ import {
   addContact,
   getContacts,
   getNextInvoiceNumber
-} from '../../services/database'
+} from '../../infrastructure/database'
 import { deriveSenderAddress, deriveChildPrivateKey } from '../../services/keyDerivation'
 import { uiLogger } from '../../services/logger'
 import { BRC100 } from '../../config'

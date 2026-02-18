@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { getTransactionByTxid } from '../../services/database'
+import { getTransactionByTxid } from '../../infrastructure/database'
 import { useWalletState } from '../../contexts'
 import { getWocClient } from '../../infrastructure/api/wocClient'
 import { btcToSatoshis } from '../../utils/satoshiConversion'

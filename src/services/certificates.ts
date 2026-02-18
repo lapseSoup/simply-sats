@@ -13,7 +13,7 @@
 import { getDatabase } from './database'
 import { PrivateKey, Hash, PublicKey, Signature } from '@bsv/sdk'
 import type { WalletKeys } from './wallet'
-import type { CertificateRow, SqlParams } from './database-types'
+import type { CertificateRow, SqlParams } from '../infrastructure/database/row-types'
 import { brc100Logger } from './logger'
 
 /**

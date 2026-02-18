@@ -5,9 +5,9 @@
  */
 
 import { getDatabase } from './connection'
-import { dbLogger } from '../logger'
+import { dbLogger } from '../../services/logger'
 import type { ActionResult } from './types'
-import type { ActionResultRow, SqlParams } from '../database-types'
+import type { ActionResultRow, SqlParams } from './row-types'
 
 /**
  * Ensure action_results table exists

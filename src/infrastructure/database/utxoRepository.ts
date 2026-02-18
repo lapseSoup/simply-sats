@@ -5,7 +5,7 @@
  */
 
 import { getDatabase, withTransaction } from './connection'
-import { dbLogger } from '../logger'
+import { dbLogger } from '../../services/logger'
 import type { UTXO } from './types'
 import type {
   UTXORow,
@@ -14,7 +14,7 @@ import type {
   PendingUTXORow,
   BalanceSumRow,
   SqlParams
-} from '../database-types'
+} from './row-types'
 
 // ============================================
 // Migration Helpers

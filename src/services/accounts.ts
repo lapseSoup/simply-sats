@@ -6,12 +6,12 @@
  */
 
 import { getDatabase } from './database'
-import { withTransaction } from './database/connection'
+import { withTransaction } from './database'
 import { encrypt, decrypt, type EncryptedData } from './crypto'
 import type { WalletKeys } from './wallet'
 import { isUnprotectedData } from './wallet/types'
 import { saveWallet, loadWallet } from './wallet/storage'
-import type { AccountRow, AccountSettingRow, IdCheckRow } from './database-types'
+import type { AccountRow, AccountSettingRow, IdCheckRow } from '../infrastructure/database/row-types'
 import { validatePassword } from '../utils/passwordValidation'
 import { accountLogger } from './logger'
 import { SECURITY } from '../config'

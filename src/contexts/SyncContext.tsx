@@ -18,7 +18,7 @@ import {
   hasOrdinalContent,
   getCachedOrdinals,
   type CachedOrdinal
-} from '../services/database'
+} from '../infrastructure/database'
 import {
   syncWallet,
   restoreFromBlockchain,

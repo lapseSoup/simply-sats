@@ -18,7 +18,7 @@ import { ok, err, type Result } from '../domain/types'
 import { getDatabase, withTransaction } from './database'
 import { broadcastTransaction, calculateTxFee, type UTXO } from './wallet'
 import { gpOrdinalsApi } from '../infrastructure/api/clients'
-import type { TokenRow, TokenBalanceRow, TokenTransferRow, IdCheckRow, SqlParams } from './database-types'
+import type { TokenRow, TokenBalanceRow, TokenTransferRow, IdCheckRow, SqlParams } from '../infrastructure/database/row-types'
 
 
 // Token metadata type

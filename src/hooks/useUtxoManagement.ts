@@ -6,8 +6,8 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
-import { getAllUTXOs, toggleUtxoFrozen } from '../services/database'
-import type { UTXO } from '../services/database'
+import { getAllUTXOs, toggleUtxoFrozen } from '../infrastructure/database'
+import type { UTXO } from '../infrastructure/database'
 import { uiLogger } from '../services/logger'
 
 interface UseUtxoManagementOptions {
