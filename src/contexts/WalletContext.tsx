@@ -33,6 +33,13 @@ export type { TxHistoryItem, BasketBalances } from './SyncContext'
 // Backward-compatible merged type — useWallet() returns this
 type WalletContextType = WalletStateContextType & WalletActionsContextType
 
+/**
+ * @deprecated Use useWalletState() for read-only state or useWalletActions() for
+ * write operations. useWallet() merges both contexts, causing unnecessary re-renders
+ * in components that only need one or the other.
+ *
+ * Exception: App.tsx (top-level orchestrator) may continue using useWallet().
+ */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useWallet(): WalletContextType {
   const state = useWalletState()
