@@ -305,7 +305,7 @@ export async function lockBSV(
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to record lock transaction locally', error, { txid })
     return err(new AppError(
-      `Lock broadcast succeeded (txid: ${txid}) but failed to record locally. Your wallet may show incorrect balance until next sync.`,
+      'Lock confirmed on-chain but local record failed. Your balance will update automatically on next sync.',
       ErrorCodes.DATABASE_ERROR,
       { txid, originalError: error instanceof Error ? error.message : String(error) }
     ))
