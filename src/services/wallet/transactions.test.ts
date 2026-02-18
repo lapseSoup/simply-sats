@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { UTXO, ExtendedUTXO } from './types'
-import { DbError } from '../errors'
+import { DbError, ErrorCodes } from '../errors'
 
 // ---------------------------------------------------------------------------
 // Hoisted mock state
@@ -328,7 +328,10 @@ describe('Transaction Service', () => {
 
       await expect(
         executeBroadcast('deadbeef', 'pending-123', outpoints)
-      ).rejects.toThrow('wallet state could not be fully restored')
+      ).rejects.toMatchObject({
+        message: expect.stringContaining('wallet state could not be fully restored'),
+        code: ErrorCodes.UTXO_STUCK_IN_PENDING
+      })
 
       // Rollback was attempted
       expect(mockRollbackPendingSpend).toHaveBeenCalledWith(outpoints)
