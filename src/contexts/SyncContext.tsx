@@ -159,7 +159,10 @@ export function SyncProvider({ children }: SyncProviderProps) {
       if (forceReset && activeAccountId) {
         syncLogger.info('Force reset: clearing UTXOs for account', { accountId: activeAccountId })
         const { clearUtxosForAccount } = await import('../services/database')
-        await clearUtxosForAccount(activeAccountId)
+        const clearResult = await clearUtxosForAccount(activeAccountId)
+        if (!clearResult.ok) {
+          syncLogger.warn('Failed to clear UTXOs for account', { accountId: activeAccountId, error: clearResult.error.message })
+        }
       }
 
       syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })
@@ -296,7 +299,11 @@ export function SyncProvider({ children }: SyncProviderProps) {
       }
 
       // Get transaction history from DATABASE (scoped to account)
-      const dbTxs = await getAllTransactions(30, activeAccountId)
+      const dbTxsResult = await getAllTransactions(30, activeAccountId)
+      const dbTxs = dbTxsResult.ok ? dbTxsResult.value : []
+      if (!dbTxsResult.ok) {
+        syncLogger.warn('Failed to get transactions from database', { error: dbTxsResult.error.message })
+      }
       const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
         tx_hash: tx.txid,
         height: tx.blockHeight || 0,

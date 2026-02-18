@@ -279,7 +279,7 @@ export async function lockBSV(
       }
 
       // Add lock UTXO and lock record
-      const utxoId = await addUTXO({
+      const addUtxoResult = await addUTXO({
         txid,
         vout: 0,
         satoshis,
@@ -288,6 +288,10 @@ export async function lockBSV(
         spendable: false,
         createdAt: Date.now()
       }, accountId)
+      if (!addUtxoResult.ok) {
+        throw new AppError(`Failed to record lock UTXO: ${addUtxoResult.error.message}`, ErrorCodes.DATABASE_ERROR)
+      }
+      const utxoId = addUtxoResult.value
 
       await addLock({
         utxoId,

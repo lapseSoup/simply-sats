@@ -292,12 +292,17 @@ export function withErrorHandling<
  * Used in repository functions that return Result<T | null, DbError>.
  */
 export class DbError extends Error {
+  readonly code: 'NOT_FOUND' | 'QUERY_FAILED' | 'CONSTRAINT' | 'CONNECTION'
+  readonly cause?: unknown
+
   constructor(
     message: string,
-    public readonly code: 'NOT_FOUND' | 'QUERY_FAILED' | 'CONSTRAINT' | 'CONNECTION',
-    public readonly cause?: unknown
+    code: 'NOT_FOUND' | 'QUERY_FAILED' | 'CONSTRAINT' | 'CONNECTION',
+    cause?: unknown
   ) {
     super(message)
     this.name = 'DbError'
+    this.code = code
+    this.cause = cause
   }
 }

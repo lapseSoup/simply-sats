@@ -37,9 +37,13 @@ export function useUtxoManagement(options: UseUtxoManagementOptions = {}): UseUt
   const reload = useCallback(async () => {
     setLoading(true)
     try {
-      const all = await getAllUTXOs(accountId)
-      const filtered = filter ? all.filter(filter) : all
-      setUtxos(filtered)
+      const allResult = await getAllUTXOs(accountId)
+      if (allResult.ok) {
+        const filtered = filter ? allResult.value.filter(filter) : allResult.value
+        setUtxos(filtered)
+      } else {
+        uiLogger.error('Failed to load UTXOs', allResult.error)
+      }
     } catch (e) {
       uiLogger.error('Failed to load UTXOs', e)
     } finally {
@@ -49,7 +53,10 @@ export function useUtxoManagement(options: UseUtxoManagementOptions = {}): UseUt
 
   const toggleFreeze = useCallback(async (txid: string, vout: number, currentlySpendable: boolean) => {
     try {
-      await toggleUtxoFrozen(txid, vout, currentlySpendable, accountId)
+      const freezeResult = await toggleUtxoFrozen(txid, vout, currentlySpendable, accountId)
+      if (!freezeResult.ok) {
+        uiLogger.error('Failed to toggle UTXO freeze', freezeResult.error)
+      }
       await reload()
     } catch (e) {
       uiLogger.error('Failed to toggle UTXO freeze', e)

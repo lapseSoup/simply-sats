@@ -16,6 +16,8 @@ import { validatePassword } from '../utils/passwordValidation'
 import { accountLogger } from './logger'
 import { SECURITY } from '../config'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
+import { type Result, ok, err } from '../domain/types'
+import { DbError } from './errors'
 
 // Account type
 export interface Account {
@@ -69,7 +71,7 @@ export async function createAccount(
   password: string | null,
   useLegacyRequirements = false,
   derivationIndex?: number
-): Promise<number> {
+): Promise<Result<number, DbError>> {
   // Password is optional — when null, keys are stored unprotected
   if (password !== null) {
     if (useLegacyRequirements) {
@@ -102,31 +104,40 @@ export async function createAccount(
   }
 
   let encryptedKeysStr: string
-  if (password !== null) {
-    const encryptedData = await encrypt(JSON.stringify(keysObj), password)
-    encryptedKeysStr = JSON.stringify(encryptedData)
-  } else {
-    // Unprotected mode — store plaintext in structured format
-    encryptedKeysStr = JSON.stringify({ version: 0, mode: 'unprotected', keys: keysObj })
+  try {
+    if (password !== null) {
+      const encryptedData = await encrypt(JSON.stringify(keysObj), password)
+      encryptedKeysStr = JSON.stringify(encryptedData)
+    } else {
+      // Unprotected mode — store plaintext in structured format
+      encryptedKeysStr = JSON.stringify({ version: 0, mode: 'unprotected', keys: keysObj })
+    }
+
+    // Deactivate all existing accounts
+    await database.execute('UPDATE accounts SET is_active = 0')
+
+    // Insert new account as active
+    const result = await database.execute(
+      `INSERT INTO accounts (name, identity_address, encrypted_keys, is_active, created_at, last_accessed_at, derivation_index)
+       VALUES ($1, $2, $3, 1, $4, $4, $5)`,
+      [name, keys.identityAddress, encryptedKeysStr, Date.now(), derivationIndex ?? null]
+    )
+
+    const accountId = result.lastInsertId as number
+    accountLogger.info('Created account', { name, accountId })
+
+    // Set default settings for new account
+    await setAccountSettings(accountId, DEFAULT_ACCOUNT_SETTINGS)
+
+    return ok(accountId)
+  } catch (e) {
+    accountLogger.error('Failed to create account', e, { name })
+    return err(new DbError(
+      `createAccount failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
   }
-
-  // Deactivate all existing accounts
-  await database.execute('UPDATE accounts SET is_active = 0')
-
-  // Insert new account as active
-  const result = await database.execute(
-    `INSERT INTO accounts (name, identity_address, encrypted_keys, is_active, created_at, last_accessed_at, derivation_index)
-     VALUES ($1, $2, $3, 1, $4, $4, $5)`,
-    [name, keys.identityAddress, encryptedKeysStr, Date.now(), derivationIndex ?? null]
-  )
-
-  const accountId = result.lastInsertId as number
-  accountLogger.info('Created account', { name, accountId })
-
-  // Set default settings for new account
-  await setAccountSettings(accountId, DEFAULT_ACCOUNT_SETTINGS)
-
-  return accountId
 }
 
 /**
@@ -326,19 +337,32 @@ export async function getAccountKeys(
 /**
  * Update account name
  */
-export async function updateAccountName(accountId: number, name: string): Promise<void> {
+export async function updateAccountName(accountId: number, name: string): Promise<Result<void, DbError>> {
   const database = getDatabase()
 
-  await database.execute(
-    'UPDATE accounts SET name = $1 WHERE id = $2',
-    [name, accountId]
-  )
+  try {
+    await database.execute(
+      'UPDATE accounts SET name = $1 WHERE id = $2',
+      [name, accountId]
+    )
+    return ok(undefined)
+  } catch (e) {
+    accountLogger.error('Failed to update account name', e, { accountId })
+    return err(new DbError(
+      `updateAccountName failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
+  }
 }
 
 /**
  * Delete an account
+ * Returns ok(false) if the account cannot be deleted (only account remaining).
+ * Returns ok(true) on successful deletion.
+ * Returns err(DbError) on database failure.
  */
-export async function deleteAccount(accountId: number): Promise<boolean> {
+export async function deleteAccount(accountId: number): Promise<Result<boolean, DbError>> {
   const database = getDatabase()
 
   try {
@@ -346,7 +370,7 @@ export async function deleteAccount(accountId: number): Promise<boolean> {
     const accounts = await getAllAccounts()
     if (accounts.length <= 1) {
       accountLogger.error('Cannot delete the only account')
-      return false
+      return ok(false)
     }
 
     // Check if this is the active account
@@ -375,10 +399,14 @@ export async function deleteAccount(accountId: number): Promise<boolean> {
     }
 
     accountLogger.info('Deleted account', { accountId })
-    return true
+    return ok(true)
   } catch (e) {
     accountLogger.error('Failed to delete account', e, { accountId })
-    return false
+    return err(new DbError(
+      `deleteAccount failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
   }
 }
 
@@ -469,10 +497,14 @@ export async function migrateToMultiAccount(
 
     // Create account for existing wallet using legacy password requirements
     // The UI has already validated the password meets minimum requirements
-    const accountId = await createAccount('Account 1', existingKeys, password, true)
+    const result = await createAccount('Account 1', existingKeys, password, true)
+    if (!result.ok) {
+      accountLogger.error('Failed to create account during migration', result.error)
+      return null
+    }
     accountLogger.info('Migrated existing wallet to account system')
 
-    return accountId
+    return result.value
   } catch (e) {
     accountLogger.error('Migration failed', e)
     return null

@@ -114,11 +114,13 @@ export async function diagnoseSyncHealth(accountId?: number): Promise<SyncHealth
 
   // Test 4: UTXO query
   const utxoStart = Date.now()
-  try {
-    await getSpendableUTXOs(accountId)
-    utxoQuery = true
-  } catch (e) {
-    errors.push(`UTXO: ${e instanceof Error ? e.message : String(e)}`)
+  {
+    const utxoResult = await getSpendableUTXOs(accountId)
+    if (utxoResult.ok) {
+      utxoQuery = true
+    } else {
+      errors.push(`UTXO: ${utxoResult.error.message}`)
+    }
   }
   timings.utxo = Date.now() - utxoStart
 
@@ -263,7 +265,12 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   syncLogger.debug(`[SYNC] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`)
 
   // Get existing spendable UTXOs from database FOR THIS SPECIFIC ADDRESS AND ACCOUNT
-  const existingUtxos = await getSpendableUTXOs(accountId)
+  const spendableResult = await getSpendableUTXOs(accountId)
+  if (!spendableResult.ok) {
+    syncLogger.error(`[SYNC #${syncId}] Failed to query existing UTXOs from DB`, { error: spendableResult.error.message })
+    return { address, basket, newUtxos: 0, spentUtxos: 0, totalBalance: 0 }
+  }
+  const existingUtxos = spendableResult.value
   const existingMap = new Map<string, DBUtxo>()
   for (const utxo of existingUtxos) {
     // Match by address field (new way) OR locking script (fallback for old records)
@@ -313,8 +320,8 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
     if (!existingMap.has(key)) {
       // New UTXO - add to database with address and account ID
       syncLogger.debug(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats (account=${accountId ?? 1})`)
-      try {
-        await addUTXO({
+      {
+        const addResult = await addUTXO({
           txid: wocUtxo.txid,
           vout: wocUtxo.vout,
           satoshis: wocUtxo.satoshis,
@@ -325,8 +332,9 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
           createdAt: Date.now(),
           tags: basket === BASKETS.ORDINALS && wocUtxo.satoshis === 1 ? ['ordinal'] : []
         }, accountId)
-      } catch (e) {
-        syncLogger.error(`[SYNC] Failed to add UTXO:`, { error: e })
+        if (!addResult.ok) {
+          syncLogger.error(`[SYNC] Failed to add UTXO:`, { error: addResult.error.message })
+        }
       }
       newUtxos++
     }
@@ -336,7 +344,11 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   // Protect change outputs from recently broadcast transactions: skip UTXOs whose
   // txid matches a pending (unconfirmed) transaction we recorded locally.
   // This replaces the old time-based grace period which was fragile.
-  const pendingTxids = await getPendingTransactionTxids(accountId)
+  const pendingTxidsResult = await getPendingTransactionTxids(accountId)
+  const pendingTxids = pendingTxidsResult.ok ? pendingTxidsResult.value : new Set<string>()
+  if (!pendingTxidsResult.ok) {
+    syncLogger.warn('[SYNC] Failed to get pending txids', { error: pendingTxidsResult.error.message })
+  }
   for (const [key, utxo] of existingMap) {
     if (!currentUtxoKeys.has(key)) {
       // Skip UTXOs that are outputs of our own pending (unconfirmed) transactions —
@@ -347,14 +359,20 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
       }
       // UTXO no longer exists at this address - mark as spent
       syncLogger.debug(`[SYNC] Marking spent: ${key}`)
-      await markUTXOSpent(utxo.txid, utxo.vout, 'unknown', accountId)
+      const markSpentResult = await markUTXOSpent(utxo.txid, utxo.vout, 'unknown', accountId)
+      if (!markSpentResult.ok) {
+        syncLogger.warn(`[SYNC] Failed to mark UTXO spent: ${key}`, { error: markSpentResult.error.message })
+      }
       spentUtxos++
     }
   }
 
   // Update sync state
   const currentHeight = await getCurrentBlockHeight()
-  await updateSyncState(address, currentHeight)
+  const syncStateResult = await updateSyncState(address, currentHeight)
+  if (!syncStateResult.ok) {
+    syncLogger.warn(`[SYNC #${syncId}] Failed to update sync state`, { error: syncStateResult.error })
+  }
 
   syncLogger.debug(`[SYNC #${syncId}] DONE: ${newUtxos} new, ${spentUtxos} spent, ${totalBalance} sats`)
 
@@ -436,10 +454,12 @@ async function calculateTxAmount(
   for (const vin of tx.vin) {
     if (vin.txid && vin.vout !== undefined) {
       // Try 1: Local UTXO DB lookup (fast, works for UTXOs we've seen before)
-      const utxo = await getUtxoByOutpoint(vin.txid, vin.vout, accountId)
-      if (utxo) {
-        spent += utxo.satoshis
+      const outpointResult = await getUtxoByOutpoint(vin.txid, vin.vout, accountId)
+      if (outpointResult.ok && outpointResult.value !== null) {
+        spent += outpointResult.value.satoshis
         continue
+      } else if (!outpointResult.ok) {
+        syncLogger.warn('[SYNC] DB error looking up outpoint', { txid: vin.txid, vout: vin.vout, error: outpointResult.error.message })
       }
 
       // Try 2: Fetch parent transaction from API (reliable, works after fresh sync)
@@ -489,7 +509,11 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
   let newTxCount = 0
 
   // Skip already-known transactions to avoid wasteful API calls
-  const knownTxids = await getKnownTxids(accountId)
+  const knownTxidsResult = await getKnownTxids(accountId)
+  const knownTxids = knownTxidsResult.ok ? knownTxidsResult.value : new Set<string>()
+  if (!knownTxidsResult.ok) {
+    syncLogger.warn('[SYNC] Failed to get known txids', { error: knownTxidsResult.error.message })
+  }
   const newHistory = history.filter(txRef => !knownTxids.has(txRef.tx_hash))
   syncLogger.debug('Incremental tx sync', {
     total: history.length,
@@ -531,7 +555,7 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
             const parsed = parseTimelockScript(lockVout.scriptPubKey.hex)
             if (!parsed || parsed.publicKeyHash !== expectedPkh) continue
 
-            const utxoId = await addUTXO({
+            const addLockUtxoResult = await addUTXO({
               txid: txRef.tx_hash,
               vout: i,
               satoshis: btcToSatoshis(lockVout.value),
@@ -540,6 +564,11 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
               spendable: false,
               createdAt: Date.now()
             }, accountId)
+            if (!addLockUtxoResult.ok) {
+              syncLogger.warn('[SYNC] Failed to persist lock UTXO', { txid: txRef.tx_hash, vout: i, error: addLockUtxoResult.error.message })
+              continue
+            }
+            const utxoId = addLockUtxoResult.value
 
             await addLockIfNotExists({
               utxoId,
@@ -602,8 +631,8 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
     }
 
     // Store in database (addTransaction won't overwrite existing)
-    try {
-      await addTransaction({
+    {
+      const addResult = await addTransaction({
         txid: txRef.tx_hash,
         createdAt: Date.now(),
         blockHeight: txRef.height > 0 ? txRef.height : undefined,
@@ -611,16 +640,19 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
         amount: txLabel === 'lock' && lockSats && amount !== undefined && amount > 0 ? -lockSats : amount,
         description: txDescription
       }, accountId)
-      newTxCount++
-    } catch (_e) {
-      // Ignore duplicates — but still label transactions that already exist
-      syncLogger.debug(`Tx ${txRef.tx_hash.slice(0,8)} already exists in database`)
+      if (addResult.ok) {
+        newTxCount++
+      } else {
+        // Ignore duplicates — but still label transactions that already exist
+        syncLogger.debug(`Tx ${txRef.tx_hash.slice(0,8)} already exists in database`)
+      }
     }
 
     // Label lock/unlock transactions (idempotent — safe for both new and existing txs)
     if (txLabel && txDescription) {
       try {
-        const existingLabels = await getTransactionLabels(txRef.tx_hash, accountId)
+        const labelsResult = await getTransactionLabels(txRef.tx_hash, accountId)
+        const existingLabels = labelsResult.ok ? labelsResult.value : []
         if (!existingLabels.includes(txLabel)) {
           await updateTransactionLabels(txRef.tx_hash, [...existingLabels, txLabel], accountId)
         }
@@ -643,10 +675,9 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
   // Update block heights for pending transactions that are now confirmed
   for (const txRef of history) {
     if (knownTxids.has(txRef.tx_hash) && txRef.height > 0) {
-      try {
-        await updateTransactionStatus(txRef.tx_hash, 'confirmed', txRef.height, accountId)
-      } catch (_e) {
-        // Ignore errors updating confirmed height
+      const statusResult = await updateTransactionStatus(txRef.tx_hash, 'confirmed', txRef.height, accountId)
+      if (!statusResult.ok) {
+        syncLogger.debug('[SYNC] Failed to update tx status (non-fatal)', { txid: txRef.tx_hash, error: statusResult.error.message })
       }
     }
   }
@@ -739,7 +770,12 @@ async function backfillNullAmounts(
 ): Promise<number> {
   try {
     // Get all transactions for this account (up to 200 — covers typical restore)
-    const allTxs = await getAllTransactions(200, accountId)
+    const allTxsResult = await getAllTransactions(200, accountId)
+    if (!allTxsResult.ok) {
+      syncLogger.warn('[BACKFILL] Failed to get transactions', { error: allTxsResult.error.message })
+      return 0
+    }
+    const allTxs = allTxsResult.value
     const nullAmountTxs = allTxs.filter(tx => tx.amount === undefined || tx.amount === null)
 
     if (nullAmountTxs.length === 0) return 0
@@ -779,7 +815,10 @@ async function backfillNullAmounts(
           return null
         }
         const amount = await calculateTxAmount(txDetails, primaryAddress, allWalletAddresses, accountId)
-        await updateTransactionAmount(tx.txid, amount, accountId)
+        const amtResult = await updateTransactionAmount(tx.txid, amount, accountId)
+        if (!amtResult.ok) {
+          syncLogger.warn(`[BACKFILL] Failed to update amount for ${tx.txid.slice(0,8)}...`, { error: amtResult.error.message })
+        }
         syncLogger.debug(`[BACKFILL] Fixed amount for ${tx.txid.slice(0, 8)}... → ${amount} sats`)
         return { txid: tx.txid, amount }
       },
@@ -825,10 +864,15 @@ export async function syncWallet(
     // Recover any UTXOs stuck in 'pending' state for more than 5 minutes
     // These can occur when a broadcast fails after marking UTXOs as pending
     try {
-      const stuckUtxos = await getPendingUtxos(5 * 60 * 1000)
-      if (stuckUtxos.length > 0) {
-        syncLogger.warn(`[SYNC] Found ${stuckUtxos.length} stuck pending UTXOs — rolling back`)
-        await rollbackPendingSpend(stuckUtxos.map(u => ({ txid: u.txid, vout: u.vout })))
+      const pendingResult = await getPendingUtxos(5 * 60 * 1000)
+      if (!pendingResult.ok) {
+        syncLogger.warn('[SYNC] Failed to query pending UTXOs', { error: pendingResult.error.message })
+      } else if (pendingResult.value.length > 0) {
+        syncLogger.warn(`[SYNC] Found ${pendingResult.value.length} stuck pending UTXOs — rolling back`)
+        const rollbackResult = await rollbackPendingSpend(pendingResult.value.map(u => ({ txid: u.txid, vout: u.vout })))
+        if (!rollbackResult.ok) {
+          syncLogger.warn('[SYNC] Failed to rollback pending UTXOs', { error: rollbackResult.error.message })
+        }
       }
     } catch (error) {
       syncLogger.warn('[SYNC] Failed to recover pending UTXOs', { error: String(error) })
@@ -936,7 +980,12 @@ export async function syncWallet(
  * @param accountId - Account ID to filter by (optional)
  */
 export async function getBalanceFromDatabase(basket?: string, accountId?: number): Promise<number> {
-  const utxos = await getSpendableUTXOs(accountId)
+  const utxosResult = await getSpendableUTXOs(accountId)
+  if (!utxosResult.ok) {
+    syncLogger.warn('[BALANCE] Failed to query spendable UTXOs', { error: utxosResult.error.message })
+    return 0
+  }
+  const utxos = utxosResult.value
 
   if (basket) {
     const filtered = utxos.filter(u => u.basket === basket)
@@ -958,8 +1007,12 @@ export async function getBalanceFromDatabase(basket?: string, accountId?: number
  * @param accountId - Account ID to filter by (optional)
  */
 export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEFAULT, accountId?: number): Promise<DBUtxo[]> {
-  const allUtxos = await getSpendableUTXOs(accountId)
-  return allUtxos
+  const allUtxosResult = await getSpendableUTXOs(accountId)
+  if (!allUtxosResult.ok) {
+    syncLogger.warn('[DB] Failed to query spendable UTXOs', { error: allUtxosResult.error.message })
+    return []
+  }
+  return allUtxosResult.value
     .filter(u => u.basket === basket)
     .sort((a, b) => a.satoshis - b.satoshis)
 }
@@ -990,8 +1043,12 @@ export function mapDbLocksToLockedUtxos(
  * @param accountId - Account ID to filter by (optional)
  */
 export async function getOrdinalsFromDatabase(accountId?: number): Promise<{ txid: string; vout: number; satoshis: number; origin: string }[]> {
-  const allUtxos = await getSpendableUTXOs(accountId)
-  const ordinalUtxos = allUtxos.filter(u => u.basket === BASKETS.ORDINALS)
+  const allUtxosResult = await getSpendableUTXOs(accountId)
+  if (!allUtxosResult.ok) {
+    syncLogger.warn('[DB] Failed to query UTXOs for ordinals', { error: allUtxosResult.error.message })
+    return []
+  }
+  const ordinalUtxos = allUtxosResult.value.filter(u => u.basket === BASKETS.ORDINALS)
   syncLogger.debug(`[Ordinals] Found ${ordinalUtxos.length} ordinals in database (account=${accountId})`)
   return ordinalUtxos.map(u => ({
     txid: u.txid,
@@ -1018,7 +1075,7 @@ export async function recordSentTransaction(
   amount?: number,
   accountId?: number
 ): Promise<void> {
-  await upsertTransaction({
+  const result = await upsertTransaction({
     txid,
     rawTx,
     description,
@@ -1027,6 +1084,9 @@ export async function recordSentTransaction(
     labels,
     amount
   }, accountId)
+  if (!result.ok) {
+    syncLogger.warn('recordSentTransaction: upsertTransaction failed', { txid, error: result.error.message })
+  }
 }
 
 /**
@@ -1038,7 +1098,10 @@ export async function markUtxosSpent(
   accountId?: number
 ): Promise<void> {
   for (const utxo of utxos) {
-    await markUTXOSpent(utxo.txid, utxo.vout, spendingTxid, accountId)
+    const markResult = await markUTXOSpent(utxo.txid, utxo.vout, spendingTxid, accountId)
+    if (!markResult.ok) {
+      syncLogger.warn('[DB] Failed to mark UTXO spent', { txid: utxo.txid, vout: utxo.vout, error: markResult.error.message })
+    }
   }
 }
 
@@ -1055,7 +1118,8 @@ export {
  */
 export async function needsInitialSync(addresses: string[]): Promise<boolean> {
   for (const addr of addresses) {
-    const lastHeight = await getLastSyncedHeight(addr)
+    const lastHeightResult = await getLastSyncedHeight(addr)
+    const lastHeight = lastHeightResult.ok ? lastHeightResult.value : 0
     if (lastHeight === 0) {
       return true
     }

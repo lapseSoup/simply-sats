@@ -31,7 +31,13 @@ export function SearchTab() {
   // Load all labels on mount
   useEffect(() => {
     getAllLabels(activeAccountId ?? undefined)
-      .then(setAllLabels)
+      .then(result => {
+        if (result.ok) {
+          setAllLabels(result.value)
+        } else {
+          setAllLabels([])
+        }
+      })
       .catch(() => setAllLabels([]))
   }, [activeAccountId])
 
@@ -61,14 +67,16 @@ export function SearchTab() {
       let txs
       if (labels.length > 0) {
         // Multi-label AND search with optional freeText
-        txs = await searchTransactionsByLabels(
+        const result = await searchTransactionsByLabels(
           labels,
           freeText.trim() || undefined,
           activeAccountId ?? undefined
         )
+        txs = result.ok ? result.value : []
       } else {
         // Simple text search
-        txs = await searchTransactions(freeText.trim(), activeAccountId ?? undefined)
+        const result = await searchTransactions(freeText.trim(), activeAccountId ?? undefined)
+        txs = result.ok ? result.value : []
       }
       setResults(txs.map(tx => ({
         tx_hash: tx.txid,

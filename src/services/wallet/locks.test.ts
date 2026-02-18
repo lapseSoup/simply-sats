@@ -173,7 +173,7 @@ vi.mock('../database', () => ({
     }),
     execute: vi.fn(async () => ({ rowsAffected: 1, lastInsertId: 1 }))
   })),
-  addUTXO: vi.fn(async () => 42),
+  addUTXO: vi.fn(async () => ({ ok: true, value: 42 })),
   addLock: vi.fn(async () => 1),
   withTransaction: vi.fn(async (fn: () => Promise<void>) => fn())
 }))

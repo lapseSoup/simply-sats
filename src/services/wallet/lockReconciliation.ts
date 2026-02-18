@@ -77,7 +77,7 @@ async function persistLocks(
 ): Promise<void> {
   for (const lock of mergedLocks) {
     try {
-      const utxoId = await addUTXO({
+      const addResult = await addUTXO({
         txid: lock.txid,
         vout: lock.vout,
         satoshis: lock.satoshis,
@@ -86,6 +86,11 @@ async function persistLocks(
         spendable: false,
         createdAt: lock.createdAt
       }, accountId)
+      if (!addResult.ok) {
+        // Best-effort — rethrow so the outer catch handles it
+        throw new Error(addResult.error.message)
+      }
+      const utxoId = addResult.value
       await addLockIfNotExists({
         utxoId,
         unlockBlock: lock.unlockBlock,
@@ -112,11 +117,13 @@ async function autoLabelLockTransactions(
 ): Promise<void> {
   for (const lock of mergedLocks) {
     try {
-      const existingLabels = await getTransactionLabels(lock.txid, accountId)
+      const labelsResult = await getTransactionLabels(lock.txid, accountId)
+      const existingLabels = labelsResult.ok ? labelsResult.value : []
       if (!existingLabels.includes('lock')) {
         await updateTransactionLabels(lock.txid, [...existingLabels, 'lock'], accountId)
       }
-      const dbTx = await getTransactionByTxid(lock.txid, accountId)
+      const dbTxResult = await getTransactionByTxid(lock.txid, accountId)
+      const dbTx = dbTxResult.ok ? dbTxResult.value : null
       if (dbTx) {
         const needsAmountFix = dbTx.amount !== undefined && dbTx.amount > 0
         const needsDescription = !dbTx.description

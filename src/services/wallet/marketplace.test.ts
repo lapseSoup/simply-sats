@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { DbError } from '../errors'
 
 // Mock js-1sat-ord before importing marketplace
 vi.mock('js-1sat-ord', () => ({
@@ -90,9 +91,9 @@ describe('Marketplace Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     // Default: all sync operations succeed
-    mockMarkPending.mockResolvedValue(undefined)
-    mockConfirmSpent.mockResolvedValue(undefined)
-    mockRollback.mockResolvedValue(undefined)
+    mockMarkPending.mockResolvedValue({ ok: true, value: undefined })
+    mockConfirmSpent.mockResolvedValue({ ok: true, value: undefined })
+    mockRollback.mockResolvedValue({ ok: true, value: undefined })
   })
 
   describe('listOrdinal', () => {
@@ -155,7 +156,7 @@ describe('Marketplace Service', () => {
     })
 
     it('should throw if UTXOs cannot be marked pending', async () => {
-      mockMarkPending.mockRejectedValue(new Error('DB error'))
+      mockMarkPending.mockResolvedValue({ ok: false, error: new DbError('DB error', 'QUERY_FAILED') })
 
       await expect(
         listOrdinal(
@@ -233,7 +234,8 @@ describe('Marketplace Service', () => {
     })
 
     it('should rollback on cancellation failure', async () => {
-      mockMarkPending.mockResolvedValue(undefined)
+      // markPending succeeds, but cancelOrdListings fails
+      mockMarkPending.mockResolvedValue({ ok: true, value: undefined })
       mockCancelOrdListings.mockRejectedValue(new Error('Cancel script error'))
 
       const listingUtxo = {

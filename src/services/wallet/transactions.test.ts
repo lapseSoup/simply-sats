@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { UTXO, ExtendedUTXO } from './types'
+import { DbError } from '../errors'
 
 // ---------------------------------------------------------------------------
 // Hoisted mock state
@@ -225,11 +226,11 @@ describe('Transaction Service', () => {
     // Sensible defaults — individual tests override as needed
     mockIsValidBSVAddress.mockReturnValue(true)
     mockInfraBroadcast.mockResolvedValue(MOCK_TXID)
-    mockMarkUtxosPendingSpend.mockResolvedValue(undefined)
-    mockConfirmUtxosSpent.mockResolvedValue(undefined)
-    mockRollbackPendingSpend.mockResolvedValue(undefined)
+    mockMarkUtxosPendingSpend.mockResolvedValue({ ok: true, value: undefined })
+    mockConfirmUtxosSpent.mockResolvedValue({ ok: true, value: undefined })
+    mockRollbackPendingSpend.mockResolvedValue({ ok: true, value: undefined })
     mockRecordSentTransaction.mockResolvedValue(undefined)
-    mockAddUTXO.mockResolvedValue(1)
+    mockAddUTXO.mockResolvedValue({ ok: true, value: 1 })
     mockGetDerivedAddresses.mockResolvedValue([])
     mockGetSpendableUtxosFromDatabase.mockResolvedValue([])
     mockReleaseLock.mockReset()
@@ -288,7 +289,7 @@ describe('Transaction Service', () => {
     })
 
     it('should throw if marking pending fails (before broadcast)', async () => {
-      mockMarkUtxosPendingSpend.mockRejectedValue(new Error('DB lock'))
+      mockMarkUtxosPendingSpend.mockResolvedValue({ ok: false, error: new Error('DB lock') })
 
       await expect(
         executeBroadcast('deadbeef', 'pending-123', outpoints)
@@ -323,7 +324,7 @@ describe('Transaction Service', () => {
 
     it('should still throw broadcast error even if rollback fails', async () => {
       mockInfraBroadcast.mockRejectedValue(new Error('broadcast rejected'))
-      mockRollbackPendingSpend.mockRejectedValue(new Error('rollback DB error'))
+      mockRollbackPendingSpend.mockResolvedValue({ ok: false, error: new Error('rollback DB error') })
 
       await expect(
         executeBroadcast('deadbeef', 'pending-123', outpoints)
@@ -609,9 +610,11 @@ describe('Transaction Service', () => {
     it('should consolidate UTXOs successfully', async () => {
       const result = await consolidateUtxos(wif, utxoIds, 1)
 
-      expect(result.txid).toBe(MOCK_TXID)
-      expect(result.outputSats).toBe(9850)
-      expect(result.fee).toBe(150)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value.txid).toBe(MOCK_TXID)
+      expect(result.value.outputSats).toBe(9850)
+      expect(result.value.fee).toBe(150)
       expect(mockAcquireSyncLock).toHaveBeenCalled()
       expect(mockReleaseLock).toHaveBeenCalled()
       expect(mockBuildConsolidationTx).toHaveBeenCalledWith({
@@ -623,8 +626,9 @@ describe('Transaction Service', () => {
     })
 
     it('should record the consolidated UTXO at vout 0', async () => {
-      await consolidateUtxos(wif, utxoIds, 1)
+      const result = await consolidateUtxos(wif, utxoIds, 1)
 
+      expect(result.ok).toBe(true)
       expect(mockAddUTXO).toHaveBeenCalledWith(
         expect.objectContaining({
           txid: MOCK_TXID,
@@ -638,8 +642,9 @@ describe('Transaction Service', () => {
     })
 
     it('should confirm spent outpoints after broadcast', async () => {
-      await consolidateUtxos(wif, utxoIds, 1)
+      const result = await consolidateUtxos(wif, utxoIds, 1)
 
+      expect(result.ok).toBe(true)
       const builtSpentOutpoints = makeBuiltConsolidationTx().spentOutpoints
       expect(mockConfirmUtxosSpent).toHaveBeenCalledWith(builtSpentOutpoints, MOCK_TXID)
     })
@@ -656,13 +661,16 @@ describe('Transaction Service', () => {
 
       const result = await consolidateUtxos(wif, singleUtxo, 1)
 
-      expect(result.txid).toBe(MOCK_TXID)
-      expect(result.outputSats).toBe(4850)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value.txid).toBe(MOCK_TXID)
+      expect(result.value.outputSats).toBe(4850)
     })
 
     it('should release sync lock on build error', async () => {
       mockBuildConsolidationTx.mockRejectedValue(new Error('build failed'))
 
+      // Unexpected errors (non-AppError) still propagate as thrown exceptions
       await expect(
         consolidateUtxos(wif, utxoIds, 1)
       ).rejects.toThrow('build failed')
@@ -670,28 +678,40 @@ describe('Transaction Service', () => {
       expect(mockReleaseLock).toHaveBeenCalled()
     })
 
+    it('should return err Result when accountId is missing', async () => {
+      const result = await consolidateUtxos(wif, utxoIds)
+
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toMatch(/accountId is required/)
+    })
+
     it('should suppress duplicate key errors on addUTXO', async () => {
-      mockAddUTXO.mockRejectedValue(new Error('UNIQUE constraint failed'))
+      mockAddUTXO.mockResolvedValue({ ok: false, error: new DbError('UNIQUE constraint failed', 'CONSTRAINT') })
 
-      // Should NOT throw — duplicate is non-fatal
+      // Should NOT return err — duplicate is non-fatal
       const result = await consolidateUtxos(wif, utxoIds, 1)
-      expect(result.txid).toBe(MOCK_TXID)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value.txid).toBe(MOCK_TXID)
     })
 
-    it('should throw on unexpected addUTXO error', async () => {
-      mockAddUTXO.mockRejectedValue(new Error('disk full'))
+    it('should return err Result on unexpected addUTXO error', async () => {
+      mockAddUTXO.mockResolvedValue({ ok: false, error: new DbError('disk full', 'QUERY_FAILED') })
 
-      await expect(
-        consolidateUtxos(wif, utxoIds, 1)
-      ).rejects.toThrow(/failed to record locally/)
+      const result = await consolidateUtxos(wif, utxoIds, 1)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toMatch(/failed to record locally/)
     })
 
-    it('should throw with helpful message if recording fails post-broadcast', async () => {
+    it('should return err Result with helpful message if recording fails post-broadcast', async () => {
       mockRecordSentTransaction.mockRejectedValue(new Error('DB write error'))
 
-      await expect(
-        consolidateUtxos(wif, utxoIds, 1)
-      ).rejects.toThrow(/broadcast succeeded.*failed to record locally/)
+      const result = await consolidateUtxos(wif, utxoIds, 1)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toMatch(/broadcast succeeded.*failed to record locally/)
     })
   })
 

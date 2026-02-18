@@ -1,5 +1,5 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-02-17 (v5+ / Review #8 remediation + architecture refactors)
+**Latest review:** 2026-02-17 (v5+ / Review #8 remediation + architecture refactors + A-3 full completion)
 **Full report:** `docs/reviews/2026-02-17-full-review-v5.md`
 **Rating:** 9.0 / 10
 
@@ -55,7 +55,7 @@
 | B-15 | ✅ Verified | `SyncContext.tsx:359-362` | `contentCacheRef.current` is intentional: useRef accumulator for async background caching, useState for React re-renders. Dual state is load-bearing. |
 | A-1 | ✅ Partial (v5+) | `eslint.config.js` | ESLint `no-restricted-imports` rule expanded to cover all service modules (crypto, accounts, brc100, keyDerivation, tokens, etc.). 54 warnings now surfaced for incremental cleanup. |
 | A-2 | ✅ Fixed | `WalletContext.tsx` | `useWallet()` marked `@deprecated`; `useWalletState()` / `useWalletActions()` now primary API; 14 of 15 consumers migrated; App.tsx intentional exception (orchestrator) |
-| A-3 | ✅ Partial | Services layer | Tier 1: sendBSV, createWallet, lockBSV etc. → Result<T,AppError>. Tier 2: contactRepository, actionRepository, addressRepository → Result<T,DbError>. `DbError` class added. Deferred: syncRepository, utxoRepository (high-traffic, separate PR) |
+| A-3 | ✅ Fixed | Services layer | Full Result<T,E> migration complete. Tier 1: sendBSV, createWallet, lockBSV → Result<T,AppError>. Tier 2 DB repos: all 10 migrated (contactRepository, actionRepository, addressRepository, syncRepository, basketRepository, txRepository, utxoRepository → Result<T,DbError>). accounts.ts mutations (createAccount, updateAccountName, deleteAccount) → Result<T,DbError>. consolidateUtxos migrated. Silent Result drops in broadcast path fixed. |
 | A-7 | ✅ Fixed (v5+) | `AppProviders.tsx:48` | `ConnectedAppsProvider` now wrapped in `<ErrorBoundary context="ConnectedAppsProvider">` |
 | A-8 | ✅ Fixed | `brc100/certificates.ts`, `listener.ts` | Keys now injected as first param in all 3 certificate functions; listener.ts consolidated from 6 → 1 `getWalletKeys()` call at handler boundary |
 | A-9 | ✅ Fixed | `src/infrastructure/database/` | All 13 DB repo files moved to `infrastructure/database/`; `database-types.ts` → `row-types.ts`; 24 import sites updated; `services/database/` deleted |
@@ -103,9 +103,6 @@
 
 ### Accepted Risk (no code change needed)
 - **S-17** — `SENSITIVE_KEYS` empty in secureStorage. XSS in Tauri requires code execution which already owns the process.
-
-### Architecture Debt (remaining — future PRs)
-- **A-3 (partial)** — `Result<T,E>` migration still needed for: syncRepository, utxoRepository, txRepository, basketRepository (high-traffic repos deferred), consolidateUtxos, getCurrentBlockHeight, AccountsContext
 
 ### Moot (no longer applicable)
 - **S-3** — Session key rotation race is moot because `SENSITIVE_KEYS` is empty

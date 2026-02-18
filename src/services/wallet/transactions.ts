@@ -82,17 +82,16 @@ export async function executeBroadcast(
   spentOutpoints: { txid: string; vout: number }[]
 ): Promise<string> {
   // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
-  try {
-    await markUtxosPendingSpend(spentOutpoints, pendingTxid)
-    walletLogger.debug('Marked UTXOs as pending spend', { txid: pendingTxid })
-  } catch (error) {
-    walletLogger.error('Failed to mark UTXOs as pending', error)
+  const pendingResult = await markUtxosPendingSpend(spentOutpoints, pendingTxid)
+  if (!pendingResult.ok) {
+    walletLogger.error('Failed to mark UTXOs as pending', pendingResult.error)
     throw new AppError(
       'Failed to prepare transaction - UTXOs could not be locked',
       ErrorCodes.DATABASE_ERROR,
-      { pendingTxid, originalError: error instanceof Error ? error.message : String(error) }
+      { pendingTxid, originalError: pendingResult.error.message }
     )
   }
+  walletLogger.debug('Marked UTXOs as pending spend', { txid: pendingTxid })
 
   // Now broadcast the transaction
   try {
@@ -108,15 +107,13 @@ export async function executeBroadcast(
   } catch (broadcastError) {
     // Broadcast failed - rollback the pending status
     walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)
-    try {
-      await rollbackPendingSpend(spentOutpoints)
-      walletLogger.debug('Rolled back pending status for UTXOs')
-    } catch (rollbackError) {
+    const rollbackResult = await rollbackPendingSpend(spentOutpoints)
+    if (!rollbackResult.ok) {
       // Rollback also failed — UTXOs are stuck in "pending spend" state.
       // Surface this as a BROADCAST_SUCCEEDED_DB_FAILED-style error so the
       // UI can warn the user their wallet may show incorrect balances until
       // the next sync (which will clean up the stale pending status).
-      walletLogger.error('CRITICAL: Failed to rollback pending status — UTXOs stuck in pending state', rollbackError, {
+      walletLogger.error('CRITICAL: Failed to rollback pending status — UTXOs stuck in pending state', rollbackResult.error, {
         txid: pendingTxid,
         outpointCount: spentOutpoints.length
       })
@@ -125,12 +122,13 @@ export async function executeBroadcast(
         ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
         {
           broadcastError: broadcastError instanceof Error ? broadcastError.message : String(broadcastError),
-          rollbackError: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          rollbackError: rollbackResult.error.message,
           pendingTxid,
           outpointCount: spentOutpoints.length
         }
       )
     }
+    walletLogger.debug('Rolled back pending status for UTXOs')
     throw AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED)
   }
 }
@@ -155,31 +153,38 @@ async function recordTransactionResult(
   try {
     await withTransaction(async () => {
       await recordSentTransaction(txid, rawTx, description, labels, amount, accountId)
-      await confirmUtxosSpent(spentOutpoints, txid)
+      const confirmResult = await confirmUtxosSpent(spentOutpoints, txid)
+      if (!confirmResult.ok) {
+        throw new AppError(
+          `Failed to confirm UTXOs spent: ${confirmResult.error.message}`,
+          ErrorCodes.DATABASE_ERROR,
+          { txid, originalError: confirmResult.error.message }
+        )
+      }
       // Track change UTXO atomically so balance stays correct until next sync
       // Use final txid (from broadcaster), NOT pendingTxid — broadcaster may return different txid
       if (change > 0) {
-        try {
-          await addUTXO({
-            txid,
-            vout: numOutputs - 1,
-            satoshis: change,
-            lockingScript: p2pkhLockingScriptHex(changeAddress),
-            address: changeAddress,
-            basket: 'default',
-            spendable: true,
-            createdAt: Date.now()
-          }, accountId)
-          walletLogger.debug('Change UTXO tracked', { txid, change })
-        } catch (error) {
-          const msg = String(error)
+        const addChangeResult = await addUTXO({
+          txid,
+          vout: numOutputs - 1,
+          satoshis: change,
+          lockingScript: p2pkhLockingScriptHex(changeAddress),
+          address: changeAddress,
+          basket: 'default',
+          spendable: true,
+          createdAt: Date.now()
+        }, accountId)
+        if (!addChangeResult.ok) {
+          const msg = addChangeResult.error.message
           if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
             // Duplicate key is expected if UTXO was already synced — non-fatal
             walletLogger.debug('Change UTXO already exists (duplicate key)', { txid, change })
           } else {
             // Unexpected DB error — re-throw so the outer withTransaction() can handle it
-            throw error
+            throw addChangeResult.error
           }
+        } else {
+          walletLogger.debug('Change UTXO tracked', { txid, change })
         }
       }
     })
@@ -365,53 +370,60 @@ export async function consolidateUtxos(
   wif: string,
   utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>,
   accountId?: number
-): Promise<{ txid: string; outputSats: number; fee: number }> {
+): Promise<Result<{ txid: string; outputSats: number; fee: number }, AppError>> {
   // accountId is required to acquire the correct per-account sync lock.
   // See sendBSV for rationale.
   if (accountId === undefined) {
-    throw new AppError('accountId is required to consolidate UTXOs', ErrorCodes.INVALID_STATE, {})
+    return err(new AppError('accountId is required to consolidate UTXOs', ErrorCodes.INVALID_STATE, {}))
   }
 
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during consolidation
   const releaseLock = await acquireSyncLock(accountId)
   try {
-  const feeRate = getFeeRate()
-  const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })
-  const { rawTx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
-  const totalInput = utxoIds.reduce((sum, u) => sum + u.satoshis, 0)
+    const feeRate = getFeeRate()
+    const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })
+    const { rawTx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
+    const totalInput = utxoIds.reduce((sum, u) => sum + u.satoshis, 0)
 
-  resetInactivityTimer()
-  const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    resetInactivityTimer()
+    const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
 
-  // Record — consolidation uses vout 0 (single output), not last output
-  try {
-    await withTransaction(async () => {
-      await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
-      await confirmUtxosSpent(spentOutpoints, txid)
-      // Track consolidated UTXO atomically — use final txid from broadcaster
-      try {
-        await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
-        walletLogger.debug('Consolidated UTXO tracked', { txid, outputSats })
-      } catch (error) {
-        const msg = String(error)
-        if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
-          walletLogger.debug('Consolidated UTXO already exists (duplicate key)', { txid, outputSats })
-        } else {
-          throw error
+    // Record — consolidation uses vout 0 (single output), not last output
+    try {
+      await withTransaction(async () => {
+        await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
+        const consolidateConfirmResult = await confirmUtxosSpent(spentOutpoints, txid)
+        if (!consolidateConfirmResult.ok) {
+          throw new AppError(
+            `Failed to confirm UTXOs spent during consolidation: ${consolidateConfirmResult.error.message}`,
+            ErrorCodes.DATABASE_ERROR,
+            { txid, originalError: consolidateConfirmResult.error.message }
+          )
         }
-      }
-    })
-    walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })
-  } catch (error) {
-    walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
-    throw new AppError(
-      `Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
-      ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
-      { txid, originalError: error instanceof Error ? error.message : String(error) }
-    )
-  }
+        // Track consolidated UTXO atomically — use final txid from broadcaster
+        const addConsolidateResult = await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
+        if (!addConsolidateResult.ok) {
+          const msg = addConsolidateResult.error.message
+          if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
+            walletLogger.debug('Consolidated UTXO already exists (duplicate key)', { txid, outputSats })
+          } else {
+            throw addConsolidateResult.error
+          }
+        } else {
+          walletLogger.debug('Consolidated UTXO tracked', { txid, outputSats })
+        }
+      })
+      walletLogger.info('Consolidation confirmed locally', { txid, inputCount: utxoIds.length, outputSats })
+    } catch (error) {
+      walletLogger.error('CRITICAL: Failed to record consolidation locally', error, { txid })
+      return err(new AppError(
+        `Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
+        ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
+        { txid, originalError: error instanceof Error ? error.message : String(error) }
+      ))
+    }
 
-  return { txid, outputSats, fee }
+    return ok({ txid, outputSats, fee })
   } finally {
     releaseLock()
   }
