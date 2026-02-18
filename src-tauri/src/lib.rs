@@ -266,7 +266,7 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         return;
     }
 
-    // Mark all 17 migrations as applied with their correct checksums
+    // Mark all 21 migrations as applied with their correct checksums
     // Checksums must match the SQL content exactly or tauri_plugin_sql will re-run them
     let migrations: Vec<(i64, &str, &str)> = vec![
         (1, "Initial database schema", "C00D163C545940AF1CB0E2DC1AABE4A8D66902CFDA8BAAE50DD8D091E4A4D22BD36389CC70B5F95308BB8C29A79C7211"),
@@ -287,6 +287,9 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         (16, "Derived address account scoping", "98C5F5AC4957A3456EC54191A1217DC3AE5C7A84CA2A9DF5D06BF064E431C76661E9C76B51AA2A484BB6050882376AA6"),
         (17, "Unique index on locks utxo_id", "E6B4E1322FB95571CCB99D425494F23DD9851735057F6FEE64A358D1F1FC5DE15B4F62950F9B3E7C3867352B772EF71E"),
         (18, "Add account_id to transaction_labels", "D3284BCD78C6CDB5026836822F7B69BB2119CB9D94847362319C45F3DAFFC1C6DFB26995CF74B4F82C53A25652BF5F60"),
+        (19, "Add derivation_index to accounts", "F718112691A39AD3EB54EF64D50E74F9C68517D035644EE3B66058163D38B4CD50C24019FEC1380AC766C88608162CA8"),
+        (20, "Add frozen column to UTXOs", "3936B66AC32B18F01B65DF8C15BBA356A8297350EDE34C05646E6A2C999DE36D986861FA0ADBF17C9E65C8C9405CFB77"),
+        (21, "Make derived_addresses.private_key_wif nullable", "325FDAF2BFF3CB15A9EF3CDD9BD65432C36EF1CDE2A24B62EFF6DEA329D1D3FCA83A184BE5ACE4559787773101C51619"),
     ];
 
     for (version, description, checksum_hex) in migrations {
@@ -417,6 +420,24 @@ fn include_migrations() -> Vec<Migration> {
             version: 18,
             description: "Add account_id to transaction_labels",
             sql: include_str!("../migrations/018_transaction_labels_account.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 19,
+            description: "Add derivation_index to accounts",
+            sql: include_str!("../migrations/019_add_derivation_index.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 20,
+            description: "Add frozen column to UTXOs",
+            sql: include_str!("../migrations/020_add_utxo_frozen.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 21,
+            description: "Make derived_addresses.private_key_wif nullable",
+            sql: include_str!("../migrations/021_nullable_private_key_wif.sql"),
             kind: MigrationKind::Up,
         },
     ]
