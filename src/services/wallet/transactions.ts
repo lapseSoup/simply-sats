@@ -6,7 +6,7 @@
  * This module handles orchestration: validation, UTXO locking, broadcasting, and DB recording.
  */
 
-import { PrivateKey, Transaction } from '@bsv/sdk'
+import { PrivateKey, PublicKey, Transaction } from '@bsv/sdk'
 import type { UTXO, ExtendedUTXO } from './types'
 import { getFeeRate } from './fees'
 import { isValidBSVAddress } from '../../domain/wallet/validation'
@@ -26,6 +26,7 @@ import {
   BASKETS
 } from '../sync'
 import { getDerivedAddresses, withTransaction, addUTXO } from '../database'
+import { deriveChildPrivateKey } from '../keyDerivation'
 import { walletLogger } from '../logger'
 import { resetInactivityTimer } from '../autoLock'
 import { acquireSyncLock } from '../cancellation'
@@ -257,8 +258,14 @@ export async function sendBSV(
 /**
  * Get all spendable UTXOs from both default and derived baskets
  * Returns UTXOs with their associated WIFs for signing
+ *
+ * @param walletWif - WIF of the main wallet key (for default basket UTXOs)
+ * @param accountId - Account ID to scope derived address lookup
+ * @param identityWif - WIF of the identity key, used to re-derive child keys
+ *   for derived-address UTXOs (S-19: WIFs are no longer stored in the DB).
+ *   When omitted, falls back to legacy stored WIF for backward compatibility.
  */
-export async function getAllSpendableUTXOs(walletWif: string, accountId?: number): Promise<ExtendedUTXO[]> {
+export async function getAllSpendableUTXOs(walletWif: string, accountId?: number, identityWif?: string): Promise<ExtendedUTXO[]> {
   const result: ExtendedUTXO[] = []
 
   // Get UTXOs from default basket
@@ -281,6 +288,31 @@ export async function getAllSpendableUTXOs(walletWif: string, accountId?: number
   const derivedUtxos = await getSpendableUtxosFromDatabase(BASKETS.DERIVED)
   const derivedAddresses = await getDerivedAddresses(accountId)
 
+  // Build a map of derived address → WIF using re-derivation (S-19)
+  const derivedWifMap = new Map<string, string>()
+  for (const d of derivedAddresses) {
+    if (identityWif && d.senderPubkey && d.invoiceNumber) {
+      // Re-derive the child private key from (identityKey + senderPubkey + invoiceNumber)
+      // so we never rely on the WIF stored in the database
+      try {
+        const childKey = deriveChildPrivateKey(
+          PrivateKey.fromWif(identityWif),
+          PublicKey.fromString(d.senderPubkey),
+          d.invoiceNumber
+        )
+        derivedWifMap.set(d.address, childKey.toWif())
+      } catch (e) {
+        walletLogger.warn('getAllSpendableUTXOs: failed to re-derive child key', {
+          address: d.address,
+          error: e instanceof Error ? e.message : String(e)
+        })
+      }
+    } else if (d.privateKeyWif) {
+      // Legacy: support old records that still have WIF stored
+      derivedWifMap.set(d.address, d.privateKeyWif)
+    }
+  }
+
   for (const u of derivedUtxos) {
     // Find the derived address entry that matches this UTXO's locking script
     const derivedAddr = derivedAddresses.find(d => {
@@ -288,12 +320,22 @@ export async function getAllSpendableUTXOs(walletWif: string, accountId?: number
     })
 
     if (derivedAddr) {
+      const wif = derivedWifMap.get(derivedAddr.address)
+      if (!wif) {
+        // Cannot determine WIF — skip this UTXO rather than error with a bad key
+        walletLogger.warn('getAllSpendableUTXOs: no WIF available for derived address, skipping UTXO', {
+          address: derivedAddr.address,
+          txid: u.txid,
+          vout: u.vout
+        })
+        continue
+      }
       result.push({
         txid: u.txid,
         vout: u.vout,
         satoshis: u.satoshis,
         script: u.lockingScript,
-        wif: derivedAddr.privateKeyWif,
+        wif,
         address: derivedAddr.address
       })
     }

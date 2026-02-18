@@ -113,13 +113,13 @@ CREATE TABLE IF NOT EXISTS sync_state (
     account_id INTEGER NOT NULL DEFAULT 1
 );
 
--- Derived addresses (002 + 016 account_id)
+-- Derived addresses (002 + 016 account_id + 021 nullable private_key_wif)
 CREATE TABLE IF NOT EXISTS derived_addresses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     address TEXT NOT NULL UNIQUE,
     sender_pubkey TEXT NOT NULL,
     invoice_number TEXT NOT NULL,
-    private_key_wif TEXT NOT NULL,
+    private_key_wif TEXT,
     label TEXT,
     created_at INTEGER NOT NULL,
     last_synced_at INTEGER,

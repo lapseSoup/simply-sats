@@ -900,12 +900,15 @@ export async function syncWallet(
     const addresses: AddressInfo[] = []
 
     // Add derived addresses first (priority)
+    // Note: the wif field in AddressInfo is not used during sync (syncAddress does
+    // not sign anything). WIF re-derivation happens at spend time in useWalletSend /
+    // getAllSpendableUTXOs. We intentionally omit it here to avoid routing key
+    // material through the sync infrastructure (S-19).
     for (const derived of derivedAddresses) {
       syncLogger.debug(`[SYNC] Adding derived address to sync (priority): ${derived.address}`)
       addresses.push({
         address: derived.address,
         basket: BASKETS.DERIVED,
-        wif: derived.privateKeyWif,
         accountId
       })
     }
