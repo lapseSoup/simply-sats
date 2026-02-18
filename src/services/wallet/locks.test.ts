@@ -406,16 +406,16 @@ describe('locks service', () => {
       )
     })
 
-    it('should throw with informative error when post-broadcast tracking fails', async () => {
+    it('should return ok with warning when post-broadcast DB tracking fails', async () => {
       vi.mocked(recordSentTransaction).mockRejectedValueOnce(new Error('DB write failed'))
 
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      // Should return err — atomic transaction ensures all-or-nothing recording
-      const errResult = await lockBSV(10_000, 900_000, utxos)
-      expect(errResult.ok).toBe(false)
-      if (errResult.ok) return
-      expect(errResult.error.message).toMatch(/Lock confirmed on-chain but local record failed/)
+      // Broadcast succeeded so we return ok — modal closes, warning shown as toast
+      const result = await lockBSV(10_000, 900_000, utxos)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.value.warning).toMatch(/Lock confirmed/)
     })
 
     it('should use the correct fee calculation', async () => {

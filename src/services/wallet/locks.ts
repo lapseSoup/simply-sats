@@ -98,7 +98,7 @@ export async function lockBSV(
   lockBlock?: number,
   accountId?: number,
   basket?: string
-): Promise<Result<{ txid: string; lockedUtxo: LockedUTXO }, AppError>> {
+): Promise<Result<{ txid: string; lockedUtxo: LockedUTXO; warning?: string }, AppError>> {
   if (!Number.isFinite(satoshis) || satoshis <= 0 || !Number.isInteger(satoshis)) {
     return err(new AppError(
       `Invalid lock amount: ${satoshis} (must be a positive integer)`,
@@ -304,11 +304,13 @@ export async function lockBSV(
     })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to record lock transaction locally', error, { txid })
-    return err(new AppError(
-      'Lock confirmed on-chain but local record failed. Your balance will update automatically on next sync.',
-      ErrorCodes.DATABASE_ERROR,
-      { txid, originalError: error instanceof Error ? error.message : String(error) }
-    ))
+    // Broadcast succeeded — return ok with a warning so the modal closes and the
+    // user is not alarmed by an inline error that could prompt a dangerous retry.
+    return ok({
+      txid,
+      lockedUtxo,
+      warning: 'Lock confirmed. Local record will update on next sync.'
+    })
   }
 
   return ok({ txid, lockedUtxo })

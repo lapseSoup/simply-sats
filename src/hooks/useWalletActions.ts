@@ -14,6 +14,7 @@ import {
   saveWalletUnprotected,
   clearWallet
 } from '../services/wallet'
+import type { Account } from '../services/accounts'
 import {
   getActiveAccount,
   migrateToMultiAccount
@@ -37,6 +38,7 @@ interface UseWalletActionsOptions {
   setContacts: (contacts: []) => void
   setFeeRateKBState: (rate: number) => void
   refreshAccounts: () => Promise<void>
+  setActiveAccountState: (account: Account | null, accountId: number | null) => void
   resetSync: () => void
   setLocks: (locks: []) => void
   resetTokens: () => void
@@ -60,6 +62,7 @@ export function useWalletActions({
   setContacts,
   setFeeRateKBState,
   refreshAccounts,
+  setActiveAccountState,
   resetSync,
   setLocks,
   resetTokens,
@@ -90,6 +93,10 @@ export function useWalletActions({
       }
       await migrateToMultiAccount(keys, password)
       await refreshAccounts()
+      const activeAccForCreate = await getActiveAccount()
+      if (activeAccForCreate) {
+        setActiveAccountState(activeAccForCreate, activeAccForCreate.id ?? null)
+      }
       // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
       setWallet({ ...keys, mnemonic: '' })
       const sessionPwd = password ?? ''
@@ -102,7 +109,7 @@ export function useWalletActions({
       walletLogger.error('Failed to create wallet', e)
       return null
     }
-  }, [setWallet, setSessionPassword, refreshAccounts])
+  }, [setWallet, setSessionPassword, refreshAccounts, setActiveAccountState])
 
   const handleRestoreWallet = useCallback(async (mnemonic: string, password: string | null): Promise<boolean> => {
     if (password !== null) {
@@ -125,13 +132,20 @@ export function useWalletActions({
       }
       await migrateToMultiAccount({ ...keys, mnemonic: mnemonic.trim() }, password)
       await refreshAccounts()
+      // Ensure activeAccountId is set immediately so App.tsx auto-sync fires correctly.
+      // refreshAccounts() sets state in AccountsContext asynchronously, but React may not
+      // have propagated it before onSuccess() closes the modal. Explicitly setting it here
+      // avoids a race where wallet is set but activeAccountId is still null.
+      const activeAcc = await getActiveAccount()
+      if (activeAcc) {
+        setActiveAccountState(activeAcc, activeAcc.id ?? null)
+      }
       // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
       setWallet({ ...keys, mnemonic: '' })
       const sessionPwd = password ?? ''
       setSessionPassword(sessionPwd)
       setModuleSessionPassword(sessionPwd)
       // Queue account discovery for after initial sync completes
-      const activeAcc = await getActiveAccount()
       pendingDiscoveryRef.current = { mnemonic: mnemonic.trim(), password, excludeAccountId: activeAcc?.id }
       audit.walletRestored()
       return true
@@ -139,7 +153,7 @@ export function useWalletActions({
       walletLogger.error('Failed to restore wallet', e)
       return false
     }
-  }, [setWallet, setSessionPassword, refreshAccounts])
+  }, [setWallet, setSessionPassword, refreshAccounts, setActiveAccountState])
 
   const handleImportJSON = useCallback(async (json: string, password: string | null): Promise<boolean> => {
     if (password !== null) {

@@ -162,7 +162,9 @@ function WalletApp() {
       ], activeAccountId ?? undefined)
       if (needsSync) {
         logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
+        showToast('Syncing wallet with blockchain…', 'info')
         await performSyncRef.current(true)
+        showToast('Loading activity & ordinals…', 'info')
       } else {
         const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
         if (derivedAddrs.length > 0) {
@@ -172,6 +174,13 @@ function WalletApp() {
       }
       // Refresh data after sync to pick up new blockchain data
       await fetchDataRef.current()
+
+      if (needsSync) {
+        showToast('Wallet ready ✓', 'success')
+      }
+
+      // Sync token balances as part of initial load
+      await refreshTokens()
 
       // Run account discovery AFTER primary sync to avoid race conditions
       // (discoverAccounts changes activeAccountId which would discard fetchData results if concurrent)
@@ -196,7 +205,7 @@ function WalletApp() {
     }
 
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
-  }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, showToast])
+  }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, refreshTokens, showToast])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {

@@ -170,7 +170,7 @@ export interface TransactionRecord {
 }
 
 /** Common result type for wallet operations (send, lock, unlock, transfer, list) */
-export type WalletResult = Result<{ txid: string }, string>
+export type WalletResult = Result<{ txid: string; warning?: string }, string>
 
 // ============================================
 // Lock Types

@@ -101,14 +101,16 @@ export function setTokenNetwork(_network: 'mainnet' | 'testnet'): void {
  */
 export async function fetchTokenBalances(address: string): Promise<TokenBalance[]> {
   try {
+    tokenLogger.debug('Fetching token balances', { address })
     const result = await gpOrdinalsApi.get<GPTokenBalance[]>(`/api/bsv20/${address}/balance`)
 
     if (!result.ok) {
-      tokenLogger.error('Failed to fetch balances', undefined, { error: result.error.message })
+      tokenLogger.error('Failed to fetch balances', undefined, { address, error: result.error.message })
       return []
     }
 
     const data: GPTokenBalance[] = result.value
+    tokenLogger.debug('Token balance API response', { address, count: data.length })
     const balances: TokenBalance[] = []
 
     // Batch all token upserts in a single transaction to avoid N+1 queries

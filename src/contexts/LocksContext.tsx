@@ -142,7 +142,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
       await onComplete()
       // Audit log lock creation
       audit.lockCreated(lockResult.value.txid, amountSats, unlockBlock, activeAccountId ?? undefined)
-      return ok({ txid: lockResult.value.txid })
+      return ok({ txid: lockResult.value.txid, warning: lockResult.value.warning })
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Lock failed')
     }

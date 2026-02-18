@@ -96,7 +96,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     renameAccount,
     refreshAccounts,
     resetAccounts,
-    getKeysForAccount
+    getKeysForAccount,
+    setActiveAccountState
   } = useAccounts()
 
   // Always-current account ID ref — avoids stale closure in fetchData after account switch
@@ -179,6 +180,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setContacts,
     setFeeRateKBState,
     refreshAccounts,
+    setActiveAccountState,
     resetSync,
     setLocks,
     resetTokens,

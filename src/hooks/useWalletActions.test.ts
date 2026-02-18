@@ -35,6 +35,7 @@ const {
   mockResetTokens,
   mockResetAccounts,
   mockSetAutoLockMinutesState,
+  mockSetActiveAccountState,
 } = vi.hoisted(() => ({
   mockRestoreWallet: vi.fn(),
   mockCreateWallet: vi.fn(),
@@ -54,6 +55,7 @@ const {
   mockResetTokens: vi.fn(),
   mockResetAccounts: vi.fn(),
   mockSetAutoLockMinutesState: vi.fn(),
+  mockSetActiveAccountState: vi.fn(),
 }))
 
 // ---------- Mocks ----------
@@ -153,6 +155,7 @@ function useMakeActions() {
     setContacts: mockSetContacts as () => void,
     setFeeRateKBState: mockSetFeeRateKBState,
     refreshAccounts: mockRefreshAccounts,
+    setActiveAccountState: mockSetActiveAccountState,
     resetSync: mockResetSync,
     setLocks: mockSetLocks as () => void,
     resetTokens: mockResetTokens,

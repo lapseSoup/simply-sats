@@ -114,7 +114,11 @@ export function LockModal({ onClose }: LockModalProps) {
     const result = await handleLock(lockSats, blocks)
 
     if (isOk(result)) {
-      showToast(`Locked ${lockSats.toLocaleString()} sats for ${blocks} blocks!`)
+      if (result.value.warning) {
+        showToast(result.value.warning, 'warning')
+      } else {
+        showToast(`Locked ${lockSats.toLocaleString()} sats for ${blocks} blocks!`)
+      }
       onClose()
     } else {
       setLockError(result.error || 'Lock failed')
