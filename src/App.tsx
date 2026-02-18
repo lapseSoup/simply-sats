@@ -159,7 +159,7 @@ function WalletApp() {
         wallet.walletAddress,
         wallet.ordAddress,
         wallet.identityAddress
-      ])
+      ], activeAccountId ?? undefined)
       if (needsSync) {
         logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
         await performSyncRef.current(true)

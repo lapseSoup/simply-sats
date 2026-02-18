@@ -367,9 +367,9 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
     }
   }
 
-  // Update sync state
+  // Update sync state (scoped to account so stale records from other installs don't block re-sync)
   const currentHeight = await getCurrentBlockHeight()
-  const syncStateResult = await updateSyncState(address, currentHeight)
+  const syncStateResult = await updateSyncState(address, currentHeight, accountId)
   if (!syncStateResult.ok) {
     syncLogger.warn(`[SYNC #${syncId}] Failed to update sync state`, { error: syncStateResult.error })
   }
@@ -1182,14 +1182,28 @@ export {
 /**
  * Check if initial sync is needed
  */
-export async function needsInitialSync(addresses: string[]): Promise<boolean> {
+export async function needsInitialSync(addresses: string[], accountId?: number): Promise<boolean> {
+  // First check: does sync_state say any address has never been synced for this account?
   for (const addr of addresses) {
-    const lastHeightResult = await getLastSyncedHeight(addr)
+    const lastHeightResult = await getLastSyncedHeight(addr, accountId)
     const lastHeight = lastHeightResult.ok ? lastHeightResult.value : 0
     if (lastHeight === 0) {
       return true
     }
   }
+
+  // Second check: sync_state may be stale from a previous install or account ID change.
+  // If sync_state says "already synced" but the account has zero transactions in the DB,
+  // force a re-sync to repopulate from the blockchain.
+  if (accountId !== undefined) {
+    const txCountResult = await getAllTransactions(1, accountId)
+    const hasTxs = txCountResult.ok && txCountResult.value.length > 0
+    if (!hasTxs) {
+      syncLogger.info('[SYNC] sync_state shows synced but no transactions found for account — forcing re-sync', { accountId })
+      return true
+    }
+  }
+
   return false
 }
 

@@ -16,8 +16,7 @@ import {
   repairUTXOs,
   ensureDerivedAddressesTable,
   ensureContactsTable,
-  getContacts,
-  deleteTransactionsForAccount
+  getContacts
 } from '../infrastructure/database'
 import {
   getAllAccounts,
@@ -93,27 +92,6 @@ export function useWalletInit({
           uiLogger.warn('Failed to repair UTXOs', { error: repairResult.error.message })
         }
 
-        // One-time cleanup: delete corrupted transactions for non-account-1 accounts
-        try {
-          const cleanupFlag = STORAGE_KEYS.TX_CLEANUP_V1
-          if (!localStorage.getItem(cleanupFlag)) {
-            const accounts = await getAllAccounts()
-            for (const acc of accounts) {
-              if (acc.id && acc.id !== 1) {
-                const result = await deleteTransactionsForAccount(acc.id)
-                if (!result.ok) {
-                  walletLogger.warn('Failed to clean transactions for account', { accountId: acc.id, error: result.error.message })
-                } else {
-                  walletLogger.info('Cleaned corrupted transactions', { accountId: acc.id })
-                }
-              }
-            }
-            localStorage.setItem(cleanupFlag, String(Date.now()))
-            walletLogger.info('One-time transaction cleanup complete')
-          }
-        } catch (cleanupErr: unknown) {
-          walletLogger.warn('Transaction cleanup failed (non-fatal)', cleanupErr as Record<string, unknown>)
-        }
         if (!mounted) return
 
         await ensureDerivedAddressesTable()
