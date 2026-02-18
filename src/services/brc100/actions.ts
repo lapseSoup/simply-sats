@@ -832,7 +832,7 @@ async function buildAndBroadcastAction(
   // Track transaction in database
   try {
     // Record the transaction
-    await addTransaction({
+    const addTxResult = await addTransaction({
       txid,
       rawTx: tx.toHex(),
       description: actionRequest.description,
@@ -840,6 +840,9 @@ async function buildAndBroadcastAction(
       status: 'pending',
       labels: actionRequest.labels || ['createAction']
     })
+    if (!addTxResult.ok) {
+      brc100Logger.warn('Failed to record transaction in database', { txid, error: addTxResult.error.message })
+    }
 
     // Mark spent UTXOs
     for (const utxo of inputsToUse) {

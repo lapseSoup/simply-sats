@@ -336,7 +336,11 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   // Protect change outputs from recently broadcast transactions: skip UTXOs whose
   // txid matches a pending (unconfirmed) transaction we recorded locally.
   // This replaces the old time-based grace period which was fragile.
-  const pendingTxids = await getPendingTransactionTxids(accountId)
+  const pendingTxidsResult = await getPendingTransactionTxids(accountId)
+  const pendingTxids = pendingTxidsResult.ok ? pendingTxidsResult.value : new Set<string>()
+  if (!pendingTxidsResult.ok) {
+    syncLogger.warn('[SYNC] Failed to get pending txids', { error: pendingTxidsResult.error.message })
+  }
   for (const [key, utxo] of existingMap) {
     if (!currentUtxoKeys.has(key)) {
       // Skip UTXOs that are outputs of our own pending (unconfirmed) transactions —
@@ -492,7 +496,11 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
   let newTxCount = 0
 
   // Skip already-known transactions to avoid wasteful API calls
-  const knownTxids = await getKnownTxids(accountId)
+  const knownTxidsResult = await getKnownTxids(accountId)
+  const knownTxids = knownTxidsResult.ok ? knownTxidsResult.value : new Set<string>()
+  if (!knownTxidsResult.ok) {
+    syncLogger.warn('[SYNC] Failed to get known txids', { error: knownTxidsResult.error.message })
+  }
   const newHistory = history.filter(txRef => !knownTxids.has(txRef.tx_hash))
   syncLogger.debug('Incremental tx sync', {
     total: history.length,
@@ -605,8 +613,8 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
     }
 
     // Store in database (addTransaction won't overwrite existing)
-    try {
-      await addTransaction({
+    {
+      const addResult = await addTransaction({
         txid: txRef.tx_hash,
         createdAt: Date.now(),
         blockHeight: txRef.height > 0 ? txRef.height : undefined,
@@ -614,16 +622,19 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
         amount: txLabel === 'lock' && lockSats && amount !== undefined && amount > 0 ? -lockSats : amount,
         description: txDescription
       }, accountId)
-      newTxCount++
-    } catch (_e) {
-      // Ignore duplicates — but still label transactions that already exist
-      syncLogger.debug(`Tx ${txRef.tx_hash.slice(0,8)} already exists in database`)
+      if (addResult.ok) {
+        newTxCount++
+      } else {
+        // Ignore duplicates — but still label transactions that already exist
+        syncLogger.debug(`Tx ${txRef.tx_hash.slice(0,8)} already exists in database`)
+      }
     }
 
     // Label lock/unlock transactions (idempotent — safe for both new and existing txs)
     if (txLabel && txDescription) {
       try {
-        const existingLabels = await getTransactionLabels(txRef.tx_hash, accountId)
+        const labelsResult = await getTransactionLabels(txRef.tx_hash, accountId)
+        const existingLabels = labelsResult.ok ? labelsResult.value : []
         if (!existingLabels.includes(txLabel)) {
           await updateTransactionLabels(txRef.tx_hash, [...existingLabels, txLabel], accountId)
         }
@@ -646,10 +657,9 @@ async function syncTransactionHistory(address: string, limit: number = 50, accou
   // Update block heights for pending transactions that are now confirmed
   for (const txRef of history) {
     if (knownTxids.has(txRef.tx_hash) && txRef.height > 0) {
-      try {
-        await updateTransactionStatus(txRef.tx_hash, 'confirmed', txRef.height, accountId)
-      } catch (_e) {
-        // Ignore errors updating confirmed height
+      const statusResult = await updateTransactionStatus(txRef.tx_hash, 'confirmed', txRef.height, accountId)
+      if (!statusResult.ok) {
+        syncLogger.debug('[SYNC] Failed to update tx status (non-fatal)', { txid: txRef.tx_hash, error: statusResult.error.message })
       }
     }
   }
@@ -742,7 +752,12 @@ async function backfillNullAmounts(
 ): Promise<number> {
   try {
     // Get all transactions for this account (up to 200 — covers typical restore)
-    const allTxs = await getAllTransactions(200, accountId)
+    const allTxsResult = await getAllTransactions(200, accountId)
+    if (!allTxsResult.ok) {
+      syncLogger.warn('[BACKFILL] Failed to get transactions', { error: allTxsResult.error.message })
+      return 0
+    }
+    const allTxs = allTxsResult.value
     const nullAmountTxs = allTxs.filter(tx => tx.amount === undefined || tx.amount === null)
 
     if (nullAmountTxs.length === 0) return 0
@@ -782,7 +797,10 @@ async function backfillNullAmounts(
           return null
         }
         const amount = await calculateTxAmount(txDetails, primaryAddress, allWalletAddresses, accountId)
-        await updateTransactionAmount(tx.txid, amount, accountId)
+        const amtResult = await updateTransactionAmount(tx.txid, amount, accountId)
+        if (!amtResult.ok) {
+          syncLogger.warn(`[BACKFILL] Failed to update amount for ${tx.txid.slice(0,8)}...`, { error: amtResult.error.message })
+        }
         syncLogger.debug(`[BACKFILL] Fixed amount for ${tx.txid.slice(0, 8)}... → ${amount} sats`)
         return { txid: tx.txid, amount }
       },
@@ -1021,7 +1039,7 @@ export async function recordSentTransaction(
   amount?: number,
   accountId?: number
 ): Promise<void> {
-  await upsertTransaction({
+  const result = await upsertTransaction({
     txid,
     rawTx,
     description,
@@ -1030,6 +1048,9 @@ export async function recordSentTransaction(
     labels,
     amount
   }, accountId)
+  if (!result.ok) {
+    syncLogger.warn('recordSentTransaction: upsertTransaction failed', { txid, error: result.error.message })
+  }
 }
 
 /**

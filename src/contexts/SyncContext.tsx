@@ -296,7 +296,11 @@ export function SyncProvider({ children }: SyncProviderProps) {
       }
 
       // Get transaction history from DATABASE (scoped to account)
-      const dbTxs = await getAllTransactions(30, activeAccountId)
+      const dbTxsResult = await getAllTransactions(30, activeAccountId)
+      const dbTxs = dbTxsResult.ok ? dbTxsResult.value : []
+      if (!dbTxsResult.ok) {
+        syncLogger.warn('Failed to get transactions from database', { error: dbTxsResult.error.message })
+      }
       const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
         tx_hash: tx.txid,
         height: tx.blockHeight || 0,

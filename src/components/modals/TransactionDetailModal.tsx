@@ -92,7 +92,8 @@ export function TransactionDetailModal({
     const loadFeeData = async () => {
       try {
         if (!activeAccountId) return
-        const dbRecord = await getTransactionByTxid(transaction.tx_hash, activeAccountId)
+        const dbRecordResult = await getTransactionByTxid(transaction.tx_hash, activeAccountId)
+        const dbRecord = dbRecordResult.ok ? dbRecordResult.value : null
 
         const effectiveAmount = transaction.amount ?? dbRecord?.amount
         const effectiveDescription = transaction.description ?? dbRecord?.description

@@ -55,7 +55,8 @@ const baseTx = {
 describe('addTransaction', () => {
   it('inserts a new transaction and returns txid', async () => {
     const result = await addTransaction(baseTx, 2)
-    expect(result).toBe('tx123')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBe('tx123')
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT OR IGNORE INTO transactions'),
       expect.arrayContaining(['tx123', 'deadbeef', 'test tx', 1000, 2000, 800000, 'confirmed', -5000, 2])
@@ -124,7 +125,8 @@ describe('upsertTransaction', () => {
 
   it('returns the txid', async () => {
     const result = await upsertTransaction(baseTx, 1)
-    expect(result).toBe('tx123')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBe('tx123')
   })
 
   it('inserts labels when provided', async () => {
@@ -153,8 +155,10 @@ describe('getAllTransactions', () => {
     ])
 
     const result = await getAllTransactions(30, 2)
-    expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toHaveLength(1)
+    expect(result.value[0]).toMatchObject({
       txid: 'tx1',
       rawTx: 'beef',
       description: 'desc',
@@ -179,11 +183,13 @@ describe('getAllTransactions', () => {
     ])
 
     const result = await getAllTransactions()
-    expect(result[0]!.rawTx).toBeUndefined()
-    expect(result[0]!.description).toBeUndefined()
-    expect(result[0]!.confirmedAt).toBeUndefined()
-    expect(result[0]!.blockHeight).toBeUndefined()
-    expect(result[0]!.amount).toBeUndefined()
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value[0]!.rawTx).toBeUndefined()
+    expect(result.value[0]!.description).toBeUndefined()
+    expect(result.value[0]!.confirmedAt).toBeUndefined()
+    expect(result.value[0]!.blockHeight).toBeUndefined()
+    expect(result.value[0]!.amount).toBeUndefined()
   })
 
   it('uses default limit of 30', async () => {
@@ -305,7 +311,8 @@ describe('getTransactionLabels', () => {
     mockDb.select.mockResolvedValueOnce([{ label: 'send' }, { label: 'daily' }])
 
     const result = await getTransactionLabels('tx1')
-    expect(result).toEqual(['send', 'daily'])
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual(['send', 'daily'])
   })
 
   it('scopes by accountId when provided', async () => {
@@ -321,7 +328,8 @@ describe('getTransactionLabels', () => {
     mockDb.select.mockResolvedValueOnce([])
 
     const result = await getTransactionLabels('tx1')
-    expect(result).toEqual([])
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual([])
   })
 })
 
@@ -334,14 +342,16 @@ describe('getTransactionByTxid', () => {
     ])
 
     const result = await getTransactionByTxid('tx1', 2)
-    expect(result).toMatchObject({ txid: 'tx1', status: 'confirmed', amount: -500 })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toMatchObject({ txid: 'tx1', status: 'confirmed', amount: -500 })
   })
 
   it('returns null when not found', async () => {
     mockDb.select.mockResolvedValueOnce([])
 
     const result = await getTransactionByTxid('nonexistent', 1)
-    expect(result).toBeNull()
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBeNull()
   })
 
   it('maps null fields to undefined', async () => {
@@ -350,9 +360,11 @@ describe('getTransactionByTxid', () => {
     ])
 
     const result = await getTransactionByTxid('tx1', 1)
-    expect(result!.rawTx).toBeUndefined()
-    expect(result!.blockHeight).toBeUndefined()
-    expect(result!.amount).toBeUndefined()
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value!.rawTx).toBeUndefined()
+    expect(result.value!.blockHeight).toBeUndefined()
+    expect(result.value!.amount).toBeUndefined()
   })
 })
 
@@ -365,8 +377,10 @@ describe('getTransactionsByLabel', () => {
     ])
 
     const result = await getTransactionsByLabel('send', 2)
-    expect(result).toHaveLength(1)
-    expect(result[0]!.txid).toBe('tx1')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toHaveLength(1)
+    expect(result.value[0]!.txid).toBe('tx1')
   })
 
   it('queries without accountId scope when not provided', async () => {
@@ -386,7 +400,8 @@ describe('getAllLabels', () => {
     mockDb.select.mockResolvedValueOnce([{ label: 'alpha' }, { label: 'beta' }])
 
     const result = await getAllLabels()
-    expect(result).toEqual(['alpha', 'beta'])
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual(['alpha', 'beta'])
   })
 
   it('scopes by accountId', async () => {
@@ -406,7 +421,8 @@ describe('getTopLabels', () => {
     mockDb.select.mockResolvedValueOnce([{ label: 'coffee' }, { label: 'rent' }])
 
     const result = await getTopLabels(3, 2)
-    expect(result).toEqual(['coffee', 'rent'])
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual(['coffee', 'rent'])
   })
 
   it('excludes lock and unlock system labels', async () => {
@@ -429,7 +445,8 @@ describe('searchTransactions', () => {
     ])
 
     const result = await searchTransactions('tx1', 1, 50)
-    expect(result).toHaveLength(1)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toHaveLength(1)
     const call = mockDb.select.mock.calls[0]!
     expect(call[0]).toContain('LIKE')
     expect(call[1]).toContain('%tx1%')
@@ -443,9 +460,11 @@ describe('getPendingTransactionTxids', () => {
     mockDb.select.mockResolvedValueOnce([{ txid: 'tx1' }, { txid: 'tx2' }])
 
     const result = await getPendingTransactionTxids(1)
-    expect(result).toBeInstanceOf(Set)
-    expect(result.has('tx1')).toBe(true)
-    expect(result.has('tx2')).toBe(true)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBeInstanceOf(Set)
+    expect(result.value.has('tx1')).toBe(true)
+    expect(result.value.has('tx2')).toBe(true)
   })
 
   it('scopes by accountId', async () => {
@@ -461,7 +480,8 @@ describe('getPendingTransactionTxids', () => {
     mockDb.select.mockResolvedValueOnce([])
 
     const result = await getPendingTransactionTxids()
-    expect(result.size).toBe(0)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value.size).toBe(0)
   })
 })
 
@@ -488,6 +508,7 @@ describe('deleteTransactionsForAccount', () => {
 
   it('returns 0', async () => {
     const result = await deleteTransactionsForAccount(1)
-    expect(result).toBe(0)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBe(0)
   })
 })

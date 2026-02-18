@@ -169,7 +169,7 @@ export async function createLockTransaction(
   await saveLockToDatabase(utxoId, unlockBlock, ordinalOrigin)
 
   // Also record the transaction
-  await addTransaction({
+  const addTxResult = await addTransaction({
     txid,
     rawTx: tx.toHex(),
     description: `Lock ${satoshis} sats until block ${unlockBlock}`,
@@ -177,6 +177,9 @@ export async function createLockTransaction(
     status: 'pending',
     labels: ['lock', 'wrootz']
   })
+  if (!addTxResult.ok) {
+    brc100Logger.warn('Failed to record lock transaction in database', { txid, error: addTxResult.error.message })
+  }
 
   brc100Logger.info('Lock saved to database', { txid, utxoId, unlockBlock })
 

@@ -42,12 +42,18 @@ export function useTransactionLabels(options: UseTransactionLabelsOptions): UseT
       setLoading(true)
       try {
         const accId = accountId ?? 1
-        const [existingLabels, topLabels] = await Promise.all([
+        const [labelsResult, topLabelsResult] = await Promise.all([
           getTransactionLabels(txid, accId),
           getTopLabels(suggestedCount, accId)
         ])
-        setLabels(existingLabels)
-        setSuggestedLabels(topLabels)
+        setLabels(labelsResult.ok ? labelsResult.value : [])
+        if (!labelsResult.ok) {
+          uiLogger.warn('Failed to load transaction labels', { txid, error: labelsResult.error.message })
+        }
+        setSuggestedLabels(topLabelsResult.ok ? topLabelsResult.value : [])
+        if (!topLabelsResult.ok) {
+          uiLogger.warn('Failed to load top labels', { txid, error: topLabelsResult.error.message })
+        }
       } catch (e) {
         uiLogger.warn('Failed to load transaction labels', { txid, error: String(e) })
       } finally {
@@ -65,7 +71,12 @@ export function useTransactionLabels(options: UseTransactionLabelsOptions): UseT
     setLabels(newLabels) // Optimistic update
 
     try {
-      await updateTransactionLabels(txid, newLabels, accountId)
+      const result = await updateTransactionLabels(txid, newLabels, accountId)
+      if (!result.ok) {
+        uiLogger.error('Failed to add label', result.error)
+        setLabels(labels) // Revert on error
+        return false
+      }
       return true
     } catch (e) {
       uiLogger.error('Failed to add label', e)
@@ -79,7 +90,12 @@ export function useTransactionLabels(options: UseTransactionLabelsOptions): UseT
     setLabels(newLabels) // Optimistic update
 
     try {
-      await updateTransactionLabels(txid, newLabels, accountId)
+      const result = await updateTransactionLabels(txid, newLabels, accountId)
+      if (!result.ok) {
+        uiLogger.error('Failed to remove label', result.error)
+        setLabels(labels) // Revert on error
+        return false
+      }
       return true
     } catch (e) {
       uiLogger.error('Failed to remove label', e)
@@ -119,7 +135,11 @@ export function useLabeledTransactions(options: UseLabeledTransactionsOptions): 
       try {
         const results = await Promise.all(
           labelNames.map(async (label) => {
-            const txs = await getTransactionsByLabel(label, accountId)
+            const txsResult = await getTransactionsByLabel(label, accountId)
+            const txs = txsResult.ok ? txsResult.value : []
+            if (!txsResult.ok) {
+              uiLogger.warn('Failed to fetch transactions by label', { label, error: txsResult.error.message })
+            }
             return [label, new Set(txs.map(tx => tx.txid))] as const
           })
         )

@@ -112,11 +112,13 @@ async function autoLabelLockTransactions(
 ): Promise<void> {
   for (const lock of mergedLocks) {
     try {
-      const existingLabels = await getTransactionLabels(lock.txid, accountId)
+      const labelsResult = await getTransactionLabels(lock.txid, accountId)
+      const existingLabels = labelsResult.ok ? labelsResult.value : []
       if (!existingLabels.includes('lock')) {
         await updateTransactionLabels(lock.txid, [...existingLabels, 'lock'], accountId)
       }
-      const dbTx = await getTransactionByTxid(lock.txid, accountId)
+      const dbTxResult = await getTransactionByTxid(lock.txid, accountId)
+      const dbTx = dbTxResult.ok ? dbTxResult.value : null
       if (dbTx) {
         const needsAmountFix = dbTx.amount !== undefined && dbTx.amount > 0
         const needsDescription = !dbTx.description

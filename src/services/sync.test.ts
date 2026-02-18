@@ -23,7 +23,7 @@ vi.mock('./database', () => ({
   getSpendableUTXOs: vi.fn().mockResolvedValue([]),
   getLastSyncedHeight: vi.fn().mockResolvedValue({ ok: true, value: 0 }),
   updateSyncState: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
-  upsertTransaction: vi.fn().mockResolvedValue(undefined),
+  upsertTransaction: vi.fn().mockResolvedValue({ ok: true, value: 'txid' }),
   getDerivedAddresses: vi.fn().mockResolvedValue([]),
   updateDerivedAddressSyncTime: vi.fn().mockResolvedValue(undefined)
 }))
