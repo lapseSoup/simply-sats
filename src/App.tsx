@@ -3,6 +3,7 @@ import { AlertCircle, X } from 'lucide-react'
 import './App.css'
 
 import { useWallet, useUI, useModal } from './contexts'
+import { useNetwork } from './contexts/NetworkContext'
 import { isOk } from './domain/types'
 import { logger } from './services/logger'
 import { Toast, PaymentAlert, SkipLink, ErrorBoundary, SimplySatsLogo } from './components/shared'
@@ -58,6 +59,7 @@ function WalletApp() {
   } = useWallet()
 
   const { copyFeedback, toasts, showToast, dismissToast } = useUI()
+  const { setSyncPhase } = useNetwork()
   const {
     modal, openModal, closeModal,
     openAccountModal,
@@ -162,9 +164,9 @@ function WalletApp() {
       ], activeAccountId ?? undefined)
       if (needsSync) {
         logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
-        showToast('Syncing wallet with blockchain…', 'info')
+        setSyncPhase('syncing')
         await performSyncRef.current(true)
-        showToast('Loading activity & ordinals…', 'info')
+        setSyncPhase('loading')
       } else {
         const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
         if (derivedAddrs.length > 0) {
@@ -176,6 +178,7 @@ function WalletApp() {
       await fetchDataRef.current()
 
       if (needsSync) {
+        setSyncPhase(null)
         showToast('Wallet ready ✓', 'success')
       }
 
@@ -205,7 +208,7 @@ function WalletApp() {
     }
 
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
-  }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, refreshTokens, showToast])
+  }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, refreshTokens, showToast, setSyncPhase])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {

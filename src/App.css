@@ -113,6 +113,14 @@ body::-webkit-scrollbar {
   font-variant-numeric: tabular-nums;
 }
 
+.sync-phase-label {
+  font-size: var(--type-micro-size);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
 .icon-btn {
   width: 30px;
   height: 30px;

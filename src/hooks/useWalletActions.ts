@@ -137,6 +137,11 @@ export function useWalletActions({
       // have propagated it before onSuccess() closes the modal. Explicitly setting it here
       // avoids a race where wallet is set but activeAccountId is still null.
       const activeAcc = await getActiveAccount()
+      // Queue account discovery BEFORE any React state setters fire.
+      // setActiveAccountState + setWallet trigger App.tsx's checkSync effect.
+      // pendingDiscoveryRef must be populated before that effect runs, otherwise
+      // consumePendingDiscovery() returns null and discovery is silently skipped.
+      pendingDiscoveryRef.current = { mnemonic: mnemonic.trim(), password, excludeAccountId: activeAcc?.id }
       if (activeAcc) {
         setActiveAccountState(activeAcc, activeAcc.id ?? null)
       }
@@ -145,8 +150,6 @@ export function useWalletActions({
       const sessionPwd = password ?? ''
       setSessionPassword(sessionPwd)
       setModuleSessionPassword(sessionPwd)
-      // Queue account discovery for after initial sync completes
-      pendingDiscoveryRef.current = { mnemonic: mnemonic.trim(), password, excludeAccountId: activeAcc?.id }
       audit.walletRestored()
       return true
     } catch (e) {

@@ -9,10 +9,14 @@ export interface NetworkInfo {
   overlayNodeCount: number
 }
 
+export type SyncPhase = 'syncing' | 'loading' | null
+
 interface NetworkContextType {
   networkInfo: NetworkInfo | null
   syncing: boolean
   setSyncing: (syncing: boolean) => void
+  syncPhase: SyncPhase
+  setSyncPhase: (phase: SyncPhase) => void
   usdPrice: number
 }
 
@@ -34,6 +38,7 @@ interface NetworkProviderProps {
 export function NetworkProvider({ children }: NetworkProviderProps) {
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncPhase, setSyncPhase] = useState<SyncPhase>(null)
   const [usdPrice, setUsdPrice] = useState<number>(0)
 
   // Track consecutive failures for exponential backoff
@@ -114,8 +119,10 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
     networkInfo,
     syncing,
     setSyncing,
+    syncPhase,
+    setSyncPhase,
     usdPrice
-  }), [networkInfo, syncing, usdPrice])
+  }), [networkInfo, syncing, syncPhase, usdPrice])
 
   return (
     <NetworkContext.Provider value={value}>

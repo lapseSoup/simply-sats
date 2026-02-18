@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Settings } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
+import { useNetwork } from '../../contexts/NetworkContext'
 import { SimplySatsLogo } from '../shared/SimplySatsLogo'
 import { AccountSwitcher } from './AccountSwitcher'
 import { getBalanceFromDB } from '../../infrastructure/database'
@@ -18,6 +19,7 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
   const { wallet, networkInfo, syncing, accounts, activeAccountId, balance } = useWalletState()
   const { performSync, fetchData, switchAccount } = useWalletActions()
   const { formatBSVShort, showToast } = useUI()
+  const { syncPhase } = useNetwork()
 
   // Track manual sync separately for button animation
   const [manualSyncing, setManualSyncing] = useState(false)
@@ -129,6 +131,11 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
             <span className="sr-only">Current block height:</span>
             {networkInfo?.blockHeight ? networkInfo.blockHeight.toLocaleString() : '...'}
           </div>
+          {syncPhase && (
+            <span className="sync-phase-label" aria-live="polite">
+              {syncPhase === 'syncing' ? 'Syncing…' : 'Loading…'}
+            </span>
+          )}
           <button
             className={`icon-btn ${syncing || manualSyncing ? 'active' : ''}`}
             onClick={handleSync}
