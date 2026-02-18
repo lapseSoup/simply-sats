@@ -7,7 +7,7 @@
 import { getDatabase } from './connection'
 import { dbLogger } from '../../services/logger'
 import type { DerivedAddress } from './types'
-import type { DerivedAddressRow, CountRow } from '../../services/database-types'
+import type { DerivedAddressRow, CountRow } from './row-types'
 
 /**
  * Run derived_addresses migration if table doesn't exist

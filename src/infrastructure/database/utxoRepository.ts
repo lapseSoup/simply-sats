@@ -14,7 +14,7 @@ import type {
   PendingUTXORow,
   BalanceSumRow,
   SqlParams
-} from '../../services/database-types'
+} from './row-types'
 
 // ============================================
 // Migration Helpers

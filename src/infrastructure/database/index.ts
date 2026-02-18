@@ -1,5 +1,6 @@
 // Infrastructure: database repositories and connection
 // This is the canonical location for all DB access code.
+export * from './row-types'
 export * from './connection'
 export * from './types'
 export * from './utxoRepository'

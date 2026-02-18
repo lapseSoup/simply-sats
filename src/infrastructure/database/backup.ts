@@ -7,7 +7,7 @@
 import { getDatabase } from './connection'
 import { dbLogger } from '../../services/logger'
 import type { DatabaseBackup, UTXO, Transaction, Lock, Basket } from './types'
-import type { UTXORow, TransactionRow, LockRow, BasketRow, SyncStateRow } from '../../services/database-types'
+import type { UTXORow, TransactionRow, LockRow, BasketRow, SyncStateRow } from './row-types'
 import { getDerivedAddresses, ensureDerivedAddressesTable } from './addressRepository'
 import { getContacts, ensureContactsTable } from './contactRepository'
 import { getCachedOrdinalsWithContent, ensureOrdinalCacheTable, upsertOrdinalCache, upsertOrdinalContent } from './ordinalRepository'
