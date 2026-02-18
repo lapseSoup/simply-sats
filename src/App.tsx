@@ -187,22 +187,26 @@ function WalletApp() {
 
       // Run account discovery AFTER primary sync to avoid race conditions
       // (discoverAccounts changes activeAccountId which would discard fetchData results if concurrent)
-      if (needsSync) {
-        const discoveryParams = consumePendingDiscovery()
-        if (discoveryParams) {
-          try {
-            const found = await discoverAccounts(
-              discoveryParams.mnemonic,
-              discoveryParams.password,
-              discoveryParams.excludeAccountId
-            )
-            if (found > 0) {
-              await refreshAccounts()
-              showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
-            }
-          } catch (_e) {
-            // Silent failure — primary restore already succeeded
+      //
+      // NOTE: Discovery is NOT gated on needsSync — these are orthogonal concerns.
+      // pendingDiscoveryRef is a one-shot signal set only during handleRestoreWallet.
+      // If Account 1 was previously synced (needsSync = false), additional accounts on
+      // the blockchain still need to be discovered. The ref being non-null is the sole
+      // gate: it's only populated during restore and consumed exactly once.
+      const discoveryParams = consumePendingDiscovery()
+      if (discoveryParams) {
+        try {
+          const found = await discoverAccounts(
+            discoveryParams.mnemonic,
+            discoveryParams.password,
+            discoveryParams.excludeAccountId
+          )
+          if (found > 0) {
+            await refreshAccounts()
+            showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
           }
+        } catch (_e) {
+          // Silent failure — primary restore already succeeded
         }
       }
     }
