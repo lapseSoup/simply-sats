@@ -95,7 +95,10 @@ export async function listOrdinal(
 
   // Mark UTXOs as pending before building tx
   try {
-    await markUtxosPendingSpend(utxosToSpend, 'listing-pending')
+    const pendingResult1 = await markUtxosPendingSpend(utxosToSpend, 'listing-pending')
+    if (!pendingResult1.ok) {
+      throw new Error(`Failed to mark UTXOs pending: ${pendingResult1.error.message}`)
+    }
   } catch (error) {
     mpLogger.error('Failed to mark UTXOs as pending for listing', error)
     throw new Error('Failed to prepare listing - UTXOs could not be locked')
@@ -120,7 +123,7 @@ export async function listOrdinal(
   } catch (err) {
     // Rollback pending status on failure
     try {
-      await rollbackPendingSpend(utxosToSpend)
+      await rollbackPendingSpend(utxosToSpend) // best-effort rollback; ignore errors (second)
     } catch (rollbackErr) {
       mpLogger.error('CRITICAL: Failed to rollback pending status after listing failure', rollbackErr)
     }
@@ -135,7 +138,10 @@ export async function listOrdinal(
       `Listed ordinal ${ordinalUtxo.txid.slice(0, 8)}... for ${priceSats} sats`,
       ['ordinal', 'listing']
     )
-    await confirmUtxosSpent(utxosToSpend, txid)
+    const confirmResult1 = await confirmUtxosSpent(utxosToSpend, txid)
+    if (!confirmResult1.ok) {
+      mpLogger.warn('Failed to confirm UTXOs spent for listing', { txid, error: confirmResult1.error.message })
+    }
   } catch (error) {
     mpLogger.warn('Failed to track listing locally', { error: String(error) })
   }
@@ -171,7 +177,10 @@ export async function cancelOrdinalListing(
   ]
 
   try {
-    await markUtxosPendingSpend(utxosToSpend, 'cancel-listing-pending')
+    const pendingResult2 = await markUtxosPendingSpend(utxosToSpend, 'cancel-listing-pending')
+    if (!pendingResult2.ok) {
+      throw new Error(`Failed to mark UTXOs pending for cancel: ${pendingResult2.error.message}`)
+    }
   } catch (error) {
     mpLogger.error('Failed to mark UTXOs as pending for cancellation', error)
     throw new Error('Failed to prepare cancellation - UTXOs could not be locked')
@@ -203,7 +212,10 @@ export async function cancelOrdinalListing(
       `Cancelled listing for ordinal ${listingUtxo.txid.slice(0, 8)}...`,
       ['ordinal', 'cancel-listing']
     )
-    await confirmUtxosSpent(utxosToSpend, txid)
+    const confirmResult2 = await confirmUtxosSpent(utxosToSpend, txid)
+    if (!confirmResult2.ok) {
+      mpLogger.warn('Failed to confirm UTXOs spent for cancel listing', { txid, error: confirmResult2.error.message })
+    }
   } catch (error) {
     mpLogger.warn('Failed to track cancellation locally', { error: String(error) })
   }

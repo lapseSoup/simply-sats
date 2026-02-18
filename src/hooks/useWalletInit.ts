@@ -81,10 +81,12 @@ export function useWalletInit({
         if (!mounted) return
         uiLogger.info('Database initialized successfully')
 
-        const repaired = await repairUTXOs()
+        const repairResult = await repairUTXOs()
         if (!mounted) return
-        if (repaired > 0) {
-          uiLogger.info('Repaired UTXOs', { count: repaired })
+        if (repairResult.ok && repairResult.value > 0) {
+          uiLogger.info('Repaired UTXOs', { count: repairResult.value })
+        } else if (!repairResult.ok) {
+          uiLogger.warn('Failed to repair UTXOs', { error: repairResult.error.message })
         }
 
         // One-time cleanup: delete corrupted transactions for non-account-1 accounts

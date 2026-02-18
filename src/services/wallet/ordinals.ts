@@ -369,7 +369,10 @@ export async function transferOrdinal(
     )
 
     // Confirm UTXOs as spent (updates from pending -> spent)
-    await confirmUtxosSpent(utxosToSpend, txid)
+    const confirmResult = await confirmUtxosSpent(utxosToSpend, txid)
+    if (!confirmResult.ok) {
+      ordLogger.warn('Failed to confirm UTXOs as spent', { txid, error: confirmResult.error.message })
+    }
 
     ordLogger.info('Ordinal transfer tracked locally', { txid })
   } catch (error) {

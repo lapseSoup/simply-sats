@@ -33,8 +33,10 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
         if (account.id) {
           try {
             // Sum default + derived baskets for each account
-            const defaultBal = await getBalanceFromDB('default', account.id)
-            const derivedBal = await getBalanceFromDB('derived', account.id)
+            const defaultResult = await getBalanceFromDB('default', account.id)
+            const derivedResult = await getBalanceFromDB('derived', account.id)
+            const defaultBal = defaultResult.ok ? defaultResult.value : 0
+            const derivedBal = derivedResult.ok ? derivedResult.value : 0
             balances[account.id] = defaultBal + derivedBal
           } catch {
             balances[account.id] = 0

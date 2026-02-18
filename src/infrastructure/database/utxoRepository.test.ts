@@ -66,8 +66,10 @@ describe('addUTXO', () => {
 
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 42, rowsAffected: 1 })
 
-    const id = await addUTXO(baseUtxo, 5)
-    expect(id).toBe(42)
+    const result = await addUTXO(baseUtxo, 5)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(42)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO utxos'),
       expect.arrayContaining(['abc123', 0, 5000])
@@ -81,8 +83,10 @@ describe('addUTXO', () => {
 
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    const id = await addUTXO(baseUtxo, 3)
-    expect(id).toBe(10)
+    const result = await addUTXO(baseUtxo, 3)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(10)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE utxos SET'),
       expect.arrayContaining(['1Test', 1, 3, 10])
@@ -96,8 +100,10 @@ describe('addUTXO', () => {
 
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    const id = await addUTXO({ ...baseUtxo, basket: 'derived' }, 2)
-    expect(id).toBe(20)
+    const result = await addUTXO({ ...baseUtxo, basket: 'derived' }, 2)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(20)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining("basket = $1"),
       expect.arrayContaining(['derived', '1Test', '76a914...', 1, 2, 20])
@@ -111,8 +117,10 @@ describe('addUTXO', () => {
 
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    const id = await addUTXO({ ...baseUtxo, basket: 'default' }, 7)
-    expect(id).toBe(30)
+    const result = await addUTXO({ ...baseUtxo, basket: 'default' }, 7)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(30)
   })
 
   it('does not reassign account_id when address ownership check fails (S-7)', async () => {
@@ -124,7 +132,8 @@ describe('addUTXO', () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
     // Account 2 syncs and tries to claim this UTXO (different address — cross-account)
-    await addUTXO({ ...baseUtxo, address: '1AccountTwo', basket: 'default' }, 2)
+    const result = await addUTXO({ ...baseUtxo, address: '1AccountTwo', basket: 'default' }, 2)
+    expect(result.ok).toBe(true)
 
     // account_id should remain 1 (existing owner), not become 2
     const updateCall = mockDb.execute.mock.calls[0]!
@@ -142,7 +151,8 @@ describe('addUTXO', () => {
 
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 50, rowsAffected: 1 })
 
-    await addUTXO(baseUtxo)
+    const result = await addUTXO(baseUtxo)
+    expect(result.ok).toBe(true)
     // The 9th param (accountId) should be 1
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO utxos'),
@@ -182,8 +192,22 @@ describe('addUTXO', () => {
       .mockResolvedValueOnce({ lastInsertId: 70, rowsAffected: 1 })
       .mockRejectedValueOnce(new Error('UNIQUE constraint failed'))
 
-    // Should not throw
-    await expect(addUTXO({ ...baseUtxo, tags: ['dup'] }, 1)).resolves.toBe(70)
+    // Should return ok (duplicate tags are swallowed internally)
+    const result = await addUTXO({ ...baseUtxo, tags: ['dup'] }, 1)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(70)
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.select
+      .mockResolvedValueOnce([]) // ensureColumn probe
+      .mockRejectedValueOnce(new Error('DB connection lost'))
+
+    const result = await addUTXO(baseUtxo)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.message).toContain('DB connection lost')
   })
 })
 
@@ -198,8 +222,10 @@ describe('getSpendableUTXOs', () => {
       ])
 
     const result = await getSpendableUTXOs()
-    expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({ txid: 'tx1', satoshis: 1000, spendable: true })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toHaveLength(1)
+    expect(result.value[0]).toMatchObject({ txid: 'tx1', satoshis: 1000, spendable: true })
   })
 
   it('filters by accountId when provided', async () => {
@@ -219,7 +245,9 @@ describe('getSpendableUTXOs', () => {
       .mockResolvedValueOnce([])
 
     const result = await getSpendableUTXOs()
-    expect(result).toEqual([])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toEqual([])
   })
 
   it('handles null address gracefully', async () => {
@@ -230,7 +258,20 @@ describe('getSpendableUTXOs', () => {
       ])
 
     const result = await getSpendableUTXOs()
-    expect(result[0]!.address).toBe('')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value[0]!.address).toBe('')
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.select
+      .mockResolvedValueOnce([]) // ensureColumn probe
+      .mockRejectedValueOnce(new Error('Query failed'))
+
+    const result = await getSpendableUTXOs()
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.message).toContain('Query failed')
   })
 })
 
@@ -247,6 +288,17 @@ describe('getSpendableUTXOsByAddress', () => {
     expect(call[0]).toContain('address = $1')
     expect(call[1]).toEqual(['1MyAddr'])
   })
+
+  it('returns ok with empty array when no UTXOs', async () => {
+    mockDb.select
+      .mockResolvedValueOnce([]) // ensureColumn probe
+      .mockResolvedValueOnce([])
+
+    const result = await getSpendableUTXOsByAddress('1Addr')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toEqual([])
+  })
 })
 
 // ---------- markUTXOSpent ----------
@@ -255,7 +307,8 @@ describe('markUTXOSpent', () => {
   it('marks a UTXO as spent without accountId', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    await markUTXOSpent('txA', 0, 'spendTx1')
+    const result = await markUTXOSpent('txA', 0, 'spendTx1')
+    expect(result.ok).toBe(true)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE utxos SET spent_at'),
       expect.arrayContaining(['spendTx1', 'spent', 'txA', 0])
@@ -265,10 +318,20 @@ describe('markUTXOSpent', () => {
   it('scopes by accountId when provided', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    await markUTXOSpent('txB', 1, 'spendTx2', 3)
+    const result = await markUTXOSpent('txB', 1, 'spendTx2', 3)
+    expect(result.ok).toBe(true)
     const call = mockDb.execute.mock.calls[0]!
     expect(call[0]).toContain('account_id = $6')
     expect(call[1]).toContain(3)
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.execute.mockRejectedValueOnce(new Error('DB locked'))
+
+    const result = await markUTXOSpent('txC', 0, 'spendTx3')
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.message).toContain('DB locked')
   })
 })
 
@@ -279,14 +342,18 @@ describe('getUtxoByOutpoint', () => {
     mockDb.select.mockResolvedValueOnce([{ satoshis: 2500 }])
 
     const result = await getUtxoByOutpoint('txC', 0)
-    expect(result).toEqual({ satoshis: 2500 })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toEqual({ satoshis: 2500 })
   })
 
   it('returns null when not found', async () => {
     mockDb.select.mockResolvedValueOnce([])
 
     const result = await getUtxoByOutpoint('txD', 1)
-    expect(result).toBeNull()
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBeNull()
   })
 
   it('includes accountId in query when provided', async () => {
@@ -296,6 +363,15 @@ describe('getUtxoByOutpoint', () => {
     const call = mockDb.select.mock.calls[0]!
     expect(call[0]).toContain('account_id = $3')
     expect(call[1]).toEqual(['txE', 0, 7])
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.select.mockRejectedValueOnce(new Error('Connection error'))
+
+    const result = await getUtxoByOutpoint('txF', 0)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.message).toContain('Connection error')
   })
 })
 
@@ -308,7 +384,9 @@ describe('getBalanceFromDB', () => {
       .mockResolvedValueOnce([{ total: 15000 }])
 
     const result = await getBalanceFromDB()
-    expect(result).toBe(15000)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(15000)
   })
 
   it('returns 0 when total is null', async () => {
@@ -317,7 +395,9 @@ describe('getBalanceFromDB', () => {
       .mockResolvedValueOnce([{ total: null }])
 
     const result = await getBalanceFromDB()
-    expect(result).toBe(0)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(0)
   })
 
   it('filters by basket', async () => {
@@ -326,7 +406,9 @@ describe('getBalanceFromDB', () => {
       .mockResolvedValueOnce([{ total: 3000 }])
 
     const result = await getBalanceFromDB('derived')
-    expect(result).toBe(3000)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(3000)
     const call = mockDb.select.mock.calls[1]!
     expect(call[0]).toContain('basket = $1')
   })
@@ -349,7 +431,20 @@ describe('getBalanceFromDB', () => {
       .mockResolvedValueOnce([])
 
     const result = await getBalanceFromDB()
-    expect(result).toBe(0)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(0)
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.select
+      .mockResolvedValueOnce([]) // ensureColumn probe
+      .mockRejectedValueOnce(new Error('DB unavailable'))
+
+    const result = await getBalanceFromDB()
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.message).toContain('DB unavailable')
   })
 })
 
@@ -364,8 +459,10 @@ describe('getUTXOsByBasket', () => {
       .mockResolvedValueOnce([{ tag: 'important' }]) // tags for utxo 1
 
     const result = await getUTXOsByBasket('derived')
-    expect(result).toHaveLength(1)
-    expect(result[0]!.tags).toEqual(['important'])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toHaveLength(1)
+    expect(result.value[0]!.tags).toEqual(['important'])
   })
 
   it('applies spendable filter when spendableOnly is true', async () => {
@@ -393,6 +490,15 @@ describe('getUTXOsByBasket', () => {
     expect(call[0]).toContain('account_id = $2')
     expect(call[1]).toEqual(['default', 4])
   })
+
+  it('returns err when database throws', async () => {
+    mockDb.select.mockRejectedValueOnce(new Error('Select failed'))
+
+    const result = await getUTXOsByBasket('default')
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.message).toContain('Select failed')
+  })
 })
 
 // ---------- markUtxosPendingSpend ----------
@@ -402,16 +508,27 @@ describe('markUtxosPendingSpend', () => {
     mockDb.select.mockResolvedValueOnce([]) // ensureColumn probe
     mockDb.execute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 })
 
-    await markUtxosPendingSpend(
+    const result = await markUtxosPendingSpend(
       [{ txid: 'tx1', vout: 0 }, { txid: 'tx2', vout: 1 }],
       'pendingTx'
     )
+    expect(result.ok).toBe(true)
     // One execute per utxo
     expect(mockDb.execute).toHaveBeenCalledTimes(2)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining("spending_status = 'pending'"),
       expect.arrayContaining(['pendingTx', 'tx1', 0])
     )
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.select.mockResolvedValueOnce([]) // ensureColumn probe
+    mockDb.execute.mockRejectedValueOnce(new Error('Execute failed'))
+
+    const result = await markUtxosPendingSpend([{ txid: 'tx1', vout: 0 }], 'pendingTx')
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error.message).toContain('Execute failed')
   })
 })
 
@@ -421,11 +538,19 @@ describe('confirmUtxosSpent', () => {
   it('confirms UTXOs as spent', async () => {
     mockDb.execute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 })
 
-    await confirmUtxosSpent([{ txid: 'tx1', vout: 0 }], 'spendTx')
+    const result = await confirmUtxosSpent([{ txid: 'tx1', vout: 0 }], 'spendTx')
+    expect(result.ok).toBe(true)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining("spending_status = 'spent'"),
       expect.arrayContaining(['spendTx', 'tx1', 0])
     )
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.execute.mockRejectedValueOnce(new Error('Confirm failed'))
+
+    const result = await confirmUtxosSpent([{ txid: 'tx1', vout: 0 }], 'spendTx')
+    expect(result.ok).toBe(false)
   })
 })
 
@@ -435,11 +560,19 @@ describe('rollbackPendingSpend', () => {
   it('resets pending UTXOs to unspent', async () => {
     mockDb.execute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 })
 
-    await rollbackPendingSpend([{ txid: 'tx1', vout: 0 }])
+    const result = await rollbackPendingSpend([{ txid: 'tx1', vout: 0 }])
+    expect(result.ok).toBe(true)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining("spending_status = 'unspent'"),
       expect.arrayContaining(['tx1', 0])
     )
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.execute.mockRejectedValueOnce(new Error('Rollback failed'))
+
+    const result = await rollbackPendingSpend([{ txid: 'tx1', vout: 0 }])
+    expect(result.ok).toBe(false)
   })
 })
 
@@ -454,8 +587,10 @@ describe('getPendingUtxos', () => {
       ])
 
     const result = await getPendingUtxos(300000)
-    expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({ txid: 'tx1', pendingTxid: 'pt1' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toHaveLength(1)
+    expect(result.value[0]).toMatchObject({ txid: 'tx1', pendingTxid: 'pt1' })
   })
 
   it('returns empty array when no stuck UTXOs', async () => {
@@ -464,7 +599,18 @@ describe('getPendingUtxos', () => {
       .mockResolvedValueOnce([])
 
     const result = await getPendingUtxos()
-    expect(result).toEqual([])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toEqual([])
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.select
+      .mockResolvedValueOnce([]) // ensureColumn probe
+      .mockRejectedValueOnce(new Error('Query failed'))
+
+    const result = await getPendingUtxos()
+    expect(result.ok).toBe(false)
   })
 })
 
@@ -474,7 +620,8 @@ describe('toggleUtxoFrozen', () => {
   it('sets spendable=0 when frozen=true', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    await toggleUtxoFrozen('tx1', 0, true)
+    const result = await toggleUtxoFrozen('tx1', 0, true)
+    expect(result.ok).toBe(true)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('spendable = $1'),
       expect.arrayContaining([0, 'tx1', 0])
@@ -484,7 +631,8 @@ describe('toggleUtxoFrozen', () => {
   it('sets spendable=1 when frozen=false', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    await toggleUtxoFrozen('tx1', 0, false)
+    const result = await toggleUtxoFrozen('tx1', 0, false)
+    expect(result.ok).toBe(true)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('spendable = $1'),
       expect.arrayContaining([1, 'tx1', 0])
@@ -494,10 +642,18 @@ describe('toggleUtxoFrozen', () => {
   it('scopes by accountId when provided', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    await toggleUtxoFrozen('tx1', 0, true, 5)
+    const result = await toggleUtxoFrozen('tx1', 0, true, 5)
+    expect(result.ok).toBe(true)
     const call = mockDb.execute.mock.calls[0]!
     expect(call[0]).toContain('account_id = $5')
     expect(call[1]).toContain(5)
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.execute.mockRejectedValueOnce(new Error('Freeze failed'))
+
+    const result = await toggleUtxoFrozen('tx1', 0, true)
+    expect(result.ok).toBe(false)
   })
 })
 
@@ -507,8 +663,10 @@ describe('repairUTXOs', () => {
   it('returns count of repaired UTXOs', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 3 })
 
-    const fixed = await repairUTXOs()
-    expect(fixed).toBe(3)
+    const result = await repairUTXOs()
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(3)
   })
 
   it('scopes repair to accountId', async () => {
@@ -523,8 +681,17 @@ describe('repairUTXOs', () => {
   it('returns 0 when nothing to repair', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 0 })
 
-    const fixed = await repairUTXOs()
-    expect(fixed).toBe(0)
+    const result = await repairUTXOs()
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(0)
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.execute.mockRejectedValueOnce(new Error('Update failed'))
+
+    const result = await repairUTXOs()
+    expect(result.ok).toBe(false)
   })
 })
 
@@ -534,11 +701,19 @@ describe('clearUtxosForAccount', () => {
   it('deletes all UTXOs for specified account', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 5 })
 
-    await clearUtxosForAccount(3)
+    const result = await clearUtxosForAccount(3)
+    expect(result.ok).toBe(true)
     expect(mockDb.execute).toHaveBeenCalledWith(
       'DELETE FROM utxos WHERE account_id = $1',
       [3]
     )
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.execute.mockRejectedValueOnce(new Error('Delete failed'))
+
+    const result = await clearUtxosForAccount(3)
+    expect(result.ok).toBe(false)
   })
 })
 
@@ -553,8 +728,10 @@ describe('getAllUTXOs', () => {
       .mockResolvedValueOnce([{ tag: 'test' }])
 
     const result = await getAllUTXOs()
-    expect(result).toHaveLength(1)
-    expect(result[0]!.tags).toEqual(['test'])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toHaveLength(1)
+    expect(result.value[0]!.tags).toEqual(['test'])
   })
 
   it('filters by accountId when provided', async () => {
@@ -575,8 +752,17 @@ describe('getAllUTXOs', () => {
       .mockResolvedValueOnce([]) // no tags
 
     const result = await getAllUTXOs()
-    expect(result[0]!.address).toBeUndefined()
-    expect(result[0]!.spendable).toBe(false)
-    expect(result[0]!.tags).toEqual([])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value[0]!.address).toBeUndefined()
+    expect(result.value[0]!.spendable).toBe(false)
+    expect(result.value[0]!.tags).toEqual([])
+  })
+
+  it('returns err when database throws', async () => {
+    mockDb.select.mockRejectedValueOnce(new Error('Read failed'))
+
+    const result = await getAllUTXOs()
+    expect(result.ok).toBe(false)
   })
 })

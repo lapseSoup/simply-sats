@@ -159,7 +159,10 @@ export function SyncProvider({ children }: SyncProviderProps) {
       if (forceReset && activeAccountId) {
         syncLogger.info('Force reset: clearing UTXOs for account', { accountId: activeAccountId })
         const { clearUtxosForAccount } = await import('../services/database')
-        await clearUtxosForAccount(activeAccountId)
+        const clearResult = await clearUtxosForAccount(activeAccountId)
+        if (!clearResult.ok) {
+          syncLogger.warn('Failed to clear UTXOs for account', { accountId: activeAccountId, error: clearResult.error.message })
+        }
       }
 
       syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })

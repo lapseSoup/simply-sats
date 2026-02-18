@@ -267,7 +267,7 @@ describe('BRC-100 Actions', () => {
 
     it('should fallback to database balance on resolver error', async () => {
       mockResolveListOutputs.mockRejectedValue(new Error('Resolver failed'))
-      mockGetBalanceFromDB.mockResolvedValue(10000)
+      mockGetBalanceFromDB.mockResolvedValue({ ok: true, value: 10000 })
 
       const response = await handleBRC100Request(
         { id: 'req3b', type: 'listOutputs', params: {} },
@@ -283,7 +283,7 @@ describe('BRC-100 Actions', () => {
 
     it('should return empty outputs when both resolver and DB fail', async () => {
       mockResolveListOutputs.mockRejectedValue(new Error('Resolver failed'))
-      mockGetBalanceFromDB.mockRejectedValue(new Error('DB failed'))
+      mockGetBalanceFromDB.mockResolvedValue({ ok: false, error: { message: 'DB failed' } })
 
       const response = await handleBRC100Request(
         { id: 'req3c', type: 'listOutputs', params: {} },

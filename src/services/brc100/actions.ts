@@ -178,7 +178,12 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
         const unlockBlock = currentHeight + blocks
 
         // Get spendable UTXOs from database and convert to wallet UTXO format
-        const dbUtxos = await getSpendableUTXOs()
+        const dbUtxosResult = await getSpendableUTXOs()
+        if (!dbUtxosResult.ok) {
+          response.error = { code: -32000, message: `Database error: ${dbUtxosResult.error.message}` }
+          break
+        }
+        const dbUtxos = dbUtxosResult.value
         if (dbUtxos.length === 0) {
           response.error = { code: -32000, message: 'No spendable UTXOs available' }
           break
@@ -501,15 +506,17 @@ export async function handleBRC100Request(
             } catch (error) {
               brc100Logger.error('listOutputs error', error)
               // Fallback to balance from database
-              try {
-                const balance = await getBalanceFromDB(params.basket || undefined)
-                response.result = {
-                  outputs: [{ satoshis: balance, spendable: true }],
-                  totalOutputs: balance > 0 ? 1 : 0
+              {
+                const balanceResult = await getBalanceFromDB(params.basket || undefined)
+                if (balanceResult.ok) {
+                  response.result = {
+                    outputs: [{ satoshis: balanceResult.value, spendable: true }],
+                    totalOutputs: balanceResult.value > 0 ? 1 : 0
+                  }
+                } else {
+                  brc100Logger.error('getBalanceFromDB fallback also failed', balanceResult.error)
+                  response.result = { outputs: [], totalOutputs: 0 }
                 }
-              } catch (dbError) {
-                brc100Logger.error('getBalanceFromDB fallback also failed', dbError)
-                response.result = { outputs: [], totalOutputs: 0 }
               }
             }
             break
@@ -846,7 +853,10 @@ async function buildAndBroadcastAction(
 
     // Mark spent UTXOs
     for (const utxo of inputsToUse) {
-      await markUTXOSpent(utxo.txid, utxo.vout, txid)
+      const markResult = await markUTXOSpent(utxo.txid, utxo.vout, txid)
+      if (!markResult.ok) {
+        brc100Logger.warn('Failed to mark UTXO spent', { txid: utxo.txid, vout: utxo.vout, error: markResult.error.message })
+      }
     }
 
     // Add new outputs to database if they belong to us
@@ -866,7 +876,7 @@ async function buildAndBroadcastAction(
           if (!tags.includes('ordinal')) tags.push('ordinal')
           tags.push(`content-type:${contentType}`)
 
-          await addUTXO({
+          const addInscrResult = await addUTXO({
             txid,
             vout: i,
             satoshis: output.satoshis,
@@ -876,7 +886,11 @@ async function buildAndBroadcastAction(
             createdAt: Date.now(),
             tags
           })
-          brc100Logger.info('Inscription added to ordinals basket', { outpoint: `${txid}:${i}`, contentType })
+          if (!addInscrResult.ok) {
+            brc100Logger.warn('Failed to add inscription UTXO to ordinals basket', { outpoint: `${txid}:${i}`, error: addInscrResult.error.message })
+          } else {
+            brc100Logger.info('Inscription added to ordinals basket', { outpoint: `${txid}:${i}`, contentType })
+          }
         }
       }
     }
@@ -885,7 +899,7 @@ async function buildAndBroadcastAction(
     // Note: BSV has no dust limit - all change amounts are valid
     if (change > 0) {
       const changeVout = actionRequest.outputs.length
-      await addUTXO({
+      const addChangeResult = await addUTXO({
         txid,
         vout: changeVout,
         satoshis: change,
@@ -895,6 +909,9 @@ async function buildAndBroadcastAction(
         createdAt: Date.now(),
         tags: ['change']
       })
+      if (!addChangeResult.ok) {
+        brc100Logger.warn('Failed to add change UTXO', { txid, changeVout, error: addChangeResult.error.message })
+      }
     }
 
     brc100Logger.info('Transaction tracked in database', { txid })

@@ -77,7 +77,7 @@ async function persistLocks(
 ): Promise<void> {
   for (const lock of mergedLocks) {
     try {
-      const utxoId = await addUTXO({
+      const addResult = await addUTXO({
         txid: lock.txid,
         vout: lock.vout,
         satoshis: lock.satoshis,
@@ -86,6 +86,11 @@ async function persistLocks(
         spendable: false,
         createdAt: lock.createdAt
       }, accountId)
+      if (!addResult.ok) {
+        // Best-effort — rethrow so the outer catch handles it
+        throw new Error(addResult.error.message)
+      }
+      const utxoId = addResult.value
       await addLockIfNotExists({
         utxoId,
         unlockBlock: lock.unlockBlock,

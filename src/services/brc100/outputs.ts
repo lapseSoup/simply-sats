@@ -79,7 +79,11 @@ export async function resolveListOutputs(params: {
   else if (basket === 'identity') dbBasket = BASKETS.IDENTITY
   else if (!basket || basket === 'default') dbBasket = BASKETS.DEFAULT
 
-  const utxos = await getUTXOsByBasket(dbBasket, !includeSpent)
+  const utxosByBasketResult = await getUTXOsByBasket(dbBasket, !includeSpent)
+  const utxos = utxosByBasketResult.ok ? utxosByBasketResult.value : []
+  if (!utxosByBasketResult.ok) {
+    brc100Logger.warn('Failed to query UTXOs by basket', { basket: dbBasket, error: utxosByBasketResult.error.message })
+  }
 
   let filteredUtxos = utxos
   if (includeTags.length > 0) {
@@ -112,7 +116,8 @@ export async function discoverByIdentityKey(args: {
 }> {
   // First check local database
   try {
-    const utxos = await getUTXOsByBasket(BASKETS.IDENTITY, true)
+    const identityResult = await getUTXOsByBasket(BASKETS.IDENTITY, true)
+    const utxos = identityResult.ok ? identityResult.value : []
     const localOutputs = utxos.map(u => ({
       outpoint: `${u.txid}.${u.vout}`,
       satoshis: u.satoshis,
@@ -162,7 +167,8 @@ export async function discoverByAttributes(args: {
 }> {
   // Search across all baskets for matching tags
   try {
-    const allUtxos = await getSpendableUTXOs()
+    const allUtxosResult = await getSpendableUTXOs()
+    const allUtxos = allUtxosResult.ok ? allUtxosResult.value : []
     const matchingUtxos = allUtxos.filter(u => {
       if (!u.tags) return false
       // Check if any attribute matches a tag

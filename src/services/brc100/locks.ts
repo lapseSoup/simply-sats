@@ -155,7 +155,7 @@ export async function createLockTransaction(
   const txid = tx.id('hex')
 
   // Save UTXO and lock to database BEFORE broadcast so the record is never missing
-  const utxoId = await addUTXO({
+  const addLockResult = await addUTXO({
     txid,
     vout: 0,
     satoshis,
@@ -165,6 +165,10 @@ export async function createLockTransaction(
     createdAt: Date.now(),
     tags: ['lock', 'wrootz']
   })
+  if (!addLockResult.ok) {
+    throw new Error(`Failed to save lock UTXO to database: ${addLockResult.error.message}`)
+  }
+  const utxoId = addLockResult.value
 
   await saveLockToDatabase(utxoId, unlockBlock, ordinalOrigin)
 
