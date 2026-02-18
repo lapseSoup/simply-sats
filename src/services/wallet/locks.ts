@@ -219,7 +219,15 @@ export async function lockBSV(
   const pendingTxid = tx.id('hex')
 
   // Mark pending → broadcast → rollback on failure (shared pattern)
-  const txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
+  let txid: string
+  try {
+    txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
+  } catch (broadcastError) {
+    return err(new AppError(
+      broadcastError instanceof Error ? broadcastError.message : 'Broadcast failed',
+      ErrorCodes.BROADCAST_FAILED
+    ))
+  }
 
   const lockedUtxo: LockedUTXO = {
     txid,

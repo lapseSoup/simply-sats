@@ -346,14 +346,16 @@ describe('locks service', () => {
       expect(result.value.txid).toBe('exec-broadcast-txid-001')
     })
 
-    it('should handle broadcast failure by propagating error', async () => {
+    it('should handle broadcast failure by returning err Result', async () => {
       vi.mocked(executeBroadcast).mockRejectedValueOnce(new Error('Broadcast failed'))
 
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      // executeBroadcast throws — propagates as rejected promise
-      await expect(lockBSV(10_000, 900_000, utxos))
-        .rejects.toThrow('Broadcast failed')
+      const result = await lockBSV(10_000, 900_000, utxos)
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error.message).toContain('Broadcast failed')
+      }
     })
 
     it('should add change UTXO to database when change > 0', async () => {
