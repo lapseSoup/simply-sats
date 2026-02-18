@@ -13,7 +13,6 @@ vi.mock('../sync', () => ({
 describe('buildInscriptionTx', () => {
   it('throws if no funding UTXOs provided', async () => {
     await expect(buildInscriptionTx({
-      ordWif: 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy7Y',
       paymentWif: 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy7Y',
       paymentUtxos: [],
       content: new Uint8Array([1, 2, 3]),

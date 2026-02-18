@@ -69,8 +69,8 @@ export function InscribeModal({ onClose }: InscribeModalProps) {
       const buffer = await selectedFile.arrayBuffer()
       const content = new Uint8Array(buffer)
 
-      // Filter to payment UTXOs (wallet address, not ordinal address)
-      const paymentUtxos = utxos.filter(u => u.address === wallet.walletAddress)
+      // UTXOs from context are already wallet-address UTXOs (payment UTXOs)
+      const paymentUtxos = utxos
 
       if (paymentUtxos.length === 0) {
         throw new Error('No payment UTXOs available. Your wallet needs a balance to pay inscription fees.')

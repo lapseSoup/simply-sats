@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { Globe } from 'lucide-react'
-import { getNetwork, setNetwork, NetworkType } from '../../../services/config'
+import { getNetwork, setNetwork } from '../../../services/config'
+import type { NetworkType } from '../../../services/config'
 import { useUI } from '../../../contexts/UIContext'
 
 export function SettingsNetwork() {

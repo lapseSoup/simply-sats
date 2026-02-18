@@ -11,10 +11,10 @@ import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import {
   getUTXOs,
   sendBSVMultiKey,
-  sendBSVMultiOutput,
   transferOrdinal,
   getWifForOperation
 } from '../services/wallet'
+import { sendBSVMultiOutput } from '../services/wallet/transactions'
 import { listOrdinal } from '../services/wallet/marketplace'
 import {
   getDerivedAddresses
