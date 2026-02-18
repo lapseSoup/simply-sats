@@ -36,9 +36,8 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
   const [currentInvoiceIndex, setCurrentInvoiceIndex] = useState<number>(1)
   const [localContacts, setLocalContacts] = useState(contacts)
 
-  if (!wallet) return null
-
   const deriveReceiveAddress = async (senderPubKey: string, invoiceIndex: number): Promise<string> => {
+    if (!wallet) return ''
     try {
       const { getWifForOperation } = await import('../../services/wallet')
       const identityWif = await getWifForOperation('identity', 'deriveReceiveAddress', wallet)
@@ -58,6 +57,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
     invoiceIndex: number,
     label?: string
   ): Promise<boolean> => {
+    if (!wallet) return false
     try {
       const { getWifForOperation } = await import('../../services/wallet')
       const identityWif = await getWifForOperation('identity', 'saveDerivedAddress', wallet)
@@ -144,6 +144,8 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       showToast('Address saved & copied!')
     }
   }
+
+  if (!wallet) return null
 
   return (
     <Modal onClose={onClose} title="Receive" className="send-modal">
