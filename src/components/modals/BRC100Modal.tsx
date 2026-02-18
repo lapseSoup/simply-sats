@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { feeFromBytes } from '../../adapters/walletAdapter'
+import { feeFromBytes, DEFAULT_FEE_RATE } from '../../adapters/walletAdapter'
 import type { BRC100Request, CreateActionRequest } from '../../services/brc100'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useKeyboardNav } from '../../hooks/useKeyboardNav'
@@ -144,7 +144,7 @@ export function BRC100Modal({ request, onApprove, onReject }: BRC100ModalProps) 
       )
       const numInputs = Math.ceil((outputAmount + 200) / 10000) || 1
       const txSize = 10 + numInputs * 148 + numOutputs * 34
-      const fee = feeFromBytes(txSize)
+      const fee = feeFromBytes(txSize, DEFAULT_FEE_RATE)
 
       txDetails = {
         outputCount: actionParams.outputs.length,
