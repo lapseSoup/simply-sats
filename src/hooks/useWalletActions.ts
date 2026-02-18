@@ -77,7 +77,12 @@ export function useWalletActions({
       }
     }
     try {
-      const keys = await createWallet()
+      const result = await createWallet()
+      if (!result.ok) {
+        walletLogger.error('Failed to create wallet', result.error)
+        return null
+      }
+      const keys = result.value
       if (password !== null) {
         await saveWallet(keys, password)
       } else {
@@ -93,8 +98,8 @@ export function useWalletActions({
       audit.walletCreated()
       // Return mnemonic for display during onboarding
       return keys.mnemonic || null
-    } catch (err) {
-      walletLogger.error('Failed to create wallet', err)
+    } catch (e) {
+      walletLogger.error('Failed to create wallet', e)
       return null
     }
   }, [setWallet, setSessionPassword, refreshAccounts])
@@ -107,7 +112,12 @@ export function useWalletActions({
       }
     }
     try {
-      const keys = await restoreWallet(mnemonic.trim())
+      const result = await restoreWallet(mnemonic.trim())
+      if (!result.ok) {
+        walletLogger.error('Failed to restore wallet', result.error)
+        return false
+      }
+      const keys = result.value
       if (password !== null) {
         await saveWallet(keys, password)
       } else {
@@ -125,8 +135,8 @@ export function useWalletActions({
       pendingDiscoveryRef.current = { mnemonic: mnemonic.trim(), password, excludeAccountId: activeAcc?.id }
       audit.walletRestored()
       return true
-    } catch (err) {
-      walletLogger.error('Failed to restore wallet', err)
+    } catch (e) {
+      walletLogger.error('Failed to restore wallet', e)
       return false
     }
   }, [setWallet, setSessionPassword, refreshAccounts])
@@ -139,7 +149,12 @@ export function useWalletActions({
       }
     }
     try {
-      const keys = await importFromJSON(json)
+      const result = await importFromJSON(json)
+      if (!result.ok) {
+        walletLogger.error('Failed to import JSON', result.error)
+        return false
+      }
+      const keys = result.value
       if (password !== null) {
         await saveWallet(keys, password)
       } else {
@@ -152,8 +167,8 @@ export function useWalletActions({
       setSessionPassword(sessionPwd)
       setModuleSessionPassword(sessionPwd)
       return true
-    } catch (err) {
-      walletLogger.error('Failed to import JSON', err)
+    } catch (e) {
+      walletLogger.error('Failed to import JSON', e)
       return false
     }
   }, [setWallet, setSessionPassword, refreshAccounts])
@@ -178,20 +193,20 @@ export function useWalletActions({
     // 3. Clean up persistent storage (errors must not block UI reset)
     try {
       await clearWallet()
-    } catch (err) {
-      walletLogger.error('Failed to clear wallet storage during delete', err)
+    } catch (e) {
+      walletLogger.error('Failed to clear wallet storage during delete', e)
     }
 
     try {
       await clearDatabase()
-    } catch (err) {
-      walletLogger.error('Failed to clear database during delete', err)
+    } catch (e) {
+      walletLogger.error('Failed to clear database during delete', e)
     }
 
     try {
       clearAllSimplySatsStorage()
-    } catch (err) {
-      walletLogger.error('Failed to clear localStorage during delete', err)
+    } catch (e) {
+      walletLogger.error('Failed to clear localStorage during delete', e)
     }
 
     walletLogger.info('Wallet deleted and all data cleared')

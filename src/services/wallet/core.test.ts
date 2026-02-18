@@ -131,8 +131,11 @@ describe('Wallet Core', () => {
     it('should generate mnemonic and return wallet keys', async () => {
       mockGenerateMnemonic.mockReturnValue(VALID_MNEMONIC)
 
-      const keys = await createWallet()
+      const result = await createWallet()
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.mnemonic).toBe(VALID_MNEMONIC)
       expect(keys.walletAddress).toBe('1WalletAddr')
       expect(mockGenerateMnemonic).toHaveBeenCalledOnce()
@@ -146,8 +149,11 @@ describe('Wallet Core', () => {
 
   describe('restoreWallet', () => {
     it('should restore wallet from valid mnemonic', async () => {
-      const keys = await restoreWallet(VALID_MNEMONIC)
+      const result = await restoreWallet(VALID_MNEMONIC)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletAddress).toBe('1WalletAddr')
       expect(mockValidateMnemonic).toHaveBeenCalledWith(VALID_MNEMONIC)
       expect(mockDeriveWalletKeys).toHaveBeenCalledWith(VALID_MNEMONIC)
@@ -159,8 +165,10 @@ describe('Wallet Core', () => {
         error: 'Invalid checksum',
       })
 
-      await expect(restoreWallet('bad mnemonic phrase'))
-        .rejects.toThrow('Invalid checksum')
+      const result = await restoreWallet('bad mnemonic phrase')
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid checksum')
     })
 
     it('should throw when validation returns no normalized mnemonic', async () => {
@@ -169,15 +177,17 @@ describe('Wallet Core', () => {
         normalizedMnemonic: undefined,
       })
 
-      await expect(restoreWallet(VALID_MNEMONIC))
-        .rejects.toThrow()
+      const result = await restoreWallet(VALID_MNEMONIC)
+      expect(result.ok).toBe(false)
     })
 
     it('should throw when key derivation fails', async () => {
       mockDeriveWalletKeys.mockRejectedValue(new Error('Derivation error'))
 
-      await expect(restoreWallet(VALID_MNEMONIC))
-        .rejects.toThrow('Failed to derive wallet keys from mnemonic')
+      const result = await restoreWallet(VALID_MNEMONIC)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Failed to derive wallet keys from mnemonic')
     })
   })
 
@@ -189,8 +199,11 @@ describe('Wallet Core', () => {
     it('should import from Shaullet backup with mnemonic', async () => {
       const backup = JSON.stringify({ mnemonic: VALID_MNEMONIC })
 
-      const keys = await importFromShaullet(backup)
+      const result = await importFromShaullet(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletAddress).toBe('1WalletAddr')
       expect(mockDeriveWalletKeys).toHaveBeenCalledWith(VALID_MNEMONIC)
     })
@@ -198,23 +211,30 @@ describe('Wallet Core', () => {
     it('should import from Shaullet backup with WIF', async () => {
       const backup = JSON.stringify({ keys: { wif: 'L1testWif' } })
 
-      const keys = await importFromShaullet(backup)
+      const result = await importFromShaullet(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletWif).toBe('L1importedWif')
       expect(keys.mnemonic).toBe('')
       expect(mockKeysFromWif).toHaveBeenCalledWith('L1testWif')
     })
 
     it('should throw on invalid JSON', async () => {
-      await expect(importFromShaullet('not json'))
-        .rejects.toThrow('Invalid JSON format')
+      const result = await importFromShaullet('not json')
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid JSON format')
     })
 
     it('should throw on invalid backup format (no mnemonic or wif)', async () => {
       const backup = JSON.stringify({ foo: 'bar' })
 
-      await expect(importFromShaullet(backup))
-        .rejects.toThrow('Invalid Shaullet backup format')
+      const result = await importFromShaullet(backup)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid Shaullet backup format')
     })
   })
 
@@ -226,8 +246,11 @@ describe('Wallet Core', () => {
     it('should import from 1Sat backup with mnemonic', async () => {
       const backup = JSON.stringify({ mnemonic: VALID_MNEMONIC })
 
-      const keys = await importFrom1SatOrdinals(backup)
+      const result = await importFrom1SatOrdinals(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletAddress).toBe('1WalletAddr')
     })
 
@@ -238,8 +261,11 @@ describe('Wallet Core', () => {
 
       const backup = JSON.stringify({ payPk: 'payWif', ordPk: 'ordWif' })
 
-      const keys = await importFrom1SatOrdinals(backup)
+      const result = await importFrom1SatOrdinals(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletWif).toBe('payWif')
       expect(keys.ordWif).toBe('ordWif')
       expect(keys.mnemonic).toBe('')
@@ -251,22 +277,29 @@ describe('Wallet Core', () => {
 
       const backup = JSON.stringify({ ordPk: 'ordWif' })
 
-      const keys = await importFrom1SatOrdinals(backup)
+      const result = await importFrom1SatOrdinals(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletWif).toBe('ordWif')
       expect(keys.ordWif).toBe('ordWif')
     })
 
     it('should throw on invalid JSON', async () => {
-      await expect(importFrom1SatOrdinals('not json'))
-        .rejects.toThrow('Invalid JSON format')
+      const result = await importFrom1SatOrdinals('not json')
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid JSON format')
     })
 
     it('should throw on invalid 1Sat backup format', async () => {
       const backup = JSON.stringify({ foo: 'bar' })
 
-      await expect(importFrom1SatOrdinals(backup))
-        .rejects.toThrow('Invalid 1Sat Ordinals backup format')
+      const result = await importFrom1SatOrdinals(backup)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid 1Sat Ordinals backup format')
     })
   })
 
@@ -281,37 +314,50 @@ describe('Wallet Core', () => {
 
       const backup = JSON.stringify({ ordPk: 'ordWif' })
 
-      const keys = await importFromJSON(backup)
+      const result = await importFromJSON(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletWif).toBe('ordWif')
     })
 
     it('should detect and import Shaullet format (has mnemonic)', async () => {
       const backup = JSON.stringify({ mnemonic: VALID_MNEMONIC })
 
-      const keys = await importFromJSON(backup)
+      const result = await importFromJSON(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletAddress).toBe('1WalletAddr')
     })
 
     it('should detect and import Shaullet format (has keys object)', async () => {
       const backup = JSON.stringify({ keys: { wif: 'L1testWif' } })
 
-      const keys = await importFromJSON(backup)
+      const result = await importFromJSON(backup)
 
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const keys = result.value
       expect(keys.walletWif).toBe('L1importedWif')
     })
 
     it('should throw on unknown format', async () => {
       const backup = JSON.stringify({ unknown: 'format' })
 
-      await expect(importFromJSON(backup))
-        .rejects.toThrow('Unknown backup format')
+      const result = await importFromJSON(backup)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Unknown backup format')
     })
 
     it('should throw on invalid JSON', async () => {
-      await expect(importFromJSON('not json'))
-        .rejects.toThrow('Invalid JSON format')
+      const result = await importFromJSON('not json')
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toContain('Invalid JSON format')
     })
   })
 

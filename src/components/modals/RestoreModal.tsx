@@ -142,7 +142,12 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
 
       // Restore wallet from backup with password
       if (backup.wallet.mnemonic) {
-        const keys = await restoreWallet(backup.wallet.mnemonic)
+        const restoreResult = await restoreWallet(backup.wallet.mnemonic)
+        if (!restoreResult.ok) {
+          showToast('Failed to restore wallet: ' + restoreResult.error.message, 'error')
+          return
+        }
+        const keys = restoreResult.value
         if (pwd !== null) {
           await saveWallet(keys, pwd)
         } else {
@@ -156,7 +161,12 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         setSessionPassword(sessionPwd)
         setModuleSessionPassword(sessionPwd)
       } else if (backup.wallet.keys) {
-        const keys = await importFromJSON(JSON.stringify(backup.wallet.keys))
+        const importResult = await importFromJSON(JSON.stringify(backup.wallet.keys))
+        if (!importResult.ok) {
+          showToast('Failed to import wallet: ' + importResult.error.message, 'error')
+          return
+        }
+        const keys = importResult.value
         if (pwd !== null) {
           await saveWallet(keys, pwd)
         } else {
