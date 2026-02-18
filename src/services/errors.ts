@@ -306,4 +306,15 @@ export class DbError extends Error {
     this.code = code
     this.cause = cause
   }
+
+  /**
+   * Convert to AppError, preserving the structured DbError.code in context.
+   * Use this when surfacing repository errors through service/context layers.
+   */
+  toAppError(): AppError {
+    return new AppError(this.message, ErrorCodes.DATABASE_ERROR, {
+      dbCode: this.code,
+      originalError: this.cause instanceof Error ? this.cause.message : String(this.cause ?? '')
+    })
+  }
 }
