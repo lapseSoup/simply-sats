@@ -225,9 +225,9 @@ describe('Transaction Service', () => {
     // Sensible defaults — individual tests override as needed
     mockIsValidBSVAddress.mockReturnValue(true)
     mockInfraBroadcast.mockResolvedValue(MOCK_TXID)
-    mockMarkUtxosPendingSpend.mockResolvedValue(undefined)
-    mockConfirmUtxosSpent.mockResolvedValue(undefined)
-    mockRollbackPendingSpend.mockResolvedValue(undefined)
+    mockMarkUtxosPendingSpend.mockResolvedValue({ ok: true, value: undefined })
+    mockConfirmUtxosSpent.mockResolvedValue({ ok: true, value: undefined })
+    mockRollbackPendingSpend.mockResolvedValue({ ok: true, value: undefined })
     mockRecordSentTransaction.mockResolvedValue(undefined)
     mockAddUTXO.mockResolvedValue(1)
     mockGetDerivedAddresses.mockResolvedValue([])
@@ -288,7 +288,7 @@ describe('Transaction Service', () => {
     })
 
     it('should throw if marking pending fails (before broadcast)', async () => {
-      mockMarkUtxosPendingSpend.mockRejectedValue(new Error('DB lock'))
+      mockMarkUtxosPendingSpend.mockResolvedValue({ ok: false, error: new Error('DB lock') })
 
       await expect(
         executeBroadcast('deadbeef', 'pending-123', outpoints)
@@ -323,7 +323,7 @@ describe('Transaction Service', () => {
 
     it('should still throw broadcast error even if rollback fails', async () => {
       mockInfraBroadcast.mockRejectedValue(new Error('broadcast rejected'))
-      mockRollbackPendingSpend.mockRejectedValue(new Error('rollback DB error'))
+      mockRollbackPendingSpend.mockResolvedValue({ ok: false, error: new Error('rollback DB error') })
 
       await expect(
         executeBroadcast('deadbeef', 'pending-123', outpoints)

@@ -82,17 +82,16 @@ export async function executeBroadcast(
   spentOutpoints: { txid: string; vout: number }[]
 ): Promise<string> {
   // CRITICAL: Mark UTXOs as pending BEFORE broadcast to prevent race conditions
-  try {
-    await markUtxosPendingSpend(spentOutpoints, pendingTxid)
-    walletLogger.debug('Marked UTXOs as pending spend', { txid: pendingTxid })
-  } catch (error) {
-    walletLogger.error('Failed to mark UTXOs as pending', error)
+  const pendingResult = await markUtxosPendingSpend(spentOutpoints, pendingTxid)
+  if (!pendingResult.ok) {
+    walletLogger.error('Failed to mark UTXOs as pending', pendingResult.error)
     throw new AppError(
       'Failed to prepare transaction - UTXOs could not be locked',
       ErrorCodes.DATABASE_ERROR,
-      { pendingTxid, originalError: error instanceof Error ? error.message : String(error) }
+      { pendingTxid, originalError: pendingResult.error.message }
     )
   }
+  walletLogger.debug('Marked UTXOs as pending spend', { txid: pendingTxid })
 
   // Now broadcast the transaction
   try {
@@ -108,15 +107,13 @@ export async function executeBroadcast(
   } catch (broadcastError) {
     // Broadcast failed - rollback the pending status
     walletLogger.error('Broadcast failed, rolling back pending status', broadcastError)
-    try {
-      await rollbackPendingSpend(spentOutpoints)
-      walletLogger.debug('Rolled back pending status for UTXOs')
-    } catch (rollbackError) {
+    const rollbackResult = await rollbackPendingSpend(spentOutpoints)
+    if (!rollbackResult.ok) {
       // Rollback also failed — UTXOs are stuck in "pending spend" state.
       // Surface this as a BROADCAST_SUCCEEDED_DB_FAILED-style error so the
       // UI can warn the user their wallet may show incorrect balances until
       // the next sync (which will clean up the stale pending status).
-      walletLogger.error('CRITICAL: Failed to rollback pending status — UTXOs stuck in pending state', rollbackError, {
+      walletLogger.error('CRITICAL: Failed to rollback pending status — UTXOs stuck in pending state', rollbackResult.error, {
         txid: pendingTxid,
         outpointCount: spentOutpoints.length
       })
@@ -125,12 +122,13 @@ export async function executeBroadcast(
         ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
         {
           broadcastError: broadcastError instanceof Error ? broadcastError.message : String(broadcastError),
-          rollbackError: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          rollbackError: rollbackResult.error.message,
           pendingTxid,
           outpointCount: spentOutpoints.length
         }
       )
     }
+    walletLogger.debug('Rolled back pending status for UTXOs')
     throw AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED)
   }
 }
@@ -155,7 +153,14 @@ async function recordTransactionResult(
   try {
     await withTransaction(async () => {
       await recordSentTransaction(txid, rawTx, description, labels, amount, accountId)
-      await confirmUtxosSpent(spentOutpoints, txid)
+      const confirmResult = await confirmUtxosSpent(spentOutpoints, txid)
+      if (!confirmResult.ok) {
+        throw new AppError(
+          `Failed to confirm UTXOs spent: ${confirmResult.error.message}`,
+          ErrorCodes.DATABASE_ERROR,
+          { txid, originalError: confirmResult.error.message }
+        )
+      }
       // Track change UTXO atomically so balance stays correct until next sync
       // Use final txid (from broadcaster), NOT pendingTxid — broadcaster may return different txid
       if (change > 0) {
@@ -387,7 +392,14 @@ export async function consolidateUtxos(
     try {
       await withTransaction(async () => {
         await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
-        await confirmUtxosSpent(spentOutpoints, txid)
+        const consolidateConfirmResult = await confirmUtxosSpent(spentOutpoints, txid)
+        if (!consolidateConfirmResult.ok) {
+          throw new AppError(
+            `Failed to confirm UTXOs spent during consolidation: ${consolidateConfirmResult.error.message}`,
+            ErrorCodes.DATABASE_ERROR,
+            { txid, originalError: consolidateConfirmResult.error.message }
+          )
+        }
         // Track consolidated UTXO atomically — use final txid from broadcaster
         try {
           await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
