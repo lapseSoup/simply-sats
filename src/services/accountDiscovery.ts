@@ -114,7 +114,11 @@ export async function discoverAccounts(
   let found = 0
   for (const { index, keys } of discovered) {
     try {
-      const accountId = await createAccount(`Account ${index + 1}`, keys, password, true)
+      const createResult = await createAccount(`Account ${index + 1}`, keys, password, true)
+      if (!createResult.ok) {
+        throw createResult.error
+      }
+      const accountId = createResult.value
       await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
       found++
       accountLogger.info('Discovered and synced account', { accountIndex: index, accountId, name: `Account ${index + 1}` })

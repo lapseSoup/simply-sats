@@ -357,11 +357,12 @@ export async function addRecoveredAccount(
 
   walletLogger.info('Adding recovered account', { name: accountName })
 
-  const accountId = await createAccount(accountName, keys, currentPassword)
+  const createResult = await createAccount(accountName, keys, currentPassword)
 
-  if (!accountId) {
-    throw new Error('Failed to create account in database')
+  if (!createResult.ok) {
+    throw new Error(`Failed to create account in database: ${createResult.error.message}`)
   }
+  const accountId = createResult.value
 
   return accountId
 }

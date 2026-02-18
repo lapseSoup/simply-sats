@@ -12,7 +12,7 @@ vi.mock('../infrastructure/api/wocClient', () => {
 
 // Mock accounts service
 vi.mock('./accounts', () => ({
-  createAccount: vi.fn().mockResolvedValue(1)
+  createAccount: vi.fn().mockResolvedValue({ ok: true, value: 1 })
 }))
 
 // Mock domain wallet key derivation

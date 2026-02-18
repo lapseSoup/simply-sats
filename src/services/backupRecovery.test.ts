@@ -329,7 +329,7 @@ describe('calculateSweepEstimate', () => {
 
 describe('addRecoveredAccount', () => {
   it('should create account with "(Imported)" suffix', async () => {
-    mockCreateAccount.mockResolvedValueOnce(42)
+    mockCreateAccount.mockResolvedValueOnce({ ok: true, value: 42 })
 
     const id = await addRecoveredAccount(testKeys, 'My Wallet', 'currentPassword')
 
@@ -341,8 +341,8 @@ describe('addRecoveredAccount', () => {
     )
   })
 
-  it('should throw when createAccount returns null/falsy', async () => {
-    mockCreateAccount.mockResolvedValueOnce(null)
+  it('should throw when createAccount returns an error Result', async () => {
+    mockCreateAccount.mockResolvedValueOnce({ ok: false, error: new Error('DB write failed') })
 
     await expect(addRecoveredAccount(testKeys, 'Wallet', 'password'))
       .rejects.toThrow('Failed to create account')

@@ -161,11 +161,12 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
 
       // Use legacy password requirements since we're reusing the session password
       // (which may have been created under older, less strict requirements)
-      const accountId = await createAccount(name, keys, password, true, newAccountIndex)
-      if (!accountId) {
-        accountLogger.error('Failed to create account in database')
+      const createResult = await createAccount(name, keys, password, true, newAccountIndex)
+      if (!createResult.ok) {
+        accountLogger.error('Failed to create account in database', createResult.error)
         return null
       }
+      const accountId = createResult.value
 
       await refreshAccounts()
       accountLogger.info(`Created derived account: ${name} at index ${newAccountIndex}`)
@@ -186,8 +187,11 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
       }
       const keys = restoreResult.value
       // Use legacy password requirements since we're reusing the session password
-      const accountId = await createAccount(name, keys, password, true)
-      if (!accountId) return null
+      const importResult = await createAccount(name, keys, password, true)
+      if (!importResult.ok) {
+        accountLogger.error('Failed to create account during import', importResult.error)
+        return null
+      }
 
       await refreshAccounts()
       accountLogger.info(`Imported account: ${name}`)
@@ -201,11 +205,15 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   // Delete account
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
     try {
-      const success = await deleteAccountDb(accountId)
-      if (success) {
+      const result = await deleteAccountDb(accountId)
+      if (!result.ok) {
+        accountLogger.error('Failed to delete account', result.error)
+        return false
+      }
+      if (result.value) {
         await refreshAccounts()
       }
-      return success
+      return result.value
     } catch (e) {
       accountLogger.error('Failed to delete account', e)
       return false
@@ -214,7 +222,10 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
 
   // Rename account
   const renameAccount = useCallback(async (accountId: number, name: string): Promise<void> => {
-    await updateAccountName(accountId, name)
+    const result = await updateAccountName(accountId, name)
+    if (!result.ok) {
+      accountLogger.error('Failed to rename account', result.error)
+    }
     await refreshAccounts()
   }, [refreshAccounts])
 
