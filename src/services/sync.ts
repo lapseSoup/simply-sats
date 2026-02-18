@@ -354,7 +354,10 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
   // Update sync state
   const currentHeight = await getCurrentBlockHeight()
-  await updateSyncState(address, currentHeight)
+  const syncStateResult = await updateSyncState(address, currentHeight)
+  if (!syncStateResult.ok) {
+    syncLogger.warn(`[SYNC #${syncId}] Failed to update sync state`, { error: syncStateResult.error })
+  }
 
   syncLogger.debug(`[SYNC #${syncId}] DONE: ${newUtxos} new, ${spentUtxos} spent, ${totalBalance} sats`)
 
@@ -1055,7 +1058,8 @@ export {
  */
 export async function needsInitialSync(addresses: string[]): Promise<boolean> {
   for (const addr of addresses) {
-    const lastHeight = await getLastSyncedHeight(addr)
+    const lastHeightResult = await getLastSyncedHeight(addr)
+    const lastHeight = lastHeightResult.ok ? lastHeightResult.value : 0
     if (lastHeight === 0) {
       return true
     }

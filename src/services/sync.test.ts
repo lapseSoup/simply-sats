@@ -21,8 +21,8 @@ vi.mock('./database', () => ({
   addUTXO: vi.fn().mockResolvedValue(undefined),
   markUTXOSpent: vi.fn().mockResolvedValue(undefined),
   getSpendableUTXOs: vi.fn().mockResolvedValue([]),
-  getLastSyncedHeight: vi.fn().mockResolvedValue(0),
-  updateSyncState: vi.fn().mockResolvedValue(undefined),
+  getLastSyncedHeight: vi.fn().mockResolvedValue({ ok: true, value: 0 }),
+  updateSyncState: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
   upsertTransaction: vi.fn().mockResolvedValue(undefined),
   getDerivedAddresses: vi.fn().mockResolvedValue([]),
   updateDerivedAddressSyncTime: vi.fn().mockResolvedValue(undefined)
@@ -321,8 +321,8 @@ describe('Sync Service', () => {
   describe('needsInitialSync', () => {
     it('should return true if any address has never been synced', async () => {
       vi.mocked(getLastSyncedHeight)
-        .mockResolvedValueOnce(850000) // First address synced
-        .mockResolvedValueOnce(0)      // Second address never synced
+        .mockResolvedValueOnce({ ok: true, value: 850000 }) // First address synced
+        .mockResolvedValueOnce({ ok: true, value: 0 })      // Second address never synced
 
       const result = await needsInitialSync(['addr1', 'addr2'])
 
@@ -331,9 +331,9 @@ describe('Sync Service', () => {
 
     it('should return false if all addresses have been synced', async () => {
       vi.mocked(getLastSyncedHeight)
-        .mockResolvedValueOnce(850000)
-        .mockResolvedValueOnce(850001)
-        .mockResolvedValueOnce(850002)
+        .mockResolvedValueOnce({ ok: true, value: 850000 })
+        .mockResolvedValueOnce({ ok: true, value: 850001 })
+        .mockResolvedValueOnce({ ok: true, value: 850002 })
 
       const result = await needsInitialSync(['addr1', 'addr2', 'addr3'])
 
@@ -348,7 +348,7 @@ describe('Sync Service', () => {
     })
 
     it('should short-circuit on first unsynced address', async () => {
-      vi.mocked(getLastSyncedHeight).mockResolvedValueOnce(0)
+      vi.mocked(getLastSyncedHeight).mockResolvedValueOnce({ ok: true, value: 0 })
 
       const result = await needsInitialSync(['addr1', 'addr2', 'addr3'])
 
