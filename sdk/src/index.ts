@@ -528,6 +528,21 @@ export class SimplySats {
       .filter(l => l.spendable)
       .reduce((sum, l) => sum + l.satoshis, 0)
   }
+
+  /**
+   * Get a deterministic key derived from a tag string (per-dApp key isolation).
+   * Each dApp gets a unique keypair derived from the wallet's identity key and the tag,
+   * ensuring different apps cannot correlate keys or share access.
+   *
+   * @param options.tag - Unique tag string identifying the dApp or use case
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
+   *
+   * Note: Requires Simply Sats server v1.1+ with getTaggedKey endpoint support.
+   */
+  async getTaggedKey(options: { tag: string; nonce?: string }): Promise<{ publicKey: string; address: string }> {
+    const nonce = options.nonce ?? (await this.getNonce())
+    return this.request<{ publicKey: string; address: string }>('getTaggedKey', { ...options, nonce })
+  }
 }
 
 /**
