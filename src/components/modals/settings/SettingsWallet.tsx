@@ -1,11 +1,14 @@
-import { Wallet, Palette, KeyRound, Copy } from 'lucide-react'
+import { useState } from 'react'
+import { Wallet, Palette, KeyRound, Copy, PenLine } from 'lucide-react'
 import { useWalletState } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { handleKeyDown } from './settingsKeyDown'
+import { SignMessageModal } from '../SignMessageModal'
 
 export function SettingsWallet() {
   const { wallet } = useWalletState()
   const { copyToClipboard } = useUI()
+  const [showSignMessage, setShowSignMessage] = useState(false)
 
   if (!wallet) return null
 
@@ -43,7 +46,18 @@ export function SettingsWallet() {
           </div>
           <span className="settings-row-arrow" aria-hidden="true"><Copy size={16} strokeWidth={1.75} /></span>
         </div>
+        <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowSignMessage(true)} onKeyDown={handleKeyDown(() => setShowSignMessage(true))} aria-label="Sign or verify a message">
+          <div className="settings-row-left">
+            <div className="settings-row-icon" aria-hidden="true"><PenLine size={16} strokeWidth={1.75} /></div>
+            <div className="settings-row-content">
+              <div className="settings-row-label">Sign Message</div>
+              <div className="settings-row-value">Sign or verify with your key</div>
+            </div>
+          </div>
+          <span className="settings-row-arrow" aria-hidden="true"><PenLine size={16} strokeWidth={1.75} /></span>
+        </div>
       </div>
+      {showSignMessage && <SignMessageModal onClose={() => setShowSignMessage(false)} />}
     </div>
   )
 }
