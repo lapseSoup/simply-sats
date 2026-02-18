@@ -165,8 +165,16 @@ export function SyncProvider({ children }: SyncProviderProps) {
         }
       }
 
+      // Guard: never sync without a valid account ID — null would cause syncTransactionHistory
+      // to store transactions with account_id=1 (the ?? 1 default in addTransaction), bleeding
+      // all synced transactions into account 1 regardless of which account is active.
+      if (!activeAccountId) {
+        syncLogger.warn('[SYNC] performSync called with null activeAccountId — aborting to prevent cross-account data write')
+        return
+      }
+
       syncLogger.info('Starting wallet sync...', { accountId: activeAccountId })
-      const accountId = activeAccountId ?? undefined
+      const accountId = activeAccountId
       if (isRestore) {
         await restoreFromBlockchain(
           wallet.walletAddress,
