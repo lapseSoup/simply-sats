@@ -164,7 +164,7 @@ export interface DerivedAddressRow {
   address: string
   sender_pubkey: string
   invoice_number: string
-  private_key_wif: string
+  private_key_wif: string | null
   label: string | null
   created_at: number
   last_synced_at: number | null

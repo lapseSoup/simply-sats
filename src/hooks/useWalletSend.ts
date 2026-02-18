@@ -5,6 +5,7 @@
  */
 
 import { useCallback } from 'react'
+import { PrivateKey, PublicKey } from '@bsv/sdk'
 import type { WalletKeys, UTXO, Ordinal, ExtendedUTXO } from '../services/wallet'
 import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import {
@@ -17,6 +18,7 @@ import { listOrdinal } from '../services/wallet/marketplace'
 import {
   getDerivedAddresses
 } from '../infrastructure/database'
+import { deriveChildPrivateKey } from '../services/keyDerivation'
 import {
   getSpendableUtxosFromDatabase
 } from '../services/sync'
@@ -61,8 +63,26 @@ export function useWalletSend({
 
       // Build a map of derived address → WIF for correct per-UTXO signing
       const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
+      const identityWif = await getWifForOperation('identity', 'sendBSV-deriveChildKey', wallet)
       for (const d of derivedAddrs) {
-        if (d.privateKeyWif) {
+        if (d.senderPubkey && d.invoiceNumber) {
+          // Re-derive the child private key from (identityKey + senderPubkey + invoiceNumber)
+          // so we never need the WIF stored in the database
+          try {
+            const childKey = deriveChildPrivateKey(
+              PrivateKey.fromWif(identityWif),
+              PublicKey.fromString(d.senderPubkey),
+              d.invoiceNumber
+            )
+            derivedMap.set(d.address, childKey.toWif())
+          } catch (e) {
+            walletLogger.warn('Failed to re-derive child key for derived address', {
+              address: d.address,
+              error: e instanceof Error ? e.message : String(e)
+            })
+          }
+        } else if (d.privateKeyWif) {
+          // Legacy: support old records that still have WIF stored
           derivedMap.set(d.address, d.privateKeyWif)
         }
       }
@@ -86,13 +106,14 @@ export function useWalletSend({
       // Include derived address UTXOs only when NOT in coin control mode
       if (!selectedUtxos) {
         for (const derived of derivedAddrs) {
-          if (derived.privateKeyWif) {
+          const derivedWif = derivedMap.get(derived.address)
+          if (derivedWif) {
             try {
               const derivedUtxos = await getUTXOs(derived.address)
               for (const u of derivedUtxos) {
                 extendedUtxos.push({
                   ...u,
-                  wif: derived.privateKeyWif,
+                  wif: derivedWif,
                   address: derived.address
                 })
               }

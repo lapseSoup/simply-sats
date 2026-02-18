@@ -61,7 +61,8 @@ export interface DerivedAddress {
   address: string
   senderPubkey: string
   invoiceNumber: string
-  privateKeyWif: string
+  /** @deprecated Legacy field — new records do not store WIF; re-derive at spend time via BRC-42 */
+  privateKeyWif?: string | null
   label?: string
   createdAt: number
   lastSyncedAt?: number

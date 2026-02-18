@@ -11,7 +11,7 @@ import {
   getContacts,
   getNextInvoiceNumber
 } from '../../infrastructure/database'
-import { deriveSenderAddress, deriveChildPrivateKey } from '../../services/keyDerivation'
+import { deriveSenderAddress } from '../../services/keyDerivation'
 import { uiLogger } from '../../services/logger'
 import { BRC100 } from '../../config'
 
@@ -59,18 +59,12 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
   ): Promise<boolean> => {
     if (!wallet) return false
     try {
-      const { getWifForOperation } = await import('../../services/wallet')
-      const identityWif = await getWifForOperation('identity', 'saveDerivedAddress', wallet)
-      const receiverPriv = PrivateKey.fromWif(identityWif)
-      const senderPub = PublicKey.fromString(senderPubKey)
       const invoiceNumber = `${BRC100.INVOICE_PREFIX} ${invoiceIndex}`
-      const childPrivKey = deriveChildPrivateKey(receiverPriv, senderPub, invoiceNumber)
 
       await addDerivedAddress({
         address,
         senderPubkey: senderPubKey,
         invoiceNumber,
-        privateKeyWif: childPrivKey.toWif(),
         label: label || `From ${senderPubKey.substring(0, 8)}...`,
         createdAt: Date.now()
       }, activeAccountId ?? undefined)
