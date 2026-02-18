@@ -163,7 +163,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setWallet,
     setIsLocked,
     setSessionPassword,
-    refreshAccounts
+    refreshAccounts,
+    storeKeysInRust
   })
 
   const {

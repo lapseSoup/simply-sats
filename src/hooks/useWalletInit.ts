@@ -36,6 +36,7 @@ interface UseWalletInitOptions {
   setIsLocked: Dispatch<SetStateAction<boolean>>
   setSessionPassword: (password: string | null) => void
   refreshAccounts: () => Promise<void>
+  storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
 }
 
 interface UseWalletInitReturn {
@@ -49,7 +50,8 @@ export function useWalletInit({
   setWallet,
   setIsLocked,
   setSessionPassword,
-  refreshAccounts
+  refreshAccounts,
+  storeKeysInRust
 }: UseWalletInitOptions): UseWalletInitReturn {
   const [loading, setLoading] = useState(true)
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -153,6 +155,12 @@ export function useWalletInit({
               const keys = await loadWallet(null)
               if (!mounted) return
               if (keys) {
+                // Populate Rust key store so operations like lockBSV/unlockBSV can get the WIF.
+                // This is required for no-password wallets — the unlock flow (useWalletLock)
+                // is skipped entirely, so we must store keys here on startup.
+                if (keys.mnemonic) {
+                  await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
+                }
                 setWallet({ ...keys, mnemonic: '' })
                 setSessionPassword('')
                 setModuleSessionPassword('')
@@ -195,7 +203,7 @@ export function useWalletInit({
     return () => {
       mounted = false
     }
-  }, [setWallet, setIsLocked, setSessionPassword, refreshAccounts])
+  }, [setWallet, setIsLocked, setSessionPassword, refreshAccounts, storeKeysInRust])
 
   // Migration: remove old localStorage locks (database is source of truth)
   useEffect(() => {

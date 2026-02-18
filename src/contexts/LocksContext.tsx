@@ -180,7 +180,11 @@ export function LocksProvider({ children }: LocksProviderProps) {
       audit.lockReleased(txid, lock.satoshis, activeAccountId ?? undefined)
       return ok({ txid })
     } catch (e) {
-      return err(e instanceof Error ? e.message : 'Unlock failed')
+      const errorMsg = e instanceof Error
+        ? e.message
+        : (typeof e === 'string' ? e : JSON.stringify(e))
+      walletLogger.error('Unlock threw unexpected exception', { error: String(e), type: typeof e })
+      return err(errorMsg || 'Unlock failed')
     }
   }, [networkInfo, addKnownUnlockedLock])
 

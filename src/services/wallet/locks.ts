@@ -348,7 +348,17 @@ export async function unlockBSV(
     ))
   }
 
-  const wif = await getWifForOperation('wallet', 'unlockBSV')
+  let wif: string
+  try {
+    wif = await getWifForOperation('wallet', 'unlockBSV')
+  } catch (keyErr) {
+    const msg = typeof keyErr === 'string' ? keyErr : (keyErr instanceof Error ? keyErr.message : String(keyErr))
+    walletLogger.error('Failed to retrieve WIF for unlock — wallet may be locked', { error: msg })
+    return err(new AppError(
+      msg || 'Wallet is locked — please unlock your wallet first',
+      ErrorCodes.INVALID_PARAMS
+    ))
+  }
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()

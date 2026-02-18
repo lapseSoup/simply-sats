@@ -280,8 +280,12 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
     /double.?spend/i,
     /mandatory-script-verify-flag/i,
     /non-mandatory-script-verify-flag/i,
+    /non-standard/i,
     /bad-txns-inputs-missingorspent/i,
     /missing.?inputs/i,
+    /script.*fail/i,
+    /locktime/i,
+    /sequence/i,
   ]
 
   const sanitized = errors.map(e => {
