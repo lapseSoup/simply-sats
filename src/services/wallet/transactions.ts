@@ -37,6 +37,7 @@ import {
   InvalidAddressError,
   InvalidAmountError
 } from '../errors'
+import { type Result, ok, err } from '../../domain/types'
 
 /**
  * Broadcast a signed transaction - try multiple endpoints for non-standard scripts.
@@ -55,19 +56,20 @@ export async function broadcastTransaction(txOrHex: Transaction | string): Promi
 /** Maximum satoshis (21M BSV) — prevents accidental astronomical sends */
 const MAX_SATOSHIS = 21_000_000_00_000_000
 
-function validateSendRequest(toAddress: string, satoshis: number): void {
+function validateSendRequest(toAddress: string, satoshis: number): Result<void, AppError> {
   if (!Number.isFinite(satoshis) || satoshis <= 0) {
-    throw new InvalidAmountError(satoshis, 'Invalid amount')
+    return err(new InvalidAmountError(satoshis, 'Invalid amount'))
   }
   if (!Number.isInteger(satoshis)) {
-    throw new InvalidAmountError(satoshis, 'Amount must be a whole number of satoshis')
+    return err(new InvalidAmountError(satoshis, 'Amount must be a whole number of satoshis'))
   }
   if (satoshis > MAX_SATOSHIS) {
-    throw new InvalidAmountError(satoshis, 'Amount exceeds maximum BSV supply')
+    return err(new InvalidAmountError(satoshis, 'Amount exceeds maximum BSV supply'))
   }
   if (!isValidBSVAddress(toAddress)) {
-    throw new InvalidAddressError(toAddress)
+    return err(new InvalidAddressError(toAddress))
   }
+  return ok(undefined)
 }
 
 /**
@@ -201,14 +203,15 @@ export async function sendBSV(
   satoshis: number,
   utxos: UTXO[],
   accountId?: number
-): Promise<string> {
-  validateSendRequest(toAddress, satoshis)
+): Promise<Result<{ txid: string }, AppError>> {
+  const validation = validateSendRequest(toAddress, satoshis)
+  if (!validation.ok) return validation
 
   // accountId is required to acquire the correct per-account sync lock.
   // Defaulting to account 1 when accountId is undefined would silently lock
   // the wrong account during a send, allowing a concurrent sync to corrupt state.
   if (accountId === undefined) {
-    throw new AppError('accountId is required to send BSV', ErrorCodes.INVALID_STATE, { toAddress, satoshis })
+    return err(new AppError('accountId is required to send BSV', ErrorCodes.INVALID_STATE, { toAddress, satoshis }))
   }
 
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during send
@@ -216,18 +219,32 @@ export async function sendBSV(
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
     if (!sufficient) {
-      throw new InsufficientFundsError(satoshis, totalInput)
+      return err(new InsufficientFundsError(satoshis, totalInput))
     }
 
     const feeRate = getFeeRate()
-    const built = await buildP2PKHTx({ wif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
+    let built
+    try {
+      built = await buildP2PKHTx({ wif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
+    } catch (buildError) {
+      return err(AppError.fromUnknown(buildError, ErrorCodes.INTERNAL_ERROR))
+    }
     const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
 
     resetInactivityTimer()
-    const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
-    await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+    let txid: string
+    try {
+      txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    } catch (broadcastError) {
+      return err(AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED))
+    }
+    try {
+      await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+    } catch (recordError) {
+      return err(AppError.fromUnknown(recordError, ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED))
+    }
     resetInactivityTimer()
-    return txid
+    return ok({ txid })
   } finally {
     releaseLock()
   }
@@ -292,13 +309,14 @@ export async function sendBSVMultiKey(
   satoshis: number,
   utxos: ExtendedUTXO[],
   accountId?: number
-): Promise<string> {
-  validateSendRequest(toAddress, satoshis)
+): Promise<Result<{ txid: string }, AppError>> {
+  const validation = validateSendRequest(toAddress, satoshis)
+  if (!validation.ok) return validation
 
   // accountId is required to acquire the correct per-account sync lock.
   // See sendBSV for rationale.
   if (accountId === undefined) {
-    throw new AppError('accountId is required to send BSV (multi-key)', ErrorCodes.INVALID_STATE, { toAddress, satoshis })
+    return err(new AppError('accountId is required to send BSV (multi-key)', ErrorCodes.INVALID_STATE, { toAddress, satoshis }))
   }
 
   // Acquire per-account sync lock to prevent concurrent sync from modifying UTXO state.
@@ -308,18 +326,32 @@ export async function sendBSVMultiKey(
   try {
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, satoshis)
     if (!sufficient) {
-      throw new InsufficientFundsError(satoshis, totalInput)
+      return err(new InsufficientFundsError(satoshis, totalInput))
     }
 
     const feeRate = getFeeRate()
-    const built = await buildMultiKeyP2PKHTx({ changeWif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
+    let built
+    try {
+      built = await buildMultiKeyP2PKHTx({ changeWif, toAddress, satoshis, selectedUtxos: inputsToUse, totalInput, feeRate })
+    } catch (buildError) {
+      return err(AppError.fromUnknown(buildError, ErrorCodes.INTERNAL_ERROR))
+    }
     const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
 
     resetInactivityTimer()
-    const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
-    await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+    let txid: string
+    try {
+      txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    } catch (broadcastError) {
+      return err(AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED))
+    }
+    try {
+      await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+    } catch (recordError) {
+      return err(AppError.fromUnknown(recordError, ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED))
+    }
     resetInactivityTimer()
-    return txid
+    return ok({ txid })
   } finally {
     releaseLock()
   }
