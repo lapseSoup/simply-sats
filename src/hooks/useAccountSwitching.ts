@@ -144,6 +144,28 @@ export function useAccountSwitching({
       }
       _lastSwitchDiag = `Found: id=${account.id} derivIdx=${account.derivationIndex}`
 
+      // Preload new account balance from DB before any React state changes.
+      // This must happen BEFORE refreshAccounts() because refreshAccounts() updates
+      // activeAccountId in AccountsContext, triggering a re-render. If balance hasn't
+      // been reset yet at that point, the UI briefly shows the old account's balance
+      // alongside the new account's name — the visible flash.
+      let preloadedBalance = 0
+      try {
+        const [defaultBal, derivedBal] = await Promise.all([
+          getBalanceFromDatabase('default', accountId),
+          getBalanceFromDatabase('derived', accountId)
+        ])
+        preloadedBalance = defaultBal + derivedBal
+      } catch (_e) {
+        // Best-effort — 0 is acceptable if DB read fails
+      }
+
+      // Clear stale state and set the new balance atomically BEFORE the account ID
+      // changes in React — ensures no render ever sees mismatched accountId + balance.
+      fetchVersionRef.current += 1
+      setLocks([])
+      resetSync(preloadedBalance)
+
       // PRIMARY PATH: switch_account_from_store derives + stores keys entirely in Rust.
       // The mnemonic never leaves native memory.
       let keys = await deriveKeysFromRust(account)
@@ -191,26 +213,6 @@ export function useAccountSwitching({
       }
 
       if (keys) {
-        // Invalidate any in-flight fetchData callbacks from the previous account
-        fetchVersionRef.current += 1
-        setLocks([])
-
-        // Preload new account balance from DB BEFORE reset — this ensures resetSync
-        // initialises balance to the correct value, never showing 0 for a funded account.
-        let preloadedBalance = 0
-        try {
-          const [defaultBal, derivedBal] = await Promise.all([
-            getBalanceFromDatabase('default', accountId),
-            getBalanceFromDatabase('derived', accountId)
-          ])
-          preloadedBalance = defaultBal + derivedBal
-        } catch (_e) {
-          // Best-effort — 0 is acceptable if DB read fails
-        }
-
-        // Reset stale state, atomically initialising balance to the new account's value
-        resetSync(preloadedBalance)
-
         // Only store keys in Rust for fallback path — Rust path already stored them
         if (!keysFromRust) {
           await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? ((accountId ?? 1) - 1))
