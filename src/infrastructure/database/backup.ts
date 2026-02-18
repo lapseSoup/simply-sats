@@ -87,8 +87,9 @@ export async function exportDatabase(): Promise<DatabaseBackup> {
   const rawDerivedAddresses = await getDerivedAddresses()
   const derivedAddresses = rawDerivedAddresses.map(addr => ({ ...addr, privateKeyWif: '' }))
 
-  // Get contacts
-  const contacts = await getContacts()
+  // Get contacts (silently fall back to empty array if DB error — backup is best-effort)
+  const contactsResult = await getContacts()
+  const contacts = contactsResult.ok ? contactsResult.value : []
 
   return {
     version: 4,

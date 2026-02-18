@@ -6,6 +6,9 @@
 
 import { getDatabase } from './connection'
 import { dbLogger } from '../../services/logger'
+import { DbError } from '../../services/errors'
+import type { Result } from '../../domain/types'
+import { ok, err } from '../../domain/types'
 import type { ActionResult } from './types'
 import type { ActionResultRow, SqlParams } from './row-types'
 
@@ -115,86 +118,111 @@ export async function updateActionResult(
 /**
  * Get recent action results
  */
-export async function getRecentActionResults(limit = 50): Promise<ActionResult[]> {
+export async function getRecentActionResults(limit = 50): Promise<Result<ActionResult[], DbError>> {
   await ensureActionResultsTable()
   const database = getDatabase()
 
-  const rows = await database.select<ActionResultRow[]>(
-    'SELECT * FROM action_results ORDER BY requested_at DESC LIMIT $1',
-    [limit]
-  )
+  try {
+    const rows = await database.select<ActionResultRow[]>(
+      'SELECT * FROM action_results ORDER BY requested_at DESC LIMIT $1',
+      [limit]
+    )
 
-  return rows.map(row => ({
-    id: row.id,
-    requestId: row.request_id,
-    actionType: row.action_type,
-    description: row.description ?? '',
-    origin: row.origin ?? undefined,
-    txid: row.txid ?? undefined,
-    approved: row.approved === 1,
-    error: row.error ?? undefined,
-    inputParams: row.input_params ?? undefined,
-    outputResult: row.output_result ?? undefined,
-    requestedAt: row.requested_at,
-    completedAt: row.completed_at ?? undefined
-  }))
+    return ok(rows.map(row => ({
+      id: row.id,
+      requestId: row.request_id,
+      actionType: row.action_type,
+      description: row.description ?? '',
+      origin: row.origin ?? undefined,
+      txid: row.txid ?? undefined,
+      approved: row.approved === 1,
+      error: row.error ?? undefined,
+      inputParams: row.input_params ?? undefined,
+      outputResult: row.output_result ?? undefined,
+      requestedAt: row.requested_at,
+      completedAt: row.completed_at ?? undefined
+    })))
+  } catch (e) {
+    return err(new DbError(
+      `getRecentActionResults failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
+  }
 }
 
 /**
  * Get action results by origin (app)
  */
-export async function getActionResultsByOrigin(origin: string, limit = 50): Promise<ActionResult[]> {
+export async function getActionResultsByOrigin(origin: string, limit = 50): Promise<Result<ActionResult[], DbError>> {
   await ensureActionResultsTable()
   const database = getDatabase()
 
-  const rows = await database.select<ActionResultRow[]>(
-    'SELECT * FROM action_results WHERE origin = $1 ORDER BY requested_at DESC LIMIT $2',
-    [origin, limit]
-  )
+  try {
+    const rows = await database.select<ActionResultRow[]>(
+      'SELECT * FROM action_results WHERE origin = $1 ORDER BY requested_at DESC LIMIT $2',
+      [origin, limit]
+    )
 
-  return rows.map(row => ({
-    id: row.id,
-    requestId: row.request_id,
-    actionType: row.action_type,
-    description: row.description ?? '',
-    origin: row.origin ?? undefined,
-    txid: row.txid ?? undefined,
-    approved: row.approved === 1,
-    error: row.error ?? undefined,
-    inputParams: row.input_params ?? undefined,
-    outputResult: row.output_result ?? undefined,
-    requestedAt: row.requested_at,
-    completedAt: row.completed_at ?? undefined
-  }))
+    return ok(rows.map(row => ({
+      id: row.id,
+      requestId: row.request_id,
+      actionType: row.action_type,
+      description: row.description ?? '',
+      origin: row.origin ?? undefined,
+      txid: row.txid ?? undefined,
+      approved: row.approved === 1,
+      error: row.error ?? undefined,
+      inputParams: row.input_params ?? undefined,
+      outputResult: row.output_result ?? undefined,
+      requestedAt: row.requested_at,
+      completedAt: row.completed_at ?? undefined
+    })))
+  } catch (e) {
+    return err(new DbError(
+      `getActionResultsByOrigin failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
+  }
 }
 
 /**
- * Get action result by transaction ID
+ * Get action result by transaction ID.
+ * Returns ok(null) when not found, err(DbError) on database failure.
  */
-export async function getActionResultByTxid(txid: string): Promise<ActionResult | null> {
+export async function getActionResultByTxid(txid: string): Promise<Result<ActionResult | null, DbError>> {
   await ensureActionResultsTable()
   const database = getDatabase()
 
-  const rows = await database.select<ActionResultRow[]>(
-    'SELECT * FROM action_results WHERE txid = $1',
-    [txid]
-  )
+  try {
+    const rows = await database.select<ActionResultRow[]>(
+      'SELECT * FROM action_results WHERE txid = $1',
+      [txid]
+    )
 
-  if (rows.length === 0) return null
+    if (rows.length === 0) return ok(null)
 
-  const row = rows[0]!
-  return {
-    id: row.id,
-    requestId: row.request_id,
-    actionType: row.action_type,
-    description: row.description ?? '',
-    origin: row.origin ?? undefined,
-    txid: row.txid ?? undefined,
-    approved: row.approved === 1,
-    error: row.error ?? undefined,
-    inputParams: row.input_params ?? undefined,
-    outputResult: row.output_result ?? undefined,
-    requestedAt: row.requested_at,
-    completedAt: row.completed_at ?? undefined
+    const row = rows[0]!
+    return ok({
+      id: row.id,
+      requestId: row.request_id,
+      actionType: row.action_type,
+      description: row.description ?? '',
+      origin: row.origin ?? undefined,
+      txid: row.txid ?? undefined,
+      approved: row.approved === 1,
+      error: row.error ?? undefined,
+      inputParams: row.input_params ?? undefined,
+      outputResult: row.output_result ?? undefined,
+      requestedAt: row.requested_at,
+      completedAt: row.completed_at ?? undefined
+    })
+  } catch (e) {
+    return err(new DbError(
+      `getActionResultByTxid failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
   }
 }

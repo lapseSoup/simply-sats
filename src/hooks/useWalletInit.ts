@@ -112,10 +112,14 @@ export function useWalletInit({
 
         await ensureContactsTable()
         if (!mounted) return
-        const loadedContacts = await getContacts()
+        const contactsResult = await getContacts()
         if (!mounted) return
-        setContacts(loadedContacts)
-        uiLogger.info('Loaded contacts', { count: loadedContacts.length })
+        if (contactsResult.ok) {
+          setContacts(contactsResult.value)
+          uiLogger.info('Loaded contacts', { count: contactsResult.value.length })
+        } else {
+          uiLogger.error('Failed to load contacts from DB', contactsResult.error)
+        }
 
         await refreshAccounts()
         if (!mounted) return
@@ -193,8 +197,12 @@ export function useWalletInit({
   }, [])
 
   const refreshContacts = useCallback(async () => {
-    const loaded = await getContacts()
-    setContacts(loaded)
+    const result = await getContacts()
+    if (result.ok) {
+      setContacts(result.value)
+    } else {
+      uiLogger.error('Failed to refresh contacts', result.error)
+    }
   }, [])
 
   return {

@@ -119,8 +119,12 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
           label: newContactLabel.trim(),
           createdAt: Date.now()
         })
-        const updated = await getContacts()
-        setLocalContacts(updated)
+        const updatedResult = await getContacts()
+        if (!updatedResult.ok) {
+          uiLogger.error('Failed to reload contacts', updatedResult.error)
+        } else {
+          setLocalContacts(updatedResult.value)
+        }
         await refreshContacts()
         setShowAddContact(false)
         setNewContactLabel('')
