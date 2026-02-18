@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react'
-import { Search, LayoutGrid, List as ListIcon, ChevronRight } from 'lucide-react'
+import { Search, LayoutGrid, List as ListIcon, ChevronRight, PenLine } from 'lucide-react'
 import { List } from 'react-window'
 import { useWalletState } from '../../contexts'
 import type { Ordinal } from '../../services/wallet'
 import { EmptyState, NoOrdinalsEmpty } from '../shared/EmptyState'
 import { OrdinalsGridSkeleton } from '../shared/Skeleton'
 import { OrdinalImage } from '../shared/OrdinalImage'
+import { InscribeModal } from '../modals/InscribeModal'
 
 const VIRTUALIZATION_THRESHOLD = 50
 const ORDINAL_LIST_ITEM_HEIGHT = 68 // ~60px item + 8px gap
@@ -45,6 +46,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [filterCategory, setFilterCategory] = useState<ContentCategory>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [showInscribeModal, setShowInscribeModal] = useState(false)
 
   // Debounce search input (250ms) to avoid filtering on every keystroke
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -111,21 +113,39 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
   // Show skeleton during initial load (loading with no data yet)
   if (loading && ordinals.length === 0) {
     return (
-      <div className="ordinals-tab">
-        <OrdinalsGridSkeleton />
-      </div>
+      <>
+        <div className="ordinals-tab">
+          <OrdinalsGridSkeleton />
+        </div>
+        {showInscribeModal && <InscribeModal onClose={() => setShowInscribeModal(false)} />}
+      </>
     )
   }
 
   if (ordinals.length === 0) {
     return (
-      <div className="ordinals-tab">
-        <NoOrdinalsEmpty />
-      </div>
+      <>
+        <div className="ordinals-tab">
+          <NoOrdinalsEmpty />
+          <div className="ordinals-action-bar">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowInscribeModal(true)}
+              aria-label="Inscribe new ordinal"
+            >
+              <PenLine size={14} strokeWidth={1.75} aria-hidden="true" />
+              Inscribe
+            </button>
+          </div>
+        </div>
+        {showInscribeModal && <InscribeModal onClose={() => setShowInscribeModal(false)} />}
+      </>
     )
   }
 
   return (
+    <>
     <div className="ordinals-tab">
       {/* Search and Filter Bar */}
       <div className="ordinals-controls">
@@ -172,6 +192,15 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
             <ListIcon size={14} strokeWidth={1.75} aria-hidden="true" />
           </button>
         </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={() => setShowInscribeModal(true)}
+          aria-label="Inscribe new ordinal"
+        >
+          <PenLine size={14} strokeWidth={1.75} aria-hidden="true" />
+          Inscribe
+        </button>
       </div>
 
       {/* Filter + Sort Dropdowns */}
@@ -253,6 +282,8 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
         </div>
       )}
     </div>
+    {showInscribeModal && <InscribeModal onClose={() => setShowInscribeModal(false)} />}
+  </>
   )
 }
 
