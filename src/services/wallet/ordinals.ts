@@ -25,7 +25,6 @@ import {
   isOneSatOutput,
   formatOrdinalOrigin
 } from '../../domain/ordinals'
-import { getDatabase } from '../database'
 
 // Create a child logger for ordinals-specific logging
 const ordLogger = walletLogger
@@ -341,20 +340,6 @@ export async function transferOrdinal(
 
   // Compute txid before broadcast for pending marking
   const pendingTxid = tx.id('hex')
-
-  // Verify ordinal UTXO is still unspent before transfer
-  const db = getDatabase()
-  const utxoCheck = await db.select<{ spending_status: string | null; spent_at: number | null }[]>(
-    'SELECT spending_status, spent_at FROM utxos WHERE txid = $1 AND vout = $2',
-    [ordinalUtxo.txid, ordinalUtxo.vout]
-  )
-  if (utxoCheck.length === 0) {
-    throw new Error('Ordinal UTXO not found in database')
-  }
-  const utxoState = utxoCheck[0]!
-  if (utxoState.spent_at !== null || (utxoState.spending_status !== null && utxoState.spending_status !== 'unspent')) {
-    throw new Error('Ordinal UTXO is no longer spendable — it may have been spent or is pending in another transaction')
-  }
 
   // Mark pending → broadcast → rollback on failure (shared pattern)
   const txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)

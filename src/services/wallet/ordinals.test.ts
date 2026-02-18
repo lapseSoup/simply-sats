@@ -21,7 +21,6 @@ const {
   mockGetTransactionDetails,
   mockRecordSentTransaction,
   mockConfirmUtxosSpent,
-  mockDbSelect,
   mockMapGpItemToOrdinal,
   mockFilterOneSatOrdinals,
   mockIsOrdinalInscriptionScript,
@@ -39,7 +38,6 @@ const {
   mockGetTransactionDetails: vi.fn(),
   mockRecordSentTransaction: vi.fn(),
   mockConfirmUtxosSpent: vi.fn(),
-  mockDbSelect: vi.fn(),
   mockMapGpItemToOrdinal: vi.fn(),
   mockFilterOneSatOrdinals: vi.fn(),
   mockIsOrdinalInscriptionScript: vi.fn(),
@@ -80,12 +78,6 @@ vi.mock('./balance', () => ({
 vi.mock('../sync', () => ({
   recordSentTransaction: (...args: unknown[]) => mockRecordSentTransaction(...args),
   confirmUtxosSpent: (...args: unknown[]) => mockConfirmUtxosSpent(...args),
-}))
-
-vi.mock('../database', () => ({
-  getDatabase: () => ({
-    select: (...args: unknown[]) => mockDbSelect(...args),
-  }),
 }))
 
 vi.mock('../logger', () => ({
@@ -486,7 +478,6 @@ describe('Ordinals Service', () => {
       mockExecuteBroadcast.mockResolvedValue(MOCK_TXID)
       mockRecordSentTransaction.mockResolvedValue(undefined)
       mockConfirmUtxosSpent.mockResolvedValue(undefined)
-      mockDbSelect.mockResolvedValue([{ spending_status: null, spent_at: null }])
     })
 
     it('should transfer ordinal successfully', async () => {
@@ -511,30 +502,6 @@ describe('Ordinals Service', () => {
           { txid: 'bb'.repeat(32), vout: 0, satoshis: 100, script: '76a914...88ac' },
         ])
       ).rejects.toThrow('Insufficient funds for fee')
-    })
-
-    it('should throw when ordinal UTXO not found in database', async () => {
-      mockDbSelect.mockResolvedValue([])
-
-      await expect(
-        transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos)
-      ).rejects.toThrow('Ordinal UTXO not found in database')
-    })
-
-    it('should throw when ordinal UTXO is already spent', async () => {
-      mockDbSelect.mockResolvedValue([{ spending_status: 'spent', spent_at: Date.now() }])
-
-      await expect(
-        transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos)
-      ).rejects.toThrow('Ordinal UTXO is no longer spendable')
-    })
-
-    it('should throw when ordinal UTXO is pending spend', async () => {
-      mockDbSelect.mockResolvedValue([{ spending_status: 'pending', spent_at: null }])
-
-      await expect(
-        transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos)
-      ).rejects.toThrow('Ordinal UTXO is no longer spendable')
     })
 
     it('should handle tracking failure gracefully (broadcast still succeeds)', async () => {
