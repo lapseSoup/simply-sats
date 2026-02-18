@@ -107,7 +107,7 @@ function WalletApp() {
   })
 
   // Keep refs to fetchData/performSync so effects don't re-trigger when
-  // their identity changes (e.g. knownUnlockedLocks updates detectLocks → fetchData)
+  // their identity changes (detectLocks/syncFetchData identity changes)
   const fetchDataRef = useRef(fetchData)
   useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
   const performSyncRef = useRef(performSync)
@@ -147,7 +147,7 @@ function WalletApp() {
   // Auto-sync on wallet load (only when account is set)
   // Single effect handles both sync + data fetch to avoid race conditions
   // Uses refs for fetchData/performSync to avoid re-triggering when their
-  // identity changes (e.g. knownUnlockedLocks → detectLocks → fetchData)
+  // identity changes (detectLocks/syncFetchData identity changes)
   useEffect(() => {
     if (!wallet || activeAccountId === null) return
 

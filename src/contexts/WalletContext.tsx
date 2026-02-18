@@ -78,7 +78,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Get lock state from LocksContext
   const {
     locks,
-    knownUnlockedLocks,
+    knownUnlockedLocksRef,
     setLocks,
     handleLock: locksHandleLock,
     handleUnlock: locksHandleUnlock,
@@ -250,7 +250,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     await syncFetchData(
       wallet,
       currentAccountId,
-      knownUnlockedLocks,
+      knownUnlockedLocksRef.current,
       async ({ utxos: fetchedUtxos, preloadedLocks }) => {
         if (fetchVersionRef.current !== version) return
 
@@ -285,7 +285,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
       },
       () => fetchVersionRef.current !== version
     )
-  }, [wallet, knownUnlockedLocks, syncFetchData, detectLocks, setLocks])
+  // knownUnlockedLocksRef is a stable ref — omitting it from deps is intentional;
+  // we read .current at call time to avoid stale-closure issues after addKnownUnlockedLock
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet, syncFetchData, detectLocks, setLocks])
 
   // Lock/unlock BSV - delegates to LocksContext
   const handleLock = useCallback(async (amountSats: number, blocks: number): Promise<WalletResult> => {
