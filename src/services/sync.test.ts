@@ -1,12 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+// Mock @bsv/sdk so P2PKH address validation doesn't reject test addresses
+vi.mock('@bsv/sdk', () => {
+  class P2PKH {
+    lock(_address: string) {
+      return { toHex: () => '76a914deadbeef88ac' }
+    }
+  }
+  return { P2PKH }
+})
+
 // Mock the WocClient from infrastructure layer - must be before imports
 vi.mock('../infrastructure/api/wocClient', () => {
   const mockClient = {
     getBlockHeight: vi.fn().mockResolvedValue(0),
     getBalance: vi.fn().mockResolvedValue(0),
     getUtxos: vi.fn().mockResolvedValue([]),
+    getUtxosSafe: vi.fn().mockResolvedValue({ ok: true, value: [{ txid: 'abc', vout: 0, satoshis: 1000 }] }),
     getTransactionHistory: vi.fn().mockResolvedValue([]),
+    getTransactionHistorySafe: vi.fn().mockResolvedValue({ ok: true, value: [] }),
     getTransactionDetails: vi.fn().mockResolvedValue(null),
     broadcastTransaction: vi.fn().mockResolvedValue('')
   }
@@ -44,9 +56,12 @@ import {
   recordSentTransaction,
   markUtxosSpent,
   needsInitialSync,
+  syncAddress,
   type AddressInfo,
   type SyncResult
 } from './sync'
+
+import { DbError } from './errors'
 
 import {
   getSpendableUTXOs,
@@ -61,7 +76,9 @@ const mockWocClient = getWocClient() as unknown as {
   getBlockHeight: ReturnType<typeof vi.fn>
   getBalance: ReturnType<typeof vi.fn>
   getUtxos: ReturnType<typeof vi.fn>
+  getUtxosSafe: ReturnType<typeof vi.fn>
   getTransactionHistory: ReturnType<typeof vi.fn>
+  getTransactionHistorySafe: ReturnType<typeof vi.fn>
   getTransactionDetails: ReturnType<typeof vi.fn>
   broadcastTransaction: ReturnType<typeof vi.fn>
 }
@@ -395,6 +412,26 @@ describe('Sync Service', () => {
       expect(result.newUtxos).toBe(5)
       expect(result.spentUtxos).toBe(2)
       expect(result.totalBalance).toBe(50000)
+    })
+  })
+
+  describe('syncAddress', () => {
+    it('throws when getSpendableUTXOs fails, preserving caller stale balance', async () => {
+      // Arrange: WoC returns UTXOs successfully (passes the API guard)
+      mockWocClient.getUtxosSafe.mockResolvedValueOnce({
+        ok: true,
+        value: [{ txid: 'abc123', vout: 0, satoshis: 5000 }]
+      })
+      // DB query fails
+      vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({
+        ok: false,
+        error: new DbError('DB locked', 'QUERY_FAILED')
+      })
+
+      // Act + Assert: should throw (not silently return { totalBalance: 0 })
+      await expect(
+        syncAddress({ address: '1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf Na', basket: 'default', accountId: 1 })
+      ).rejects.toThrow('DB locked')
     })
   })
 })

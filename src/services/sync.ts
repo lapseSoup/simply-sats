@@ -268,7 +268,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   const spendableResult = await getSpendableUTXOs(accountId)
   if (!spendableResult.ok) {
     syncLogger.error(`[SYNC #${syncId}] Failed to query existing UTXOs from DB`, { error: spendableResult.error.message })
-    return { address, basket, newUtxos: 0, spentUtxos: 0, totalBalance: 0 }
+    throw spendableResult.error.toAppError()
   }
   const existingUtxos = spendableResult.value
   const existingMap = new Map<string, DBUtxo>()
