@@ -12,13 +12,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { SendModal } from './SendModal'
 
-// Mock the wallet context
+// Mock the wallet contexts
 const mockHandleSend = vi.fn()
 const mockShowToast = vi.fn()
 const mockOnClose = vi.fn()
 
-vi.mock('../../contexts/WalletContext', () => ({
-  useWallet: () => ({
+vi.mock('../../contexts', () => ({
+  useWalletState: () => ({
     wallet: {
       walletAddress: '1TestAddress123',
       walletWif: 'testWif'
@@ -28,6 +28,9 @@ vi.mock('../../contexts/WalletContext', () => ({
       { txid: 'abc123', vout: 0, satoshis: 50000, script: 'script1' },
       { txid: 'def456', vout: 1, satoshis: 50000, script: 'script2' }
     ],
+    feeRateKB: 500
+  }),
+  useWalletActions: () => ({
     handleSend: mockHandleSend
   })
 }))

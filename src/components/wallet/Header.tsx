@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Settings } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { SimplySatsLogo } from '../shared/SimplySatsLogo'
 import { AccountSwitcher } from './AccountSwitcher'
@@ -15,17 +15,8 @@ interface HeaderProps {
 }
 
 export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }: HeaderProps) {
-  const {
-    wallet,
-    networkInfo,
-    syncing,
-    performSync,
-    fetchData,
-    accounts,
-    activeAccountId,
-    switchAccount,
-    balance
-  } = useWallet()
+  const { wallet, networkInfo, syncing, accounts, activeAccountId, balance } = useWalletState()
+  const { performSync, fetchData, switchAccount } = useWalletActions()
   const { formatBSVShort, showToast } = useUI()
 
   // Track manual sync separately for button animation

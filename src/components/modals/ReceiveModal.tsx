@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { PrivateKey, PublicKey } from '@bsv/sdk'
 import { Copy } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { Modal } from '../shared/Modal'
 import {
@@ -22,7 +22,8 @@ interface ReceiveModalProps {
 type ReceiveType = 'wallet' | 'ordinals' | 'brc100'
 
 export function ReceiveModal({ onClose }: ReceiveModalProps) {
-  const { wallet, contacts, refreshContacts, activeAccountId } = useWallet()
+  const { wallet, contacts, activeAccountId } = useWalletState()
+  const { refreshContacts } = useWalletActions()
   const { copyToClipboard, showToast } = useUI()
 
   const [receiveType, setReceiveType] = useState<ReceiveType>('wallet')

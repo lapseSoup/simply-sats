@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Lock, AlertTriangle } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateLockFee } from '../../services/wallet/fees'
 import { getTimelockScriptSize } from '../../services/wallet'
@@ -21,13 +21,8 @@ interface LockModalProps {
 }
 
 export function LockModal({ onClose }: LockModalProps) {
-  const {
-    wallet,
-    balance,
-    utxos,
-    networkInfo,
-    handleLock
-  } = useWallet()
+  const { wallet, balance, utxos, networkInfo } = useWalletState()
+  const { handleLock } = useWalletActions()
   const { displayInSats, showToast } = useUI()
 
   const [lockAmount, setLockAmount] = useState('')
