@@ -7,7 +7,7 @@ import { SECURITY } from '../../config'
 import { validatePassword, getPasswordStrengthLabel, getPasswordStrengthColor } from '../../utils/passwordValidation'
 
 interface OnboardingFlowProps {
-  onCreateWallet: (password: string | null) => Promise<string | null>
+  onCreateWallet: (password: string | null, wordCount?: 12 | 24) => Promise<string | null>
   onRestoreClick: () => void
   onWalletCreated?: (mnemonic: string) => void
 }
@@ -46,6 +46,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [showSkipWarning, setShowSkipWarning] = useState(false)
+  const [wordCount, setWordCount] = useState<12 | 24>(12)
   const { showToast } = useUI()
 
   // Password strength meter
@@ -115,7 +116,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
     setPasswordError('')
     setCreating(true)
     try {
-      const mnemonic = await onCreateWallet(password)
+      const mnemonic = await onCreateWallet(password, wordCount)
       if (mnemonic) {
         onWalletCreated?.(mnemonic)
       } else {
@@ -131,7 +132,7 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
     setShowSkipWarning(false)
     setCreating(true)
     try {
-      const mnemonic = await onCreateWallet(null)
+      const mnemonic = await onCreateWallet(null, wordCount)
       if (mnemonic) {
         onWalletCreated?.(mnemonic)
       } else {
@@ -242,6 +243,29 @@ export function OnboardingFlow({ onCreateWallet, onRestoreClick, onWalletCreated
             <p className="onboarding-action-subtitle">
               This password encrypts your wallet on this device.
             </p>
+            <div className="form-group" style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 4 }}>
+              <label className="form-label" style={{ marginBottom: 0 }}>Seed phrase length</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="wordCount"
+                  value="12"
+                  checked={wordCount === 12}
+                  onChange={() => setWordCount(12)}
+                />
+                12 words
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="wordCount"
+                  value="24"
+                  checked={wordCount === 24}
+                  onChange={() => setWordCount(24)}
+                />
+                24 words
+              </label>
+            </div>
             <div className="onboarding-password-section">
               <div className="form-group">
                 <label className="form-label" htmlFor="create-password">Password</label>

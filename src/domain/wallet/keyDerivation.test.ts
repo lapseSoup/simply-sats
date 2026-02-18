@@ -77,6 +77,14 @@ describe('Key Derivation', () => {
       expect(walletKeys.walletAddress).not.toBe(walletKeys.identityAddress)
       expect(walletKeys.ordAddress).not.toBe(walletKeys.identityAddress)
     })
+
+    it('derives wallet keys from a 24-word mnemonic', async () => {
+      const { generateMnemonic } = await import('bip39')
+      const mnemonic24 = generateMnemonic(256) // 24 words
+      expect(mnemonic24.split(' ')).toHaveLength(24)
+      const keys = await deriveWalletKeys(mnemonic24)
+      expect(keys.walletAddress).toMatch(/^1[a-zA-Z0-9]{25,34}$/)
+    })
   })
 
   describe('Rust↔JS parity', () => {

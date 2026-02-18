@@ -45,7 +45,7 @@ interface UseWalletActionsOptions {
 }
 
 interface UseWalletActionsReturn {
-  handleCreateWallet: (password: string | null) => Promise<string | null>
+  handleCreateWallet: (password: string | null, wordCount?: 12 | 24) => Promise<string | null>
   handleRestoreWallet: (mnemonic: string, password: string | null) => Promise<boolean>
   handleImportJSON: (json: string, password: string | null) => Promise<boolean>
   handleDeleteWallet: () => Promise<void>
@@ -69,7 +69,7 @@ export function useWalletActions({
   // Stores pending account discovery params — consumed by App.tsx after initial sync completes
   const pendingDiscoveryRef = useRef<{ mnemonic: string; password: string | null; excludeAccountId?: number } | null>(null)
 
-  const handleCreateWallet = useCallback(async (password: string | null): Promise<string | null> => {
+  const handleCreateWallet = useCallback(async (password: string | null, wordCount: 12 | 24 = 12): Promise<string | null> => {
     if (password !== null) {
       const validation = validatePassword(password)
       if (!validation.isValid) {
@@ -77,7 +77,7 @@ export function useWalletActions({
       }
     }
     try {
-      const result = await createWallet()
+      const result = await createWallet(wordCount)
       if (!result.ok) {
         walletLogger.error('Failed to create wallet', result.error)
         return null

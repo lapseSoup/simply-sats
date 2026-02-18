@@ -92,6 +92,9 @@ export function SignMessageModal({ onClose }: SignMessageModalProps) {
 
         {tab === 'verify' && (
           <>
+            <p className="form-hint" style={{ marginBottom: 8 }}>
+              Verifies the signature against this wallet's public key.
+            </p>
             <div className="form-group">
               <label className="form-label" htmlFor="verify-message">Message</label>
               <textarea

@@ -27,8 +27,9 @@ function keysFromWif(wif: string) {
 /**
  * Create new wallet with fresh mnemonic
  */
-export async function createWallet(): Promise<Result<WalletKeys, AppError>> {
-  const mnemonic = bip39.generateMnemonic()
+export async function createWallet(wordCount: 12 | 24 = 12): Promise<Result<WalletKeys, AppError>> {
+  const entropy = wordCount === 24 ? 256 : 128
+  const mnemonic = bip39.generateMnemonic(entropy)
   return restoreWallet(mnemonic)
 }
 

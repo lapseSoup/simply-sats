@@ -40,7 +40,7 @@ export interface WalletActionsContextType {
   // Wallet lifecycle
   performSync: (isRestore?: boolean, forceReset?: boolean) => Promise<void>
   fetchData: () => Promise<void>
-  handleCreateWallet: (password: string | null) => Promise<string | null>
+  handleCreateWallet: (password: string | null, wordCount?: 12 | 24) => Promise<string | null>
   handleRestoreWallet: (mnemonic: string, password: string | null) => Promise<boolean>
   handleImportJSON: (json: string, password: string | null) => Promise<boolean>
   handleDeleteWallet: () => Promise<void>
