@@ -82,6 +82,7 @@ export {
   sendBSV,
   getAllSpendableUTXOs,
   sendBSVMultiKey,
+  sendBSVMultiOutput,
   consolidateUtxos
 } from './transactions'
 

@@ -10,6 +10,7 @@ import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } 
 import { CoinControlModal } from './CoinControlModal'
 import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
+import type { RecipientOutput } from '../../domain/transaction/builder'
 
 interface SendModalProps {
   onClose: () => void
@@ -17,7 +18,7 @@ interface SendModalProps {
 
 export function SendModal({ onClose }: SendModalProps) {
   const { wallet, balance, utxos, feeRateKB } = useWalletState()
-  const { handleSend } = useWalletActions()
+  const { handleSend, handleSendMulti } = useWalletActions()
   const { displayInSats, showToast, formatUSD } = useUI()
 
   const [sendAddress, setSendAddress] = useState('')
@@ -28,6 +29,13 @@ export function SendModal({ onClose }: SendModalProps) {
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showCoinControl, setShowCoinControl] = useState(false)
   const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
+
+  // Multi-recipient mode
+  const [multiRecipient, setMultiRecipient] = useState(false)
+  const [recipients, setRecipients] = useState<Array<{ id: number; address: string; amount: string }>>(
+    [{ id: 0, address: '', amount: '' }]
+  )
+  const [nextRecipientId, setNextRecipientId] = useState(1)
 
   // Use fee rate from settings (convert from sats/KB to sats/byte), fallback to 0.05 sat/byte
   const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : 0.05
@@ -133,6 +141,36 @@ export function SendModal({ onClose }: SendModalProps) {
     setSending(false)
   }
 
+  const executeSendMulti = async () => {
+    setSending(true)
+    setSendError('')
+
+    const parsedRecipients: RecipientOutput[] = recipients.map(r => ({
+      address: r.address,
+      satoshis: displayInSats
+        ? Math.round(parseFloat(r.amount || '0'))
+        : btcToSatoshis(parseFloat(r.amount || '0'))
+    }))
+
+    const result = await handleSendMulti(parsedRecipients, selectedUtxos ?? undefined)
+
+    if (isOk(result)) {
+      const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
+      showToast(`Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`)
+      onClose()
+    } else {
+      const errorMsg = result.error || 'Send failed'
+      if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
+        showToast('Sent! Balance may take a moment to update.', 'warning')
+        onClose()
+      } else {
+        setSendError(errorMsg)
+      }
+    }
+
+    setSending(false)
+  }
+
   // Format amount for display in confirmation
   const formatAmount = (sats: number) => {
     if (sats >= 100000000) {
@@ -214,7 +252,80 @@ export function SendModal({ onClose }: SendModalProps) {
                 ≈ ${formatUSD(sendSats)} USD
               </div>
             )}
+            {!multiRecipient && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: '4px 8px', marginTop: 4 }}
+                onClick={() => setMultiRecipient(true)}
+              >
+                + Multiple recipients
+              </button>
+            )}
           </div>
+
+          {multiRecipient && (
+            <div className="form-group">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <label className="form-label" style={{ margin: 0 }}>Recipients</label>
+                <button
+                  type="button"
+                  style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', fontSize: 11, cursor: 'pointer' }}
+                  onClick={() => { setMultiRecipient(false); setRecipients([{ id: 0, address: '', amount: '' }]); setNextRecipientId(1) }}
+                >
+                  - Single recipient
+                </button>
+              </div>
+              {recipients.map((r) => (
+                <div key={r.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'flex-start' }}>
+                  <input
+                    type="text"
+                    className="form-input mono"
+                    placeholder="BSV address"
+                    value={r.address}
+                    onChange={e => {
+                      setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, address: e.target.value } : x))
+                    }}
+                    style={{ flex: 2 }}
+                    autoComplete="off"
+                  />
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder={displayInSats ? '0' : '0.00000000'}
+                    step={displayInSats ? '1' : '0.00000001'}
+                    value={r.amount}
+                    onChange={e => {
+                      setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, amount: e.target.value } : x))
+                    }}
+                    style={{ flex: 1 }}
+                    autoComplete="off"
+                  />
+                  {recipients.length > 1 && (
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 18, lineHeight: 1, paddingTop: 8 }}
+                      onClick={() => setRecipients(prev => prev.filter(x => x.id !== r.id))}
+                      aria-label="Remove recipient"
+                    >
+                      -
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: '4px 8px', width: '100%' }}
+                onClick={() => {
+                  setRecipients(r => [...r, { id: nextRecipientId, address: '', amount: '' }])
+                  setNextRecipientId(n => n + 1)
+                }}
+              >
+                + Add recipient
+              </button>
+            </div>
+          )}
 
           <div className="send-summary compact">
             <div className="send-summary-row">
@@ -298,19 +409,36 @@ export function SendModal({ onClose }: SendModalProps) {
               <span className="warning-text">{sendError}</span>
             </div>
           )}
-          <button
-            className="btn btn-primary"
-            onClick={handleSubmitClick}
-            disabled={sending || !sendAddress || !sendAmount || !!addressError || sendSats + fee > availableSats}
-            aria-busy={sending}
-          >
-            {sending ? (
-              <>
-                <span className="spinner-small" aria-hidden="true" />
-                Sending...
-              </>
-            ) : `Send ${sendSats > 0 ? sendSats.toLocaleString() + ' sats' : 'BSV'}`}
-          </button>
+          {multiRecipient ? (
+            <button
+              className="btn btn-primary"
+              onClick={executeSendMulti}
+              disabled={sending || recipients.some(r => !r.address || !r.amount) || recipients.length === 0}
+              aria-busy={sending}
+              type="button"
+            >
+              {sending ? (
+                <>
+                  <span className="spinner-small" aria-hidden="true" />
+                  Sending...
+                </>
+              ) : `Send to ${recipients.length} recipient${recipients.length !== 1 ? 's' : ''}`}
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              onClick={handleSubmitClick}
+              disabled={sending || !sendAddress || !sendAmount || !!addressError || sendSats + fee > availableSats}
+              aria-busy={sending}
+            >
+              {sending ? (
+                <>
+                  <span className="spinner-small" aria-hidden="true" />
+                  Sending...
+                </>
+              ) : `Send ${sendSats > 0 ? sendSats.toLocaleString() + ' sats' : 'BSV'}`}
+            </button>
+          )}
         </div>
       </Modal>
 

@@ -4,6 +4,7 @@ import {
   buildP2PKHTx,
   buildMultiKeyP2PKHTx,
   buildConsolidationTx,
+  buildMultiOutputP2PKHTx,
   calculateChangeAndFee,
   p2pkhLockingScriptHex
 } from './builder'
@@ -330,6 +331,48 @@ describe('Transaction Builder', () => {
       expect(result.tx!.outputs.length).toBe(1)
       expect(result.outputSats).toBe(10000 - result.fee)
       expect(result.spentOutpoints).toHaveLength(10)
+    })
+  })
+
+  describe('buildMultiOutputP2PKHTx', () => {
+    it('builds a tx with two recipient outputs and change', async () => {
+      const mockUtxo = { txid: 'a'.repeat(64), vout: 0, satoshis: 10000, script: '' }
+      const result = await buildMultiOutputP2PKHTx({
+        wif: TEST_WIF,
+        outputs: [
+          { address: RECIPIENT_ADDRESS, satoshis: 3000 },
+          { address: RECIPIENT_ADDRESS, satoshis: 3000 },
+        ],
+        selectedUtxos: [mockUtxo],
+        totalInput: 10000,
+        feeRate: 0.05,
+      })
+      expect(result.txid).toHaveLength(64)
+      expect(result.numOutputs).toBe(3) // 2 recipients + change
+      expect(result.fee).toBeGreaterThan(0)
+      expect(result.totalSent).toBe(6000)
+    })
+
+    it('throws if outputs array is empty', async () => {
+      const mockUtxo = { txid: 'c'.repeat(64), vout: 0, satoshis: 5000, script: '' }
+      await expect(buildMultiOutputP2PKHTx({
+        wif: TEST_WIF,
+        outputs: [],
+        selectedUtxos: [mockUtxo],
+        totalInput: 5000,
+        feeRate: 0.05,
+      })).rejects.toThrow('at least one output')
+    })
+
+    it('throws if insufficient funds', async () => {
+      const mockUtxo = { txid: 'd'.repeat(64), vout: 0, satoshis: 100, script: '' }
+      await expect(buildMultiOutputP2PKHTx({
+        wif: TEST_WIF,
+        outputs: [{ address: RECIPIENT_ADDRESS, satoshis: 5000 }],
+        selectedUtxos: [mockUtxo],
+        totalInput: 100,
+        feeRate: 0.05,
+      })).rejects.toThrow('Insufficient funds')
     })
   })
 })

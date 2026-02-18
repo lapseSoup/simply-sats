@@ -11,6 +11,7 @@ import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import {
   getUTXOs,
   sendBSVMultiKey,
+  sendBSVMultiOutput,
   transferOrdinal,
   getWifForOperation
 } from '../services/wallet'
@@ -25,6 +26,7 @@ import {
 import { audit } from '../services/auditLog'
 import { walletLogger } from '../services/logger'
 import { ok, err, type Result, type WalletResult } from '../domain/types'
+import type { RecipientOutput } from '../domain/transaction/builder'
 
 interface UseWalletSendOptions {
   wallet: WalletKeys | null
@@ -42,6 +44,7 @@ interface UseWalletSendOptions {
 
 interface UseWalletSendReturn {
   handleSend: (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]) => Promise<WalletResult>
+  handleSendMulti: (recipients: RecipientOutput[], selectedUtxos?: DatabaseUTXO[]) => Promise<WalletResult>
   handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<WalletResult>
   handleListOrdinal: (ordinal: Ordinal, priceSats: number) => Promise<WalletResult>
   handleSendToken: (ticker: string, protocol: 'bsv20' | 'bsv21', amount: string, toAddress: string) => Promise<WalletResult>
@@ -151,6 +154,94 @@ export function useWalletSend({
     }
   }, [wallet, fetchData, activeAccountId])
 
+
+  const handleSendMulti = useCallback(async (recipients: RecipientOutput[], selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
+    if (!wallet) return err('No wallet loaded')
+
+    const derivedMap = new Map<string, string>() // address → WIF
+    try {
+      const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
+
+      const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
+      const identityWif = await getWifForOperation('identity', 'sendBSVMulti-deriveChildKey', wallet)
+      for (const d of derivedAddrs) {
+        if (d.senderPubkey && d.invoiceNumber) {
+          try {
+            const childKey = deriveChildPrivateKey(
+              PrivateKey.fromWif(identityWif),
+              PublicKey.fromString(d.senderPubkey),
+              d.invoiceNumber
+            )
+            derivedMap.set(d.address, childKey.toWif())
+          } catch (e) {
+            walletLogger.warn('Failed to re-derive child key for derived address', {
+              address: d.address,
+              error: e instanceof Error ? e.message : String(e)
+            })
+          }
+        } else if (d.privateKeyWif) {
+          derivedMap.set(d.address, d.privateKeyWif)
+        }
+      }
+
+      const walletWif = await getWifForOperation('wallet', 'sendBSVMulti', wallet)
+
+      const extendedUtxos = spendableUtxos.map(u => {
+        const utxoAddress = u.address || wallet.walletAddress
+        const wif = derivedMap.get(utxoAddress) || walletWif
+        return {
+          txid: u.txid,
+          vout: u.vout,
+          satoshis: u.satoshis,
+          script: u.lockingScript || '',
+          wif,
+          address: utxoAddress
+        }
+      })
+
+      if (!selectedUtxos) {
+        for (const derived of derivedAddrs) {
+          const derivedWif = derivedMap.get(derived.address)
+          if (derivedWif) {
+            try {
+              const derivedUtxos = await getUTXOs(derived.address)
+              for (const u of derivedUtxos) {
+                extendedUtxos.push({ ...u, wif: derivedWif, address: derived.address })
+              }
+            } catch (e) {
+              walletLogger.warn('Failed to fetch derived address UTXOs, skipping', {
+                address: derived.address,
+                error: e instanceof Error ? e.message : String(e)
+              })
+            }
+          }
+        }
+      }
+
+      const seen = new Set<string>()
+      const deduplicatedUtxos = extendedUtxos.filter(u => {
+        const key = `${u.txid}:${u.vout}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      const totalSent = recipients.reduce((sum, r) => sum + r.satoshis, 0)
+      const sendResult = await sendBSVMultiOutput(walletWif, recipients, deduplicatedUtxos, activeAccountId ?? undefined)
+      if (!sendResult.ok) {
+        return err(sendResult.error.message)
+      }
+      const { txid } = sendResult.value
+      await fetchData()
+      audit.transactionSent(txid, totalSent, activeAccountId ?? undefined)
+      return ok({ txid })
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'Multi-recipient send failed')
+    } finally {
+      derivedMap.clear()
+    }
+  }, [wallet, fetchData, activeAccountId])
+
   const handleTransferOrdinal = useCallback(async (
     ordinal: Ordinal,
     toAddress: string
@@ -250,6 +341,7 @@ export function useWalletSend({
 
   return {
     handleSend,
+    handleSendMulti,
     handleTransferOrdinal,
     handleListOrdinal,
     handleSendToken

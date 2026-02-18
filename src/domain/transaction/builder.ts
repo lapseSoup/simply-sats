@@ -556,6 +556,147 @@ export async function buildConsolidationTx(
   }
 }
 
+
+export interface RecipientOutput {
+  address: string
+  satoshis: number
+}
+
+export interface BuildMultiOutputP2PKHTxParams {
+  wif: string
+  outputs: RecipientOutput[]
+  selectedUtxos: UTXO[]
+  totalInput: number
+  feeRate: number
+}
+
+export interface BuiltMultiOutputTransaction extends BuiltTransaction {
+  totalSent: number
+}
+
+/**
+ * Build and sign a P2PKH transaction with multiple recipient outputs.
+ *
+ * Sends to multiple recipients in a single transaction, with change back to
+ * the sender. This is the multi-recipient analogue of buildP2PKHTx.
+ *
+ * @param params - Transaction parameters including multiple outputs
+ * @returns The built and signed transaction with metadata
+ * @throws Error if outputs array is empty
+ * @throws Error if insufficient funds to cover all outputs plus fee
+ *
+ * @example
+ * ```typescript
+ * const result = await buildMultiOutputP2PKHTx({
+ *   wif: 'L1...',
+ *   outputs: [
+ *     { address: '1A1zP1...', satoshis: 3000 },
+ *     { address: '1B2yQ2...', satoshis: 2000 },
+ *   ],
+ *   selectedUtxos: [...],
+ *   totalInput: 10000,
+ *   feeRate: 0.05
+ * })
+ * // result.totalSent === 5000
+ * // result.numOutputs === 3 (2 recipients + change)
+ * ```
+ */
+export async function buildMultiOutputP2PKHTx(
+  params: BuildMultiOutputP2PKHTxParams
+): Promise<BuiltMultiOutputTransaction> {
+  const { wif, outputs, selectedUtxos, totalInput, feeRate } = params
+
+  if (outputs.length === 0) {
+    throw new Error('Must have at least one output')
+  }
+
+  const totalSent = outputs.reduce((sum, o) => sum + o.satoshis, 0)
+
+  // Delegate to Rust when running inside Tauri — use key store (WIF never leaves Rust)
+  if (isTauri()) {
+    const result = await tauriInvoke<{
+      rawTx: string
+      txid: string
+      fee: number
+      change: number
+      changeAddress: string
+      spentOutpoints: Array<{ txid: string; vout: number }>
+    }>('build_multi_output_p2pkh_tx_from_store', {
+      outputs,
+      selectedUtxos: selectedUtxos.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script ?? '',
+      })),
+      totalInput,
+      feeRate,
+    })
+    return {
+      tx: null,
+      rawTx: result.rawTx,
+      txid: result.txid,
+      fee: result.fee,
+      change: result.change,
+      changeAddress: result.changeAddress,
+      numOutputs: result.change > 0 ? outputs.length + 1 : outputs.length,
+      spentOutpoints: result.spentOutpoints,
+      totalSent,
+    }
+  }
+
+  // JS fallback (browser dev mode / tests)
+  const privateKey = PrivateKey.fromWif(wif)
+  const fromAddress = privateKey.toPublicKey().toAddress()
+  const sourceLockingScript = new P2PKH().lock(fromAddress)
+
+  // Calculate fee: n inputs, (numRecipients + 1 change) outputs
+  const numOutputsWithChange = outputs.length + 1
+  const fee = calculateTxFee(selectedUtxos.length, numOutputsWithChange, feeRate)
+  const change = totalInput - totalSent - fee
+
+  if (change < 0) {
+    throw new Error(
+      `Insufficient funds: need ${totalSent + fee} sats (${totalSent} + ${fee} fee), have ${totalInput}`
+    )
+  }
+
+  const tx = new Transaction()
+
+  for (const utxo of selectedUtxos) {
+    tx.addInput({
+      sourceTXID: utxo.txid,
+      sourceOutputIndex: utxo.vout,
+      unlockingScriptTemplate: new P2PKH().unlock(
+        privateKey, 'all', false, utxo.satoshis, sourceLockingScript
+      ),
+      sequence: 0xffffffff,
+    })
+  }
+
+  for (const output of outputs) {
+    tx.addOutput({ lockingScript: new P2PKH().lock(output.address), satoshis: output.satoshis })
+  }
+
+  if (change > 0) {
+    tx.addOutput({ lockingScript: new P2PKH().lock(fromAddress), satoshis: change })
+  }
+
+  await tx.sign()
+
+  return {
+    tx,
+    rawTx: tx.toHex(),
+    txid: tx.id('hex'),
+    fee,
+    change,
+    changeAddress: fromAddress,
+    numOutputs: tx.outputs.length,
+    spentOutpoints: selectedUtxos.map(u => ({ txid: u.txid, vout: u.vout })),
+    totalSent,
+  }
+}
+
 /**
  * Create a P2PKH locking script hex for an address.
  *

@@ -304,6 +304,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Send operations - from useWalletSend
   const {
     handleSend,
+    handleSendMulti,
     handleTransferOrdinal,
     handleListOrdinal,
     handleSendToken
@@ -376,6 +377,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleImportJSON,
     handleDeleteWallet,
     handleSend,
+    handleSendMulti,
     handleLock,
     handleUnlock,
     handleTransferOrdinal,
@@ -387,7 +389,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     renameAccount, refreshAccounts, refreshTokens, lockWallet, unlockWallet,
     setAutoLockMinutes, setFeeRate, refreshContacts, performSync, fetchData,
     handleCreateWallet, handleRestoreWallet, handleImportJSON, handleDeleteWallet,
-    handleSend, handleLock, handleUnlock, handleTransferOrdinal, handleListOrdinal,
+    handleSend, handleSendMulti, handleLock, handleUnlock, handleTransferOrdinal, handleListOrdinal,
     handleSendToken, consumePendingDiscovery
   ])
 

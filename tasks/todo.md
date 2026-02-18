@@ -235,3 +235,27 @@ Track files using ad-hoc `{ success: boolean; error?: string }` pattern that sho
 - [ ] `src/domain/types.ts` (SendResult type)
 
 Note: The unused comprehensive `src/domain/result.ts` was removed in the code review remediation. When migrating, design a simpler Result type that fits the actual patterns used.
+
+## Feature Parity with Yours Wallet (Gap Analysis — Feb 2026)
+
+Simply Sats already has feature parity on: BSV send/receive, QR codes, tx history, ordinals view/transfer, BSV-20/21 tokens, time-locks, multi-account, BIP-39/44, auto-lock, AES-256-GCM encryption, backup/restore, coin control, UTXO consolidation, SHIP/SLAP overlay, contacts, BRC-100 dApp integration, dark/light theme, audit logging, and accessibility. Simply Sats is MORE secure than Yours (600k vs 100k PBKDF2 iterations).
+
+Note: Simply Sats is **not an SPV wallet** — it trusts WhatsOnChain/GorillaPool blindly. No merkle proof verification occurs.
+
+### Priority 1 — High Impact
+- [ ] **SPV verification**: integrate merkle proof validation using @bsv/sdk, replace blind API trust with verified chain data (`src/infrastructure/api/`, `src/services/wallet/transactions.ts`)
+- [ ] **Multi-recipient transactions**: extend `buildP2PKHTx()` to accept multiple outputs array; update SendModal (`src/domain/transaction/builder.ts`, `src/components/modals/SendModal.tsx`)
+- [ ] **Testnet / network switching UI**: expose existing testnet infrastructure (`src/infrastructure/storage/localStorage.ts`, `src/services/config.ts`) via Settings toggle — infrastructure already exists, just needs UI (`src/config/index.ts`, `src/components/modals/SettingsModal.tsx`)
+- [ ] **Ordinal inscription creation**: add `inscribeOrdinal()` service and `InscribeModal` for creating new 1Sat Ordinals (`src/services/wallet/ordinals.ts`, `src/components/modals/`)
+
+### Priority 2 — Medium Impact
+- [ ] **MNEE stablecoin support**: add MNEE as known token type with ticket-based confirmation polling (`src/services/wallet/tokens.ts`)
+- [ ] **Ordinals marketplace — purchase**: add `purchaseOrdinal()` to complete buy/sell/cancel flow (list+cancel already implemented) (`src/services/wallet/`, `src/components/modals/OrdinalModal.tsx`)
+- [ ] **Standalone message signing UI**: add `SignMessageModal` for sign/verify outside of BRC-100 request flow (`src/components/modals/`)
+- [ ] **"Send max" button**: add Max button to SendModal that calculates full spendable balance minus estimated fee (`src/components/modals/SendModal.tsx`)
+- [ ] **SDK method parity**: audit `@simply-sats/sdk` against Yours Wallet Provider API methods and implement any missing methods (`sdk/`)
+
+### Priority 3 — Lower Impact
+- [ ] **24-word seed phrase support**: update onboarding and key derivation to optionally support BIP-39 24-word mnemonics (`src/services/keyDerivation.ts`, `src/components/onboarding/`)
+- [ ] **WIF private key export/import**: add WIF export to Settings > Wallet; add WIF import path to onboarding restore flow (`src/components/modals/SettingsModal.tsx`, `src/components/onboarding/`)
+- [ ] **Per-dApp tagged derivation**: evaluate and expose `taggedDerivation` in SDK for Yours-compatible dApp key isolation (`sdk/`, `src/services/brc100/`)

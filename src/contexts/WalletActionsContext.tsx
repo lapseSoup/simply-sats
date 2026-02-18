@@ -11,6 +11,7 @@ import { createContext, useContext } from 'react'
 import type { WalletKeys, LockedUTXO, Ordinal } from '../services/wallet'
 import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import type { WalletResult } from '../domain/types'
+import type { RecipientOutput } from '../domain/transaction/builder'
 
 export interface WalletActionsContextType {
   setWallet: (wallet: WalletKeys | null) => void
@@ -46,6 +47,7 @@ export interface WalletActionsContextType {
 
   // Wallet operations
   handleSend: (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]) => Promise<WalletResult>
+  handleSendMulti: (recipients: RecipientOutput[], selectedUtxos?: DatabaseUTXO[]) => Promise<WalletResult>
   handleLock: (amountSats: number, blocks: number) => Promise<WalletResult>
   handleUnlock: (lock: LockedUTXO) => Promise<WalletResult>
   handleTransferOrdinal: (ordinal: Ordinal, toAddress: string) => Promise<WalletResult>

@@ -15,6 +15,7 @@ import {
   buildP2PKHTx,
   buildMultiKeyP2PKHTx,
   buildConsolidationTx,
+  buildMultiOutputP2PKHTx,
   p2pkhLockingScriptHex
 } from '../../domain/transaction/builder'
 import {
@@ -38,6 +39,7 @@ import {
   InvalidAddressError,
   InvalidAmountError
 } from '../errors'
+import type { RecipientOutput } from '../../domain/transaction/builder'
 import { type Result, ok, err } from '../../domain/types'
 
 /**
@@ -465,6 +467,75 @@ export async function consolidateUtxos(
     }
 
     return ok({ txid, outputSats, fee })
+  } finally {
+    releaseLock()
+  }
+}
+
+/**
+ * Send BSV to multiple recipients in a single transaction.
+ *
+ * Uses selectCoinsMultiKey for coin selection, buildMultiOutputP2PKHTx for
+ * transaction construction, then broadcasts and records the result.
+ *
+ * @param changeWif - WIF for the change output address
+ * @param outputs - Array of recipient addresses and satoshi amounts
+ * @param utxos - Available spendable UTXOs (with per-UTXO signing keys)
+ * @param accountId - Account ID for sync lock and DB recording
+ * @returns Result with txid on success, AppError on failure
+ */
+export async function sendBSVMultiOutput(
+  changeWif: string,
+  outputs: RecipientOutput[],
+  utxos: ExtendedUTXO[],
+  accountId?: number
+): Promise<Result<{ txid: string }, AppError>> {
+  if (outputs.length === 0) {
+    return err(new AppError('Must specify at least one recipient output', ErrorCodes.INVALID_STATE, { outputs }))
+  }
+
+  for (const output of outputs) {
+    const validation = validateSendRequest(output.address, output.satoshis)
+    if (!validation.ok) return validation
+  }
+
+  const totalSent = outputs.reduce((sum, o) => sum + o.satoshis, 0)
+
+  if (accountId === undefined) {
+    return err(new AppError('accountId is required to send BSV (multi-output)', ErrorCodes.INVALID_STATE, { outputs }))
+  }
+
+  const releaseLock = await acquireSyncLock(accountId)
+  try {
+    const { selected: inputsToUse, total: totalInput, sufficient } = selectCoinsMultiKey(utxos, totalSent)
+    if (!sufficient) {
+      return err(new InsufficientFundsError(totalSent, totalInput))
+    }
+
+    const feeRate = getFeeRate()
+    let built
+    try {
+      built = await buildMultiOutputP2PKHTx({ wif: changeWif, outputs, selectedUtxos: inputsToUse, totalInput, feeRate })
+    } catch (buildError) {
+      return err(AppError.fromUnknown(buildError, ErrorCodes.INTERNAL_ERROR))
+    }
+    const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
+
+    resetInactivityTimer()
+    let txid: string
+    try {
+      txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    } catch (broadcastError) {
+      return err(AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED))
+    }
+    try {
+      const description = `Sent ${totalSent} sats to ${outputs.length} recipients`
+      await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, description, ['send'], -(totalSent + fee), change, changeAddress, spentOutpoints, accountId)
+    } catch (recordError) {
+      return err(AppError.fromUnknown(recordError, ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED))
+    }
+    resetInactivityTimer()
+    return ok({ txid })
   } finally {
     releaseLock()
   }
