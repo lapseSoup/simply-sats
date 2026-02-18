@@ -1,8 +1,9 @@
 /**
  * BRC-100 Certificate Operations
  *
- * Delegates certificate operations to the certificate service,
- * using BRC-100 wallet keys for authentication.
+ * Delegates certificate operations to the certificate service.
+ * WalletKeys is accepted as an explicit first parameter — callers
+ * (HTTP handlers) are responsible for resolving keys at the boundary.
  */
 
 import {
@@ -13,14 +14,13 @@ import {
   type CertificateType,
   type AcquireCertificateArgs
 } from '../certificates'
-import { getWalletKeys } from './state'
+import type { WalletKeys } from '../wallet'
 
 // Re-export needed certificate types for convenience
 export type { Certificate, CertificateType, AcquireCertificateArgs }
 
 // BRC-100 acquireCertificate - delegates to certificate service
-export async function acquireCertificate(args: AcquireCertificateArgs): Promise<Certificate> {
-  const keys = getWalletKeys()
+export async function acquireCertificate(keys: WalletKeys | null, args: AcquireCertificateArgs): Promise<Certificate> {
   if (!keys) {
     throw new Error('No wallet loaded')
   }
@@ -28,7 +28,7 @@ export async function acquireCertificate(args: AcquireCertificateArgs): Promise<
 }
 
 // BRC-100 listCertificates - delegates to certificate service
-export async function listCertificates(args: {
+export async function listCertificates(keys: WalletKeys | null, args: {
   certifiers?: string[]
   types?: CertificateType[]
   limit?: number
@@ -37,7 +37,6 @@ export async function listCertificates(args: {
   certificates: Certificate[]
   totalCertificates: number
 }> {
-  const keys = getWalletKeys()
   if (!keys) {
     return { certificates: [], totalCertificates: 0 }
   }
@@ -45,7 +44,7 @@ export async function listCertificates(args: {
 }
 
 // BRC-100 proveCertificate - creates a proof of certificate ownership
-export async function proveCertificate(args: {
+export async function proveCertificate(keys: WalletKeys | null, args: {
   certificate: Certificate
   fieldsToReveal: string[]
   verifier: string
@@ -54,7 +53,6 @@ export async function proveCertificate(args: {
   revealedFields: Record<string, string>
   verifier: string
 }> {
-  const keys = getWalletKeys()
   if (!keys) {
     throw new Error('No wallet loaded')
   }
