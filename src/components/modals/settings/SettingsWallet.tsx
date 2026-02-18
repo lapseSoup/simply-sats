@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Wallet, Palette, KeyRound, Copy, PenLine } from 'lucide-react'
+import { Wallet, Palette, KeyRound, Copy, PenLine, Eye, EyeOff, AlertTriangle } from 'lucide-react'
 import { useWalletState } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { handleKeyDown } from './settingsKeyDown'
@@ -9,6 +9,7 @@ export function SettingsWallet() {
   const { wallet } = useWalletState()
   const { copyToClipboard } = useUI()
   const [showSignMessage, setShowSignMessage] = useState(false)
+  const [showWif, setShowWif] = useState(false)
 
   if (!wallet) return null
 
@@ -57,6 +58,65 @@ export function SettingsWallet() {
           <span className="settings-row-arrow" aria-hidden="true"><PenLine size={16} strokeWidth={1.75} /></span>
         </div>
       </div>
+
+      {/* WIF Private Key Export — Danger Zone */}
+      {/* TODO: WIF import is future work. Importing a bare WIF has no mnemonic for backup,
+           which requires a separate wallet derivation path and distinct backup warning flow. */}
+      <div className="settings-section-title" style={{ marginTop: '1.5rem' }}>Private Key Export</div>
+      <div className="settings-card">
+        <div style={{ padding: '0.75rem 1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <AlertTriangle size={14} strokeWidth={2} style={{ color: 'var(--color-warning, #f59e0b)', flexShrink: 0 }} aria-hidden="true" />
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-warning, #f59e0b)', fontWeight: 600 }}>
+              Never share your private key. Anyone with this key has full control of your funds.
+            </span>
+          </div>
+          <button
+            className="btn btn-secondary"
+            style={{ marginBottom: showWif ? '0.75rem' : 0, fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+            onClick={() => setShowWif(v => !v)}
+            aria-expanded={showWif}
+            aria-controls="wif-key-panel"
+          >
+            {showWif
+              ? <><EyeOff size={14} strokeWidth={1.75} aria-hidden="true" /> Hide WIF Key</>
+              : <><Eye size={14} strokeWidth={1.75} aria-hidden="true" /> Show WIF Key</>
+            }
+          </button>
+          {showWif && (
+            <div id="wif-key-panel">
+              <textarea
+                readOnly
+                value={wallet.walletWif ?? ''}
+                rows={2}
+                aria-label="Payment private key (WIF)"
+                style={{
+                  width: '100%',
+                  fontFamily: 'monospace',
+                  fontSize: '0.75rem',
+                  resize: 'none',
+                  borderRadius: '0.375rem',
+                  border: '1px solid var(--color-border, #374151)',
+                  background: 'var(--color-surface-2, #111827)',
+                  color: 'var(--color-text, #f9fafb)',
+                  padding: '0.5rem',
+                  boxSizing: 'border-box',
+                  marginBottom: '0.5rem',
+                }}
+              />
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+                onClick={() => wallet.walletWif && copyToClipboard(wallet.walletWif, 'Private key copied!')}
+                aria-label="Copy WIF private key"
+              >
+                <Copy size={14} strokeWidth={1.75} aria-hidden="true" /> Copy
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {showSignMessage && <SignMessageModal onClose={() => setShowSignMessage(false)} />}
     </div>
   )
