@@ -6,7 +6,7 @@
  */
 
 import { getDatabase } from './database'
-import { withTransaction } from './database/connection'
+import { withTransaction } from './database'
 import { encrypt, decrypt, type EncryptedData } from './crypto'
 import type { WalletKeys } from './wallet'
 import { isUnprotectedData } from './wallet/types'

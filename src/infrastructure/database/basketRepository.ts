@@ -6,7 +6,7 @@
 
 import { getDatabase } from './connection'
 import type { Basket } from './types'
-import type { BasketRow } from '../database-types'
+import type { BasketRow } from '../../services/database-types'
 
 /**
  * Get all baskets

@@ -9,7 +9,7 @@
 import { P2PKH } from '@bsv/sdk'
 import { BASKETS } from '../domain/types'
 import type { LockedUTXO } from './wallet/types'
-import type { DerivedAddress } from './database/types'
+import type { DerivedAddress } from './database'
 import {
   addUTXO,
   markUTXOSpent,

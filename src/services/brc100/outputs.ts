@@ -11,7 +11,7 @@ import {
   getUTXOsByBasket,
   getLocks as getLocksFromDB
 } from '../database'
-import type { Lock, UTXO } from '../database/types'
+import type { Lock, UTXO } from '../database'
 import { BASKETS, getCurrentBlockHeight } from '../sync'
 import { lookupByTopic, TOPICS } from '../overlay'
 import { brc100Logger } from '../logger'

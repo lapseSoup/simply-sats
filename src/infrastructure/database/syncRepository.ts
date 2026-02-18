@@ -5,7 +5,7 @@
  */
 
 import { getDatabase } from './connection'
-import type { SyncStateRow } from '../database-types'
+import type { SyncStateRow } from '../../services/database-types'
 
 /**
  * Get last synced height for an address

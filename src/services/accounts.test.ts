@@ -45,6 +45,7 @@ const { mockDb, resetMockDb, autoIncrement } = vi.hoisted(() => {
 // Mock the database module
 vi.mock('./database', () => {
   return {
+    withTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
     getDatabase: () => ({
       select: vi.fn(async (query: string, params?: unknown[]) => {
         // Parse the query to determine what to return
@@ -163,13 +164,6 @@ vi.mock('./wallet/storage', () => ({
   loadWallet: vi.fn(async () => null)
 }))
 
-// Mock the database connection module (withTransaction)
-vi.mock('./database/connection', () => ({
-  withTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
-  getDatabase: () => ({}),
-  initDatabase: vi.fn(),
-  closeDatabase: vi.fn()
-}))
 
 // Helper to create mock wallet keys
 function createMockWalletKeys(suffix = '1'): WalletKeys {

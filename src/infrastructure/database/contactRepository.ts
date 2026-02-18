@@ -5,9 +5,9 @@
  */
 
 import { getDatabase } from './connection'
-import { dbLogger } from '../logger'
+import { dbLogger } from '../../services/logger'
 import type { Contact } from './types'
-import type { ContactRow } from '../database-types'
+import type { ContactRow } from '../../services/database-types'
 
 /**
  * Ensure contacts table exists
