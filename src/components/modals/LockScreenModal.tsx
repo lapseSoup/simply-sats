@@ -71,7 +71,7 @@ export function LockScreenModal({
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={e => setPassword(e.target.value)}
-              placeholder="Enter password (or leave blank)"
+              placeholder="Enter your password"
               className={`lock-screen-input ${error ? 'error' : ''}`}
               disabled={loading}
               autoComplete="current-password"

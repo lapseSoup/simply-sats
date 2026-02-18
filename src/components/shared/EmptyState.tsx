@@ -74,7 +74,7 @@ export function NoTransactionsEmpty({ onReceive }: { onReceive?: () => void }) {
     <EmptyState
       icon={<Inbox size={48} strokeWidth={1.5} />}
       title="No Transactions Yet"
-      description="Your transaction history will appear here"
+      description="Your transaction history will appear here."
       action={onReceive ? { label: 'Receive BSV', onClick: onReceive } : undefined}
     />
   )
@@ -117,7 +117,7 @@ export function NoContactsEmpty({ onAdd }: { onAdd?: () => void }) {
   return (
     <EmptyState
       icon={<Users size={48} strokeWidth={1.5} />}
-      title="No contacts yet"
+      title="No Contacts Yet"
       description="Add contacts to easily send and receive payments."
       action={onAdd ? { label: 'Add Contact', onClick: onAdd } : undefined}
       size="small"
@@ -129,7 +129,7 @@ export function NoSearchResultsEmpty() {
   return (
     <EmptyState
       icon={<Search size={48} strokeWidth={1.5} />}
-      title="No results found"
+      title="No Results Found"
       description="Try adjusting your search or filter criteria."
       size="small"
     />
@@ -140,7 +140,7 @@ export function ErrorStateEmpty({ onRetry }: { onRetry?: () => void }) {
   return (
     <EmptyState
       icon={<AlertTriangle size={48} strokeWidth={1.5} />}
-      title="Something went wrong"
+      title="Something Went Wrong"
       description="We couldn't load this content. Please try again."
       action={onRetry ? { label: 'Try Again', onClick: onRetry } : undefined}
     />

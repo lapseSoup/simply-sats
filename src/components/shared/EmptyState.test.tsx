@@ -219,7 +219,7 @@ describe('NoLocksEmpty', () => {
 describe('NoContactsEmpty', () => {
   it('renders title', () => {
     render(<NoContactsEmpty />)
-    expect(screen.getByText('No contacts yet')).toBeInTheDocument()
+    expect(screen.getByText('No Contacts Yet')).toBeInTheDocument()
   })
 
   it('renders Add Contact button when onAdd provided', () => {
@@ -235,14 +235,14 @@ describe('NoContactsEmpty', () => {
 describe('NoSearchResultsEmpty', () => {
   it('renders title', () => {
     render(<NoSearchResultsEmpty />)
-    expect(screen.getByText('No results found')).toBeInTheDocument()
+    expect(screen.getByText('No Results Found')).toBeInTheDocument()
   })
 })
 
 describe('ErrorStateEmpty', () => {
   it('renders title', () => {
     render(<ErrorStateEmpty />)
-    expect(screen.getByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.getByText('Something Went Wrong')).toBeInTheDocument()
   })
 
   it('renders Try Again button when onRetry provided', () => {

@@ -429,7 +429,12 @@ export async function consolidateUtxos(
     const totalInput = utxoIds.reduce((sum, u) => sum + u.satoshis, 0)
 
     resetInactivityTimer()
-    const txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    let txid: string
+    try {
+      txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    } catch (broadcastError) {
+      return err(AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED))
+    }
 
     // Record — consolidation uses vout 0 (single output), not last output
     try {

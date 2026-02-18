@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { useState, useMemo, useRef } from 'react'
+import { AlertTriangle, Crosshair, Settings } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
@@ -25,6 +25,7 @@ export function SendModal({ onClose }: SendModalProps) {
   const [sendAmount, setSendAmount] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const sendingRef = useRef(false)
   const { addressError, validateAddress } = useAddressValidation()
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showCoinControl, setShowCoinControl] = useState(false)
@@ -105,6 +106,7 @@ export function SendModal({ onClose }: SendModalProps) {
   const isHighValue = sendSats >= HIGH_VALUE_THRESHOLD
 
   const handleSubmitClick = () => {
+    if (sendingRef.current) return
     if (!sendAddress || !sendAmount) return
 
     // Show confirmation for large amounts
@@ -116,29 +118,33 @@ export function SendModal({ onClose }: SendModalProps) {
   }
 
   const executeSend = async () => {
+    sendingRef.current = true
     setShowConfirmation(false)
     setSending(true)
     setSendError('')
 
-    // Pass selected UTXOs to handleSend if coin control was used
-    const result = await handleSend(sendAddress, sendSats, selectedUtxos ?? undefined)
+    try {
+      // Pass selected UTXOs to handleSend if coin control was used
+      const result = await handleSend(sendAddress, sendSats, selectedUtxos ?? undefined)
 
-    if (isOk(result)) {
-      showToast(`Sent ${sendSats.toLocaleString()} sats!`)
-      onClose()
-    } else {
-      const errorMsg = result.error || 'Send failed'
-      // Broadcast succeeded but local DB write failed — tx is on-chain, close and warn via toast.
-      // Detect via BROADCAST_SUCCEEDED_DB_FAILED error code or legacy "broadcast succeeded" substring.
-      if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
-        showToast('Sent! Balance may take a moment to update.', 'warning')
+      if (isOk(result)) {
+        showToast(`Sent ${sendSats.toLocaleString()} sats!`)
         onClose()
       } else {
-        setSendError(errorMsg)
+        const errorMsg = result.error || 'Send failed'
+        // Broadcast succeeded but local DB write failed — tx is on-chain, close and warn via toast.
+        // Detect via BROADCAST_SUCCEEDED_DB_FAILED error code or legacy "broadcast succeeded" substring.
+        if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
+          showToast('Sent! Balance may take a moment to update.', 'warning')
+          onClose()
+        } else {
+          setSendError(errorMsg)
+        }
       }
+    } finally {
+      setSending(false)
+      sendingRef.current = false
     }
-
-    setSending(false)
   }
 
   const executeSendMulti = async () => {
@@ -380,8 +386,8 @@ export function SendModal({ onClose }: SendModalProps) {
                 style={{ width: '100%', fontSize: 12, padding: '8px 12px', marginTop: 8 }}
               >
                 {selectedUtxos
-                  ? `🎯 Using ${selectedUtxos.length} selected UTXOs`
-                  : '⚙️ Coin Control'}
+                  ? <><Crosshair size={14} strokeWidth={1.75} /> Using {selectedUtxos.length} selected UTXOs</>
+                  : <><Settings size={14} strokeWidth={1.75} /> Coin Control</>}
               </button>
               {selectedUtxos && (
                 <button
@@ -404,7 +410,7 @@ export function SendModal({ onClose }: SendModalProps) {
           </details>
 
           {sendError && (
-            <div className="warning compact" role="alert">
+            <div className="warning error compact" role="alert">
               <span className="warning-icon"><AlertTriangle size={16} strokeWidth={1.75} /></span>
               <span className="warning-text">{sendError}</span>
             </div>

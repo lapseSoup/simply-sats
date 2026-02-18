@@ -7,6 +7,7 @@ import {
 import { getUTXOs, getWifForOperation, type WalletKeys } from '../services/wallet'
 import { tokenLogger } from '../services/logger'
 import { err, type Result } from '../domain/types'
+import { acquireSyncLock } from '../services/cancellation'
 
 interface TokensContextType {
   tokenBalances: TokenBalance[]
@@ -85,6 +86,7 @@ export function TokensProvider({ children }: TokensProviderProps) {
     amount: string,
     toAddress: string
   ): Promise<Result<{ txid: string }, string>> => {
+    const releaseLock = await acquireSyncLock()
     try {
       const fundingUtxos = await getUTXOs(wallet.walletAddress)
 
@@ -110,6 +112,8 @@ export function TokensProvider({ children }: TokensProviderProps) {
       return result
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Token transfer failed')
+    } finally {
+      releaseLock()
     }
   }, [])
 

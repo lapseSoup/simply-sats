@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, X } from 'lucide-react'
 import './App.css'
 
 import { useWallet, useUI, useModal } from './contexts'
 import { isOk } from './domain/types'
 import { logger } from './services/logger'
-import { Toast, PaymentAlert, SkipLink, ErrorBoundary } from './components/shared'
+import { Toast, PaymentAlert, SkipLink, ErrorBoundary, SimplySatsLogo } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
 import { Header, BalanceDisplay, QuickActions } from './components/wallet'
 import { RestoreModal, MnemonicModal, LockScreenModal, BackupVerificationModal } from './components/modals'
@@ -267,7 +267,8 @@ function WalletApp() {
   if (loading) {
     return (
       <div className="setup-screen">
-        <div className="spinner" aria-label="Loading" />
+        <SimplySatsLogo size={48} />
+        <div className="spinner" aria-label="Loading" style={{ marginTop: 16 }} />
       </div>
     )
   }
@@ -372,7 +373,7 @@ function WalletApp() {
             onClick={() => setShowBackupReminder(false)}
             aria-label="Dismiss reminder"
           >
-            ✕
+            <X size={16} strokeWidth={2} />
           </button>
         </div>
       )}

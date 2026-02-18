@@ -55,13 +55,11 @@ function getTierFromRate(rate: number): FeeTier {
 }
 
 /**
- * Estimate confirmation time based on fee rate
+ * BSV confirms transactions in ~10 seconds regardless of fee rate.
+ * Unlike BTC, fee rate does not meaningfully affect confirmation time.
  */
-function estimateConfirmationTime(rate: number): string {
-  if (rate >= 0.5) return '~10 seconds'
-  if (rate >= 0.1) return '~10 seconds'
-  if (rate >= 0.05) return '~10 seconds'
-  return '~10 seconds' // BSV has fast blocks regardless
+function estimateConfirmationTime(_rate: number): string {
+  return 'Near-instant'
 }
 
 export function FeeEstimation({

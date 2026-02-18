@@ -172,10 +172,10 @@ export function SpeedBumpModal({
         )}
 
         {/* Actions */}
-        <div className="button-row">
+        <div className="speed-bump-actions">
           <button
             type="button"
-            className="secondary-button"
+            className="btn btn-secondary"
             onClick={onClose}
             disabled={loading}
           >
@@ -183,7 +183,7 @@ export function SpeedBumpModal({
           </button>
           <button
             type="button"
-            className={`primary-button ${warningLevel === 'high' ? 'danger' : ''}`}
+            className={`btn ${warningLevel === 'high' ? 'btn-danger' : 'btn-primary'}`}
             onClick={handleConfirm}
             disabled={loading || !canConfirm}
           >
@@ -191,146 +191,6 @@ export function SpeedBumpModal({
           </button>
         </div>
       </div>
-
-      <style>{`
-        .speed-bump-content {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 1rem;
-          text-align: center;
-        }
-
-        .warning-icon {
-          margin-bottom: 0.5rem;
-        }
-
-        .speed-bump-title {
-          margin: 0;
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: var(--text-primary);
-        }
-
-        .warning-box {
-          width: 100%;
-          padding: 1rem;
-          border: 1px solid;
-          border-radius: 0.75rem;
-        }
-
-        .warning-message {
-          margin: 0;
-          font-size: 0.875rem;
-          line-height: 1.5;
-        }
-
-        .details-section {
-          width: 100%;
-          padding: 1rem;
-          background: var(--bg-surface-2);
-          border-radius: 0.75rem;
-          text-align: left;
-        }
-
-        .type-confirm-section {
-          width: 100%;
-        }
-
-        .type-confirm-label {
-          font-size: 0.875rem;
-          color: var(--text-secondary);
-          margin: 0 0 0.5rem 0;
-        }
-
-        .type-confirm-label code {
-          padding: 0.125rem 0.375rem;
-          background: var(--bg-surface-2);
-          border-radius: 0.25rem;
-          font-family: monospace;
-          color: var(--text-primary);
-        }
-
-        .type-confirm-input {
-          width: 100%;
-          padding: 0.75rem;
-          background: var(--bg-surface-2);
-          border: 1px solid var(--border);
-          border-radius: 0.5rem;
-          color: var(--text-primary);
-          font-size: 0.875rem;
-          font-family: monospace;
-          text-align: center;
-          outline: none;
-          transition: border-color 0.15s ease;
-        }
-
-        .type-confirm-input:focus {
-          border-color: var(--accent);
-        }
-
-        .type-confirm-input.valid {
-          border-color: var(--success);
-        }
-
-        .button-row {
-          display: flex;
-          gap: 0.75rem;
-          width: 100%;
-          margin-top: 0.5rem;
-        }
-
-        .primary-button,
-        .secondary-button {
-          flex: 1;
-          padding: 0.75rem 1rem;
-          border-radius: 0.5rem;
-          font-size: 0.875rem;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .primary-button {
-          background: linear-gradient(135deg, var(--accent), var(--accent-dark));
-          border: none;
-          color: white;
-        }
-
-        .primary-button.danger {
-          background: linear-gradient(135deg, var(--error), var(--error-dark, #dc2626));
-        }
-
-        .primary-button:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px var(--accent-glow);
-        }
-
-        .primary-button.danger:hover:not(:disabled) {
-          box-shadow: 0 4px 12px var(--error-glow, rgba(239, 68, 68, 0.3));
-        }
-
-        .primary-button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-          transform: none;
-        }
-
-        .secondary-button {
-          background: transparent;
-          border: 1px solid var(--border);
-          color: var(--text-primary);
-        }
-
-        .secondary-button:hover:not(:disabled) {
-          background: var(--bg-surface-3);
-        }
-
-        .secondary-button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-      `}</style>
     </Modal>
   )
 }
