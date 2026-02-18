@@ -145,7 +145,7 @@ const VALID_PASSWORD = 'StrongPassword123!'
 const WEAK_PASSWORD = 'short'
 const VALID_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
 
-function makeActions() {
+function useMakeActions() {
   return useWalletActions({
     setWallet: mockSetWallet,
     setIsLocked: mockSetIsLocked,
@@ -178,7 +178,7 @@ describe('handleRestoreWallet', () => {
   it('restores wallet with password — uses saveWallet (encrypted path)', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
     const result = await handleRestoreWallet(VALID_MNEMONIC, VALID_PASSWORD)
 
     expect(result).toBe(true)
@@ -189,7 +189,7 @@ describe('handleRestoreWallet', () => {
   it('restores wallet without password — uses saveWalletUnprotected', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
     const result = await handleRestoreWallet(VALID_MNEMONIC, null)
 
     expect(result).toBe(true)
@@ -198,7 +198,7 @@ describe('handleRestoreWallet', () => {
   })
 
   it('rejects weak password before calling restoreWallet', async () => {
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
 
     await expect(handleRestoreWallet(VALID_MNEMONIC, WEAK_PASSWORD))
       .rejects.toThrow('at least 14 characters')
@@ -210,7 +210,7 @@ describe('handleRestoreWallet', () => {
   it('stores keys in React state WITHOUT mnemonic', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
     await handleRestoreWallet(VALID_MNEMONIC, VALID_PASSWORD)
 
     // Mnemonic must not be stored in React state (it lives in Rust key store)
@@ -220,7 +220,7 @@ describe('handleRestoreWallet', () => {
   it('sets session password after successful restore', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
     await handleRestoreWallet(VALID_MNEMONIC, VALID_PASSWORD)
 
     expect(mockSetSessionPassword).toHaveBeenCalledWith(VALID_PASSWORD)
@@ -229,7 +229,7 @@ describe('handleRestoreWallet', () => {
   it('sets empty session password for unprotected restore', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
     await handleRestoreWallet(VALID_MNEMONIC, null)
 
     expect(mockSetSessionPassword).toHaveBeenCalledWith('')
@@ -238,7 +238,7 @@ describe('handleRestoreWallet', () => {
   it('returns false (not throw) when restoreWallet fails', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: false, error: new Error('Invalid mnemonic') })
 
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
     const result = await handleRestoreWallet(VALID_MNEMONIC, VALID_PASSWORD)
 
     expect(result).toBe(false)
@@ -248,7 +248,7 @@ describe('handleRestoreWallet', () => {
   it('trims mnemonic before passing to restoreWallet', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
     await handleRestoreWallet(`  ${VALID_MNEMONIC}  `, VALID_PASSWORD)
 
     expect(mockRestoreWallet).toHaveBeenCalledWith(VALID_MNEMONIC)
@@ -257,7 +257,7 @@ describe('handleRestoreWallet', () => {
   it('calls migrateToMultiAccount with mnemonic and password', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleRestoreWallet } = makeActions()
+    const { handleRestoreWallet } = useMakeActions()
     await handleRestoreWallet(VALID_MNEMONIC, VALID_PASSWORD)
 
     expect(mockMigrateToMultiAccount).toHaveBeenCalledWith(
@@ -277,7 +277,7 @@ describe('handleImportJSON', () => {
   it('imports with password — uses saveWallet (encrypted path)', async () => {
     mockImportFromJSON.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleImportJSON } = makeActions()
+    const { handleImportJSON } = useMakeActions()
     const result = await handleImportJSON(mockJSON, VALID_PASSWORD)
 
     expect(result).toBe(true)
@@ -288,7 +288,7 @@ describe('handleImportJSON', () => {
   it('imports without password — uses saveWalletUnprotected', async () => {
     mockImportFromJSON.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleImportJSON } = makeActions()
+    const { handleImportJSON } = useMakeActions()
     const result = await handleImportJSON(mockJSON, null)
 
     expect(result).toBe(true)
@@ -297,7 +297,7 @@ describe('handleImportJSON', () => {
   })
 
   it('rejects weak password before calling importFromJSON', async () => {
-    const { handleImportJSON } = makeActions()
+    const { handleImportJSON } = useMakeActions()
 
     await expect(handleImportJSON(mockJSON, WEAK_PASSWORD))
       .rejects.toThrow('at least 14 characters')
@@ -308,7 +308,7 @@ describe('handleImportJSON', () => {
   it('returns false when importFromJSON fails', async () => {
     mockImportFromJSON.mockResolvedValueOnce({ ok: false, error: new Error('Invalid JSON') })
 
-    const { handleImportJSON } = makeActions()
+    const { handleImportJSON } = useMakeActions()
     const result = await handleImportJSON('not-valid-json', VALID_PASSWORD)
 
     expect(result).toBe(false)
@@ -318,7 +318,7 @@ describe('handleImportJSON', () => {
   it('sets session password after successful import', async () => {
     mockImportFromJSON.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleImportJSON } = makeActions()
+    const { handleImportJSON } = useMakeActions()
     await handleImportJSON(mockJSON, VALID_PASSWORD)
 
     expect(mockSetSessionPassword).toHaveBeenCalledWith(VALID_PASSWORD)
@@ -333,7 +333,7 @@ describe('handleCreateWallet', () => {
   it('creates wallet with password — uses saveWallet', async () => {
     mockCreateWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleCreateWallet } = makeActions()
+    const { handleCreateWallet } = useMakeActions()
     const mnemonic = await handleCreateWallet(VALID_PASSWORD)
 
     expect(mnemonic).toBe(testKeys.mnemonic)
@@ -344,7 +344,7 @@ describe('handleCreateWallet', () => {
   it('creates wallet without password — uses saveWalletUnprotected', async () => {
     mockCreateWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleCreateWallet } = makeActions()
+    const { handleCreateWallet } = useMakeActions()
     const mnemonic = await handleCreateWallet(null)
 
     expect(mnemonic).toBe(testKeys.mnemonic)
@@ -353,7 +353,7 @@ describe('handleCreateWallet', () => {
   })
 
   it('rejects weak password before calling createWallet', async () => {
-    const { handleCreateWallet } = makeActions()
+    const { handleCreateWallet } = useMakeActions()
 
     await expect(handleCreateWallet(WEAK_PASSWORD))
       .rejects.toThrow('at least 14 characters')
@@ -364,7 +364,7 @@ describe('handleCreateWallet', () => {
   it('stores keys in React state WITHOUT mnemonic', async () => {
     mockCreateWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
-    const { handleCreateWallet } = makeActions()
+    const { handleCreateWallet } = useMakeActions()
     await handleCreateWallet(VALID_PASSWORD)
 
     expect(mockSetWallet).toHaveBeenCalledWith({ ...testKeys, mnemonic: '' })
@@ -373,7 +373,7 @@ describe('handleCreateWallet', () => {
   it('returns null when createWallet fails', async () => {
     mockCreateWallet.mockResolvedValueOnce({ ok: false, error: new Error('Key derivation failed') })
 
-    const { handleCreateWallet } = makeActions()
+    const { handleCreateWallet } = useMakeActions()
     const result = await handleCreateWallet(VALID_PASSWORD)
 
     expect(result).toBeNull()
