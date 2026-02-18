@@ -1,154 +1,114 @@
-# Simply Sats — Comprehensive Code Review
+# Simply Sats — Review Findings
+**Latest review:** 2026-02-17 (v5+ / Review #8 remediation)
+**Full report:** `docs/reviews/2026-02-17-full-review-v5.md`
+**Rating:** 8.5 / 10
 
-**Baseline:** Lint clean (0 errors), TypeScript clean, 1560/1560 tests passing (64 files)
-
----
-
-## Phase 1: Security Audit — Rating: 9/10
-
-**No critical vulnerabilities found.** Security posture is excellent for a desktop wallet.
-
-### Strengths
-- **Crypto**: AES-256-GCM, PBKDF2 600k iterations, 12-byte IV, 16-byte salt, Web Crypto API
-- **Key isolation**: Private keys stay in Rust memory via Tauri commands; JS fallback only in dev mode
-- **Rate limiting**: 5 max attempts, exponential backoff (1s-5min), state in Rust (not clearable via browser)
-- **CSRF**: HMAC-SHA256 nonces, 5-min expiry, single-use, max 1000 tracked
-- **SQL injection**: All queries use parameterized `$1, $2` placeholders — zero injection vectors found
-- **Transaction atomicity**: UTXOs marked pending BEFORE broadcast, rolled back on failure
-- **HTTP server**: DNS rebinding protection, constant-time token comparison, host header validation
-- **Auto-lock**: 10-min default (max 60), 15s check interval, proper event tracking
-
-### Minor Observations (LOW priority)
-| # | Issue | File | Severity |
-|---|-------|------|----------|
-| S1 | Rate limit HMAC key hardcoded in Rust binary (extractable) | `src-tauri/src/rate_limiter.rs:27` | Low |
-| S2 | Mnemonic briefly in JS memory during `deriveWalletKeys()` fallback | `src/domain/wallet/keyDerivation.ts:121` | Low (dev-only path) |
-| S3 | Session key rotation: no concurrency guard during rotation | `src/services/secureStorage.ts` | Low |
+> **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
 ---
 
-## Phase 2: Bug Detection — Rating: 7.5/10
+## Critical — Fix Before Next Release
 
-### Critical/High Bugs
-
-| # | Issue | File:Line | Severity | Fix Effort |
-|---|-------|-----------|----------|------------|
-| B1 | **Unhandled promise rejection** in payment listener setup | `src/App.tsx:127-135` | High | Quick — add `.catch()` |
-| B2 | **SyncContext: state set after cancellation** — `setTxHistory`, `setOrdinals` called between `isCancelled()` checks during long-running ordinal content fetch | `src/contexts/SyncContext.tsx:305-428` | Medium | Quick — add `isCancelled()` guard before setters at lines ~390, ~404 |
-| B3 | **WalletContext: fetchVersionRef race condition** — concurrent `fetchData()` calls can both check against a stale version after account switch, discarding valid results | `src/contexts/WalletContext.tsx:51,239-279` | Medium | Medium — increment version atomically at call start |
-| B4 | **LocksContext: state inconsistency window** in `handleUnlock` — lock removed from state before `onComplete()` succeeds, brief period where UI and chain state disagree | `src/contexts/LocksContext.tsx:153-156` | Low | Quick — move `setLocks` filter after `onComplete()` |
-
-### Medium Bugs
-
-| # | Issue | File:Line | Severity |
-|---|-------|-----------|----------|
-| B5 | `toggleTheme` callback recreated on every theme change — causes unnecessary re-renders of all UIContext consumers | `src/contexts/UIContext.tsx:74` | Low-Med |
-| B6 | `knownUnlockedLocks` in `detectLocks` dependency array causes re-render cascade on lock operations | `src/contexts/LocksContext.tsx:88-95` | Low-Med |
-| B7 | Toast timeout Set can accumulate stale entries when >5 toasts queued rapidly | `src/contexts/UIContext.tsx:104-111` | Low |
+| ID | Status | File | Issue |
+|----|--------|------|-------|
+| B-1 | ✅ Fixed (v5) | `SyncContext.tsx:261` | Stale balance: `isCancelled` check now before `setBalance` |
+| B-2 | ✅ Fixed (v5) | `useWalletLock.ts:127-130` | `lockWallet()` failure: `setIsLocked(true)` forced on error |
+| B-3 | ✅ Fixed (v5) | `transactions.ts:210-211` | `accountId ?? 1` replaced with hard throw |
+| B-4 | ✅ Fixed (v5) | `transactions.ts:174,365` | Duplicate UTXO error caught and logged |
 
 ---
 
-## Phase 3: Architecture Review — Rating: 8/10
+## High Priority — Next Sprint
 
-### Strengths
-- **Clean layered architecture**: Domain (pure) -> Services (orchestration) -> Infrastructure (I/O) -> Contexts (state) -> Components (UI)
-- **No circular dependencies** across major modules
-- **Context values properly memoized** with `useMemo()` in all 9 providers
-- **Error hierarchy** is well-designed: `AppError` base with domain-specific subclasses + `Result<T,E>` pattern
-- **Broadcast resilience**: Multi-endpoint cascade (WoC -> ARC JSON -> ARC text -> mAPI)
-- **Database transactions**: Serialized queue with SAVEPOINT for nested calls
-
-### Issues
-
-| # | Issue | Location | Priority |
-|---|-------|----------|----------|
-| A1 | **Logger cross-cutting concern**: `infrastructure/api/httpClient.ts` imports from `services/logger` (acknowledged in comment but breaks layering) | `src/infrastructure/api/httpClient.ts` | Low |
-| A2 | **Inconsistent error pattern adoption**: Many services still use ad-hoc `{ success, error }` instead of `Result<T,E>` | Various in `src/services/` | Medium |
-| A3 | **ConnectedAppsProvider** positioned high in hierarchy with no deps on outer providers — could be moved lower | `src/AppProviders.tsx` | Low |
-| A4 | **No offline queue**: All broadcast endpoints depend on network connectivity — failed broadcasts are lost | `src/infrastructure/api/broadcastService.ts` | Medium |
+| ID | Status | File | Issue |
+|----|--------|------|-------|
+| S-1 | ✅ Mitigated | `storage.ts:121` | Unprotected mode warning shown at setup (OnboardingFlow HIGH RISK banner), at restore (RestoreModal skip-warning modal), and in Settings (isPasswordless prompt to set password) |
+| S-2 | ✅ Fixed (v5) | `storage.ts:43-48` | Read-back verify after `saveToSecureStorage()` now present |
+| S-4 | ✅ Fixed (v5) | `crypto.ts:239` | PBKDF2 minimum enforced: `Math.max(encryptedData.iterations, PBKDF2_ITERATIONS)` |
+| S-15 | ✅ Mitigated (v5+) | `brc100/state.ts:19` | All `setWalletKeys()` call sites audited (lock/unlock/account-switch/restore all covered). `assertKeysMatchAccount()` added for pre-sign divergence detection. `actions.ts:587` already guards sign path via `identityPubKey` comparison. Long-term: parameter injection refactor (A-8). |
+| S-16 | ✅ Fixed (v5+) | `http_server.rs:649` | Timeout reduced from 120s to 30s |
+| S-17 | 🟠 Accepted | `secureStorage.ts:21-23` | `SENSITIVE_KEYS` empty — `trusted_origins`/`connected_apps` in plaintext localStorage; XSS can exfiltrate and replay. Encryption previously caused data loss on restart (session key is per-session). Accepted risk: XSS in Tauri requires code exec. |
+| A-4 | ✅ Fixed (v5) | `AppProviders.tsx` | All providers wrapped in ErrorBoundary including `ConnectedAppsProvider` (A-7 fixed) |
+| A-5 | ✅ Fixed (v5) | `infrastructure/api/wocClient.ts` | Retry/backoff logic now in httpClient |
+| Q-3 | ✅ Fixed (v5) | `balance.ts:32-34` | `getUTXOsFromDB()` no longer swallows errors — explicit comment at source |
+| Q-5 | ✅ Partial (v5+) | `src/hooks/useWalletActions.test.ts` | 19 tests cover handleRestoreWallet, handleImportJSON, handleCreateWallet — password enforcement, encrypted vs unprotected save path, mnemonic stripping from React state |
 
 ---
 
-## Phase 4: Code Quality — Rating: 7/10
+## Medium Priority — Sprint After
 
-### Performance
-
-| # | Issue | Location | Priority |
-|---|-------|----------|----------|
-| Q1 | **Zero `React.memo` usage** across 51 component files — no protection against unnecessary re-renders from parent state changes | `src/components/**/*.tsx` | Medium |
-| Q2 | **Insufficient `useCallback`/`useMemo`** in components — `BalanceDisplay.tsx` recalculates on every render | Various components | Medium |
-| Q3 | **Potential N+1 queries**: `getDerivedAddresses()` then loop calling `getUTXOs()` for each | `src/services/sync.ts` | Low-Med |
-
-### TypeScript Quality
-
-| # | Issue | Location | Priority |
-|---|-------|----------|----------|
-| Q4 | **151 uses of `any` type** across codebase — mostly tests/legacy but some in infrastructure/BRC-100 modules | Codebase-wide | Medium |
-| Q5 | **SendModal imports from domain layer directly** bypassing service layer | `src/components/modals/SendModal.tsx` | Low |
-
-### DRY Violations
-
-| # | Issue | Priority |
-|---|-------|----------|
-| Q6 | Fee calculation logic in 3 places (domain, service, component) | Low |
-| Q7 | Balance calculation duplicated across SyncContext and BalanceDisplay | Low |
-
-### Test Coverage Gaps
-
-| # | Issue | Priority |
-|---|-------|----------|
-| Q8 | No component tests (only 2 test files for shared components: `ConfirmationModal.test.tsx`, `Modal.test.tsx`) | Medium |
-| Q9 | No integration tests for end-to-end flows (wallet creation -> send -> receive) | Medium |
-| Q10 | Context providers have no tests | Low-Med |
-
-### Accessibility
-- Good: `useKeyboardNav`, `useFocusTrap`, `useModalKeyboard`, `ScreenReaderAnnounce`, `SkipLink`
-- Missing: No ARIA role/label audit done; 0 component-level a11y tests
+| ID | Status | File | Issue |
+|----|--------|------|-------|
+| S-3 | 🟡 Moot | `secureStorage.ts:47-114` | Session key rotation race: `SENSITIVE_KEYS` is empty so no data is encrypted/rotated. Race is theoretical only. |
+| S-6 | ✅ Verified | `lib.rs:194-210` | Nonce cleanup properly implemented with expiry + capacity guard (`MAX_USED_NONCES`); `generate_nonce` has capacity guard |
+| S-7 | ✅ Fixed (v5+) | `utxoRepository.ts:83-89` | Address ownership check added: account_id only migrated when addresses match (or either is null); cross-account reassignment blocked and warned |
+| S-8 | ✅ Fixed (v5) | `backupRecovery.ts:177-179` | Restored keys validated: checks walletWif, walletAddress, mnemonic presence |
+| B-5 | ✅ Fixed (v5) | `balance.ts:113` | Full null guard: `prevTx?.vout && Array.isArray(prevTx.vout) ? prevTx.vout[vin.vout] : undefined` |
+| B-6 | ✅ Fixed (v5) | `domain/transaction/fees.ts:97-103` | `feeFromBytes` guards invalid bytes/rate with isFinite checks |
+| B-7 | ✅ Fixed (v5) | `domain/transaction/fees.ts:103` | `Math.max(1, Math.ceil())` prevents negative/zero fee |
+| B-8 | ✅ Fixed (v5) | `backupRecovery.ts:177` | Restored key fields validated post-decrypt |
+| B-9 | ✅ Fixed (v5) | `useWalletLock.ts:141-144` | Visibility listener properly cleaned up in useEffect return |
+| B-10 | ✅ Fixed (v5) | `SyncContext.tsx:407,429` | `partialErrors.push('ordinals')` feeds into `setSyncError(...)` — user sees "Some data may be stale: failed to load ordinals" |
+| B-12 | ✅ Fixed (v5) | `fees.ts:93-96` | `isCacheValid()` requires `age >= 0` — guards backwards clock |
+| B-13 | ✅ Fixed (v5) | `SyncContext.tsx:273-274` | Array destructuring with defaults: `[ordAddressOrdinals = [], ...]` |
+| B-14 | ✅ Fixed (v5) | `SyncContext.tsx:338,344` | `isCancelled?.()` check at line 338 runs before `setOrdinals(dbOrdinals)` at line 344 — already correctly placed |
+| B-15 | ✅ Verified | `SyncContext.tsx:359-362` | `contentCacheRef.current` is intentional: useRef accumulator for async background caching, useState for React re-renders. Dual state is load-bearing. |
+| A-1 | ✅ Partial (v5+) | `eslint.config.js` | ESLint `no-restricted-imports` rule expanded to cover all service modules (crypto, accounts, brc100, keyDerivation, tokens, etc.). 54 warnings now surfaced for incremental cleanup. |
+| A-2 | 🟡 Open | `WalletContext.tsx` | God Object: 50+ state props, 30+ actions; should split into focused contexts. **Major refactor — separate branch.** |
+| A-3 | 🟡 Open | Services layer | `Result<T,E>` migration ~30% complete; wallet throws AppError, DB throws/null, Accounts returns null. **Major refactor — separate branch.** |
+| A-7 | ✅ Fixed (v5+) | `AppProviders.tsx:48` | `ConnectedAppsProvider` now wrapped in `<ErrorBoundary context="ConnectedAppsProvider">` |
+| A-8 | 🟡 Open | `brc100/state.ts` | ARCH-6: Module-level key state documented as needing refactor; keys should be parameters, not module state. **Major refactor — separate branch.** |
+| A-9 | 🟡 Open | `src/services/database/` | Database repos live in `services/database/` not `infrastructure/database/` — violates stated layer boundary. **Major refactor — separate branch.** |
+| Q-1 | ✅ Fixed (v5) | `fees.ts:33-41` | `getStoredFeeRate()` helper centralizes localStorage fee rate retrieval |
+| Q-2 | ✅ Fixed (v5+) | `src/hooks/useAddressValidation.ts` | `useAddressValidation()` hook created; SendModal and OrdinalTransferModal now use it |
+| Q-4 | ✅ Fixed (v5) | `transactions.ts:121-122` | Rollback failure throws `AppError` with user-visible message: "Transaction failed and wallet state could not be fully restored" |
+| Q-6 | ✅ Verified | `SyncContext.tsx:134-135` | `ordinalContentCache` dual state is intentional — useRef for async accumulation, useState for rendering. Same as B-15. |
 
 ---
 
-## Final Summary
+## Low Priority
 
-### Overall Health Rating: 7.5/10
-
-Strong security foundation, clean architecture, comprehensive service-layer testing. Main gaps are in React rendering performance (no `React.memo`), component-level test coverage, and some state management race conditions.
-
-### Prioritized Remediation Plan
-
-#### Must Fix Before Release (Critical)
-1. **B1**: Add `.catch()` to payment listener promise in `App.tsx:127` — prevents unhandled rejection
-2. **B2**: Add `isCancelled()` guards in `SyncContext.tsx` before state setters after async operations
-
-#### Should Fix Soon (High)
-3. **B3**: Fix fetchVersionRef race condition in `WalletContext.tsx` — increment at call start
-4. **Q1**: Add `React.memo` to frequently-rendered components (`BalanceDisplay`, `TransactionList`, modals)
-5. **A2**: Continue `Result<T,E>` migration in services (currently ad-hoc `{success, error}` pattern mixed in)
-
-#### Good to Improve (Medium)
-6. **Q4**: Audit and replace `any` types in non-test files, especially `broadcastService.ts` and `RequestManager.ts`
-7. **Q8/Q9**: Add component tests and at least one integration test for send flow
-8. **A4**: Consider offline broadcast queue for resilience
-9. **B4**: Move lock state removal after `onComplete()` succeeds in `LocksContext.tsx`
-
-#### Nice to Have (Low)
-10. **S1**: Derive rate limit HMAC key from OS keychain instead of hardcoding
-11. **B5**: Optimize `toggleTheme` callback to avoid re-renders
-12. **A1**: Move logger to shared utilities layer
-13. **Q6/Q7**: Consolidate duplicated fee/balance calculation logic
+| ID | Status | File | Issue |
+|----|--------|------|-------|
+| S-5 | ✅ Documented (v5+) | `autoLock.ts:13-21` | Security tradeoff now documented: mousemove/scroll excluded because passive activity should not prevent auto-lock |
+| S-9 | ✅ Verified | `http_server.rs:44-66` | CORS already properly scoped with production-only origins; debug origins stripped in release builds |
+| S-10 | ✅ Fixed (v5+) | `domain/transaction/builder.ts` | Output sum validation added: `satoshis + change + fee === totalInput` checked before building both `buildP2PKHTx` and `buildMultiKeyP2PKHTx` |
+| S-11 | ✅ Verified | `rate_limiter.rs:189-218` | HMAC key properly generated and persisted to disk on first boot; panics if persistence fails (security-critical) |
+| S-12 | ✅ Fixed (v5+) | `storage.ts:308-330` | `changePassword()` now calls `rotate_session_for_account` to invalidate BRC-100 session tokens |
+| S-13 | ✅ Verified | `tauri.conf.json:25` | `style-src 'unsafe-inline'` is required for Tailwind CSS; `script-src` does NOT have unsafe-inline. Acceptable. |
+| S-14 | ✅ Fixed (v5+) | `brc100/actions.ts:126-135` | `parseInt` result now validated with `Number.isFinite() && > 0`; malformed tags return error to caller |
+| S-18 | ✅ Fixed (v5+) | `infrastructure/api/httpClient.ts` | Response body size limit (10 MB) added via `content-length` header check in both GET and POST methods |
+| A-6 | ✅ Verified | `brc100/RequestManager.ts` | Cleanup interval properly bounded: `Math.min(ttlMs / 4, 60_000)` — stale requests cleaned within 75s max |
+| B-11 | ✅ Fixed (v5) | `SyncContext.tsx:264` | `Number.isFinite()` guard on balance before `setBalance` |
+| Q-7a | ✅ Fixed (v5) | `useWalletLock.ts` | `HIDDEN_LOCK_DELAY_MS` moved to config |
+| Q-7b | ✅ Fixed (v5) | `SendModal.tsx` | Fallback fee `0.05` moved to config |
+| Q-8 | ✅ Fixed (v5+) | `autoLock.ts:98` | Poll interval reduced from 15s to 5s — max overshoot now ~4s instead of ~14s |
+| Q-9 | ✅ Verified | `keyDerivation.ts:260-262` | Already guarded: `if (!import.meta.env.DEV) throw` — Vite tree-shakes dead code in production |
 
 ---
 
-## Verification
+## Summary: Issue Status
 
-After implementing fixes, run:
-```bash
-npm run lint          # 0 errors
-npm run typecheck     # clean compile
-npm run test:run      # all 1560+ tests passing
-npm run tauri:build   # desktop build succeeds
-```
+| Category | Total | ✅ Fixed/Verified | 🟠 Accepted | 🟡 Open-Medium | ⚪ Open-Low |
+|----------|-------|-------------------|-------------|----------------|-------------|
+| Security | 18 | 16 | 1 | 1 | 0 |
+| Bugs | 15 | 15 | 0 | 0 | 0 |
+| Architecture | 9 | 5 | 0 | 4 | 0 |
+| Quality | 9 | 9 | 0 | 0 | 0 |
+| **Total** | **51** | **45** | **1** | **5** | **0** |
 
-For race condition fixes (B2, B3), manually test:
-- Rapid account switching during sync
-- Lock/unlock operations during background sync
-- Payment listener startup/teardown on wallet lock/unlock
+---
+
+## Remaining Open Items
+
+### Accepted Risk (no code change needed)
+- **S-17** — `SENSITIVE_KEYS` empty in secureStorage. XSS in Tauri requires code execution which already owns the process.
+
+### Architecture Debt (each needs its own branch/PR)
+- **A-2** — WalletContext God Object split (50+ state props → focused contexts)
+- **A-3** — `Result<T,E>` migration to AccountsContext and database layer
+- **A-8** — BRC-100 key parameter injection (replace module-level state)
+- **A-9** — Move database repos from `services/database/` to `infrastructure/database/`
+
+### Moot (no longer applicable)
+- **S-3** — Session key rotation race is moot because `SENSITIVE_KEYS` is empty

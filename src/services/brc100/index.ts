@@ -44,7 +44,7 @@ export {
 export { RequestManager, getRequestManager, resetRequestManager } from './RequestManager'
 
 // Re-export state management
-export { setWalletKeys, getWalletKeys, hasWalletKeys } from './state'
+export { setWalletKeys, getWalletKeys, hasWalletKeys, assertKeysMatchAccount } from './state'
 
 // Re-export signing operations
 export { signMessage, signData, verifySignature } from './signing'

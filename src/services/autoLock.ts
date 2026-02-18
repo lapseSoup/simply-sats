@@ -10,9 +10,12 @@ import { walletLogger } from './logger'
 // Default inactivity limit in milliseconds (10 minutes)
 export const DEFAULT_INACTIVITY_LIMIT = 10 * 60 * 1000
 
-// Activity events to track — intentional interactions only.
-// mousemove and scroll are excluded because passive cursor/scroll activity
-// should not prevent auto-lock from engaging (S-13 security hardening).
+// Activity events to track — intentional user interactions only.
+// SECURITY TRADEOFF (S-5): mousemove and scroll are intentionally excluded.
+// Rationale: passive cursor movement or scroll wheel activity (e.g., reading a page)
+// should NOT reset the inactivity timer — only deliberate actions (clicks, keystrokes,
+// touch) indicate active user presence. Including mousemove would make auto-lock
+// nearly impossible to trigger while the cursor is on the app window.
 const ACTIVITY_EVENTS = [
   'mousedown',
   'keydown',
@@ -77,7 +80,7 @@ export function initAutoLock(
     })
   }
 
-  // Check for inactivity every 15 seconds (reduces max overshoot from 59s to 14s)
+  // Check for inactivity every 5 seconds (max overshoot ≈ 4s)
   state.checkInterval = setInterval(() => {
     if (!state.isEnabled) return
 
@@ -95,7 +98,7 @@ export function initAutoLock(
         walletLogger.error('[AutoLock] Lock callback threw synchronously', err)
       }
     }
-  }, 15000) // Check every 15 seconds
+  }, 5000) // Check every 5 seconds (Q-8: reduced from 15s for tighter lock response)
 
   walletLogger.info(`[AutoLock] Initialized with ${inactivityLimitMs / 60000} minute timeout`)
 

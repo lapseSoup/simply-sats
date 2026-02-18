@@ -646,7 +646,7 @@ async fn forward_to_frontend_impl(
         }))).into_response();
     }
 
-    match tokio::time::timeout(std::time::Duration::from_secs(120), rx).await {
+    match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
         Ok(Ok(response)) => {
             if let Some(error) = response.get("error") {
                 return (StatusCode::BAD_REQUEST, Json(serde_json::json!({

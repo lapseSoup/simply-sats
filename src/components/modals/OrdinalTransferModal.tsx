@@ -14,7 +14,7 @@ import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
 import { calculateTxFee } from '../../services/wallet/fees'
 import { isOk } from '../../domain/types'
-import { isValidBSVAddress } from '../../domain/wallet/validation'
+import { useAddressValidation } from '../../hooks/useAddressValidation'
 
 interface OrdinalTransferModalProps {
   ordinal: Ordinal
@@ -37,6 +37,7 @@ export function OrdinalTransferModal({
   const [error, setError] = useState('')
   const [txid, setTxid] = useState<string | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const { validateAddress } = useAddressValidation()
 
   const handleTransferClick = () => {
     if (!toAddress.trim()) {
@@ -44,8 +45,7 @@ export function OrdinalTransferModal({
       return
     }
 
-    // Full Base58Check address validation with checksum verification
-    if (!isValidBSVAddress(toAddress.trim())) {
+    if (!validateAddress(toAddress.trim())) {
       setError('Invalid BSV address format')
       return
     }

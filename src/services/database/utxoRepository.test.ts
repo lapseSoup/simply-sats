@@ -77,7 +77,7 @@ describe('addUTXO', () => {
   it('updates existing derived UTXO (case 1)', async () => {
     mockDb.select
       .mockResolvedValueOnce([]) // ensureColumn probe
-      .mockResolvedValueOnce([{ id: 10, basket: 'derived', address: '1Old', spendable: 0, spent_at: null }])
+      .mockResolvedValueOnce([{ id: 10, basket: 'derived', address: '1Old', spendable: 0, spent_at: null, account_id: 3 }])
 
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
@@ -92,7 +92,7 @@ describe('addUTXO', () => {
   it('upgrades to derived when new is derived and existing is not (case 2)', async () => {
     mockDb.select
       .mockResolvedValueOnce([]) // ensureColumn probe
-      .mockResolvedValueOnce([{ id: 20, basket: 'default', address: '1Old', spendable: 0, spent_at: null }])
+      .mockResolvedValueOnce([{ id: 20, basket: 'default', address: '1Old', spendable: 0, spent_at: null, account_id: 2 }])
 
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
@@ -107,12 +107,31 @@ describe('addUTXO', () => {
   it('updates existing UTXO with same basket (case 3)', async () => {
     mockDb.select
       .mockResolvedValueOnce([]) // ensureColumn probe
-      .mockResolvedValueOnce([{ id: 30, basket: 'default', address: '1Old', spendable: 1, spent_at: null }])
+      .mockResolvedValueOnce([{ id: 30, basket: 'default', address: '1Old', spendable: 1, spent_at: null, account_id: 7 }])
 
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
     const id = await addUTXO({ ...baseUtxo, basket: 'default' }, 7)
     expect(id).toBe(30)
+  })
+
+  it('does not reassign account_id when address ownership check fails (S-7)', async () => {
+    // Existing UTXO belongs to account 1, address '1AccountOne'
+    mockDb.select
+      .mockResolvedValueOnce([]) // ensureColumn probe
+      .mockResolvedValueOnce([{ id: 40, basket: 'default', address: '1AccountOne', spendable: 1, spent_at: null, account_id: 1 }])
+
+    mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
+
+    // Account 2 syncs and tries to claim this UTXO (different address — cross-account)
+    await addUTXO({ ...baseUtxo, address: '1AccountTwo', basket: 'default' }, 2)
+
+    // account_id should remain 1 (existing owner), not become 2
+    const updateCall = mockDb.execute.mock.calls[0]!
+    const params = updateCall[1] as unknown[]
+    // The account_id param (3rd positional in UPDATE) should be 1, not 2
+    expect(params).toContain(1)
+    expect(params).not.toContain(2)
   })
 
   it('defaults accountId to 1 when not provided', async () => {

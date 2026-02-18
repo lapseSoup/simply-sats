@@ -1,8 +1,9 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { useWallet } from '../../contexts/WalletContext'
 import { useUI } from '../../contexts/UIContext'
-import { calculateExactFee, calculateTxFee, calculateMaxSend, isValidBSVAddress, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
+import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
+import { useAddressValidation } from '../../hooks/useAddressValidation'
 import { isOk } from '../../domain/types'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
@@ -28,20 +29,7 @@ export function SendModal({ onClose }: SendModalProps) {
   const [sendAmount, setSendAmount] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
-  const [addressError, setAddressError] = useState('')
-
-  // Validate BSV address format and checksum using domain validator
-  const validateAddress = useCallback((addr: string) => {
-    if (!addr) {
-      setAddressError('')
-      return
-    }
-    if (!isValidBSVAddress(addr)) {
-      setAddressError('Invalid BSV address')
-    } else {
-      setAddressError('')
-    }
-  }, [])
+  const { addressError, validateAddress } = useAddressValidation()
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showCoinControl, setShowCoinControl] = useState(false)
   const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)

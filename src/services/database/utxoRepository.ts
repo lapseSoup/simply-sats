@@ -73,15 +73,24 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
 
   // Check if UTXO already exists - get ALL relevant fields
   const existing = await database.select<UTXOExistsRow[]>(
-    'SELECT id, basket, address, spendable, spent_at FROM utxos WHERE txid = $1 AND vout = $2',
+    'SELECT id, basket, address, spendable, spent_at, account_id FROM utxos WHERE txid = $1 AND vout = $2',
     [utxo.txid, utxo.vout]
   )
 
   if (existing.length > 0) {
     const ex = existing[0]!
     const spendableValue = utxo.spendable ? 1 : 0
-    // Always update account_id when caller provides one — fixes UTXOs stuck under wrong account
-    const accId = accountId ?? 1
+
+    // S-7: Only migrate account_id if the address ownership check passes.
+    // A UTXO's address must match the incoming address (or have no stored address)
+    // before we reassign it to a different account. This prevents cross-account
+    // UTXO reassignment when two accounts share an address (e.g. via address reuse).
+    const addressMatches = !ex.address || !utxo.address || ex.address === utxo.address
+    const accId = addressMatches ? (accountId ?? 1) : (ex.account_id ?? 1)
+
+    if (!addressMatches) {
+      dbLogger.warn(`[DB] Address mismatch on UTXO ${utxo.txid.slice(0,8)}:${utxo.vout} — keeping existing account_id (stored: ${ex.address}, incoming: ${utxo.address})`)
+    }
 
     // CRITICAL: If we're re-syncing a UTXO that exists on-chain, it's NOT spent!
     // Always clear spent_at and ensure spendable is correct when adding a UTXO

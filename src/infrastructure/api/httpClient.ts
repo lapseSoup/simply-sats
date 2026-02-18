@@ -70,6 +70,12 @@ export const DEFAULT_HTTP_CONFIG: HttpClientConfig = {
 const RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504]
 
 /**
+ * Maximum response body size in bytes (10 MB).
+ * Prevents OOM from malicious or oversized API responses (S-18).
+ */
+const MAX_RESPONSE_BODY_BYTES = 10 * 1024 * 1024
+
+/**
  * Create an HTTP error object
  */
 function createHttpError(
@@ -293,6 +299,12 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
         ))
       }
 
+      // S-18: Guard against oversized responses before reading body
+      const contentLength = Number(response.headers?.get?.('content-length'))
+      if (contentLength > MAX_RESPONSE_BODY_BYTES) {
+        return err(createHttpError('RESPONSE_TOO_LARGE', `Response body too large: ${contentLength} bytes`, undefined, path))
+      }
+
       try {
         const data = await response.json() as T
         return ok(data)
@@ -345,6 +357,12 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
           path,
           isRetryable(response.status)
         ))
+      }
+
+      // S-18: Guard against oversized responses before reading body
+      const postContentLength = Number(response.headers?.get?.('content-length'))
+      if (postContentLength > MAX_RESPONSE_BODY_BYTES) {
+        return err(createHttpError('RESPONSE_TOO_LARGE', `Response body too large: ${postContentLength} bytes`, undefined, path))
       }
 
       try {

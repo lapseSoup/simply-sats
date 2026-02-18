@@ -41,8 +41,21 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': ['warn', {
         patterns: [{
-          group: ['**/services/database*', '**/services/wallet*', '**/services/sync*', '**/infrastructure/**'],
-          message: 'Components should use context hooks (useWallet, useSync, etc.) instead of importing from services/infrastructure directly.',
+          group: [
+            '**/services/database*',
+            '**/services/wallet*',
+            '**/services/sync*',
+            '**/services/crypto*',
+            '**/services/accounts*',
+            '**/services/accountDiscovery*',
+            '**/services/keyDerivation*',
+            '**/services/brc100*',
+            '**/services/sessionPasswordStore*',
+            '**/services/tokens*',
+            '**/services/messageBox*',
+            '**/infrastructure/**',
+          ],
+          message: 'Components should use context hooks (useWallet, useSync, useAccounts, etc.) instead of importing from services/infrastructure directly. Use hooks or adapters for service access.',
         }],
       }],
     },

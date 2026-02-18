@@ -248,6 +248,12 @@ export async function buildP2PKHTx(params: BuildP2PKHTxParams): Promise<BuiltTra
     throw new Error(`Insufficient funds (need ${fee} sats for fee)`)
   }
 
+  // S-10: Validate output sum matches input sum before building transaction
+  const outputSum = satoshis + change + fee
+  if (outputSum !== totalInput) {
+    throw new Error(`Output sum validation failed: inputs=${totalInput}, outputs=${satoshis}+${change}+${fee}=${outputSum}`)
+  }
+
   const tx = new Transaction()
 
   // Add inputs with unlocking scripts
@@ -372,6 +378,12 @@ export async function buildMultiKeyP2PKHTx(params: BuildMultiKeyP2PKHTxParams): 
 
   if (change < 0) {
     throw new Error(`Insufficient funds (need ${fee} sats for fee)`)
+  }
+
+  // S-10: Validate output sum matches input sum before building transaction
+  const multiOutputSum = satoshis + change + fee
+  if (multiOutputSum !== totalInput) {
+    throw new Error(`Output sum validation failed: inputs=${totalInput}, outputs=${satoshis}+${change}+${fee}=${multiOutputSum}`)
   }
 
   const tx = new Transaction()

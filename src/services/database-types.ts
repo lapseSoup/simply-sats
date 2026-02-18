@@ -39,6 +39,7 @@ export interface UTXOExistsRow {
   address: string | null
   spendable: number
   spent_at: number | null
+  account_id: number | null
 }
 
 /**

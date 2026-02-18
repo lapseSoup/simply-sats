@@ -51,7 +51,7 @@ export type {
 } from './brc100/types'
 
 // State management
-export { setWalletKeys, getWalletKeys } from './brc100/state'
+export { setWalletKeys, getWalletKeys, assertKeysMatchAccount } from './brc100/state'
 
 // Signing
 export { signMessage, signData, verifySignature, verifyDataSignature } from './brc100/signing'

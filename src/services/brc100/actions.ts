@@ -123,11 +123,17 @@ async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys):
           break
         }
 
-        // Parse unlock block from tags
+        // Parse unlock block from tags (S-14: guard against NaN from malformed tags)
         const unlockTag = lockOutput.tags?.find(t => t.startsWith('unlock_'))
         const ordinalTag = lockOutput.tags?.find(t => t.startsWith('ordinal_'))
-        const unlockBlock = unlockTag ? parseInt(unlockTag.replace('unlock_', '')) : 0
-        const ordinalOrigin = ordinalTag?.replace('ordinal_', '')
+        const parsedBlock = unlockTag ? parseInt(unlockTag.replace('unlock_', ''), 10) : 0
+        const unlockBlock = Number.isFinite(parsedBlock) && parsedBlock > 0 ? parsedBlock : 0
+        const ordinalOrigin = ordinalTag?.replace('ordinal_', '') || undefined
+
+        if (unlockTag && unlockBlock === 0) {
+          response.error = { code: -32000, message: `Invalid unlock block in tag: ${unlockTag}` }
+          break
+        }
 
         // Get current height to calculate blocks
         const currentHeight = await getBlockHeight()

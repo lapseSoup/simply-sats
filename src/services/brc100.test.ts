@@ -10,6 +10,7 @@ import {
   getIdentityKeyForApp,
   setWalletKeys,
   getWalletKeys,
+  assertKeysMatchAccount,
   getPendingRequests,
   setRequestHandler,
   BRC100_REQUEST_TYPES,
@@ -65,6 +66,25 @@ describe('BRC-100 Service', () => {
         setWalletKeys(null)
 
         expect(getWalletKeys()).toBeNull()
+      })
+    })
+
+    describe('assertKeysMatchAccount', () => {
+      it('returns true when no keys are loaded (locked state)', () => {
+        expect(getWalletKeys()).toBeNull()
+        expect(assertKeysMatchAccount('1AnyAddress')).toBe(true)
+      })
+
+      it('returns true when keys match the expected identity address', async () => {
+        const keys = await getTestKeys()
+        setWalletKeys(keys)
+        expect(assertKeysMatchAccount(keys.identityAddress)).toBe(true)
+      })
+
+      it('returns false when keys belong to a different account (divergence)', async () => {
+        const keys = await getTestKeys()
+        setWalletKeys(keys)
+        expect(assertKeysMatchAccount('1WrongAccountAddress')).toBe(false)
       })
     })
   })

@@ -45,29 +45,31 @@ export function AppProviders({ children }: AppProvidersProps) {
           <NetworkProvider>
             <ErrorBoundary context="UIProvider">
               <UIProvider>
-                <ConnectedAppsProvider>
-                  <ErrorBoundary context="AccountsProvider">
-                    <AccountsProvider>
-                      <TokensProvider>
-                        <ErrorBoundary context="SyncProvider">
-                          <SyncProvider>
-                            <ErrorBoundary context="LocksProvider">
-                              <LocksProvider>
-                                <ModalProvider>
-                                  <ErrorBoundary context="WalletProvider">
-                                    <WalletProvider>
-                                      {children}
-                                    </WalletProvider>
-                                  </ErrorBoundary>
-                                </ModalProvider>
-                              </LocksProvider>
-                            </ErrorBoundary>
-                          </SyncProvider>
-                        </ErrorBoundary>
-                      </TokensProvider>
-                    </AccountsProvider>
-                  </ErrorBoundary>
-                </ConnectedAppsProvider>
+                <ErrorBoundary context="ConnectedAppsProvider">
+                  <ConnectedAppsProvider>
+                    <ErrorBoundary context="AccountsProvider">
+                      <AccountsProvider>
+                        <TokensProvider>
+                          <ErrorBoundary context="SyncProvider">
+                            <SyncProvider>
+                              <ErrorBoundary context="LocksProvider">
+                                <LocksProvider>
+                                  <ModalProvider>
+                                    <ErrorBoundary context="WalletProvider">
+                                      <WalletProvider>
+                                        {children}
+                                      </WalletProvider>
+                                    </ErrorBoundary>
+                                  </ModalProvider>
+                                </LocksProvider>
+                              </ErrorBoundary>
+                            </SyncProvider>
+                          </ErrorBoundary>
+                        </TokensProvider>
+                      </AccountsProvider>
+                    </ErrorBoundary>
+                  </ConnectedAppsProvider>
+                </ErrorBoundary>
               </UIProvider>
             </ErrorBoundary>
           </NetworkProvider>

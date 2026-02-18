@@ -316,5 +316,14 @@ export async function changePassword(oldPassword: string, newPassword: string): 
   }
 
   await saveWallet(keys, newPassword)
+
+  // S-12: Rotate the session key so that any cached BRC-100 session tokens
+  // derived from the old password are invalidated.
+  try {
+    await invoke('rotate_session_for_account', { accountId: 0 })
+  } catch (e) {
+    walletLogger.warn('Failed to rotate session key after password change', { error: String(e) })
+  }
+
   return true
 }
