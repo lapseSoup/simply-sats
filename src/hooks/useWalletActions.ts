@@ -44,6 +44,7 @@ interface UseWalletActionsOptions {
   resetTokens: () => void
   resetAccounts: () => void
   setAutoLockMinutesState: (minutes: number) => void
+  storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
 }
 
 interface UseWalletActionsReturn {
@@ -67,7 +68,8 @@ export function useWalletActions({
   setLocks,
   resetTokens,
   resetAccounts,
-  setAutoLockMinutesState
+  setAutoLockMinutesState,
+  storeKeysInRust
 }: UseWalletActionsOptions): UseWalletActionsReturn {
   // Stores pending account discovery params — consumed by App.tsx after initial sync completes
   const pendingDiscoveryRef = useRef<{ mnemonic: string; password: string | null; excludeAccountId?: number } | null>(null)
@@ -137,6 +139,10 @@ export function useWalletActions({
       // have propagated it before onSuccess() closes the modal. Explicitly setting it here
       // avoids a race where wallet is set but activeAccountId is still null.
       const activeAcc = await getActiveAccount()
+      // Populate the Rust key store so operations requiring a WIF (lockBSV, sign, etc.)
+      // work immediately after restore — without this, get_wif_for_operation returns
+      // "Wallet is locked" because the key store is only populated on unlock/startup.
+      await storeKeysInRust(mnemonic.trim(), activeAcc?.derivationIndex ?? 0)
       // Queue account discovery BEFORE any React state setters fire.
       // setActiveAccountState + setWallet trigger App.tsx's checkSync effect.
       // pendingDiscoveryRef must be populated before that effect runs, otherwise
@@ -156,7 +162,7 @@ export function useWalletActions({
       walletLogger.error('Failed to restore wallet', e)
       return false
     }
-  }, [setWallet, setSessionPassword, refreshAccounts, setActiveAccountState])
+  }, [setWallet, setSessionPassword, refreshAccounts, setActiveAccountState, storeKeysInRust])
 
   const handleImportJSON = useCallback(async (json: string, password: string | null): Promise<boolean> => {
     if (password !== null) {

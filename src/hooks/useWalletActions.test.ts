@@ -36,6 +36,7 @@ const {
   mockResetAccounts,
   mockSetAutoLockMinutesState,
   mockSetActiveAccountState,
+  mockStoreKeysInRust,
 } = vi.hoisted(() => ({
   mockRestoreWallet: vi.fn(),
   mockCreateWallet: vi.fn(),
@@ -56,6 +57,7 @@ const {
   mockResetAccounts: vi.fn(),
   mockSetAutoLockMinutesState: vi.fn(),
   mockSetActiveAccountState: vi.fn(),
+  mockStoreKeysInRust: vi.fn(),
 }))
 
 // ---------- Mocks ----------
@@ -161,6 +163,7 @@ function useMakeActions() {
     resetTokens: mockResetTokens,
     resetAccounts: mockResetAccounts,
     setAutoLockMinutesState: mockSetAutoLockMinutesState,
+    storeKeysInRust: mockStoreKeysInRust,
   })
 }
 
@@ -171,6 +174,7 @@ beforeEach(() => {
   mockSaveWallet.mockResolvedValue(undefined)
   mockSaveWalletUnprotected.mockResolvedValue(undefined)
   mockGetActiveAccount.mockResolvedValue({ id: 1 })
+  mockStoreKeysInRust.mockResolvedValue(undefined)
 })
 
 // =============================================================================

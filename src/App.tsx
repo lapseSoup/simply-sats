@@ -194,6 +194,10 @@ function WalletApp() {
       // the blockchain still need to be discovered. The ref being non-null is the sole
       // gate: it's only populated during restore and consumed exactly once.
       const discoveryParams = consumePendingDiscovery()
+      logger.info('Account discovery check', {
+        hasParams: !!discoveryParams,
+        excludeAccountId: discoveryParams?.excludeAccountId
+      })
       if (discoveryParams) {
         try {
           const found = await discoverAccounts(
@@ -201,12 +205,13 @@ function WalletApp() {
             discoveryParams.password,
             discoveryParams.excludeAccountId
           )
+          logger.info('Account discovery complete', { found })
           if (found > 0) {
             await refreshAccounts()
             showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
           }
-        } catch (_e) {
-          // Silent failure — primary restore already succeeded
+        } catch (e) {
+          logger.error('Account discovery failed', e)
         }
       }
     }

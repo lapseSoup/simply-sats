@@ -185,7 +185,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setLocks,
     resetTokens,
     resetAccounts,
-    setAutoLockMinutesState: (() => {}) as (minutes: number) => void // Auto-lock state is managed by useWalletLock
+    setAutoLockMinutesState: (() => {}) as (minutes: number) => void, // Auto-lock state is managed by useWalletLock
+    storeKeysInRust
   })
 
   const {

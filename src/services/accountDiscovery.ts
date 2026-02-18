@@ -53,6 +53,12 @@ export async function discoverAccounts(
 
   for (let i = 1; i <= MAX_ACCOUNT_DISCOVERY; i++) {
     const keys = await deriveWalletKeysForAccount(mnemonic, i)
+    accountLogger.info('Checking account for activity', {
+      accountIndex: i,
+      walletAddress: keys.walletAddress,
+      ordAddress: keys.ordAddress,
+      identityAddress: keys.identityAddress
+    })
 
     // Check ALL 3 addresses for activity (wallet, ordinals, AND identity)
     const [walletResult, ordResult, idResult] = await Promise.all([
@@ -64,6 +70,14 @@ export async function discoverAccounts(
     const walletHasActivity = walletResult.ok && walletResult.value.length > 0
     const ordHasActivity = ordResult.ok && ordResult.value.length > 0
     const idHasActivity = idResult.ok && idResult.value.length > 0
+
+    accountLogger.info('Activity check result', {
+      accountIndex: i,
+      walletTxCount: walletResult.ok ? walletResult.value.length : 'err',
+      ordTxCount: ordResult.ok ? ordResult.value.length : 'err',
+      idTxCount: idResult.ok ? idResult.value.length : 'err',
+      hasActivity: walletHasActivity || ordHasActivity || idHasActivity
+    })
 
     if (walletHasActivity || ordHasActivity || idHasActivity) {
       discovered.push({ index: i, keys })
