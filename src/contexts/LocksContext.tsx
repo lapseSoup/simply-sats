@@ -130,14 +130,17 @@ export function LocksProvider({ children }: LocksProviderProps) {
       const walletUtxos = await getUTXOs(wallet.walletAddress)
 
       const lockResult = await lockBSV(amountSats, unlockBlock, walletUtxos, undefined, currentHeight, activeAccountId ?? undefined)
+      if (!lockResult.ok) {
+        return err(lockResult.error.message)
+      }
 
       // Add the locked UTXO to our list (functional updater to avoid stale closure)
-      setLocks(prev => [...prev, lockResult.lockedUtxo])
+      setLocks(prev => [...prev, lockResult.value.lockedUtxo])
 
       await onComplete()
       // Audit log lock creation
-      audit.lockCreated(lockResult.txid, amountSats, unlockBlock, activeAccountId ?? undefined)
-      return ok({ txid: lockResult.txid })
+      audit.lockCreated(lockResult.value.txid, amountSats, unlockBlock, activeAccountId ?? undefined)
+      return ok({ txid: lockResult.value.txid })
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Lock failed')
     }
@@ -154,7 +157,11 @@ export function LocksProvider({ children }: LocksProviderProps) {
     if (!currentHeight) return err('Could not get block height')
 
     try {
-      const txid = await unlockBSV(lock, currentHeight, activeAccountId ?? undefined)
+      const unlockResult = await unlockBSV(lock, currentHeight, activeAccountId ?? undefined)
+      if (!unlockResult.ok) {
+        return err(unlockResult.error.message)
+      }
+      const txid = unlockResult.value
 
       // Add to known-unlocked set BEFORE removing from state and fetching data
       // This prevents the race condition where detectLockedUtxos re-adds the lock
