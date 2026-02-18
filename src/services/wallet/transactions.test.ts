@@ -35,6 +35,7 @@ const {
   mockResetInactivityTimer,
   mockAcquireSyncLock,
   mockReleaseLock,
+  mockDeriveChildPrivateKey,
 } = vi.hoisted(() => {
   const releaseLock = vi.fn()
   return {
@@ -57,6 +58,7 @@ const {
     mockResetInactivityTimer: vi.fn(),
     mockAcquireSyncLock: vi.fn(async () => releaseLock),
     mockReleaseLock: releaseLock,
+    mockDeriveChildPrivateKey: vi.fn(),
   }
 })
 
@@ -85,11 +87,21 @@ vi.mock('@bsv/sdk', () => {
       }
     }
   }
+  class MockPublicKey {
+    _hex: string
+    constructor(hex?: string) { this._hex = hex ?? 'mock-pubkey' }
+    static fromString(hex: string) { return new MockPublicKey(hex) }
+  }
   return {
     PrivateKey: MockPrivateKey,
+    PublicKey: MockPublicKey,
     Transaction: MockTransaction,
   }
 })
+
+vi.mock('../keyDerivation', () => ({
+  deriveChildPrivateKey: (...args: unknown[]) => mockDeriveChildPrivateKey(...args),
+}))
 
 vi.mock('../../infrastructure/api/broadcastService', () => ({
   broadcastTransaction: (...args: unknown[]) => mockInfraBroadcast(...args),
@@ -803,6 +815,109 @@ describe('Transaction Service', () => {
       const result = await getAllSpendableUTXOs(walletWif)
 
       expect(result.map(u => u.satoshis)).toEqual([1000, 5000, 9000])
+    })
+
+    // -------------------------------------------------------------------------
+    // S-19: re-derivation tests
+    // -------------------------------------------------------------------------
+
+    it('Test A: re-derives child WIF from identityWif + senderPubkey + invoiceNumber', async () => {
+      // The derived UTXO's locking script matches p2pkhLockingScriptHex('1DerivedAddr')
+      // which returns 'script_1DerivedAddr' per the mock.
+      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
+        if (basket === 'default') return []
+        if (basket === 'derived') {
+          return [
+            { txid: 'txS19a', vout: 0, satoshis: 7000, lockingScript: 'script_1DerivedAddr' },
+          ]
+        }
+        return []
+      })
+      mockGetDerivedAddresses.mockResolvedValue([
+        {
+          address: '1DerivedAddr',
+          senderPubkey: 'abcd1234pubkey',
+          invoiceNumber: '42',
+          privateKeyWif: undefined,
+        },
+      ])
+      // Mock deriveChildPrivateKey to return a fake PrivateKey-like object
+      mockDeriveChildPrivateKey.mockReturnValue({
+        toWif: () => 'L1aChildWif...',
+      })
+
+      const identityWif = 'L1identityWif'
+      const result = await getAllSpendableUTXOs(walletWif, undefined, identityWif)
+
+      // deriveChildPrivateKey must have been called (re-derivation path exercised)
+      expect(mockDeriveChildPrivateKey).toHaveBeenCalledTimes(1)
+      expect(result).toHaveLength(1)
+      expect(result[0]!.wif).toBe('L1aChildWif...')
+      expect(result[0]!.address).toBe('1DerivedAddr')
+      expect(result[0]!.satoshis).toBe(7000)
+    })
+
+    it('Test B: skips UTXO when identityWif is absent and record has no stored privateKeyWif', async () => {
+      // A derived address entry with senderPubkey+invoiceNumber but no stored WIF,
+      // and no identityWif supplied — cannot produce a WIF, so UTXO must be skipped.
+      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
+        if (basket === 'default') return []
+        if (basket === 'derived') {
+          return [
+            { txid: 'txS19b', vout: 0, satoshis: 4000, lockingScript: 'script_1NewDerivedAddr' },
+          ]
+        }
+        return []
+      })
+      mockGetDerivedAddresses.mockResolvedValue([
+        {
+          address: '1NewDerivedAddr',
+          senderPubkey: 'abcd1234pubkey',
+          invoiceNumber: '7',
+          privateKeyWif: undefined, // no stored WIF — new-style record
+        },
+      ])
+
+      // identityWif is NOT provided
+      const result = await getAllSpendableUTXOs(walletWif)
+
+      // UTXO must be skipped — no WIF available
+      expect(result).toHaveLength(0)
+      // deriveChildPrivateKey must NOT have been called
+      expect(mockDeriveChildPrivateKey).not.toHaveBeenCalled()
+    })
+
+    it('Test C: includes UTXO with stored privateKeyWif when identityWif is absent (legacy fallback)', async () => {
+      // Legacy record: has a stored WIF. identityWif is not provided.
+      // The legacy fallback path should populate the map and include the UTXO.
+      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
+        if (basket === 'default') return []
+        if (basket === 'derived') {
+          return [
+            { txid: 'txS19c', vout: 0, satoshis: 2500, lockingScript: 'script_1LegacyAddr' },
+          ]
+        }
+        return []
+      })
+      mockGetDerivedAddresses.mockResolvedValue([
+        {
+          address: '1LegacyAddr',
+          senderPubkey: undefined,   // old record — no senderPubkey
+          invoiceNumber: undefined,  // old record — no invoiceNumber
+          privateKeyWif: 'L3legacyStoredWif',
+        },
+      ])
+
+      // identityWif is NOT provided
+      const result = await getAllSpendableUTXOs(walletWif)
+
+      // Legacy UTXO must be included with the stored WIF
+      expect(result).toHaveLength(1)
+      expect(result[0]!.wif).toBe('L3legacyStoredWif')
+      expect(result[0]!.address).toBe('1LegacyAddr')
+      expect(result[0]!.satoshis).toBe(2500)
+      // re-derivation must NOT have been attempted
+      expect(mockDeriveChildPrivateKey).not.toHaveBeenCalled()
     })
   })
 })
