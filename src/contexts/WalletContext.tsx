@@ -67,10 +67,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
     balance,
     ordBalance,
     syncError,
-    setOrdinals,
-    setTxHistory,
     resetSync,
     performSync: syncPerformSync,
+    fetchDataFromDB: syncFetchDataFromDB,
     fetchData: syncFetchData
   } = useSyncContext()
 
@@ -79,6 +78,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     locks,
     knownUnlockedLocksRef,
     setLocks,
+    resetKnownUnlockedLocks,
     handleLock: locksHandleLock,
     handleUnlock: locksHandleUnlock,
     detectLocks
@@ -206,12 +206,12 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setWallet,
     setIsLocked,
     setLocks,
-    setOrdinals,
-    setTxHistory,
     resetSync,
+    resetKnownUnlockedLocks,
     storeKeysInRust,
     refreshAccounts,
     setActiveAccountState,
+    fetchDataFromDB: syncFetchDataFromDB,
     wallet,
     accounts
   })
@@ -295,6 +295,25 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet, syncFetchData, detectLocks, setLocks])
 
+  // Fetch data from local DB only (no API calls) — for instant account switching
+  const fetchDataFromDB = useCallback(async () => {
+    if (!wallet) return
+
+    const version = fetchVersionRef.current
+    const currentAccountId = activeAccountIdRef.current
+    if (!currentAccountId) return
+
+    await syncFetchDataFromDB(
+      wallet,
+      currentAccountId,
+      (loadedLocks) => {
+        if (fetchVersionRef.current !== version) return
+        setLocks(loadedLocks)
+      },
+      () => fetchVersionRef.current !== version
+    )
+  }, [wallet, syncFetchDataFromDB, setLocks])
+
   // Lock/unlock BSV - delegates to LocksContext
   const handleLock = useCallback(async (amountSats: number, blocks: number): Promise<WalletResult> => {
     if (!wallet) return { ok: false, error: 'No wallet loaded' }
@@ -376,6 +395,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setFeeRate,
     refreshContacts,
     performSync,
+    fetchDataFromDB,
     fetchData,
     handleCreateWallet,
     handleRestoreWallet,
@@ -394,7 +414,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }), [
     setWallet, setSessionPassword, switchAccount, createNewAccount, importAccount, deleteAccount,
     renameAccount, refreshAccounts, refreshTokens, lockWallet, unlockWallet,
-    setAutoLockMinutes, setFeeRate, refreshContacts, performSync, fetchData,
+    setAutoLockMinutes, setFeeRate, refreshContacts, performSync, fetchDataFromDB, fetchData,
     handleCreateWallet, handleRestoreWallet, handleImportJSON, handleDeleteWallet,
     handleSend, handleSendMulti, handleLock, handleUnlock, handleTransferOrdinal, handleListOrdinal,
     handleSendToken, consumePendingDiscovery, peekPendingDiscovery, clearPendingDiscovery

@@ -23,6 +23,8 @@ interface LocksContextType {
   // State setters
   setLocks: (locks: SetStateAction<LockedUTXO[]>) => void
   addKnownUnlockedLock: (key: string) => void
+  /** Clear knownUnlockedLocks on account switch to prevent cross-account contamination */
+  resetKnownUnlockedLocks: () => void
 
   // Actions
   handleLock: (
@@ -80,6 +82,12 @@ export function LocksProvider({ children }: LocksProviderProps) {
   // Add a lock key to known unlocked set
   const addKnownUnlockedLock = useCallback((key: string) => {
     setKnownUnlockedLocks(prev => new Set([...prev, key]))
+  }, [])
+
+  // Clear known unlocked locks on account switch to prevent cross-account contamination
+  const resetKnownUnlockedLocks = useCallback(() => {
+    setKnownUnlockedLocks(new Set())
+    knownUnlockedLocksRef.current = new Set()
   }, [])
 
   // Detect locked UTXOs
@@ -194,10 +202,11 @@ export function LocksProvider({ children }: LocksProviderProps) {
     knownUnlockedLocksRef,
     setLocks,
     addKnownUnlockedLock,
+    resetKnownUnlockedLocks,
     handleLock,
     handleUnlock,
     detectLocks
-  }), [locks, knownUnlockedLocks, setLocks, addKnownUnlockedLock, handleLock, handleUnlock, detectLocks])
+  }), [locks, knownUnlockedLocks, setLocks, addKnownUnlockedLock, resetKnownUnlockedLocks, handleLock, handleUnlock, detectLocks])
 
   return (
     <LocksContext.Provider value={value}>

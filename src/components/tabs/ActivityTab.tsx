@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, memo, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useRef, useEffect, memo, useCallback, useMemo, type ReactNode } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
 import { useWalletState } from '../../contexts'
-import { useWalletActions } from '../../contexts/WalletActionsContext'
 import { useUI } from '../../contexts/UIContext'
 import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
@@ -73,23 +72,9 @@ const TransactionItem = memo(function TransactionItem({
 
 export function ActivityTab() {
   const { txHistory, locks, loading, activeAccountId } = useWalletState()
-  const { performSync, fetchData } = useWalletActions()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
 
-  // Sync when mounted or when account changes so pending txs get updated status
-  useEffect(() => {
-    let cancelled = false
-    const run = async () => {
-      try {
-        await performSync()
-        if (!cancelled) await fetchData()
-      } catch {
-        // best-effort
-      }
-    }
-    run()
-    return () => { cancelled = true }
-  }, [activeAccountId, performSync, fetchData])
+  // Sync is handled by App.tsx checkSync effect — no duplicate sync here
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
 
   // Fetch lock/unlock labels via hook (refreshes when txHistory or account changes)

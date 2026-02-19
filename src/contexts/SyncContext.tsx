@@ -6,8 +6,8 @@
  */
 
 import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode } from 'react'
-import type { WalletKeys, UTXO, Ordinal } from '../services/wallet'
-import { getBalance, getUTXOs, getOrdinals } from '../services/wallet'
+import type { WalletKeys, UTXO, Ordinal, LockedUTXO } from '../services/wallet'
+import { getBalance, getUTXOs, getOrdinals, getUTXOsFromDB } from '../services/wallet'
 import {
   getAllTransactions,
   getDerivedAddresses,
@@ -80,6 +80,13 @@ interface SyncContextType {
     isRestore?: boolean,
     forceReset?: boolean
   ) => Promise<void>
+  /** Load all data from local DB only (no API calls). Used for instant account switching. */
+  fetchDataFromDB: (
+    wallet: WalletKeys,
+    activeAccountId: number | null,
+    onLocksLoaded: (locks: LockedUTXO[]) => void,
+    isCancelled?: () => boolean
+  ) => Promise<void>
   fetchData: (
     wallet: WalletKeys,
     activeAccountId: number | null,
@@ -134,6 +141,109 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setSyncError(null)
     setOrdinalContentCache(new Map())
     contentCacheRef.current = new Map()
+  }, [])
+
+  // Load all data from local DB only — no API calls. Completes fast for instant switching.
+  const fetchDataFromDB = useCallback(async (
+    wallet: WalletKeys,
+    activeAccountId: number | null,
+    onLocksLoaded: (locks: LockedUTXO[]) => void,
+    isCancelled?: () => boolean
+  ) => {
+    if (!activeAccountId) return
+
+    syncLogger.debug('fetchDataFromDB: loading cached data', { activeAccountId })
+
+    // Balance from DB
+    try {
+      const [defaultBal, derivedBal] = await Promise.all([
+        getBalanceFromDatabase('default', activeAccountId),
+        getBalanceFromDatabase('derived', activeAccountId)
+      ])
+      if (isCancelled?.()) return
+      const totalBalance = defaultBal + derivedBal
+      if (Number.isFinite(totalBalance)) {
+        setBalance(totalBalance)
+        try { localStorage.setItem(`${STORAGE_KEYS.CACHED_BALANCE}_${activeAccountId}`, String(totalBalance)) } catch { /* quota exceeded */ }
+      }
+    } catch (e) {
+      syncLogger.warn('fetchDataFromDB: balance read failed', { error: String(e) })
+    }
+
+    // Transaction history from DB
+    try {
+      const dbTxsResult = await getAllTransactions(activeAccountId)
+      const dbTxs = dbTxsResult.ok ? dbTxsResult.value : []
+      if (isCancelled?.()) return
+      const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
+        tx_hash: tx.txid,
+        height: tx.blockHeight || 0,
+        amount: tx.amount,
+        description: tx.description
+      }))
+      dbTxHistory.sort((a, b) => {
+        const aH = a.height || 0, bH = b.height || 0
+        if (aH === 0 && bH !== 0) return -1
+        if (bH === 0 && aH !== 0) return 1
+        return bH - aH
+      })
+      setTxHistory(dbTxHistory)
+    } catch (e) {
+      syncLogger.warn('fetchDataFromDB: tx history read failed', { error: String(e) })
+    }
+
+    // Locks from DB
+    try {
+      const dbLocks = await getLocksFromDB(0, activeAccountId)
+      if (isCancelled?.()) return
+      const mapped = mapDbLocksToLockedUtxos(dbLocks, wallet.walletPubKey)
+      if (mapped.length > 0) {
+        onLocksLoaded(mapped)
+      }
+    } catch (e) {
+      syncLogger.warn('fetchDataFromDB: locks read failed', { error: String(e) })
+    }
+
+    // Ordinals from DB
+    try {
+      const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
+      if (isCancelled?.()) return
+      if (dbOrdinals.length > 0) {
+        setOrdinals(dbOrdinals)
+      }
+    } catch (e) {
+      syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(e) })
+    }
+
+    // Cached ordinal content from DB
+    try {
+      const cachedOrdinals = await getCachedOrdinals(activeAccountId)
+      const newCache = new Map<string, OrdinalContentEntry>()
+      for (const cached of cachedOrdinals) {
+        if (isCancelled?.()) return
+        const content = await getCachedOrdinalContent(cached.origin)
+        if (content && (content.contentData || content.contentText)) {
+          newCache.set(cached.origin, content)
+        }
+      }
+      if (newCache.size > 0) {
+        contentCacheRef.current = newCache
+        setOrdinalContentCache(new Map(newCache))
+      }
+    } catch (e) {
+      syncLogger.warn('fetchDataFromDB: ordinal content cache read failed', { error: String(e) })
+    }
+
+    // UTXOs from DB
+    try {
+      const dbUtxos = await getUTXOsFromDB(undefined, activeAccountId)
+      if (isCancelled?.()) return
+      setUtxos(dbUtxos)
+    } catch (e) {
+      syncLogger.warn('fetchDataFromDB: UTXOs read failed', { error: String(e) })
+    }
+
+    setSyncError(null)
   }, [])
 
   // Sync wallet with blockchain
@@ -460,8 +570,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setOrdBalance,
     resetSync,
     performSync,
+    fetchDataFromDB,
     fetchData
-  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, ordinalContentCache, setUtxos, setOrdinals, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchData])
+  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, ordinalContentCache, setUtxos, setOrdinals, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData])
 
   return (
     <SyncContext.Provider value={value}>

@@ -43,6 +43,7 @@ function WalletApp() {
     handleUnlock,
     handleCreateWallet,
     performSync,
+    fetchDataFromDB,
     fetchData,
     isLocked,
     unlockWallet,
@@ -124,6 +125,8 @@ function WalletApp() {
   // Putting any of these in the dep array caused an infinite sync loop:
   //   wallet changes → new performSync → new actionsValue → new consumePendingDiscovery
   //   → effect re-fires → sync starts again → repeat.
+  const fetchDataFromDBRef = useRef(fetchDataFromDB)
+  useEffect(() => { fetchDataFromDBRef.current = fetchDataFromDB }, [fetchDataFromDB])
   const fetchDataRef = useRef(fetchData)
   useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
   const performSyncRef = useRef(performSync)
@@ -211,9 +214,10 @@ function WalletApp() {
 
       let needsSync = false
 
-      // Load DB data immediately so UI is populated while sync runs
+      // Load cached DB data immediately so UI is populated while sync runs.
+      // This is DB-only (no API calls) — completes in <100ms.
       try {
-        await fetchDataRef.current()
+        await fetchDataFromDBRef.current()
 
         needsSync = await needsInitialSync([
           wallet.walletAddress,

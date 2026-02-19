@@ -39,6 +39,8 @@ export interface WalletActionsContextType {
 
   // Wallet lifecycle
   performSync: (isRestore?: boolean, forceReset?: boolean) => Promise<void>
+  /** Load all data from local DB only (no API calls). Used for instant account switching. */
+  fetchDataFromDB: () => Promise<void>
   fetchData: () => Promise<void>
   handleCreateWallet: (password: string | null, wordCount?: 12 | 24) => Promise<string | null>
   handleRestoreWallet: (mnemonic: string, password: string | null) => Promise<boolean>

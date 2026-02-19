@@ -10,20 +10,12 @@
  */
 
 import { useCallback, useRef, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
-import type { WalletKeys, LockedUTXO, Ordinal, PublicWalletKeys } from '../services/wallet'
+import type { WalletKeys, LockedUTXO, PublicWalletKeys } from '../services/wallet'
 import type { Account } from '../services/accounts'
-import type { TxHistoryItem } from '../contexts/SyncContext'
 import { getActiveAccount, switchAccount as switchAccountDb } from '../services/accounts'
 import { discoverAccounts } from '../services/accountDiscovery'
 import {
-  getLocks as getLocksFromDB,
-  getAllTransactions,
-  type Transaction
-} from '../infrastructure/database'
-import {
-  getOrdinalsFromDatabase,
   getBalanceFromDatabase,
-  mapDbLocksToLockedUtxos,
   cancelSync
 } from '../services/sync'
 import { walletLogger } from '../services/logger'
@@ -44,12 +36,19 @@ interface UseAccountSwitchingOptions {
   setWallet: (wallet: WalletKeys | null) => void
   setIsLocked: Dispatch<SetStateAction<boolean>>
   setLocks: (locks: LockedUTXO[]) => void
-  setOrdinals: (ordinals: Ordinal[]) => void
-  setTxHistory: (history: TxHistoryItem[]) => void
   resetSync: (initialBalance?: number) => void
+  /** Clear knownUnlockedLocks on account switch to prevent cross-account lock contamination */
+  resetKnownUnlockedLocks: () => void
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
   refreshAccounts: () => Promise<void>
   setActiveAccountState: (account: Account | null, accountId: number | null) => void
+  /** DB-only data loader from SyncContext — loads all cached data without API calls */
+  fetchDataFromDB: (
+    wallet: WalletKeys,
+    activeAccountId: number | null,
+    onLocksLoaded: (locks: LockedUTXO[]) => void,
+    isCancelled?: () => boolean
+  ) => Promise<void>
   wallet: WalletKeys | null
   accounts: Account[]
 }
@@ -113,22 +112,26 @@ export function useAccountSwitching({
   setWallet,
   setIsLocked,
   setLocks,
-  setOrdinals,
-  setTxHistory,
   resetSync,
+  resetKnownUnlockedLocks,
   storeKeysInRust,
   refreshAccounts,
   setActiveAccountState,
+  fetchDataFromDB,
   wallet,
   accounts
 }: UseAccountSwitchingOptions): UseAccountSwitchingReturn {
 
   // Mutex to prevent concurrent account switches
   const switchingRef = useRef(false)
+  // Queue the latest switch request when one is already in progress
+  const pendingSwitchRef = useRef<number | null>(null)
 
   const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
     if (switchingRef.current) {
-      walletLogger.warn('Account switch already in progress — ignoring concurrent request', { accountId })
+      // Queue the latest request instead of silently dropping it
+      pendingSwitchRef.current = accountId
+      walletLogger.warn('Account switch already in progress — queued', { accountId })
       return false
     }
     switchingRef.current = true
@@ -166,6 +169,7 @@ export function useAccountSwitching({
       // changes in React — ensures no render ever sees mismatched accountId + balance.
       fetchVersionRef.current += 1
       setLocks([])
+      resetKnownUnlockedLocks()
       resetSync(preloadedBalance)
 
       // PRIMARY PATH: switch_account_from_store derives + stores keys entirely in Rust.
@@ -238,45 +242,21 @@ export function useAccountSwitching({
           walletLogger.warn('Failed to rotate session for account', { accountId, error: String(e) })
         }
 
-        // Preload remaining data from DB
+        // Load all cached data from DB in one call (balance, txHistory, locks,
+        // ordinals, UTXOs). This populates the UI instantly without API calls.
         const preloadVersion = fetchVersionRef.current
-
-        // Preload locks from DB instantly
         try {
-          const dbLocks = await getLocksFromDB(0, accountId)
-          if (fetchVersionRef.current !== preloadVersion) {
-            walletLogger.debug('Skipping lock preload — account switch detected during DB query')
-          } else if (dbLocks.length > 0) {
-            setLocks(mapDbLocksToLockedUtxos(dbLocks, keys.walletPubKey))
-          }
+          await fetchDataFromDB(
+            keys,
+            accountId,
+            (loadedLocks) => {
+              if (fetchVersionRef.current !== preloadVersion) return
+              setLocks(loadedLocks)
+            },
+            () => fetchVersionRef.current !== preloadVersion
+          )
         } catch (_e) {
-          // Best-effort: full sync will pick up locks anyway
-        }
-
-        // Preload ordinals from DB
-        try {
-          const dbOrdinals = await getOrdinalsFromDatabase(accountId)
-          if (fetchVersionRef.current === preloadVersion && dbOrdinals.length > 0) {
-            setOrdinals(dbOrdinals)
-          }
-        } catch (_e) {
-          // Best-effort
-        }
-
-        // Preload transaction history from DB
-        try {
-          const dbTxsResult = await getAllTransactions(accountId)
-          const dbTxs = dbTxsResult.ok ? dbTxsResult.value : []
-          if (fetchVersionRef.current === preloadVersion && dbTxs.length > 0) {
-            setTxHistory(dbTxs.map((tx: Transaction) => ({
-              tx_hash: tx.txid,
-              height: tx.blockHeight || 0,
-              amount: tx.amount,
-              description: tx.description
-            })))
-          }
-        } catch (_e) {
-          // Best-effort
+          // Best-effort: full sync will pick up data anyway
         }
 
         walletLogger.info('Account switched successfully', { accountId })
@@ -291,8 +271,17 @@ export function useAccountSwitching({
       return false
     } finally {
       switchingRef.current = false
+      // If another switch was requested while this one was running, execute the latest one.
+      // This ensures rapid A→B→C clicking lands on C, not A.
+      const pendingId = pendingSwitchRef.current
+      pendingSwitchRef.current = null
+      if (pendingId !== null && pendingId !== accountId) {
+        walletLogger.info('Executing queued account switch', { from: accountId, to: pendingId })
+        // Fire-and-forget — the next switch will set switchingRef itself
+        switchAccount(pendingId).catch(e => walletLogger.error('Queued switch failed', e))
+      }
     }
-  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, setOrdinals, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
+  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, resetSync, resetKnownUnlockedLocks, storeKeysInRust, fetchVersionRef, setIsLocked, fetchDataFromDB])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()
