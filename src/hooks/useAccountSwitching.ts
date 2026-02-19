@@ -49,6 +49,7 @@ interface UseAccountSwitchingOptions {
   resetSync: (initialBalance?: number) => void
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
   refreshAccounts: () => Promise<void>
+  setActiveAccountState: (account: Account | null, accountId: number | null) => void
   wallet: WalletKeys | null
   accounts: Account[]
 }
@@ -117,6 +118,7 @@ export function useAccountSwitching({
   resetSync,
   storeKeysInRust,
   refreshAccounts,
+  setActiveAccountState,
   wallet,
   accounts
 }: UseAccountSwitchingOptions): UseAccountSwitchingReturn {
@@ -180,7 +182,11 @@ export function useAccountSwitching({
           walletLogger.error('Failed to update active account in database')
           return false
         }
-        await refreshAccounts()
+        // Set active account state directly to avoid a DB round-trip that could
+        // return stale data if account discovery is concurrently modifying rows.
+        setActiveAccountState(account, accountId)
+        // Refresh accounts list in background (updates dropdown + balance display)
+        refreshAccounts().catch(e => walletLogger.warn('Background account refresh failed', e))
         _lastSwitchDiag += ' | DB+refresh OK'
       } else {
         // FALLBACK: If Rust has no mnemonic (shouldn't happen while wallet is unlocked),
@@ -273,9 +279,6 @@ export function useAccountSwitching({
           // Best-effort
         }
 
-        // Bump version again AFTER preload
-        fetchVersionRef.current += 1
-
         walletLogger.info('Account switched successfully', { accountId })
         return true
       }
@@ -289,7 +292,7 @@ export function useAccountSwitching({
     } finally {
       switchingRef.current = false
     }
-  }, [accounts, accountsSwitchAccount, refreshAccounts, setWallet, setLocks, setOrdinals, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
+  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, setOrdinals, setTxHistory, resetSync, storeKeysInRust, fetchVersionRef, setIsLocked])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()

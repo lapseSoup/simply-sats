@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Mock WocClient BEFORE imports
 vi.mock('../infrastructure/api/wocClient', () => {
@@ -12,7 +12,8 @@ vi.mock('../infrastructure/api/wocClient', () => {
 
 // Mock accounts service
 vi.mock('./accounts', () => ({
-  createAccount: vi.fn().mockResolvedValue({ ok: true, value: 1 })
+  createAccount: vi.fn().mockResolvedValue({ ok: true, value: 1 }),
+  switchAccount: vi.fn().mockResolvedValue(true)
 }))
 
 // Mock domain wallet key derivation
@@ -59,7 +60,10 @@ const makeMockKeys = (index: number) => ({
   identityPubKey: `id-pub-${index}`
 })
 
-/** Helper: mock 3 address checks (wallet, ord, identity) for one account with no activity */
+/**
+ * Helper: mock serial address checks for one account with no activity.
+ * New implementation checks addresses one at a time (wallet → ord → identity).
+ */
 const mockEmptyAccount = () => {
   mockWocClient.getTransactionHistorySafe
     .mockResolvedValueOnce({ ok: true, value: [] }) // wallet
@@ -67,38 +71,54 @@ const mockEmptyAccount = () => {
     .mockResolvedValueOnce({ ok: true, value: [] }) // identity
 }
 
-/** Helper: mock 3 address checks for one account with wallet activity */
+/**
+ * Helper: mock serial address checks for one account with wallet activity.
+ * Short-circuits after wallet returns activity (ord+identity not called for this account).
+ */
 const mockActiveAccount = (txHash = 'abc', height = 850000) => {
   mockWocClient.getTransactionHistorySafe
-    .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: txHash, height }] }) // wallet
-    .mockResolvedValueOnce({ ok: true, value: [] }) // ord
-    .mockResolvedValueOnce({ ok: true, value: [] }) // identity
+    .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: txHash, height }] }) // wallet — active, short-circuits
 }
 
-/** Helper: mock 3 address checks for one account with ordinals activity */
+/**
+ * Helper: mock serial address checks for one account with ordinals activity.
+ * wallet is checked first (empty), then ord (active) — identity not called.
+ */
 const mockOrdActiveAccount = (txHash = 'def', height = 850001) => {
   mockWocClient.getTransactionHistorySafe
-    .mockResolvedValueOnce({ ok: true, value: [] }) // wallet
-    .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: txHash, height }] }) // ord
-    .mockResolvedValueOnce({ ok: true, value: [] }) // identity
+    .mockResolvedValueOnce({ ok: true, value: [] })                             // wallet — empty
+    .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: txHash, height }] }) // ord — active, short-circuits
 }
 
 describe('discoverAccounts', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useFakeTimers()
     vi.mocked(deriveWalletKeysForAccount).mockImplementation((_mnemonic, index) => Promise.resolve(makeMockKeys(index)))
     // Default all unstubbed address checks to "successful but empty" so tests can
     // override only the account indices relevant to each scenario.
     mockWocClient.getTransactionHistorySafe.mockResolvedValue({ ok: true, value: [] })
   })
 
-  it('discovers 0 accounts when the full discovery window has no activity', async () => {
-    // Account 1: no activity
-    mockEmptyAccount()
-    // Account 2: no activity
-    mockEmptyAccount()
+  afterEach(() => {
+    vi.useRealTimers()
+  })
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+  /**
+   * Run discoverAccounts while automatically advancing fake timers so
+   * setTimeout-based delays don't block the test.
+   */
+  const runDiscovery = async (mnemonic: string, password: string | null, excludeId?: number) => {
+    const promise = discoverAccounts(mnemonic, password, excludeId)
+    // Repeatedly flush all pending timers + microtasks until the promise settles
+    for (let i = 0; i < 500; i++) {
+      await vi.runAllTimersAsync()
+    }
+    return promise
+  }
+
+  it('discovers 0 accounts when the full discovery window has no activity', async () => {
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(0)
     expect(createAccount).not.toHaveBeenCalled()
@@ -107,14 +127,10 @@ describe('discoverAccounts', () => {
   })
 
   it('discovers accounts with wallet address activity and syncs them', async () => {
-    // Account 1: wallet has activity
+    // Account 1 (index 1): wallet has activity — short-circuits after 1 call
     mockActiveAccount('abc', 850000)
-    // Account 2: no activity
-    mockEmptyAccount()
-    // Account 3: no activity
-    mockEmptyAccount()
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledTimes(1)
@@ -126,47 +142,36 @@ describe('discoverAccounts', () => {
   })
 
   it('discovers accounts with ordinals address activity', async () => {
-    // Account 1: only ordinals has activity
+    // Account 1 (index 1): wallet empty, ord has activity
     mockOrdActiveAccount('def', 850001)
-    // Account 2: no activity
-    mockEmptyAccount()
-    // Account 3: no activity
-    mockEmptyAccount()
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
   })
 
   it('discovers accounts with identity address activity', async () => {
-    // Account 1: only identity has activity
+    // Account 1 (index 1): wallet empty, ord empty, identity active
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValueOnce({ ok: true, value: [] }) // wallet
       .mockResolvedValueOnce({ ok: true, value: [] }) // ord
-      .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'id-tx', height: 850002 }] }) // identity active!
-    // Account 2: no activity
-    mockEmptyAccount()
-    // Account 3: no activity
-    mockEmptyAccount()
+      .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'id-tx', height: 850002 }] }) // identity active
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
   })
 
   it('discovers multiple consecutive accounts', async () => {
-    // Account 1: has activity
+    // Account 1 (index 1): wallet active — short-circuits
     mockActiveAccount('a', 1)
-    // Account 2: has activity
+    // Account 2 (index 2): wallet active — short-circuits
     mockActiveAccount('b', 2)
-    // Account 3: no activity
-    mockEmptyAccount()
-    // Account 4: no activity
-    mockEmptyAccount()
+    // Accounts 3+ return the default empty
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(2)
     expect(createAccount).toHaveBeenCalledTimes(2)
@@ -174,15 +179,14 @@ describe('discoverAccounts', () => {
     expect(createAccount).toHaveBeenCalledWith('Account 3', makeMockKeys(2), 'password', true, 2)
   })
 
-  it('discovers account after multiple empty indices', async () => {
-    // Account 1: no activity (empty)
-    mockEmptyAccount()
-    // Account 2: no activity (empty)
-    mockEmptyAccount()
-    // Account 3: has activity — should still be discovered
+  it('discovers account after multiple empty indices (before any found)', async () => {
+    // Accounts 1-2 (indices 1,2): empty
+    mockEmptyAccount() // index 1
+    mockEmptyAccount() // index 2
+    // Account 3 (index 3): wallet active — should still be discovered (no gap limit before first hit)
     mockActiveAccount('found-it', 850000)
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledTimes(1)
@@ -203,100 +207,126 @@ describe('discoverAccounts', () => {
       return { ok: true, value: [] }
     })
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledWith('Account 51', makeMockKeys(50), 'password', true, 50)
     expect(deriveWalletKeysForAccount).toHaveBeenCalledWith('test mnemonic', 50)
   })
 
-  it('retries on API failure and stops only if retry also fails', async () => {
-    // First attempt: API failure on all 3 addresses
+  it('retries on API failure and discovers account on successful retry', async () => {
+    // Index 1: all 3 addresses fail on first attempt
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } })
-      .mockResolvedValueOnce({ ok: true, value: [] })
-      .mockResolvedValueOnce({ ok: true, value: [] })
-    // Retry after delay: all 3 succeed but empty
+      .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } }) // wallet fail
+      .mockResolvedValueOnce({ ok: true, value: [] })  // ord ok (continues despite wallet fail)
+      .mockResolvedValueOnce({ ok: true, value: [] })  // identity ok — result: null (wallet failed)
+    // Retry attempt 1: wallet has activity
     mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ ok: true, value: [] })
-      .mockResolvedValueOnce({ ok: true, value: [] })
-      .mockResolvedValueOnce({ ok: true, value: [] })
-    // Account 2: empty
-    mockEmptyAccount()
+      .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'abc', height: 850000 }] }) // wallet active — found!
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
+
+    expect(found).toBe(1)
+    expect(createAccount).toHaveBeenCalledTimes(1)
+    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
+  })
+
+  it('skips account when all retries fail (API error persists)', async () => {
+    // Index 1: wallet fails — makes result null
+    mockWocClient.getTransactionHistorySafe
+      .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } }) // wallet fail
+      .mockResolvedValueOnce({ ok: true, value: [] })  // ord ok
+      .mockResolvedValueOnce({ ok: true, value: [] })  // identity ok — null (wallet failed)
+    // All 3 retries also fail (wallet always fails)
+    for (let i = 0; i < 3; i++) {
+      mockWocClient.getTransactionHistorySafe
+        .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } }) // wallet fail
+        .mockResolvedValueOnce({ ok: true, value: [] })  // ord ok
+        .mockResolvedValueOnce({ ok: true, value: [] })  // identity ok — still null
+    }
+
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(0)
     expect(createAccount).not.toHaveBeenCalled()
   })
 
-  it('discovers account on retry after initial API failure', async () => {
-    // First attempt: API failure on wallet + ordinals
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ ok: false, error: { code: 'RATE_LIMITED', message: '429' } })
-      .mockResolvedValueOnce({ ok: false, error: { code: 'RATE_LIMITED', message: '429' } })
-      .mockResolvedValueOnce({ ok: false, error: { code: 'RATE_LIMITED', message: '429' } })
-    // Retry: has activity
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'abc', height: 850000 }] })
-      .mockResolvedValueOnce({ ok: true, value: [] })
-      .mockResolvedValueOnce({ ok: true, value: [] })
-    // Account 2: no activity
-    mockEmptyAccount()
-    // Account 3: no activity
-    mockEmptyAccount()
-
-    const found = await discoverAccounts('test mnemonic', 'password')
-
-    expect(found).toBe(1)
-    expect(createAccount).toHaveBeenCalledTimes(1)
-  })
-
   it('stops on createAccount failure', async () => {
-    // Account 1: has activity
+    // Account 1 (index 1): has activity
     mockActiveAccount('a', 1)
-    // Account 2: no activity
-    mockEmptyAccount()
-    // Account 3: no activity
-    mockEmptyAccount()
 
     vi.mocked(createAccount).mockRejectedValueOnce(new Error('DB write failed'))
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(0) // Failed account isn't counted
     expect(createAccount).toHaveBeenCalledTimes(1)
   })
 
   it('keeps discovered account when initial sync fails', async () => {
-    // Account 1: has activity
+    // Account 1 (index 1): has activity
     mockActiveAccount('a', 1)
-    // Account 2: no activity
-    mockEmptyAccount()
-    // Account 3: no activity
-    mockEmptyAccount()
 
     vi.mocked(syncWallet).mockRejectedValueOnce(new Error('sync failed'))
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledTimes(1)
     expect(syncWallet).toHaveBeenCalledTimes(1)
   })
 
-  it('respects max discovery cap of 20', async () => {
-    // All accounts have activity — should stop at max cap
-    // Each account check does 3 calls (wallet, ord, identity)
+  it('respects max discovery cap of 200', async () => {
+    // All accounts have activity — wallet short-circuits after 1 call per account
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValue({ ok: true, value: [{ tx_hash: 'x', height: 1 }] })
 
-    const found = await discoverAccounts('test mnemonic', 'password')
+    const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(200)
     expect(createAccount).toHaveBeenCalledTimes(200)
     // Verify it checked accounts 1 through 200
     expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(200)
     expect(deriveWalletKeysForAccount).toHaveBeenLastCalledWith('test mnemonic', 200)
+  })
+
+  it('stops after gap limit of 20 consecutive confirmed-empty accounts post-first-hit', async () => {
+    // Index 1: active
+    mockActiveAccount('a', 1)
+    // Indices 2-21: all empty (20 consecutive empties after first hit)
+    for (let i = 0; i < 20; i++) {
+      mockEmptyAccount()
+    }
+
+    const found = await runDiscovery('test mnemonic', 'password')
+
+    expect(found).toBe(1)
+    // Should have stopped at index 21 (1 active + 20 empty = gap limit reached)
+    expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(21)
+  })
+
+  it('does not count API failures toward gap limit', async () => {
+    // Index 1: active
+    mockActiveAccount('a', 1)
+    // Index 2: API failure (wallet fails) — should NOT count toward gap limit
+    mockWocClient.getTransactionHistorySafe
+      .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'fail' } }) // wallet fail
+      .mockResolvedValueOnce({ ok: true, value: [] })
+      .mockResolvedValueOnce({ ok: true, value: [] })
+    // All retries for index 2 also fail
+    for (let i = 0; i < 3; i++) {
+      mockWocClient.getTransactionHistorySafe
+        .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'fail' } })
+        .mockResolvedValueOnce({ ok: true, value: [] })
+        .mockResolvedValueOnce({ ok: true, value: [] })
+    }
+    // Index 3: active — still discoverable because index 2 didn't count as empty
+    mockActiveAccount('b', 3)
+
+    const found = await runDiscovery('test mnemonic', 'password')
+
+    expect(found).toBe(2)
+    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
+    expect(createAccount).toHaveBeenCalledWith('Account 4', makeMockKeys(3), 'password', true, 3)
   })
 })

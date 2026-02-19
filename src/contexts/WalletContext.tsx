@@ -209,6 +209,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     resetSync,
     storeKeysInRust,
     refreshAccounts,
+    setActiveAccountState,
     wallet,
     accounts
   })

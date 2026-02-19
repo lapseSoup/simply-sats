@@ -495,17 +495,18 @@ async function calculateTxAmount(
  * @param limit - Maximum transactions to sync
  * @param accountId - Account ID for scoping data
  */
-async function syncTransactionHistory(address: string, limit: number = 50, accountId?: number, allWalletAddresses?: string[], walletPubKey?: string): Promise<number> {
+async function syncTransactionHistory(address: string, accountId?: number, allWalletAddresses?: string[], walletPubKey?: string): Promise<number> {
   const wocClient = getWocClient()
 
-  // Fetch transaction history
+  // Fetch transaction history — no client-side limit: the API returns all txs
+  // and each subsequent sync skips already-known txids, so only new ones are fetched.
   const historyResult = await wocClient.getTransactionHistorySafe(address)
   if (!historyResult.ok) {
     syncLogger.warn(`Failed to fetch tx history for ${address.slice(0,12)}...`, { error: historyResult.error })
     return 0
   }
 
-  const history = historyResult.value.slice(0, limit)
+  const history = historyResult.value
   let newTxCount = 0
 
   // Skip already-known transactions to avoid wasteful API calls
@@ -837,13 +838,12 @@ async function backfillNullAmounts(
 }
 
 /**
- * Resolve pending transactions that were missed by the history-limit slice.
+ * Resolve pending transactions that may have been missed during sync.
  *
- * `syncTransactionHistory` only fetches the most recent N transactions per
- * address.  If a pending transaction (e.g. an unlock tx) was broadcast when
- * the wallet already had ≥N prior transactions, the history slice doesn't
- * include it and `updateTransactionStatus` is never called — so it stays
- * "Pending" forever even after on-chain confirmation.
+ * `syncTransactionHistory` skips already-known txids for efficiency.
+ * If a pending transaction is not returned by the history API (e.g. due
+ * to an API error mid-sync), `updateTransactionStatus` is never called
+ * — so it stays "Pending" forever even after on-chain confirmation.
  *
  * This function queries all pending txids from the DB and, for each one,
  * checks WoC directly.  If confirmed (blockheight > 0), it updates the DB.
@@ -992,7 +992,7 @@ export async function syncWallet(
     for (const addr of txHistoryAddresses) {
       if (token.isCancelled) break
       try {
-        await syncTransactionHistory(addr, 30, accountId, allWalletAddresses, walletPubKey)
+        await syncTransactionHistory(addr, accountId, allWalletAddresses, walletPubKey)
         // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
       } catch (e) {

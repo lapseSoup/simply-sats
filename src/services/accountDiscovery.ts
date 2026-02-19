@@ -27,9 +27,21 @@ const MAX_ACCOUNT_DISCOVERY = 200
 
 /**
  * Once at least one account is discovered, stop after this many consecutive
- * successful empty checks.
+ * successfully-confirmed-empty checks. API failures do not count toward this.
  */
 const DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT = 20
+
+/**
+ * Delay between each account index check (ms) to avoid WoC rate limiting.
+ * At ~500ms per account with 3 serial address checks, this keeps us well
+ * under WoC's limit while still discovering 20+ accounts in a reasonable time.
+ */
+const DISCOVERY_INTER_ACCOUNT_DELAY_MS = 300
+
+/**
+ * Number of retries per account on API failure, with exponential backoff.
+ */
+const DISCOVERY_MAX_RETRIES = 3
 
 /**
  * Discover additional accounts with on-chain activity.
@@ -50,7 +62,7 @@ export async function discoverAccounts(
   const wocClient = createWocClient()
 
   // Phase 1: Lightweight discovery (just check addresses for activity)
-  // No syncing here — avoids rate limiting between checks
+  // Requests are serialized (not parallel) to stay under WoC rate limits.
   const discovered: { index: number; keys: WalletKeys }[] = []
   let foundAny = false
   let consecutiveEmptyAfterHit = 0
@@ -63,73 +75,48 @@ export async function discoverAccounts(
       identityAddress: keys.identityAddress
     })
 
-    // Check ALL 3 addresses for activity (wallet, ordinals, AND identity)
-    const [walletResult, ordResult, idResult] = await Promise.all([
-      wocClient.getTransactionHistorySafe(keys.walletAddress),
-      wocClient.getTransactionHistorySafe(keys.ordAddress),
-      wocClient.getTransactionHistorySafe(keys.identityAddress)
-    ])
+    // Check all 3 addresses serially to avoid burst rate limiting.
+    // Returns true if we got a definitive "has activity" answer.
+    // Returns false if definitely empty (all 3 returned ok + empty).
+    // Returns null if any check failed (API error — inconclusive).
+    const checkActivity = async (): Promise<boolean | null> => {
+      const addresses = [keys.walletAddress, keys.ordAddress, keys.identityAddress]
+      let allOk = true
+      for (const addr of addresses) {
+        const result = await wocClient.getTransactionHistorySafe(addr)
+        if (!result.ok) { allOk = false; continue }
+        if (result.value.length > 0) return true  // has activity — done
+      }
+      return allOk ? false : null  // false=confirmed empty, null=API error
+    }
 
-    const walletHasActivity = walletResult.ok && walletResult.value.length > 0
-    const ordHasActivity = ordResult.ok && ordResult.value.length > 0
-    const idHasActivity = idResult.ok && idResult.value.length > 0
+    let result = await checkActivity()
+
+    // Retry with exponential backoff on API failures
+    if (result === null) {
+      for (let attempt = 1; attempt <= DISCOVERY_MAX_RETRIES && result === null; attempt++) {
+        const waitMs = 2000 * Math.pow(2, attempt - 1) // 2s, 4s, 8s
+        accountLogger.warn('API failure during discovery, retrying', { accountIndex: i, attempt, waitMs })
+        await new Promise(resolve => setTimeout(resolve, waitMs))
+        result = await checkActivity()
+      }
+    }
 
     accountLogger.info('Activity check result', {
       accountIndex: i,
-      walletTxCount: walletResult.ok ? walletResult.value.length : 'err',
-      ordTxCount: ordResult.ok ? ordResult.value.length : 'err',
-      idTxCount: idResult.ok ? idResult.value.length : 'err',
-      hasActivity: walletHasActivity || ordHasActivity || idHasActivity
+      result: result === true ? 'active' : result === false ? 'empty' : 'api-error'
     })
 
-    if (walletHasActivity || ordHasActivity || idHasActivity) {
+    if (result === true) {
       discovered.push({ index: i, keys })
       foundAny = true
       consecutiveEmptyAfterHit = 0
-      continue
-    }
-
-    // Successful empty account.
-    const allSucceeded = walletResult.ok && ordResult.ok && idResult.ok
-    if (allSucceeded) {
-      accountLogger.debug('Empty account found', { accountIndex: i })
+    } else if (result === false) {
+      // Confirmed empty — count toward gap limit only after first active account found
       if (foundAny) {
         consecutiveEmptyAfterHit++
         if (consecutiveEmptyAfterHit >= DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT) {
-          accountLogger.info('Gap limit reached after first discovered account; stopping', {
-            accountIndex: i,
-            consecutiveEmptyAfterHit,
-            gapLimit: DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT
-          })
-          break
-        }
-      }
-      continue
-    }
-
-    // API failure (likely rate limiting) — wait and retry once
-    accountLogger.warn('API failure during discovery, retrying after delay', { accountIndex: i })
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    const [retryW, retryO, retryI] = await Promise.all([
-      wocClient.getTransactionHistorySafe(keys.walletAddress),
-      wocClient.getTransactionHistorySafe(keys.ordAddress),
-      wocClient.getTransactionHistorySafe(keys.identityAddress)
-    ])
-
-    if (
-      (retryW.ok && retryW.value.length > 0) ||
-      (retryO.ok && retryO.value.length > 0) ||
-      (retryI.ok && retryI.value.length > 0)
-    ) {
-      discovered.push({ index: i, keys })
-      foundAny = true
-      consecutiveEmptyAfterHit = 0
-    } else if (retryW.ok && retryO.ok && retryI.ok) {
-      accountLogger.debug('Empty account found after retry', { accountIndex: i })
-      if (foundAny) {
-        consecutiveEmptyAfterHit++
-        if (consecutiveEmptyAfterHit >= DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT) {
-          accountLogger.info('Gap limit reached after retry and first discovered account; stopping', {
+          accountLogger.info('Gap limit reached; stopping discovery', {
             accountIndex: i,
             consecutiveEmptyAfterHit,
             gapLimit: DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT
@@ -138,7 +125,10 @@ export async function discoverAccounts(
         }
       }
     }
-    // If retry also fails (API error), continue to next account.
+    // result === null: API still failing after all retries — skip without counting as empty
+
+    // Inter-account delay to stay well under rate limits
+    await new Promise(resolve => setTimeout(resolve, DISCOVERY_INTER_ACCOUNT_DELAY_MS))
   }
 
   // Phase 2: Create accounts and attempt sync.
