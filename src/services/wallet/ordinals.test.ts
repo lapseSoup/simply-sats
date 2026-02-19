@@ -126,10 +126,14 @@ vi.mock('@bsv/sdk', () => {
     lock(_addr: string) { return { toHex: () => `lockscript` } }
     unlock(..._args: unknown[]) { return {} }
   }
+  class MockScript {
+    static fromHex(_hex: string) { return { toHex: () => _hex } }
+  }
   return {
     PrivateKey: MockPrivateKey,
     Transaction: MockTransaction,
     P2PKH: MockP2PKH,
+    Script: MockScript,
   }
 })
 

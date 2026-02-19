@@ -10,6 +10,7 @@ import type { WalletKeys, UTXO, Ordinal, ExtendedUTXO } from '../services/wallet
 import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import {
   getUTXOs,
+  getUTXOLockingScript,
   sendBSVMultiKey,
   transferOrdinal,
   getWifForOperation
@@ -255,11 +256,12 @@ export function useWalletSend({
         return err('No funding UTXOs available for transfer fee')
       }
 
+      const lockingScript = await getUTXOLockingScript(ordinal.txid, ordinal.vout)
       const ordinalUtxo: UTXO = {
         txid: ordinal.txid,
         vout: ordinal.vout,
         satoshis: 1,
-        script: ''
+        script: lockingScript ?? ''
       }
 
       const ordWif = await getWifForOperation('ordinals', 'transferOrdinal', wallet)

@@ -83,6 +83,7 @@ export {
   getBalanceFromDB,
   getUTXOsFromDB,
   getUTXOs,
+  getUTXOLockingScript,
   getTransactionHistory,
   getTransactionDetails,
   calculateTxAmount

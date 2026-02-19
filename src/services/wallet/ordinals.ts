@@ -3,7 +3,7 @@
  * Fetching, scanning, and transferring 1Sat Ordinals
  */
 
-import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
+import { PrivateKey, P2PKH, Transaction, Script } from '@bsv/sdk'
 import type { UTXO, Ordinal, GpOrdinalItem, OrdinalDetails } from './types'
 import { gpOrdinalsApi } from '../../infrastructure/api/clients'
 import { getWocClient } from '../../infrastructure/api/wocClient'
@@ -252,7 +252,11 @@ export async function transferOrdinal(
   const ordPrivateKey = PrivateKey.fromWif(ordWif)
   const ordPublicKey = ordPrivateKey.toPublicKey()
   const ordFromAddress = ordPublicKey.toAddress()
-  const ordSourceLockingScript = new P2PKH().lock(ordFromAddress)
+  // Use the stored locking script if available (ordinals have inscription envelope scripts,
+  // not plain P2PKH). Falling back to derived P2PKH only when no script is provided.
+  const ordSourceLockingScript = ordinalUtxo.script
+    ? Script.fromHex(ordinalUtxo.script)
+    : new P2PKH().lock(ordFromAddress)
 
   const fundingPrivateKey = PrivateKey.fromWif(fundingWif)
   const fundingPublicKey = fundingPrivateKey.toPublicKey()

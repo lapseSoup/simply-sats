@@ -46,6 +46,17 @@ export async function getUTXOsFromDB(basket = BASKETS.DEFAULT, accountId?: numbe
 }
 
 /**
+ * Get the locking script hex for a specific UTXO by outpoint, from the local database.
+ * Returns null if the UTXO is not found in any basket.
+ * Used to supply the correct (potentially non-P2PKH) script when signing ordinal transfers.
+ */
+export async function getUTXOLockingScript(txid: string, vout: number): Promise<string | null> {
+  const ordinalUtxos = await getSpendableUtxosFromDatabase(BASKETS.ORDINALS)
+  const match = ordinalUtxos.find(u => u.txid === txid && u.vout === vout)
+  return match?.lockingScript ?? null
+}
+
+/**
  * Get UTXOs from WhatsOnChain with locking scripts (uses wocClient infrastructure)
  */
 export async function getUTXOs(address: string): Promise<UTXO[]> {
