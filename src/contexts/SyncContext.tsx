@@ -670,21 +670,26 @@ async function cacheOrdinalsInBackground(
 
     // 1b. Prune stale entries — remove DB cache rows and in-memory content that
     // are no longer in the API's list (e.g. transferred ordinals). Without this,
-    // fetchDataFromDB would reload the transferred ordinal's thumbnail from the
-    // stale cache entry, making it reappear in the activity item after sync.
+    // fetchDataFromDB would reload the transferred ordinal from the stale DB cache
+    // row and set the count back to 621 on next launch. We must prune the DB table
+    // (not just the in-memory content map) since most ordinals have no cached content.
     if (isCancelled()) return
     const currentOrigins = new Set(allOrdinals.map(o => o.origin))
+    const allCachedRows = await getCachedOrdinals(activeAccountId)
     let contentPruned = false
-    for (const origin of Array.from(contentCacheRef.current.keys())) {
-      if (!currentOrigins.has(origin)) {
-        await deleteOrdinalCacheEntry(origin)
-        contentCacheRef.current.delete(origin)
-        contentPruned = true
+    for (const row of allCachedRows) {
+      if (!currentOrigins.has(row.origin)) {
+        await deleteOrdinalCacheEntry(row.origin)
+        // Also remove from in-memory content cache if present
+        if (contentCacheRef.current.has(row.origin)) {
+          contentCacheRef.current.delete(row.origin)
+          contentPruned = true
+        }
+        syncLogger.debug('Pruned stale ordinal cache entry', { origin: row.origin })
       }
     }
     if (contentPruned) {
       setOrdinalContentCache(new Map(contentCacheRef.current))
-      syncLogger.debug('Pruned stale ordinal cache entries')
     }
 
     // 2. Fetch missing content (up to 10 per cycle)

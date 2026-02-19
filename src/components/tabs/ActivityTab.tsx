@@ -137,12 +137,13 @@ export function ActivityTab() {
   // Pre-compute lock txid Set for O(1) lookup (instead of O(n) locks.some per tx row)
   const lockTxidSet = useMemo(() => new Set(locks.map(l => l.txid)), [locks])
 
-  // Build a map from ordinal txid prefix → ordinal, for thumbnail lookup in activity items.
-  // The description stored for ordinal transfers is "Transferred ordinal {txid.slice(0,8)}..."
-  const ordinalByTxidPrefix = useMemo(() => {
+  // Build a map from ordinal origin → ordinal, for thumbnail lookup in activity items.
+  // New description format: "Transferred ordinal {txid}_{vout} to {addr}..."
+  // Legacy format (fallback): "Transferred ordinal {txid.slice(0,8)}... to {addr}..."
+  const ordinalByOrigin = useMemo(() => {
     const map = new Map<string, typeof ordinals[number]>()
     for (const ord of ordinals) {
-      map.set(ord.txid.slice(0, 8), ord)
+      map.set(ord.origin, ord)
     }
     return map
   }, [ordinals])
@@ -171,20 +172,38 @@ export function ActivityTab() {
     return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }
   }, [lockTxidSet, lockTxids, unlockTxids, ordinalTxids])
 
-  // For ordinal transfer txs, look up the matched ordinal via the description prefix
+  // For ordinal transfer txs, extract the origin directly from the description.
+  // New format: "Transferred ordinal {txid}_{vout} to {addr}..."
+  // This allows thumbnail lookup from ordinalContentCache even after the ordinal
+  // is no longer in the ordinals array (i.e. after it's been transferred out).
+  // Legacy fallback: "Transferred ordinal {txid.slice(0,8)}..." — try ordinalByOrigin map.
   const getOrdinalProps = useCallback((tx: TxHistoryItem) => {
     if (!ordinalTxids.has(tx.tx_hash) || !tx.description) return {}
-    // Description format: "Transferred ordinal {txid.slice(0,8)}... to {addr}..."
-    const match = tx.description.match(/Transferred ordinal ([0-9a-f]{8})/)
-    if (!match) return {}
-    const ord = ordinalByTxidPrefix.get(match[1]!)
+
+    // New format: full "txid_vout" origin embedded in description
+    const newMatch = tx.description.match(/Transferred ordinal ([0-9a-f]{64}_\d+)/)
+    if (newMatch) {
+      const origin = newMatch[1]!
+      const cachedContent = ordinalContentCache.get(origin)
+      // Get contentType from ordinals array if still present, else undefined
+      const contentType = ordinalByOrigin.get(origin)?.contentType
+      return { ordinalOrigin: origin, ordinalContentType: contentType, ordinalCachedContent: cachedContent }
+    }
+
+    // Legacy fallback: old txid prefix format — requires ordinal still in state
+    const legacyMatch = tx.description.match(/Transferred ordinal ([0-9a-f]{8})/)
+    if (!legacyMatch) return {}
+    const ord = ordinalByOrigin.get(
+      // Try to find by matching origin that starts with this prefix
+      Array.from(ordinalByOrigin.keys()).find(k => k.startsWith(legacyMatch[1]!)) ?? ''
+    )
     if (!ord) return {}
     return {
       ordinalOrigin: ord.origin,
       ordinalContentType: ord.contentType,
       ordinalCachedContent: ordinalContentCache.get(ord.origin)
     }
-  }, [ordinalTxids, ordinalByTxidPrefix, ordinalContentCache])
+  }, [ordinalTxids, ordinalByOrigin, ordinalContentCache])
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {

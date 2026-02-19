@@ -350,10 +350,14 @@ export async function transferOrdinal(
 
   // Track transaction locally
   try {
+    // Embed the full ordinal origin (txid_vout) in the description so the
+    // activity tab can look up the thumbnail from ordinalContentCache even
+    // after the ordinal is transferred and removed from the ordinals array.
+    const ordinalOrigin = `${ordinalUtxo.txid}_${ordinalUtxo.vout}`
     await recordSentTransaction(
       txid,
       tx.toHex(),
-      `Transferred ordinal ${ordinalUtxo.txid.slice(0, 8)}... to ${toAddress.slice(0, 8)}...`,
+      `Transferred ordinal ${ordinalOrigin} to ${toAddress.slice(0, 8)}...`,
       ['ordinal', 'transfer'],
       -actualFee  // Fee sats only — the ordinal sat is not counted in BSV balance
     )

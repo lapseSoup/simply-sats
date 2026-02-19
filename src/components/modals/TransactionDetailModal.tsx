@@ -7,6 +7,7 @@ import { getWocClient } from '../../infrastructure/api/wocClient'
 import { btcToSatoshis } from '../../utils/satoshiConversion'
 import { useTransactionLabels } from '../../hooks/useTransactionLabels'
 import { Modal } from '../shared/Modal'
+import { OrdinalImage } from '../shared/OrdinalImage'
 
 // Default label suggestions (always shown as fallback)
 const DEFAULT_LABELS = ['personal', 'business', 'exchange']
@@ -65,7 +66,21 @@ export function TransactionDetailModal({
   onLabelsUpdated
 }: TransactionDetailModalProps) {
   const { copyToClipboard, showToast, formatUSD, displayInSats, formatBSVShort } = useUI()
-  const { activeAccountId } = useWalletState()
+  const { activeAccountId, ordinalContentCache } = useWalletState()
+
+  // Extract ordinal origin from description if this is an ordinal transfer
+  // New format: "Transferred ordinal {txid}_{vout} to {addr}..."
+  const ordinalOrigin = useMemo(() => {
+    const desc = transaction.description
+    if (!desc) return null
+    const match = desc.match(/Transferred ordinal ([0-9a-f]{64}_\d+)/)
+    return match?.[1] ?? null
+  }, [transaction.description])
+
+  const ordinalCachedContent = ordinalOrigin ? ordinalContentCache.get(ordinalOrigin) : undefined
+  // Derive contentType: check if cached data looks like an image (has binary content)
+  // vs text. OrdinalImage falls back to network fetch if contentType is undefined.
+  const ordinalContentType = ordinalCachedContent?.contentData ? 'image/png' : ordinalCachedContent?.contentText ? 'text/plain' : undefined
 
   // Labels via hook (handles loading, optimistic updates, suggestions)
   const { labels, suggestedLabels: hookSuggestions, loading: labelsLoading, addLabel, removeLabel } = useTransactionLabels({
@@ -156,6 +171,22 @@ export function TransactionDetailModal({
   return (
     <Modal title="Transaction Details" onClose={onClose}>
       <div className="modal-content">
+        {/* Ordinal Thumbnail — shown for ordinal transfer txs */}
+        {ordinalOrigin && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <div style={{ width: 160, height: 160, borderRadius: 12, overflow: 'hidden' }}>
+              <OrdinalImage
+                origin={ordinalOrigin}
+                contentType={ordinalContentType}
+                size="lg"
+                alt="Transferred Ordinal"
+                lazy={false}
+                cachedContent={ordinalCachedContent}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Transaction Info */}
         <div className="tx-detail-section">
           <div className="tx-detail-row">
