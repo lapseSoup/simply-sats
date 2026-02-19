@@ -28,7 +28,7 @@ import {
 } from '../services/sync'
 import { walletLogger } from '../services/logger'
 import { invoke } from '@tauri-apps/api/core'
-import { getSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
+import { getSessionPassword, clearSessionPassword, NO_PASSWORD } from '../services/sessionPasswordStore'
 
 // Diagnostic: last failure reason (visible to UI for debugging)
 let _lastSwitchDiag = ''
@@ -297,11 +297,12 @@ export function useAccountSwitching({
       walletLogger.error('Cannot create account - no session password available')
       return false
     }
+    const accountPassword = currentPassword === NO_PASSWORD ? null : currentPassword
     if (accounts.length >= 10) {
       walletLogger.warn('Account creation blocked - maximum 10 accounts reached')
       return false
     }
-    const keys = await accountsCreateNewAccount(name, currentPassword)
+    const keys = await accountsCreateNewAccount(name, accountPassword)
     if (keys) {
       // Store mnemonic in Rust key store before clearing from React state
       await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? (accounts.length))
@@ -319,7 +320,8 @@ export function useAccountSwitching({
       walletLogger.error('Cannot import account - no session password available')
       return false
     }
-    const keys = await accountsImportAccount(name, mnemonic, currentPassword)
+    const accountPassword = currentPassword === NO_PASSWORD ? null : currentPassword
+    const keys = await accountsImportAccount(name, mnemonic, accountPassword)
     if (keys) {
       // Store mnemonic in Rust key store before clearing from React state
       await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? (accounts.length))
@@ -328,7 +330,7 @@ export function useAccountSwitching({
       setIsLocked(false)
       // Discover derivative accounts for this mnemonic (non-blocking)
       const active = await getActiveAccount()
-      discoverAccounts(mnemonic, currentPassword, active?.id)
+      discoverAccounts(mnemonic, accountPassword, active?.id)
         .then(async (found) => {
           if (found > 0) {
             await refreshAccounts()

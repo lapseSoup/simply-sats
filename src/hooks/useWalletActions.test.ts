@@ -22,7 +22,12 @@ const {
   mockImportFromJSON,
   mockSaveWallet,
   mockSaveWalletUnprotected,
+  mockClearWallet,
   mockMigrateToMultiAccount,
+  mockClearDatabase,
+  mockClearAllSimplySatsStorage,
+  mockStopAutoLock,
+  mockInvoke,
   mockRefreshAccounts,
   mockGetActiveAccount,
   mockSetWallet,
@@ -43,7 +48,12 @@ const {
   mockImportFromJSON: vi.fn(),
   mockSaveWallet: vi.fn(),
   mockSaveWalletUnprotected: vi.fn(),
+  mockClearWallet: vi.fn(),
   mockMigrateToMultiAccount: vi.fn(),
+  mockClearDatabase: vi.fn(),
+  mockClearAllSimplySatsStorage: vi.fn(),
+  mockStopAutoLock: vi.fn(),
+  mockInvoke: vi.fn(),
   mockRefreshAccounts: vi.fn(),
   mockGetActiveAccount: vi.fn(),
   mockSetWallet: vi.fn(),
@@ -68,6 +78,7 @@ vi.mock('../services/wallet', () => ({
   importFromJSON: (...args: unknown[]) => mockImportFromJSON(...args),
   saveWallet: (...args: unknown[]) => mockSaveWallet(...args),
   saveWalletUnprotected: (...args: unknown[]) => mockSaveWalletUnprotected(...args),
+  clearWallet: (...args: unknown[]) => mockClearWallet(...args),
 }))
 
 vi.mock('../services/accounts', () => ({
@@ -76,16 +87,20 @@ vi.mock('../services/accounts', () => ({
 }))
 
 vi.mock('../services/database', () => ({
-  clearDatabase: vi.fn(),
+  clearDatabase: (...args: unknown[]) => mockClearDatabase(...args),
 }))
 
 vi.mock('../services/secureStorage', () => ({
-  clearAllSimplySatsStorage: vi.fn(),
+  clearAllSimplySatsStorage: (...args: unknown[]) => mockClearAllSimplySatsStorage(...args),
 }))
 
 vi.mock('../services/autoLock', () => ({
-  stopAutoLock: vi.fn(),
+  stopAutoLock: (...args: unknown[]) => mockStopAutoLock(...args),
   initAutoLock: vi.fn(),
+}))
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => mockInvoke(...args),
 }))
 
 vi.mock('../services/auditLog', () => ({
@@ -173,6 +188,11 @@ beforeEach(() => {
   mockMigrateToMultiAccount.mockResolvedValue(undefined)
   mockSaveWallet.mockResolvedValue(undefined)
   mockSaveWalletUnprotected.mockResolvedValue(undefined)
+  mockClearWallet.mockResolvedValue(undefined)
+  mockClearDatabase.mockResolvedValue(undefined)
+  mockClearAllSimplySatsStorage.mockReturnValue(undefined)
+  mockStopAutoLock.mockReturnValue(undefined)
+  mockInvoke.mockResolvedValue(undefined)
   mockGetActiveAccount.mockResolvedValue({ id: 1 })
   mockStoreKeysInRust.mockResolvedValue(undefined)
 })
@@ -330,6 +350,32 @@ describe('handleImportJSON', () => {
 
     expect(mockSetSessionPassword).toHaveBeenCalledWith(VALID_PASSWORD)
   })
+
+  it('stores imported keys in Rust key store when mnemonic exists', async () => {
+    mockImportFromJSON.mockResolvedValueOnce({ ok: true, value: testKeys })
+
+    const { handleImportJSON } = useMakeActions()
+    const result = await handleImportJSON(mockJSON, VALID_PASSWORD)
+
+    expect(result).toBe(true)
+    expect(mockStoreKeysInRust).toHaveBeenCalledWith(testKeys.mnemonic, 0)
+  })
+
+  it('falls back to store_keys_direct when imported JSON has no mnemonic', async () => {
+    mockImportFromJSON.mockResolvedValueOnce({ ok: true, value: { ...testKeys, mnemonic: '' } })
+
+    const { handleImportJSON } = useMakeActions()
+    const result = await handleImportJSON(mockJSON, VALID_PASSWORD)
+
+    expect(result).toBe(true)
+    expect(mockStoreKeysInRust).not.toHaveBeenCalled()
+    expect(mockInvoke).toHaveBeenCalledWith('store_keys_direct', expect.objectContaining({
+      walletWif: testKeys.walletWif,
+      ordWif: testKeys.ordWif,
+      identityWif: testKeys.identityWif,
+      mnemonic: null
+    }))
+  })
 })
 
 // =============================================================================
@@ -385,5 +431,19 @@ describe('handleCreateWallet', () => {
 
     expect(result).toBeNull()
     expect(mockSetWallet).not.toHaveBeenCalled()
+  })
+})
+
+// =============================================================================
+// handleDeleteWallet
+// =============================================================================
+
+describe('handleDeleteWallet', () => {
+  it('clears Rust key store during wallet deletion', async () => {
+    const { handleDeleteWallet } = useMakeActions()
+
+    await handleDeleteWallet()
+
+    expect(mockInvoke).toHaveBeenCalledWith('clear_keys')
   })
 })

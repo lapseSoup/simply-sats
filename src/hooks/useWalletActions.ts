@@ -14,6 +14,7 @@ import {
   saveWalletUnprotected,
   clearWallet
 } from '../services/wallet'
+import { invoke } from '@tauri-apps/api/core'
 import type { Account } from '../services/accounts'
 import {
   getActiveAccount,
@@ -185,6 +186,27 @@ export function useWalletActions({
       }
       await migrateToMultiAccount(keys, password)
       await refreshAccounts()
+      try {
+        if (keys.mnemonic) {
+          await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
+        } else {
+          // Legacy JSON imports may not include a mnemonic; seed Rust store directly.
+          await invoke('store_keys_direct', {
+            walletWif: keys.walletWif,
+            ordWif: keys.ordWif,
+            identityWif: keys.identityWif,
+            walletAddress: keys.walletAddress,
+            walletPubKey: keys.walletPubKey,
+            ordAddress: keys.ordAddress,
+            ordPubKey: keys.ordPubKey,
+            identityAddress: keys.identityAddress,
+            identityPubKey: keys.identityPubKey,
+            mnemonic: null
+          })
+        }
+      } catch (e) {
+        walletLogger.warn('Failed to initialize Rust key store after JSON import', { error: String(e) })
+      }
       setWallet(keys)
       const sessionPwd = password ?? ''
       setSessionPassword(sessionPwd)
@@ -194,7 +216,7 @@ export function useWalletActions({
       walletLogger.error('Failed to import JSON', e)
       return false
     }
-  }, [setWallet, setSessionPassword, refreshAccounts])
+  }, [setWallet, setSessionPassword, refreshAccounts, storeKeysInRust])
 
   const handleDeleteWallet = useCallback(async () => {
     // 1. Stop auto-lock timer
@@ -218,6 +240,12 @@ export function useWalletActions({
       await clearWallet()
     } catch (e) {
       walletLogger.error('Failed to clear wallet storage during delete', e)
+    }
+
+    try {
+      await invoke('clear_keys')
+    } catch (e) {
+      walletLogger.warn('Failed to clear Rust key store during delete', { error: String(e) })
     }
 
     try {
