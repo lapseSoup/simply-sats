@@ -300,7 +300,6 @@ function WalletApp() {
       if (otherAccounts.length > 0 && !discoveryParams) {
         const sessionPwd = getSessionPassword()
         ;(async () => {
-          let syncedAny = false
           for (const account of otherAccounts) {
             try {
               const keys = await getAccountKeys(account, sessionPwd)
@@ -313,18 +312,11 @@ function WalletApp() {
                 account.id ?? undefined,
                 keys.walletPubKey
               )
-              syncedAny = true
+              // Refresh accounts after EACH account sync so Header picks up
+              // the new balance immediately (instead of waiting for all accounts).
+              try { await refreshAccountsRef.current() } catch { /* non-critical */ }
             } catch (e) {
               logger.warn('Background sync failed for account', { accountId: account.id, error: String(e) })
-            }
-          }
-          // Refresh accounts list so Header re-fetches balances from DB
-          // (background sync wrote new UTXO data but React state doesn't know yet)
-          if (syncedAny) {
-            try {
-              await refreshAccountsRef.current()
-            } catch (e) {
-              logger.warn('Failed to refresh accounts after background sync', { error: String(e) })
             }
           }
         })()
@@ -371,6 +363,36 @@ function WalletApp() {
           if (found > 0) {
             await refreshAccountsRef.current()
             showToastRef.current(`Discovered ${found} additional account${found > 1 ? 's' : ''}`, 'success')
+
+            // Background-sync discovered accounts so their balances appear in the
+            // account switcher. Discovery creates accounts with deferred sync, so
+            // they have 0 UTXOs until explicitly synced. Fire-and-forget.
+            // Read fresh account list from DB (accountsRef.current may not have
+            // the newly discovered accounts yet — React state update is async).
+            const sessionPwd = getSessionPassword()
+            const { getAllAccounts: fetchAllAccounts } = await import('./services/accounts')
+            const allAccounts = await fetchAllAccounts()
+            const newAccounts = allAccounts.filter(a => a.id !== activeAccountId)
+            ;(async () => {
+              for (const account of newAccounts) {
+                try {
+                  const keys = await getAccountKeys(account, sessionPwd)
+                  if (!keys) continue
+                  logger.info('Post-discovery sync for account', { accountId: account.id, name: account.name })
+                  await syncWallet(
+                    keys.walletAddress,
+                    keys.ordAddress,
+                    keys.identityAddress,
+                    account.id ?? undefined,
+                    keys.walletPubKey
+                  )
+                  // Refresh after each so balances appear incrementally in switcher
+                  try { await refreshAccountsRef.current() } catch { /* non-critical */ }
+                } catch (e) {
+                  logger.warn('Post-discovery sync failed for account', { accountId: account.id, error: String(e) })
+                }
+              }
+            })()
           } else {
             showToastRef.current('No additional accounts found')
           }

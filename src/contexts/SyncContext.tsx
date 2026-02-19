@@ -205,18 +205,16 @@ export function SyncProvider({ children }: SyncProviderProps) {
       syncLogger.warn('fetchDataFromDB: locks read failed', { error: String(e) })
     }
 
-    // Ordinals from DB
+    // Ordinals from DB — always set, even if empty, to clear stale data from previous account
     try {
       const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
       if (isCancelled?.()) return
-      if (dbOrdinals.length > 0) {
-        setOrdinals(dbOrdinals)
-      }
+      setOrdinals(dbOrdinals)
     } catch (e) {
       syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(e) })
     }
 
-    // Cached ordinal content from DB
+    // Cached ordinal content from DB — always set to clear stale previews
     try {
       const cachedOrdinals = await getCachedOrdinals(activeAccountId)
       const newCache = new Map<string, OrdinalContentEntry>()
@@ -227,10 +225,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
           newCache.set(cached.origin, content)
         }
       }
-      if (newCache.size > 0) {
-        contentCacheRef.current = newCache
-        setOrdinalContentCache(new Map(newCache))
-      }
+      contentCacheRef.current = newCache
+      setOrdinalContentCache(new Map(newCache))
     } catch (e) {
       syncLogger.warn('fetchDataFromDB: ordinal content cache read failed', { error: String(e) })
     }
@@ -244,6 +240,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
       syncLogger.warn('fetchDataFromDB: UTXOs read failed', { error: String(e) })
     }
 
+    // Ord balance is API-only — no DB cache. Reset to 0 so the old account's
+    // ord balance doesn't persist in the UI until the next API fetch.
+    setOrdBalance(0)
     setSyncError(null)
   }, [])
 

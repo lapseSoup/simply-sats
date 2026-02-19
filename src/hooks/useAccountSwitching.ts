@@ -15,7 +15,6 @@ import type { Account } from '../services/accounts'
 import { getActiveAccount, switchAccount as switchAccountDb } from '../services/accounts'
 import { discoverAccounts } from '../services/accountDiscovery'
 import {
-  getBalanceFromDatabase,
   cancelSync
 } from '../services/sync'
 import { walletLogger } from '../services/logger'
@@ -119,7 +118,7 @@ export function useAccountSwitching({
   setWallet,
   setIsLocked,
   setLocks,
-  resetSync,
+  resetSync: _resetSync,
   resetKnownUnlockedLocks,
   storeKeysInRust,
   refreshAccounts,
@@ -157,28 +156,13 @@ export function useAccountSwitching({
       }
       _lastSwitchDiag = `Found: id=${account.id} derivIdx=${account.derivationIndex}`
 
-      // Preload new account balance from DB before any React state changes.
-      // This must happen BEFORE refreshAccounts() because refreshAccounts() updates
-      // activeAccountId in AccountsContext, triggering a re-render. If balance hasn't
-      // been reset yet at that point, the UI briefly shows the old account's balance
-      // alongside the new account's name — the visible flash.
-      let preloadedBalance = 0
-      try {
-        const [defaultBal, derivedBal] = await Promise.all([
-          getBalanceFromDatabase('default', accountId),
-          getBalanceFromDatabase('derived', accountId)
-        ])
-        preloadedBalance = defaultBal + derivedBal
-      } catch (_e) {
-        // Best-effort — 0 is acceptable if DB read fails
-      }
-
-      // Clear stale state and set the new balance atomically BEFORE the account ID
-      // changes in React — ensures no render ever sees mismatched accountId + balance.
+      // Invalidate stale async callbacks. Do NOT call resetSync() here —
+      // it clears utxos/ordinals/txHistory to empty arrays, causing a visible
+      // flash of blank data before fetchDataFromDB repopulates from the DB.
+      // Instead, let the old account's data remain visible until fetchDataFromDB
+      // atomically replaces it with the new account's data (~50ms).
       fetchVersionRef.current += 1
-      setLocks([])
       resetKnownUnlockedLocks()
-      resetSync(preloadedBalance)
 
       // PRIMARY PATH: switch_account_from_store derives + stores keys entirely in Rust.
       // The mnemonic never leaves native memory.
@@ -298,7 +282,7 @@ export function useAccountSwitching({
         switchAccount(pendingId).catch(e => walletLogger.error('Queued switch failed', e))
       }
     }
-  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, resetSync, resetKnownUnlockedLocks, storeKeysInRust, fetchVersionRef, setIsLocked, fetchDataFromDB])
+  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, resetKnownUnlockedLocks, storeKeysInRust, fetchVersionRef, setIsLocked, fetchDataFromDB])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()
