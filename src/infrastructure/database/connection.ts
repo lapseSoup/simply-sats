@@ -3,6 +3,20 @@
  *
  * Handles database initialization, singleton access, and transactions.
  * Supports reentrant transactions via SAVEPOINT for nested calls.
+ *
+ * NOTE on connection pools: tauri-plugin-sql uses a sqlx SqlitePool (default 5
+ * connections). Each `database.execute()` may run on a different pool connection.
+ * This means BEGIN TRANSACTION, operations, and COMMIT may all run on different
+ * connections — so SQLite transactions via this API are NOT reliable.
+ *
+ * withTransaction should only be used where idempotency is acceptable, or where
+ * the caller can tolerate partial writes. For critical atomic operations, use
+ * a single multi-statement execute() call (not yet supported by tauri-plugin-sql),
+ * or accept individual auto-commit semantics.
+ *
+ * When a COMMIT fails (because BEGIN ran on a different connection), we attempt
+ * to drain any dangling open transactions by issuing ROLLBACK multiple times
+ * across all pool slots to avoid SQLITE_BUSY for subsequent writes.
  */
 
 import Database from '@tauri-apps/plugin-sql'
@@ -17,6 +31,9 @@ let transactionQueue: Promise<unknown> = Promise.resolve()
 let transactionDepth = 0
 // Whether we're currently inside the serialized queue (guards direct executeTransaction calls)
 let isInsideQueue = false
+
+// sqlx SqlitePool default max_connections (tauri-plugin-sql v2)
+const POOL_SIZE = 5
 
 /**
  * Initialize database connection
@@ -98,19 +115,48 @@ async function executeTransaction<T>(
     }
     return result
   } catch (error) {
-    try {
-      if (depth === 0) {
-        await database.execute('ROLLBACK')
-      } else {
+    if (depth === 0) {
+      // COMMIT or operation failed. Since BEGIN ran on one pool connection and
+      // COMMIT may have run on another (and failed), there may be a dangling
+      // open transaction on a pool connection holding a write lock. Issue
+      // ROLLBACK across all pool slots to clean up any dangling transactions.
+      // ROLLBACK on connections with no active transaction is a no-op in SQLite.
+      await drainDanglingTransactions(database)
+    } else {
+      try {
         await database.execute(`ROLLBACK TO SAVEPOINT sp_${depth}`)
+      } catch (rollbackError) {
+        dbLogger.error('Failed to rollback savepoint', rollbackError)
       }
-    } catch (rollbackError) {
-      dbLogger.error('Failed to rollback', rollbackError)
     }
     throw error
   } finally {
     transactionDepth = depth
   }
+}
+
+/**
+ * Issue ROLLBACK across all pool connections to clear any dangling BEGIN
+ * TRANSACTION that may have been left open when COMMIT ran on a different
+ * pool connection than the one that issued BEGIN.
+ *
+ * SQLite ignores ROLLBACK when no transaction is active, so this is safe.
+ */
+async function drainDanglingTransactions(database: Database): Promise<void> {
+  const rollbacks: Promise<void>[] = []
+  for (let i = 0; i < POOL_SIZE; i++) {
+    rollbacks.push(
+      database.execute('ROLLBACK').then(() => undefined).catch((_e: unknown) => {
+        // "cannot rollback - no transaction is active" is expected for most
+        // connections. Only log unexpected errors.
+        const msg = String(_e)
+        if (!msg.includes('no transaction') && !msg.includes('cannot rollback')) {
+          dbLogger.warn('Unexpected error during drain rollback', { error: msg })
+        }
+      })
+    )
+  }
+  await Promise.allSettled(rollbacks)
 }
 
 /**

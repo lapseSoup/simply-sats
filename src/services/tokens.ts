@@ -15,7 +15,7 @@ const OP_0 = 0x00
 const OP_1 = 0x51
 import { tokenLogger } from './logger'
 import { ok, err, type Result } from '../domain/types'
-import { getDatabase, withTransaction } from './database'
+import { getDatabase } from './database'
 import { broadcastTransaction, calculateTxFee, type UTXO } from './wallet'
 import { gpOrdinalsApi } from '../infrastructure/api/clients'
 import type { TokenRow, TokenBalanceRow, TokenTransferRow, IdCheckRow, SqlParams } from '../infrastructure/database/row-types'
@@ -113,27 +113,24 @@ export async function fetchTokenBalances(address: string): Promise<TokenBalance[
     tokenLogger.debug('Token balance API response', { address, count: data.length })
     const balances: TokenBalance[] = []
 
-    // Batch all token upserts in a single transaction to avoid N+1 queries
-    const tokens: Token[] = await withTransaction(async () => {
-      const results: Token[] = []
-      for (const item of data) {
-        const ticker = item.tick || item.id || ''
-        const protocol = item.id ? 'bsv21' : 'bsv20'
+    // Upsert token metadata for each item (INSERT OR REPLACE — idempotent, no transaction needed)
+    const tokens: Token[] = []
+    for (const item of data) {
+      const ticker = item.tick || item.id || ''
+      const protocol = item.id ? 'bsv21' : 'bsv20'
 
-        const token = await upsertToken({
-          ticker,
-          protocol,
-          contractTxid: item.id,
-          name: item.sym || ticker,
-          decimals: item.dec || 0,
-          iconUrl: item.icon,
-          verified: false,
-          createdAt: Date.now()
-        })
-        results.push(token)
-      }
-      return results
-    })
+      const token = await upsertToken({
+        ticker,
+        protocol,
+        contractTxid: item.id,
+        name: item.sym || ticker,
+        decimals: item.dec || 0,
+        iconUrl: item.icon,
+        verified: false,
+        createdAt: Date.now()
+      })
+      tokens.push(token)
+    }
 
     for (let i = 0; i < data.length; i++) {
       const item = data[i]!
@@ -670,18 +667,14 @@ export async function syncTokenBalances(
 
   const balances = Array.from(balanceMap.values())
 
-  // Batch all balance updates in a single transaction
+  // Update token balances (INSERT OR REPLACE — idempotent, no transaction needed)
   const balancesToUpdate = balances.filter(b => b.token.id)
-  if (balancesToUpdate.length > 0) {
-    await withTransaction(async () => {
-      for (const balance of balancesToUpdate) {
-        await updateTokenBalance(
-          accountId,
-          balance.token.id!,
-          balance.total.toString()
-        )
-      }
-    })
+  for (const balance of balancesToUpdate) {
+    await updateTokenBalance(
+      accountId,
+      balance.token.id!,
+      balance.total.toString()
+    )
   }
 
   return balances
