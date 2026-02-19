@@ -108,16 +108,28 @@ function WalletApp() {
     enabled: true
   })
 
-  // Keep refs to fetchData/performSync/refreshTokens so the checkSync effect
-  // doesn't re-trigger when their identities change. refreshTokens depends on
-  // [wallet, activeAccountId] so it gets a new identity on every restore/switch —
-  // if left in the effect dep array it causes an infinite sync loop.
+  // Keep refs for all callbacks used inside checkSync so the effect itself only
+  // depends on [wallet, activeAccountId] — the two values that actually signal
+  // "a new account is ready to sync". Every other function either:
+  //   (a) has a dep on wallet/activeAccountId (performSync, fetchData, refreshTokens)
+  //       and therefore gets a new identity on every restore/switch, or
+  //   (b) arrives through the actionsValue useMemo in WalletContext, which recreates
+  //       whenever performSync/fetchData change, giving consumePendingDiscovery and
+  //       refreshAccounts new object references even though their underlying logic
+  //       is stable.
+  // Putting any of these in the dep array caused an infinite sync loop:
+  //   wallet changes → new performSync → new actionsValue → new consumePendingDiscovery
+  //   → effect re-fires → sync starts again → repeat.
   const fetchDataRef = useRef(fetchData)
   useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
   const performSyncRef = useRef(performSync)
   useEffect(() => { performSyncRef.current = performSync }, [performSync])
   const refreshTokensRef = useRef(refreshTokens)
   useEffect(() => { refreshTokensRef.current = refreshTokens }, [refreshTokens])
+  const consumePendingDiscoveryRef = useRef(consumePendingDiscovery)
+  useEffect(() => { consumePendingDiscoveryRef.current = consumePendingDiscovery }, [consumePendingDiscovery])
+  const refreshAccountsRef = useRef(refreshAccounts)
+  useEffect(() => { refreshAccountsRef.current = refreshAccounts }, [refreshAccounts])
 
   // MessageBox listener for payments
   useEffect(() => {
@@ -197,7 +209,7 @@ function WalletApp() {
       // If Account 1 was previously synced (needsSync = false), additional accounts on
       // the blockchain still need to be discovered. The ref being non-null is the sole
       // gate: it's only populated during restore and consumed exactly once.
-      const discoveryParams = consumePendingDiscovery()
+      const discoveryParams = consumePendingDiscoveryRef.current()
       logger.info('Account discovery check', {
         hasParams: !!discoveryParams,
         excludeAccountId: discoveryParams?.excludeAccountId
@@ -211,7 +223,7 @@ function WalletApp() {
           )
           logger.info('Account discovery complete', { found })
           if (found > 0) {
-            await refreshAccounts()
+            await refreshAccountsRef.current()
             showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
           }
         } catch (e) {
@@ -221,7 +233,7 @@ function WalletApp() {
     }
 
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
-  }, [wallet, activeAccountId, consumePendingDiscovery, refreshAccounts, showToast, setSyncPhase])
+  }, [wallet, activeAccountId, showToast, setSyncPhase])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {
