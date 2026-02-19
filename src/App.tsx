@@ -259,9 +259,11 @@ function WalletApp() {
       }
 
       // Background-sync all inactive accounts so their data is fresh when switched to.
+      // Skip when discovery is pending — background sync holds the DB lock and would
+      // race with discoverAccounts' createAccount calls, causing "database is locked" errors.
       // Fire-and-forget: failures are logged but don't affect the active account.
       const otherAccounts = accountsRef.current.filter(a => a.id !== activeAccountId)
-      if (otherAccounts.length > 0) {
+      if (otherAccounts.length > 0 && !discoveryParams) {
         const sessionPwd = getSessionPassword()
         ;(async () => {
           for (const account of otherAccounts) {

@@ -228,51 +228,77 @@ export async function discoverAccounts(
   })
 
   // Phase 2: Create accounts and attempt sync.
+  // Wait briefly to ensure the initial restore sync has released its DB lock
+  // before we start writing new account rows.
+  await new Promise(resolve => setTimeout(resolve, 2000))
+
   // Account creation is authoritative for discovery; sync is best-effort.
   let created = 0
   let synced = 0
   for (const { index, keys } of discovered) {
-    try {
-      let accountId: number
-      const createResult = await createAccount(`Account ${index + 1}`, keys, password, true, index)
-      if (!createResult.ok) {
-        // Check if it failed because the account already exists (e.g. previous partial restore).
-        // If so, treat it as already discovered and continue rather than aborting.
-        const existing = await getAccountByIdentity(keys.identityAddress)
-        if (existing?.id) {
-          accountLogger.info('Account already exists, counting as discovered', {
-            accountIndex: index,
-            accountId: existing.id
-          })
-          accountId = existing.id
-          created++
-          // Don't re-sync already-existing accounts; their data is intact.
+    // Retry createAccount up to 3 times on DB lock (code 5) — the restore sync
+    // may still briefly hold the lock even after our wait above.
+    let accountId: number | null = null
+    let lastErr: unknown = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+      }
+      try {
+        const createResult = await createAccount(`Account ${index + 1}`, keys, password, true, index)
+        if (!createResult.ok) {
+          const errMsg = String((createResult.error as { message?: string })?.message ?? createResult.error)
+          // DB lock — retry
+          if (errMsg.includes('database is locked') || errMsg.includes('code: 5')) {
+            accountLogger.warn('DB locked on createAccount, will retry', { accountIndex: index, attempt })
+            lastErr = createResult.error
+            continue
+          }
+          // Already exists from a previous partial restore — count as discovered
+          const existing = await getAccountByIdentity(keys.identityAddress)
+          if (existing?.id) {
+            accountLogger.info('Account already exists, counting as discovered', { accountIndex: index, accountId: existing.id })
+            accountId = existing.id
+            break
+          }
+          lastErr = createResult.error
+          break
+        }
+        accountId = createResult.value
+        break
+      } catch (e) {
+        lastErr = e
+        const msg = String(e)
+        if (msg.includes('database is locked') || msg.includes('code: 5')) {
+          accountLogger.warn('DB locked on createAccount (exception), will retry', { accountIndex: index, attempt })
           continue
         }
-        throw createResult.error
+        break
       }
-      accountId = createResult.value
-      created++
-      try {
-        await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
-        synced++
-      } catch (syncErr) {
-        accountLogger.warn('Discovered account created but initial sync failed', {
-          accountIndex: index,
-          accountId,
-          error: String(syncErr)
-        })
-      }
-      accountLogger.info('Discovered account', {
+    }
+
+    if (accountId === null) {
+      accountLogger.error('Failed to create discovered account', lastErr, { accountIndex: index })
+      break // Unexpected error — stop processing
+    }
+
+    created++
+    try {
+      await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
+      synced++
+    } catch (syncErr) {
+      accountLogger.warn('Discovered account created but initial sync failed', {
         accountIndex: index,
         accountId,
-        name: `Account ${index + 1}`,
-        syncSuccessful: synced === created
+        error: String(syncErr)
       })
-    } catch (err) {
-      accountLogger.error('Failed to create discovered account', err, { accountIndex: index })
-      break // Don't continue if DB write fails with an unexpected error
     }
+    accountLogger.info('Discovered account', {
+      accountIndex: index,
+      accountId,
+      name: `Account ${index + 1}`,
+      syncSuccessful: synced === created
+    })
   }
 
   // Restore the originally active account (createAccount deactivates all others)
