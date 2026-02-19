@@ -138,6 +138,12 @@ function WalletApp() {
   // useMemo recreates → new setSyncPhase reference → effect re-fires → repeat.
   const setSyncPhaseRef = useRef(setSyncPhase)
   useEffect(() => { setSyncPhaseRef.current = setSyncPhase }, [setSyncPhase])
+  // showToast arrives via UIContext's useMemo, which includes `toasts` in its deps.
+  // Every time a toast is displayed, toasts changes → useMemo recreates → new
+  // showToast reference → effect re-fires → sync starts again → repeat.
+  // Calling showToast('Wallet ready ✓') inside the effect was the trigger.
+  const showToastRef = useRef(showToast)
+  useEffect(() => { showToastRef.current = showToast }, [showToast])
   const accountsRef = useRef(accounts)
   useEffect(() => { accountsRef.current = accounts }, [accounts])
 
@@ -215,7 +221,7 @@ function WalletApp() {
         await fetchDataRef.current()
 
         if (needsSync) {
-          showToast('Wallet ready ✓', 'success')
+          showToastRef.current('Wallet ready ✓', 'success')
         }
       } catch (e) {
         logger.error('Auto-sync pipeline failed', e)
@@ -274,7 +280,7 @@ function WalletApp() {
           logger.info('Account discovery complete', { found })
           if (found > 0) {
             await refreshAccountsRef.current()
-            showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
+            showToastRef.current(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
           }
         } catch (e) {
           logger.error('Account discovery failed', e)
@@ -283,7 +289,7 @@ function WalletApp() {
     }
 
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
-  }, [wallet, activeAccountId, showToast])
+  }, [wallet, activeAccountId])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {
