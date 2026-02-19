@@ -156,7 +156,6 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
         .map(a => a.derivationIndex)
         .filter((idx): idx is number => Number.isInteger(idx) && (idx as number) >= 0)
 
-      let newAccountIndex: number
       let existingIndices: number[]
       if (explicitIndices.length > 0) {
         existingIndices = explicitIndices
@@ -168,7 +167,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
         existingIndices = ids.map(id => id - minId)
       }
 
-      newAccountIndex = existingIndices.length > 0 ? Math.max(...existingIndices) + 1 : 0
+      const newAccountIndex = existingIndices.length > 0 ? Math.max(...existingIndices) + 1 : 0
       accountLogger.debug('Deriving keys for new account', { newAccountIndex, existingIndices, explicitCount: explicitIndices.length })
 
       const keys = await deriveWalletKeysForAccount(firstAccountKeys.mnemonic, newAccountIndex)
