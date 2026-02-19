@@ -9,7 +9,7 @@ import { useNetwork } from './NetworkContext'
 import { useAccounts } from './AccountsContext'
 import { useSyncContext } from './SyncContext'
 import { useLocksContext } from './LocksContext'
-import { reconcileLocks, combineLocksWithExisting } from '../services/wallet/lockReconciliation'
+import { reconcileLocks } from '../services/wallet/lockReconciliation'
 import type { WalletResult } from '../domain/types'
 import { useTokens } from './TokensContext'
 import { walletLogger } from '../services/logger'
@@ -259,15 +259,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
       async ({ utxos: fetchedUtxos, preloadedLocks }) => {
         if (fetchVersionRef.current !== version) return
 
-        if (preloadedLocks && preloadedLocks.length > 0) {
-          // Merge DB locks with existing state (preserves optimistically-added locks)
-          setLocks(prev => {
-            const merged = new Map(prev.map(l => [`${l.txid}:${l.vout}`, l]))
-            for (const lock of preloadedLocks) {
-              merged.set(`${lock.txid}:${lock.vout}`, lock)
-            }
-            return Array.from(merged.values())
-          })
+        // Set preloaded DB locks directly — these are authoritative for this account.
+        // No merge with prev: optimistic locks are already in DB (written by handleLock),
+        // and merging with prev risks preserving stale locks from a different account.
+        if (preloadedLocks) {
+          setLocks(preloadedLocks)
         }
 
         try {
@@ -280,9 +276,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
               preloadedLocks || [],
               currentAccountId || undefined
             )
-            // Use functional updater to safely merge with current React state
-            // (avoids stale-closure issues if state changed during async operations)
-            setLocks(prev => combineLocksWithExisting(mergedLocks, prev))
+            // Direct set — reconcileLocks already merged detected + preloaded.
+            // No combineLocksWithExisting: merging with prev risks preserving
+            // stale locks from a previous account.
+            setLocks(mergedLocks)
+          } else if (preloadedLocks) {
+            // No on-chain locks detected — keep DB locks (may include unconfirmed)
+            setLocks(preloadedLocks)
+          } else {
+            // No detected locks and no DB locks — ensure state is clean
+            setLocks([])
           }
         } catch (e) {
           walletLogger.error('Failed to detect locks', e)

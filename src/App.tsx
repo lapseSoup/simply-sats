@@ -19,8 +19,7 @@ import { AppTabNav, AppTabContent, type Tab } from './AppTabs'
 import type { PaymentNotification } from './services/messageBox'
 import { loadNotifications, startPaymentListener } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
-import { getDerivedAddresses } from './infrastructure/database'
-import { needsInitialSync, syncWallet } from './services/sync'
+import { needsInitialSync, syncWallet, getLastSyncTimeForAccount } from './services/sync'
 import { discoverAccounts } from './services/accountDiscovery'
 import { getAccountKeys } from './services/accounts'
 import { getSessionPassword } from './services/sessionPasswordStore'
@@ -224,29 +223,50 @@ function WalletApp() {
           wallet.ordAddress,
           wallet.identityAddress
         ], activeAccountId ?? undefined)
+
         if (needsSync) {
+          // First-ever sync for this account: must block — no cached data to show
           logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
           setSyncPhaseRef.current('syncing')
           await performSyncRef.current(true)
           setSyncPhaseRef.current('loading')
-        } else {
-          const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
-          if (derivedAddrs.length > 0) {
-            logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
-            await performSyncRef.current(false)
-          }
-        }
-        // Refresh data after sync to pick up new blockchain data
-        await fetchDataRef.current()
-
-        if (needsSync) {
+          await fetchDataRef.current()
           showToastRef.current('Wallet ready ✓', 'success')
+          setSyncPhaseRef.current(null)
+        } else {
+          // Already-synced account: DB data is already loaded (fetchDataFromDB above).
+          // Only sync in background if data is stale (>5 min since last sync).
+          const SYNC_COOLDOWN_MS = 5 * 60 * 1000
+          const lastSyncTime = await getLastSyncTimeForAccount(activeAccountId!)
+          const isStale = (Date.now() - lastSyncTime) > SYNC_COOLDOWN_MS
+
+          if (isStale) {
+            logger.info('Account data stale, background-syncing', { accountId: activeAccountId, lastSyncTime })
+            // Fire-and-forget: sync in background, don't block UI
+            ;(async () => {
+              try {
+                if (cancelled) return
+                await performSyncRef.current(false)
+                if (cancelled) return
+                await fetchDataRef.current()
+              } catch (e) {
+                logger.warn('Background sync after switch failed', { error: String(e) })
+              } finally {
+                setSyncPhaseRef.current(null)
+              }
+            })()
+          } else {
+            logger.info('Account data fresh, skipping sync', { accountId: activeAccountId, lastSyncTime })
+          }
         }
       } catch (e) {
         logger.error('Auto-sync pipeline failed', e)
       } finally {
-        // Always clear sync phase regardless of success/failure
-        setSyncPhaseRef.current(null)
+        // Clear sync phase for the initial-sync (blocking) path.
+        // Background sync manages its own phase in its own finally block.
+        if (needsSync) {
+          setSyncPhaseRef.current(null)
+        }
       }
 
       // Bail out if this invocation was superseded by a newer one

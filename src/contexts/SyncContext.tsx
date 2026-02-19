@@ -197,9 +197,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
       const dbLocks = await getLocksFromDB(0, activeAccountId)
       if (isCancelled?.()) return
       const mapped = mapDbLocksToLockedUtxos(dbLocks, wallet.walletPubKey)
-      if (mapped.length > 0) {
-        onLocksLoaded(mapped)
-      }
+      // Always call even for empty arrays — ensures accounts with 0 locks
+      // get setLocks([]) to clear any stale locks from a previous account
+      onLocksLoaded(mapped)
     } catch (e) {
       syncLogger.warn('fetchDataFromDB: locks read failed', { error: String(e) })
     }

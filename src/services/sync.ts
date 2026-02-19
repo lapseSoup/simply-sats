@@ -1207,6 +1207,17 @@ export async function needsInitialSync(addresses: string[], accountId?: number):
 }
 
 /**
+ * Get the most recent sync timestamp for any address in this account.
+ * Returns 0 if never synced. Used to determine if background sync is needed.
+ */
+export async function getLastSyncTimeForAccount(accountId: number): Promise<number> {
+  const { getAllSyncStates } = await import('../infrastructure/database/syncRepository')
+  const result = await getAllSyncStates(accountId)
+  if (!result.ok || result.value.length === 0) return 0
+  return Math.max(...result.value.map(s => s.syncedAt))
+}
+
+/**
  * Restore wallet - full sync that rebuilds the database from blockchain
  * This is what happens when you restore from 12 words
  * @param walletAddress - Main wallet address
