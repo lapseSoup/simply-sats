@@ -213,7 +213,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
 
   return (
     <Modal onClose={onClose} title="Restore Wallet">
-      <div className="modal-content">
+      <div className="modal-content compact">
         <div className="pill-tabs" role="tablist" aria-label="Restore method">
             <button
               id="restore-tab-mnemonic"
