@@ -172,7 +172,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleRestoreWallet,
     handleImportJSON,
     handleDeleteWallet,
-    consumePendingDiscovery
+    consumePendingDiscovery,
+    peekPendingDiscovery,
+    clearPendingDiscovery
   } = useWalletActionsHook({
     setWallet,
     setIsLocked,
@@ -386,14 +388,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
     handleTransferOrdinal,
     handleListOrdinal,
     handleSendToken,
-    consumePendingDiscovery
+    consumePendingDiscovery,
+    peekPendingDiscovery,
+    clearPendingDiscovery
   }), [
     setWallet, setSessionPassword, switchAccount, createNewAccount, importAccount, deleteAccount,
     renameAccount, refreshAccounts, refreshTokens, lockWallet, unlockWallet,
     setAutoLockMinutes, setFeeRate, refreshContacts, performSync, fetchData,
     handleCreateWallet, handleRestoreWallet, handleImportJSON, handleDeleteWallet,
     handleSend, handleSendMulti, handleLock, handleUnlock, handleTransferOrdinal, handleListOrdinal,
-    handleSendToken, consumePendingDiscovery
+    handleSendToken, consumePendingDiscovery, peekPendingDiscovery, clearPendingDiscovery
   ])
 
   return (

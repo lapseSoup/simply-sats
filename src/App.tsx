@@ -57,6 +57,8 @@ function WalletApp() {
     renameAccount,
     syncError,
     consumePendingDiscovery,
+    peekPendingDiscovery,
+    clearPendingDiscovery,
     refreshAccounts
   } = useWallet()
 
@@ -130,6 +132,10 @@ function WalletApp() {
   useEffect(() => { refreshTokensRef.current = refreshTokens }, [refreshTokens])
   const consumePendingDiscoveryRef = useRef(consumePendingDiscovery)
   useEffect(() => { consumePendingDiscoveryRef.current = consumePendingDiscovery }, [consumePendingDiscovery])
+  const peekPendingDiscoveryRef = useRef(peekPendingDiscovery)
+  useEffect(() => { peekPendingDiscoveryRef.current = peekPendingDiscovery }, [peekPendingDiscovery])
+  const clearPendingDiscoveryRef = useRef(clearPendingDiscovery)
+  useEffect(() => { clearPendingDiscoveryRef.current = clearPendingDiscovery }, [clearPendingDiscovery])
   const refreshAccountsRef = useRef(refreshAccounts)
   useEffect(() => { refreshAccountsRef.current = refreshAccounts }, [refreshAccounts])
   // setSyncPhase arrives via NetworkContext's useMemo, which recreates whenever
@@ -185,13 +191,22 @@ function WalletApp() {
   useEffect(() => {
     if (!wallet || activeAccountId === null) return
 
+    // Cancellation guard: if the effect re-fires while checkSync is running,
+    // the stale invocation will stop at the next check point. This prevents
+    // a stale run from clearing pendingDiscovery params before the real run
+    // gets to them.
+    let cancelled = false
+
     const checkSync = async () => {
-      // Consume restore-discovery params up front so transient sync/token failures
-      // do not permanently skip discovery for this restore session.
-      const discoveryParams = consumePendingDiscoveryRef.current()
-      logger.info('Account discovery check', {
-        hasParams: !!discoveryParams,
-        excludeAccountId: discoveryParams?.excludeAccountId
+      // Peek at discovery params without consuming — we'll clear only if
+      // this invocation actually runs discovery (not cancelled).
+      const discoveryParams = peekPendingDiscoveryRef.current()
+      logger.info('checkSync starting', {
+        hasDiscoveryParams: !!discoveryParams,
+        excludeAccountId: discoveryParams?.excludeAccountId,
+        walletAddress: wallet.walletAddress?.substring(0, 12),
+        activeAccountId,
+        accountCount: accountsRef.current.length
       })
 
       let needsSync = false
@@ -230,6 +245,12 @@ function WalletApp() {
         setSyncPhaseRef.current(null)
       }
 
+      // Bail out if this invocation was superseded by a newer one
+      if (cancelled) {
+        logger.info('checkSync cancelled after sync pipeline (superseded by newer invocation)')
+        return
+      }
+
       // Sync token balances as part of initial load
       try {
         await refreshTokensRef.current()
@@ -262,15 +283,29 @@ function WalletApp() {
         })()
       }
 
+      // Bail out if this invocation was superseded by a newer one
+      if (cancelled) {
+        logger.info('checkSync cancelled before discovery (superseded by newer invocation)')
+        return
+      }
+
       // Run account discovery AFTER primary sync to avoid race conditions
       // (discoverAccounts changes activeAccountId which would discard fetchData results if concurrent)
       //
       // NOTE: Discovery is NOT gated on needsSync — these are orthogonal concerns.
       // pendingDiscoveryRef is a one-shot signal set only during handleRestoreWallet.
       // If Account 1 was previously synced (needsSync = false), additional accounts on
-      // the blockchain still need to be discovered. The ref being non-null is the sole
-      // gate: it's only populated during restore and consumed exactly once.
+      // the blockchain still need to be discovered.
+      //
+      // We peek first, then clear only when we're about to run discovery.
+      // This ensures a cancelled invocation doesn't destroy the params.
       if (discoveryParams) {
+        // Clear the ref now that we've committed to running discovery
+        clearPendingDiscoveryRef.current()
+        logger.info('Account discovery starting', {
+          excludeAccountId: discoveryParams.excludeAccountId
+        })
+        showToastRef.current('Scanning for additional accounts...')
         try {
           const found = await discoverAccounts(
             discoveryParams.mnemonic,
@@ -280,15 +315,20 @@ function WalletApp() {
           logger.info('Account discovery complete', { found })
           if (found > 0) {
             await refreshAccountsRef.current()
-            showToastRef.current(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
+            showToastRef.current(`Discovered ${found} additional account${found > 1 ? 's' : ''}`, 'success')
+          } else {
+            showToastRef.current('No additional accounts found')
           }
         } catch (e) {
           logger.error('Account discovery failed', e)
+          showToastRef.current('Account discovery failed', 'error')
         }
       }
     }
 
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
+
+    return () => { cancelled = true }
   }, [wallet, activeAccountId])
 
   // Auto-clear mnemonic from memory after timeout (security)

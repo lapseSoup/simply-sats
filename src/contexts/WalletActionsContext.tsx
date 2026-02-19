@@ -56,6 +56,8 @@ export interface WalletActionsContextType {
 
   // Account discovery (deferred after restore sync)
   consumePendingDiscovery: () => { mnemonic: string; password: string | null; excludeAccountId?: number } | null
+  peekPendingDiscovery: () => { mnemonic: string; password: string | null; excludeAccountId?: number } | null
+  clearPendingDiscovery: () => void
 }
 
 export const WalletActionsContext = createContext<WalletActionsContextType | null>(null)

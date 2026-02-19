@@ -48,13 +48,17 @@ interface UseWalletActionsOptions {
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
 }
 
+type DiscoveryParams = { mnemonic: string; password: string | null; excludeAccountId?: number }
+
 interface UseWalletActionsReturn {
   handleCreateWallet: (password: string | null, wordCount?: 12 | 24) => Promise<string | null>
   handleRestoreWallet: (mnemonic: string, password: string | null) => Promise<boolean>
   handleImportJSON: (json: string, password: string | null) => Promise<boolean>
   handleDeleteWallet: () => Promise<void>
-  pendingDiscoveryRef: MutableRefObject<{ mnemonic: string; password: string | null; excludeAccountId?: number } | null>
-  consumePendingDiscovery: () => { mnemonic: string; password: string | null; excludeAccountId?: number } | null
+  pendingDiscoveryRef: MutableRefObject<DiscoveryParams | null>
+  consumePendingDiscovery: () => DiscoveryParams | null
+  peekPendingDiscovery: () => DiscoveryParams | null
+  clearPendingDiscovery: () => void
 }
 
 export function useWalletActions({
@@ -264,6 +268,17 @@ export function useWalletActions({
   }, [setWallet, setIsLocked, setSessionPassword, setContacts, setFeeRateKBState, resetSync, setLocks, resetTokens, resetAccounts, setAutoLockMinutesState])
 
   // Account discovery (deferred until after initial sync completes)
+  // Split into peek/clear so that a cancelled effect invocation doesn't
+  // destroy the params before the real invocation can use them.
+  const peekPendingDiscovery = useCallback(() => {
+    return pendingDiscoveryRef.current
+  }, [])
+
+  const clearPendingDiscovery = useCallback(() => {
+    pendingDiscoveryRef.current = null
+  }, [])
+
+  /** @deprecated Use peekPendingDiscovery + clearPendingDiscovery instead */
   const consumePendingDiscovery = useCallback(() => {
     const params = pendingDiscoveryRef.current
     pendingDiscoveryRef.current = null
@@ -276,6 +291,8 @@ export function useWalletActions({
     handleImportJSON,
     handleDeleteWallet,
     pendingDiscoveryRef,
-    consumePendingDiscovery
+    consumePendingDiscovery,
+    peekPendingDiscovery,
+    clearPendingDiscovery
   }
 }

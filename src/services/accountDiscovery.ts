@@ -67,12 +67,21 @@ export async function discoverAccounts(
   restoreActiveAccountId?: number
 ): Promise<number> {
   const wocClient = createWocClient()
+  const startTime = Date.now()
+
+  accountLogger.info('Discovery Phase 1: scanning for accounts with on-chain activity', {
+    maxIndex: MAX_ACCOUNT_DISCOVERY,
+    gapLimit: DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT,
+    restoreActiveAccountId
+  })
 
   // Phase 1: Lightweight discovery (just check addresses for activity)
   // Requests are serialized (not parallel) to stay under WoC rate limits.
   const discovered: { index: number; keys: WalletKeys }[] = []
   let foundAny = false
   let consecutiveEmptyAfterHit = 0
+  let totalChecked = 0
+  let totalApiErrors = 0
   for (let i = 1; i <= MAX_ACCOUNT_DISCOVERY; i++) {
     const keys = await deriveWalletKeysForAccount(mnemonic, i)
     accountLogger.info('Checking account for activity', {
@@ -119,6 +128,7 @@ export async function discoverAccounts(
       result: result === true ? 'active' : result === false ? 'empty' : 'api-error'
     })
 
+    totalChecked++
     if (result === true) {
       discovered.push({ index: i, keys })
       foundAny = true
@@ -136,12 +146,26 @@ export async function discoverAccounts(
           break
         }
       }
+    } else {
+      // result === null: API still failing after all retries — skip without counting as empty
+      totalApiErrors++
     }
-    // result === null: API still failing after all retries — skip without counting as empty
 
     // Inter-account delay to stay well under rate limits
     await new Promise(resolve => setTimeout(resolve, DISCOVERY_INTER_ACCOUNT_DELAY_MS))
   }
+
+  const phase1DurationMs = Date.now() - startTime
+  accountLogger.info('Discovery Phase 1 complete', {
+    totalChecked,
+    discovered: discovered.length,
+    discoveredIndices: discovered.map(d => d.index),
+    totalApiErrors,
+    phase1DurationMs,
+    stoppedReason: !foundAny && totalChecked >= MAX_ACCOUNT_DISCOVERY ? 'max-index'
+      : consecutiveEmptyAfterHit >= DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT ? 'gap-limit'
+      : !foundAny ? 'no-activity-found' : 'scan-complete'
+  })
 
   // Phase 2: Create accounts and attempt sync.
   // Account creation is authoritative for discovery; sync is best-effort.
@@ -197,9 +221,13 @@ export async function discoverAccounts(
     accountLogger.info('Restored active account after discovery', { restoreActiveAccountId })
   }
 
-  if (created > 0) {
-    accountLogger.info('Account discovery complete', { created, synced })
-  }
+  const totalDurationMs = Date.now() - startTime
+  accountLogger.info('Account discovery complete', {
+    created,
+    synced,
+    totalDurationMs,
+    phase1DurationMs
+  })
 
   return created
 }

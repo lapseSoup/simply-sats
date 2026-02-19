@@ -147,7 +147,7 @@ export async function deriveWalletKeys(mnemonic: string): Promise<WalletKeys> {
  *
  * Derivation paths with account index N:
  * - wallet:   m/44'/236'/N'/1/0
- * - ordinals: m/44'/236'/(N+1)'/0/0  (offset by 1 to avoid collision)
+ * - ordinals: m/44'/236'/(N*2+1)'/0/0  (odd indices to avoid collision with wallet)
  * - identity: m/0'/236'/N'/0/0
  *
  * Account 0 matches the standard WALLET_PATHS.yours paths exactly.
