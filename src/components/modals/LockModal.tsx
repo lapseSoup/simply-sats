@@ -22,7 +22,7 @@ interface LockModalProps {
 
 export function LockModal({ onClose }: LockModalProps) {
   const { wallet, balance, utxos, networkInfo } = useWalletState()
-  const { handleLock, performSync } = useWalletActions()
+  const { handleLock, performSync, fetchData } = useWalletActions()
   const { displayInSats, showToast } = useUI()
 
   const [lockAmount, setLockAmount] = useState('')
@@ -121,6 +121,8 @@ export function LockModal({ onClose }: LockModalProps) {
       } else {
         showToast(`Locked ${lockSats.toLocaleString()} sats for ${blocks} blocks!`)
       }
+      // Ensure Activity tab reflects the new lock transaction immediately
+      await fetchData()
       onClose()
     } else {
       setLockError(result.error || 'Lock failed')

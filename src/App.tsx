@@ -20,8 +20,10 @@ import type { PaymentNotification } from './services/messageBox'
 import { loadNotifications, startPaymentListener } from './services/messageBox'
 import { PrivateKey } from '@bsv/sdk'
 import { getDerivedAddresses } from './infrastructure/database'
-import { needsInitialSync } from './services/sync'
+import { needsInitialSync, syncWallet } from './services/sync'
 import { discoverAccounts } from './services/accountDiscovery'
+import { getAccountKeys } from './services/accounts'
+import { getSessionPassword } from './services/sessionPasswordStore'
 // import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive
 
 // Tab order for keyboard navigation
@@ -130,6 +132,8 @@ function WalletApp() {
   useEffect(() => { consumePendingDiscoveryRef.current = consumePendingDiscovery }, [consumePendingDiscovery])
   const refreshAccountsRef = useRef(refreshAccounts)
   useEffect(() => { refreshAccountsRef.current = refreshAccounts }, [refreshAccounts])
+  const accountsRef = useRef(accounts)
+  useEffect(() => { accountsRef.current = accounts }, [accounts])
 
   // MessageBox listener for payments
   useEffect(() => {
@@ -219,6 +223,31 @@ function WalletApp() {
         await refreshTokensRef.current()
       } catch (e) {
         logger.error('Token refresh during auto-sync failed', e)
+      }
+
+      // Background-sync all inactive accounts so their data is fresh when switched to.
+      // Fire-and-forget: failures are logged but don't affect the active account.
+      const otherAccounts = accountsRef.current.filter(a => a.id !== activeAccountId)
+      if (otherAccounts.length > 0) {
+        const sessionPwd = getSessionPassword()
+        ;(async () => {
+          for (const account of otherAccounts) {
+            try {
+              const keys = await getAccountKeys(account, sessionPwd)
+              if (!keys) continue
+              logger.info('Background-syncing account', { accountId: account.id, name: account.name })
+              await syncWallet(
+                keys.walletAddress,
+                keys.ordAddress,
+                keys.identityAddress,
+                account.id ?? undefined,
+                keys.walletPubKey
+              )
+            } catch (e) {
+              logger.warn('Background sync failed for account', { accountId: account.id, error: String(e) })
+            }
+          }
+        })()
       }
 
       // Run account discovery AFTER primary sync to avoid race conditions
