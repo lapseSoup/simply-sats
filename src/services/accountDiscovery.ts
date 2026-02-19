@@ -20,11 +20,16 @@ import { accountLogger } from './logger'
 /**
  * Maximum derivation indices to scan (1..N) when restoring from mnemonic.
  *
- * We intentionally scan the full window instead of stopping after a small
- * empty-account gap, because users can delete accounts and later create new
- * ones at higher derivation indices.
+ * Keep this comfortably above expected usage because historical bugs could
+ * place accounts on unexpectedly high indices.
  */
-const MAX_ACCOUNT_DISCOVERY = 20
+const MAX_ACCOUNT_DISCOVERY = 200
+
+/**
+ * Once at least one account is discovered, stop after this many consecutive
+ * successful empty checks.
+ */
+const DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT = 20
 
 /**
  * Discover additional accounts with on-chain activity.
@@ -47,6 +52,8 @@ export async function discoverAccounts(
   // Phase 1: Lightweight discovery (just check addresses for activity)
   // No syncing here — avoids rate limiting between checks
   const discovered: { index: number; keys: WalletKeys }[] = []
+  let foundAny = false
+  let consecutiveEmptyAfterHit = 0
   for (let i = 1; i <= MAX_ACCOUNT_DISCOVERY; i++) {
     const keys = await deriveWalletKeysForAccount(mnemonic, i)
     accountLogger.info('Checking account for activity', {
@@ -77,13 +84,26 @@ export async function discoverAccounts(
 
     if (walletHasActivity || ordHasActivity || idHasActivity) {
       discovered.push({ index: i, keys })
+      foundAny = true
+      consecutiveEmptyAfterHit = 0
       continue
     }
 
-    // Successful empty account: keep scanning remaining derivation indices.
+    // Successful empty account.
     const allSucceeded = walletResult.ok && ordResult.ok && idResult.ok
     if (allSucceeded) {
       accountLogger.debug('Empty account found', { accountIndex: i })
+      if (foundAny) {
+        consecutiveEmptyAfterHit++
+        if (consecutiveEmptyAfterHit >= DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT) {
+          accountLogger.info('Gap limit reached after first discovered account; stopping', {
+            accountIndex: i,
+            consecutiveEmptyAfterHit,
+            gapLimit: DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT
+          })
+          break
+        }
+      }
       continue
     }
 
@@ -102,8 +122,21 @@ export async function discoverAccounts(
       (retryI.ok && retryI.value.length > 0)
     ) {
       discovered.push({ index: i, keys })
+      foundAny = true
+      consecutiveEmptyAfterHit = 0
     } else if (retryW.ok && retryO.ok && retryI.ok) {
       accountLogger.debug('Empty account found after retry', { accountIndex: i })
+      if (foundAny) {
+        consecutiveEmptyAfterHit++
+        if (consecutiveEmptyAfterHit >= DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT) {
+          accountLogger.info('Gap limit reached after retry and first discovered account; stopping', {
+            accountIndex: i,
+            consecutiveEmptyAfterHit,
+            gapLimit: DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT
+          })
+          break
+        }
+      }
     }
     // If retry also fails (API error), continue to next account.
   }

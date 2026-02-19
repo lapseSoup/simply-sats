@@ -150,12 +150,26 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
       }
 
       // Derive keys for the new account using the next available derivation index.
-      // Use derivation_index from each account (falling back to id-1 for pre-migration accounts)
-      // to decouple key derivation from DB auto-increment IDs.
-      const existingIndices = allAccounts.map(a => a.derivationIndex ?? ((a.id ?? 1) - 1))
-      const newAccountIndex = existingIndices.length > 0
-        ? Math.max(...existingIndices) + 1 : 0
-      accountLogger.debug('Deriving keys for new account', { newAccountIndex, existingIndices })
+      // Prefer explicit derivation_index values; for legacy rows without it, infer a
+      // stable 0-based sequence from account IDs normalized to the minimum ID.
+      const explicitIndices = allAccounts
+        .map(a => a.derivationIndex)
+        .filter((idx): idx is number => Number.isInteger(idx) && (idx as number) >= 0)
+
+      let newAccountIndex: number
+      let existingIndices: number[]
+      if (explicitIndices.length > 0) {
+        existingIndices = explicitIndices
+      } else {
+        const ids = allAccounts
+          .map(a => a.id)
+          .filter((id): id is number => Number.isInteger(id) && (id as number) > 0)
+        const minId = ids.length > 0 ? Math.min(...ids) : 1
+        existingIndices = ids.map(id => id - minId)
+      }
+
+      newAccountIndex = existingIndices.length > 0 ? Math.max(...existingIndices) + 1 : 0
+      accountLogger.debug('Deriving keys for new account', { newAccountIndex, existingIndices, explicitCount: explicitIndices.length })
 
       const keys = await deriveWalletKeysForAccount(firstAccountKeys.mnemonic, newAccountIndex)
 

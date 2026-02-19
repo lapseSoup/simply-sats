@@ -102,8 +102,8 @@ describe('discoverAccounts', () => {
 
     expect(found).toBe(0)
     expect(createAccount).not.toHaveBeenCalled()
-    expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(20)
-    expect(deriveWalletKeysForAccount).toHaveBeenLastCalledWith('test mnemonic', 20)
+    expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(200)
+    expect(deriveWalletKeysForAccount).toHaveBeenLastCalledWith('test mnemonic', 200)
   })
 
   it('discovers accounts with wallet address activity and syncs them', async () => {
@@ -189,6 +189,27 @@ describe('discoverAccounts', () => {
     expect(createAccount).toHaveBeenCalledWith('Account 4', makeMockKeys(3), 'password', true, 3)
   })
 
+  it('discovers account at high derivation index beyond legacy cap', async () => {
+    // Use a dynamic mock so index 50 is the first with activity.
+    mockWocClient.getTransactionHistorySafe.mockImplementation(async (address: string) => {
+      const match = address.match(/-(\d+)$/)
+      const index = match ? Number(match[1]) : -1
+      const isWalletAddress = address.startsWith('wallet-addr-')
+
+      if (isWalletAddress && index === 50) {
+        return { ok: true, value: [{ tx_hash: 'high-index-tx', height: 850123 }] }
+      }
+
+      return { ok: true, value: [] }
+    })
+
+    const found = await discoverAccounts('test mnemonic', 'password')
+
+    expect(found).toBe(1)
+    expect(createAccount).toHaveBeenCalledWith('Account 51', makeMockKeys(50), 'password', true, 50)
+    expect(deriveWalletKeysForAccount).toHaveBeenCalledWith('test mnemonic', 50)
+  })
+
   it('retries on API failure and stops only if retry also fails', async () => {
     // First attempt: API failure on all 3 addresses
     mockWocClient.getTransactionHistorySafe
@@ -265,17 +286,17 @@ describe('discoverAccounts', () => {
   })
 
   it('respects max discovery cap of 20', async () => {
-    // All accounts have activity — should stop at 20
+    // All accounts have activity — should stop at max cap
     // Each account check does 3 calls (wallet, ord, identity)
     mockWocClient.getTransactionHistorySafe
       .mockResolvedValue({ ok: true, value: [{ tx_hash: 'x', height: 1 }] })
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
-    expect(found).toBe(20)
-    expect(createAccount).toHaveBeenCalledTimes(20)
-    // Verify it checked accounts 1 through 20
-    expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(20)
-    expect(deriveWalletKeysForAccount).toHaveBeenLastCalledWith('test mnemonic', 20)
+    expect(found).toBe(200)
+    expect(createAccount).toHaveBeenCalledTimes(200)
+    // Verify it checked accounts 1 through 200
+    expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(200)
+    expect(deriveWalletKeysForAccount).toHaveBeenLastCalledWith('test mnemonic', 200)
   })
 })

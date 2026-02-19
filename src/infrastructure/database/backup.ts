@@ -260,6 +260,12 @@ export async function clearDatabase(): Promise<void> {
   } catch (_e) {
     // Table may not exist yet
   }
+  try {
+    // Reset auto-increment for accounts so fresh wallets start at ID 1.
+    await database.execute("DELETE FROM sqlite_sequence WHERE name = 'accounts'")
+  } catch (_e) {
+    // sqlite_sequence may not exist in all environments
+  }
 
   // Clear derived addresses
   try {

@@ -491,13 +491,32 @@ export async function migrateToMultiAccount(
     const existingAccount = accounts.find(a => a.identityAddress === existingKeys.identityAddress)
 
     if (existingAccount) {
+      // Backfill derivation index for legacy primary accounts.
+      if (existingAccount.id && existingAccount.derivationIndex === undefined) {
+        try {
+          const database = getDatabase()
+          await database.execute(
+            'UPDATE accounts SET derivation_index = $1 WHERE id = $2 AND derivation_index IS NULL',
+            [0, existingAccount.id]
+          )
+          accountLogger.info('Backfilled derivation index for existing account', {
+            accountId: existingAccount.id,
+            derivationIndex: 0
+          })
+        } catch (backfillErr) {
+          accountLogger.warn('Failed to backfill derivation index', {
+            accountId: existingAccount.id,
+            error: String(backfillErr)
+          })
+        }
+      }
       accountLogger.info('Account already exists, skipping migration')
       return existingAccount.id!
     }
 
     // Create account for existing wallet using legacy password requirements
     // The UI has already validated the password meets minimum requirements
-    const result = await createAccount('Account 1', existingKeys, password, true)
+    const result = await createAccount('Account 1', existingKeys, password, true, 0)
     if (!result.ok) {
       accountLogger.error('Failed to create account during migration', result.error)
       return null
