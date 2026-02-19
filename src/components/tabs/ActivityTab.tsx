@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback, useMemo, type ReactNode } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle, ImageIcon } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
@@ -7,6 +7,7 @@ import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 import { NoTransactionsEmpty } from '../shared/EmptyState'
 import { ActivityListSkeleton } from '../shared/Skeleton'
+import { OrdinalImage } from '../shared/OrdinalImage'
 
 const VIRTUALIZATION_THRESHOLD = 50
 const TX_ITEM_HEIGHT = 70 // ~64px item + 6px gap
@@ -22,7 +23,10 @@ const TransactionItem = memo(function TransactionItem({
   onClick,
   formatUSD,
   displayInSats,
-  formatBSVShort
+  formatBSVShort,
+  ordinalOrigin,
+  ordinalContentType,
+  ordinalCachedContent
 }: {
   tx: TxHistoryItem
   txType: string
@@ -31,6 +35,9 @@ const TransactionItem = memo(function TransactionItem({
   formatUSD: (sats: number) => string
   displayInSats: boolean
   formatBSVShort: (sats: number) => string
+  ordinalOrigin?: string
+  ordinalContentType?: string
+  ordinalCachedContent?: { contentData?: Uint8Array; contentText?: string }
 }) {
   return (
     <div
@@ -41,7 +48,20 @@ const TransactionItem = memo(function TransactionItem({
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
       style={{ cursor: 'pointer' }}
     >
-      <div className="tx-icon" aria-hidden="true">{txIcon}</div>
+      <div className="tx-icon" aria-hidden="true">
+        {ordinalOrigin ? (
+          <div style={{ width: 32, height: 32, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+            <OrdinalImage
+              origin={ordinalOrigin}
+              contentType={ordinalContentType}
+              size="sm"
+              alt="Ordinal"
+              lazy={false}
+              cachedContent={ordinalCachedContent}
+            />
+          </div>
+        ) : txIcon}
+      </div>
       <div className="tx-info">
         <div className="tx-type">{txType}</div>
         <div className="tx-meta">
@@ -71,7 +91,7 @@ const TransactionItem = memo(function TransactionItem({
 })
 
 export function ActivityTab() {
-  const { txHistory, locks, loading, activeAccountId } = useWalletState()
+  const { txHistory, locks, loading, activeAccountId, ordinals, ordinalContentCache } = useWalletState()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
 
   // Sync is handled by App.tsx checkSync effect — no duplicate sync here
@@ -117,6 +137,16 @@ export function ActivityTab() {
   // Pre-compute lock txid Set for O(1) lookup (instead of O(n) locks.some per tx row)
   const lockTxidSet = useMemo(() => new Set(locks.map(l => l.txid)), [locks])
 
+  // Build a map from ordinal txid prefix → ordinal, for thumbnail lookup in activity items.
+  // The description stored for ordinal transfers is "Transferred ordinal {txid.slice(0,8)}..."
+  const ordinalByTxidPrefix = useMemo(() => {
+    const map = new Map<string, typeof ordinals[number]>()
+    for (const ord of ordinals) {
+      map.set(ord.txid.slice(0, 8), ord)
+    }
+    return map
+  }, [ordinals])
+
   const getTxTypeAndIcon = useCallback((tx: { tx_hash: string; amount?: number }) => {
     // Check active locks from context + historical lock labels from DB
     const isLockTx = lockTxidSet.has(tx.tx_hash) || lockTxids.has(tx.tx_hash)
@@ -130,7 +160,7 @@ export function ActivityTab() {
       return { type: 'Unlocked', icon: <Unlock size={14} strokeWidth={1.75} /> }
     }
     if (isOrdinalTx) {
-      return { type: 'Ordinal Transfer', icon: <ImageIcon size={14} strokeWidth={1.75} /> }
+      return { type: 'Ordinal Transfer', icon: null }
     }
     if (tx.amount != null && tx.amount > 0) {
       return { type: 'Received', icon: <ArrowDownLeft size={14} strokeWidth={1.75} /> }
@@ -140,6 +170,21 @@ export function ActivityTab() {
     }
     return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }
   }, [lockTxidSet, lockTxids, unlockTxids, ordinalTxids])
+
+  // For ordinal transfer txs, look up the matched ordinal via the description prefix
+  const getOrdinalProps = useCallback((tx: TxHistoryItem) => {
+    if (!ordinalTxids.has(tx.tx_hash) || !tx.description) return {}
+    // Description format: "Transferred ordinal {txid.slice(0,8)}... to {addr}..."
+    const match = tx.description.match(/Transferred ordinal ([0-9a-f]{8})/)
+    if (!match) return {}
+    const ord = ordinalByTxidPrefix.get(match[1]!)
+    if (!ord) return {}
+    return {
+      ordinalOrigin: ord.origin,
+      ordinalContentType: ord.contentType,
+      ordinalCachedContent: ordinalContentCache.get(ord.origin)
+    }
+  }, [ordinalTxids, ordinalByTxidPrefix, ordinalContentCache])
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {
@@ -171,6 +216,7 @@ export function ActivityTab() {
             rowComponent={({ index, style }) => {
               const tx = txHistory[index]!
               const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
+              const ordinalProps = getOrdinalProps(tx)
               return (
                 <div style={{ ...style, paddingBottom: 6 }}>
                   <TransactionItem
@@ -181,6 +227,7 @@ export function ActivityTab() {
                     formatUSD={formatUSD}
                     displayInSats={displayInSats}
                     formatBSVShort={formatBSVShort}
+                    {...ordinalProps}
                   />
                 </div>
               )
@@ -203,6 +250,7 @@ export function ActivityTab() {
       <div className="tx-list" role="list" aria-label="Transaction history">
         {txHistory.map((tx) => {
           const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
+          const ordinalProps = getOrdinalProps(tx)
 
           return (
             <TransactionItem
@@ -214,6 +262,7 @@ export function ActivityTab() {
               formatUSD={formatUSD}
               displayInSats={displayInSats}
               formatBSVShort={formatBSVShort}
+              {...ordinalProps}
             />
           )
         })}

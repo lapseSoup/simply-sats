@@ -493,7 +493,8 @@ describe('Ordinals Service', () => {
         MOCK_TXID,
         expect.any(String),
         expect.stringContaining('Transferred ordinal'),
-        ['ordinal', 'transfer']
+        ['ordinal', 'transfer'],
+        expect.any(Number)  // negative fee sats
       )
       expect(mockConfirmUtxosSpent).toHaveBeenCalled()
     })

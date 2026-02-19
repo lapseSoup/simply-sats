@@ -354,7 +354,8 @@ export async function transferOrdinal(
       txid,
       tx.toHex(),
       `Transferred ordinal ${ordinalUtxo.txid.slice(0, 8)}... to ${toAddress.slice(0, 8)}...`,
-      ['ordinal', 'transfer']
+      ['ordinal', 'transfer'],
+      -actualFee  // Fee sats only — the ordinal sat is not counted in BSV balance
     )
 
     // Confirm UTXOs as spent (updates from pending -> spent)

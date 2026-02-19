@@ -535,10 +535,14 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
         const [ordAddressOrdinals = [], walletAddressOrdinals = [], identityAddressOrdinals = [], ...derivedOrdinals] = ordinalArrays
 
-        // Combine and deduplicate by origin
+        // Combine and deduplicate by origin.
+        // API results are the authoritative source — do NOT re-add dbOrdinals here.
+        // dbOrdinals were already shown immediately at line 499 for a fast initial
+        // display. Including them again in the final merge would re-add transferred
+        // ordinals whose DB records haven't been marked spent yet, causing the count
+        // to stay stale. Only fall back to dbOrdinals if the API returned nothing.
         const seen = new Set<string>()
-        const allOrdinals = [
-          ...dbOrdinals,
+        const apiOrdinals = [
           ...ordAddressOrdinals,
           ...walletAddressOrdinals,
           ...identityAddressOrdinals,
@@ -548,6 +552,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
           seen.add(ord.origin)
           return true
         })
+
+        const allOrdinals = apiOrdinals.length > 0 ? apiOrdinals : dbOrdinals
 
         // Guard: if account switched during slow API calls, discard results
         if (isCancelled?.()) return
