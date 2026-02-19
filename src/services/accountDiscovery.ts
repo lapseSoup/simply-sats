@@ -13,7 +13,7 @@
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 import type { WalletKeys } from '../domain/types'
 import { createWocClient } from '../infrastructure/api/wocClient'
-import { createAccount, switchAccount } from './accounts'
+import { createAccount, switchAccount, getAccountByIdentity } from './accounts'
 import { syncWallet } from './sync'
 import { accountLogger } from './logger'
 
@@ -149,11 +149,25 @@ export async function discoverAccounts(
   let synced = 0
   for (const { index, keys } of discovered) {
     try {
+      let accountId: number
       const createResult = await createAccount(`Account ${index + 1}`, keys, password, true, index)
       if (!createResult.ok) {
+        // Check if it failed because the account already exists (e.g. previous partial restore).
+        // If so, treat it as already discovered and continue rather than aborting.
+        const existing = await getAccountByIdentity(keys.identityAddress)
+        if (existing?.id) {
+          accountLogger.info('Account already exists, counting as discovered', {
+            accountIndex: index,
+            accountId: existing.id
+          })
+          accountId = existing.id
+          created++
+          // Don't re-sync already-existing accounts; their data is intact.
+          continue
+        }
         throw createResult.error
       }
-      const accountId = createResult.value
+      accountId = createResult.value
       created++
       try {
         await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
@@ -173,7 +187,7 @@ export async function discoverAccounts(
       })
     } catch (err) {
       accountLogger.error('Failed to create discovered account', err, { accountIndex: index })
-      break // Don't continue if DB write fails
+      break // Don't continue if DB write fails with an unexpected error
     }
   }
 
