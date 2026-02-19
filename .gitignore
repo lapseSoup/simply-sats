@@ -29,3 +29,8 @@ src-tauri/gen/
 
 # Git worktrees
 .worktrees/
+
+# Generated files
+coverage/
+*.sqlite
+*.bak
