@@ -104,13 +104,14 @@ CREATE TABLE IF NOT EXISTS certificates (
     revoked_at INTEGER
 );
 
--- Sync state (001 + 003 account_id)
+-- Sync state (001 + 003 account_id + 022 UNIQUE per account)
 CREATE TABLE IF NOT EXISTS sync_state (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    address TEXT NOT NULL UNIQUE,
+    address TEXT NOT NULL,
     last_synced_height INTEGER NOT NULL DEFAULT 0,
     last_synced_at INTEGER NOT NULL,
-    account_id INTEGER NOT NULL DEFAULT 1
+    account_id INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(address, account_id)
 );
 
 -- Derived addresses (002 + 016 account_id + 021 nullable private_key_wif)

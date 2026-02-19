@@ -229,6 +229,39 @@ fn get_app_data_dir() -> Option<std::path::PathBuf> {
     dirs::data_dir().map(|d| d.join("com.simplysats.wallet"))
 }
 
+/// Configure database settings (WAL mode, busy timeout) for all installs.
+///
+/// Must run BEFORE tauri_plugin_sql opens the connection pool, because the pool
+/// uses the default DELETE journal mode which causes SQLITE_BUSY errors when
+/// multiple pool connections try to write concurrently.
+///
+/// WAL mode allows concurrent reads and writes without blocking, which is
+/// essential during account discovery when createAccount and background sync
+/// may overlap.
+fn configure_database(app_data_dir: &std::path::Path) {
+    let db_path = app_data_dir.join("simplysats.db");
+
+    // Only configure if the DB file already exists (fresh installs are handled by pre_init_database)
+    if !db_path.exists() {
+        return;
+    }
+
+    let conn = match rusqlite::Connection::open(&db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("configure_database: failed to open DB: {}", e);
+            return;
+        }
+    };
+
+    // Enable WAL journal mode — allows concurrent readers/writers without SQLITE_BUSY
+    if let Err(e) = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=30000;") {
+        log::error!("configure_database: failed to set WAL mode: {}", e);
+    } else {
+        log::info!("configure_database: WAL mode and busy_timeout=30000 applied");
+    }
+}
+
 /// Pre-initialize the database for fresh installs.
 ///
 /// tauri_plugin_sql hangs when migrations contain DML (INSERT/UPDATE/DELETE).
@@ -266,7 +299,12 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         return;
     }
 
-    // Mark all 21 migrations as applied with their correct checksums
+    // Enable WAL mode for fresh installs so concurrent access works from the start
+    if let Err(e) = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=30000;") {
+        log::error!("Failed to set WAL mode on fresh DB: {}", e);
+    }
+
+    // Mark all 23 migrations as applied with their correct checksums
     // Checksums must match the SQL content exactly or tauri_plugin_sql will re-run them
     let migrations: Vec<(i64, &str, &str)> = vec![
         (1, "Initial database schema", "C00D163C545940AF1CB0E2DC1AABE4A8D66902CFDA8BAAE50DD8D091E4A4D22BD36389CC70B5F95308BB8C29A79C7211"),
@@ -290,6 +328,8 @@ fn pre_init_database(app_data_dir: &std::path::Path) {
         (19, "Add derivation_index to accounts", "F718112691A39AD3EB54EF64D50E74F9C68517D035644EE3B66058163D38B4CD50C24019FEC1380AC766C88608162CA8"),
         (20, "Add frozen column to UTXOs", "3936B66AC32B18F01B65DF8C15BBA356A8297350EDE34C05646E6A2C999DE36D986861FA0ADBF17C9E65C8C9405CFB77"),
         (21, "Make derived_addresses.private_key_wif nullable", "325FDAF2BFF3CB15A9EF3CDD9BD65432C36EF1CDE2A24B62EFF6DEA329D1D3FCA83A184BE5ACE4559787773101C51619"),
+        (22, "Scope sync_state per account", "22A8C91539937C2263A0312CCEC99CFD06211CA6EA6A6C78F8C25C246F26644284C6B7033EDCB7AEC1FB9B0492500C6F"),
+        (23, "Enable WAL journal mode", "1293333EC9F2CE134BCFF5FA27038E90DECEE529E955FB3DF7B9B687105CF0ECE8BD92D5C2A65587BE2758AF9569CB01"),
     ];
 
     for (version, description, checksum_hex) in migrations {
@@ -440,6 +480,14 @@ fn include_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/021_nullable_private_key_wif.sql"),
             kind: MigrationKind::Up,
         },
+        // NOTE: Migrations 022 (sync_state per account) and 023 (WAL mode) are NOT run
+        // via tauri_plugin_sql because:
+        // - 022 contains DML (INSERT OR IGNORE) which hangs the tauri_plugin_sql runner
+        // - 023 PRAGMA is a no-op inside a SQL transaction
+        // Instead: 022 schema is baked into fresh_install_schema.sql (DDL already correct)
+        // and WAL mode is set by configure_database() in run() using rusqlite before
+        // the plugin initializes. Both are marked as applied in the checksums list above
+        // so the plugin doesn't try to run them.
     ]
 }
 
@@ -590,6 +638,8 @@ pub fn run() {
     // Uses platform-specific app data directory since Tauri isn't initialized yet.
     if let Some(app_data_dir) = get_app_data_dir() {
         pre_init_database(&app_data_dir);
+        // Configure WAL mode for existing installs (fresh installs set it inside pre_init_database)
+        configure_database(&app_data_dir);
     }
 
     let brc100_state: SharedBRC100State = Arc::new(Mutex::new(BRC100State::default()));
