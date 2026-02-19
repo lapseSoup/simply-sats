@@ -769,8 +769,7 @@ async function backfillNullAmounts(
   accountId?: number
 ): Promise<number> {
   try {
-    // Get all transactions for this account (up to 200 — covers typical restore)
-    const allTxsResult = await getAllTransactions(200, accountId)
+    const allTxsResult = await getAllTransactions(accountId)
     if (!allTxsResult.ok) {
       syncLogger.warn('[BACKFILL] Failed to get transactions', { error: allTxsResult.error.message })
       return 0
@@ -1196,7 +1195,7 @@ export async function needsInitialSync(addresses: string[], accountId?: number):
   // If sync_state says "already synced" but the account has zero transactions in the DB,
   // force a re-sync to repopulate from the blockchain.
   if (accountId !== undefined) {
-    const txCountResult = await getAllTransactions(1, accountId)
+    const txCountResult = await getAllTransactions(accountId)
     const hasTxs = txCountResult.ok && txCountResult.value.length > 0
     if (!hasTxs) {
       syncLogger.info('[SYNC] sync_state shows synced but no transactions found for account — forcing re-sync', { accountId })

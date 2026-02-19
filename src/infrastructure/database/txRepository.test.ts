@@ -154,7 +154,7 @@ describe('getAllTransactions', () => {
       { id: 1, txid: 'tx1', raw_tx: 'beef', description: 'desc', created_at: 1000, confirmed_at: 2000, block_height: 800000, status: 'confirmed', amount: -500 }
     ])
 
-    const result = await getAllTransactions(30, 2)
+    const result = await getAllTransactions(2)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.value).toHaveLength(1)
@@ -171,10 +171,10 @@ describe('getAllTransactions', () => {
   it('filters by accountId', async () => {
     mockDb.select.mockResolvedValueOnce([])
 
-    await getAllTransactions(10, 5)
+    await getAllTransactions(5)
     const call = mockDb.select.mock.calls[0]!
     expect(call[0]).toContain('account_id = $1')
-    expect(call[1]).toEqual([5, 10])
+    expect(call[1]).toEqual([5])
   })
 
   it('handles null optional fields as undefined', async () => {
@@ -192,12 +192,14 @@ describe('getAllTransactions', () => {
     expect(result.value[0]!.amount).toBeUndefined()
   })
 
-  it('uses default limit of 30', async () => {
+  it('returns all transactions when no accountId provided', async () => {
     mockDb.select.mockResolvedValueOnce([])
 
     await getAllTransactions()
     const call = mockDb.select.mock.calls[0]!
-    expect(call[1]).toEqual([30])
+    // No WHERE clause and no LIMIT params when no accountId
+    expect(call[0]).not.toContain('account_id')
+    expect(call[1]).toEqual([])
   })
 })
 

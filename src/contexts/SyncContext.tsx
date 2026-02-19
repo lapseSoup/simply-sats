@@ -297,7 +297,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       }
 
       // Get transaction history from DATABASE (scoped to account)
-      const dbTxsResult = await getAllTransactions(100, activeAccountId)
+      const dbTxsResult = await getAllTransactions(activeAccountId)
       const dbTxs = dbTxsResult.ok ? dbTxsResult.value : []
       if (!dbTxsResult.ok) {
         syncLogger.warn('Failed to get transactions from database', { error: dbTxsResult.error.message })

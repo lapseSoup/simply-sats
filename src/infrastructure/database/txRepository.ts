@@ -134,29 +134,25 @@ export async function upsertTransaction(tx: Omit<Transaction, 'id'>, accountId?:
 /**
  * Get all transactions from database for a specific account
  * Orders pending (unconfirmed) transactions first, then by block height descending
- * @param limit - Maximum number of transactions to return
  * @param accountId - Account ID to filter by (optional)
  */
-export async function getAllTransactions(limit = 30, accountId?: number): Promise<Result<Transaction[], DbError>> {
+export async function getAllTransactions(accountId?: number): Promise<Result<Transaction[], DbError>> {
   try {
     const database = getDatabase()
 
     let query = `SELECT * FROM transactions`
     const params: SqlParams = []
-    let paramIndex = 1
 
     // Filter by account ID if provided (check for both undefined AND null)
     if (accountId !== undefined && accountId !== null) {
-      query += ` WHERE account_id = $${paramIndex++}`
+      query += ` WHERE account_id = $1`
       params.push(accountId)
     }
 
     query += ` ORDER BY
          CASE WHEN block_height IS NULL THEN 0 ELSE 1 END,
          block_height DESC,
-         created_at DESC
-       LIMIT $${paramIndex}`
-    params.push(limit)
+         created_at DESC`
 
     // Order: pending transactions first (NULL block_height), then confirmed by height DESC
     const rows = await database.select<TransactionRow[]>(query, params)
