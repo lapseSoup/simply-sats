@@ -291,19 +291,19 @@ describe('discoverAccounts', () => {
     expect(deriveWalletKeysForAccount).toHaveBeenLastCalledWith('test mnemonic', 200)
   })
 
-  it('stops after gap limit of 20 consecutive confirmed-empty accounts post-first-hit', async () => {
+  it('stops after gap limit of 5 consecutive confirmed-empty accounts post-first-hit', async () => {
     // Index 1: active
     mockActiveAccount()
-    // Indices 2-21: all empty (20 consecutive empties after first hit)
-    for (let i = 0; i < 20; i++) {
+    // Indices 2-6: all empty (5 consecutive empties after first hit)
+    for (let i = 0; i < 5; i++) {
       mockEmptyAccount()
     }
 
     const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(1)
-    // Should have stopped at index 21 (1 active + 20 empty = gap limit reached)
-    expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(21)
+    // Should have stopped at index 6 (1 active + 5 empty = gap limit reached)
+    expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(6)
   })
 
   it('does not count API failures toward gap limit', async () => {
@@ -328,6 +328,8 @@ describe('discoverAccounts', () => {
 
     expect(found).toBe(2)
     expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
+    // Index 3 is active; after it we need 5 empties before stopping
+    // Index 4-8: empties → gap limit → stop
     expect(createAccount).toHaveBeenCalledWith('Account 4', makeMockKeys(3), 'password', true, 3)
   })
 })

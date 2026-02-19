@@ -104,14 +104,33 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
       const ex = existing[0]!
       const spendableValue = utxo.spendable ? 1 : 0
 
-      // S-7: Only migrate account_id if the address ownership check passes.
-      // A UTXO's address must match the incoming address (or have no stored address)
-      // before we reassign it to a different account. This prevents cross-account
-      // UTXO reassignment when two accounts share an address (e.g. via address reuse).
-      const addressMatches = !ex.address || !utxo.address || ex.address === utxo.address
-      const accId = addressMatches ? (accountId ?? 1) : (ex.account_id ?? 1)
-
-      if (!addressMatches) {
+      // S-7: Preserve address-confirmed account ownership.
+      //
+      // A UTXO belongs to whichever account's address received it (BIP-44 addresses
+      // are unique per account). The first sync that writes a UTXO with a confirmed
+      // address establishes ownership. Subsequent syncs from other accounts that see
+      // the same UTXO (e.g. via shared transaction history) must NOT overwrite the
+      // established account_id.
+      //
+      // Rules:
+      //  1. If the stored address matches the incoming address AND ex.account_id is
+      //     already set — keep the existing account_id (first-writer wins).
+      //  2. If addresses mismatch (shouldn't happen with BIP-44) — keep existing.
+      //  3. If no address is stored yet — accept the incoming account_id.
+      const addressConfirmed = ex.address && utxo.address && ex.address === utxo.address
+      let accId: number
+      if (addressConfirmed && ex.account_id !== null && ex.account_id !== undefined) {
+        // Address ownership already confirmed by a previous sync — preserve it.
+        accId = ex.account_id
+        if (ex.account_id !== (accountId ?? 1)) {
+          dbLogger.debug(`[DB] Preserving existing account_id=${ex.account_id} for UTXO ${utxo.txid.slice(0,8)}:${utxo.vout} (incoming account=${accountId ?? 1} ignored — address already claimed)`)
+        }
+      } else if (!ex.address || !utxo.address || ex.address === utxo.address) {
+        // No confirmed address yet, or same address with no prior claim — accept incoming
+        accId = accountId ?? 1
+      } else {
+        // Address mismatch — keep existing to prevent cross-account reassignment
+        accId = ex.account_id ?? 1
         dbLogger.warn(`[DB] Address mismatch on UTXO ${utxo.txid.slice(0,8)}:${utxo.vout} — keeping existing account_id (stored: ${ex.address}, incoming: ${utxo.address})`)
       }
 

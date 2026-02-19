@@ -51,22 +51,24 @@ const MAX_ACCOUNT_DISCOVERY = 200
 /**
  * Once at least one account is discovered, stop after this many consecutive
  * successfully-confirmed-empty checks. API failures do not count toward this.
+ * BIP-44 specifies a gap limit of 20 for address-level discovery, but for
+ * account-level discovery 5 is sufficient — normal usage doesn't leave 5+
+ * consecutive empty account slots.
  */
-const DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT = 20
+const DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT = 5
 
 /**
  * Delay between each address check within an account (ms).
- * WoC allows roughly 3 req/sec. With 3 addresses per account, we need
- * at least ~340ms between requests to stay under the limit. Use 400ms
- * to give a comfortable margin.
+ * WoC allows ~10 req/sec. With 3 addresses per account at 150ms spacing
+ * we use ~6.7 req/sec — safely below the limit with headroom.
  */
-const DISCOVERY_INTER_ADDRESS_DELAY_MS = 400
+const DISCOVERY_INTER_ADDRESS_DELAY_MS = 150
 
 /**
  * Delay between each account index check (ms) to avoid WoC rate limiting.
  * This is additional breathing room added after all 3 address checks complete.
  */
-const DISCOVERY_INTER_ACCOUNT_DELAY_MS = 200
+const DISCOVERY_INTER_ACCOUNT_DELAY_MS = 50
 
 /**
  * Number of retries per account on API failure, with exponential backoff.
@@ -228,9 +230,8 @@ export async function discoverAccounts(
   })
 
   // Phase 2: Create accounts and attempt sync.
-  // Wait briefly to ensure the initial restore sync has released its DB lock
-  // before we start writing new account rows.
-  await new Promise(resolve => setTimeout(resolve, 2000))
+  // Brief pause to let any in-flight DB writes from the restore sync settle.
+  await new Promise(resolve => setTimeout(resolve, 500))
 
   // Account creation is authoritative for discovery; sync is best-effort.
   let created = 0
