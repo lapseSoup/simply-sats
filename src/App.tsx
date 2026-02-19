@@ -192,16 +192,19 @@ function WalletApp() {
     }
   }, [wallet, showToast])
 
-  // Auto-sync on wallet load (only when account is set)
-  // Single effect handles both sync + data fetch to avoid race conditions
-  // Uses refs for fetchData/performSync to avoid re-triggering when their
-  // identity changes (detectLocks/syncFetchData identity changes)
-  // Auto-sync on account change. Depends ONLY on activeAccountId — NOT wallet.
-  // useAccountSwitching sets wallet BEFORE activeAccountId. If this effect depended
-  // on wallet, it would fire with (newWallet, oldAccountId) — a mismatched pair
-  // that causes needsInitialSync to wrongly return true, triggering a blocking sync
-  // with the wrong account. By depending only on activeAccountId, the effect fires
-  // once when both wallet and accountId are correct.
+  // Coerce wallet to boolean: true when loaded, false when null.
+  // Using this in deps instead of `wallet` directly prevents the effect from firing
+  // on every account switch (where wallet identity changes but stays non-null).
+  // It DOES fire on restore/create (null → non-null) and delete (non-null → null).
+  const hasWallet = !!wallet
+
+  // Auto-sync on wallet load or account change.
+  // Depends on [activeAccountId, hasWallet] — NOT the wallet object itself.
+  // - hasWallet fires the effect on initial restore/create (wallet null → non-null)
+  // - activeAccountId fires on account switches
+  // During account switches, wallet identity changes (Account1Keys → Account2Keys)
+  // but hasWallet stays true, so the effect doesn't re-fire from wallet alone.
+  // This avoids the mismatched (newWallet, oldAccountId) pair that caused wrong data.
   useEffect(() => {
     const currentWallet = walletRef.current
     if (!currentWallet || activeAccountId === null) return
@@ -425,7 +428,7 @@ function WalletApp() {
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
 
     return () => { cancelled = true }
-  }, [activeAccountId])
+  }, [activeAccountId, hasWallet])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {
