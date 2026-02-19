@@ -23,7 +23,7 @@ import { needsInitialSync, syncWallet, getLastSyncTimeForAccount } from './servi
 import { discoverAccounts } from './services/accountDiscovery'
 import { getAccountKeys } from './services/accounts'
 import { getSessionPassword } from './services/sessionPasswordStore'
-import { isAccountSwitchInProgress, switchJustCompleted } from './hooks/useAccountSwitching'
+import { switchJustCompleted } from './hooks/useAccountSwitching'
 // import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive
 
 // Tab order for keyboard navigation
@@ -153,6 +153,11 @@ function WalletApp() {
   // Calling showToast('Wallet ready ✓') inside the effect was the trigger.
   const showToastRef = useRef(showToast)
   useEffect(() => { showToastRef.current = showToast }, [showToast])
+  // walletRef lets checkSync always read the latest wallet without depending on it.
+  // This prevents the effect from firing when setWallet() is called during a switch
+  // (which would cause a mismatched newWallet+oldAccountId pair).
+  const walletRef = useRef(wallet)
+  useEffect(() => { walletRef.current = wallet }, [wallet])
   const accountsRef = useRef(accounts)
   useEffect(() => { accountsRef.current = accounts }, [accounts])
 
@@ -191,48 +196,46 @@ function WalletApp() {
   // Single effect handles both sync + data fetch to avoid race conditions
   // Uses refs for fetchData/performSync to avoid re-triggering when their
   // identity changes (detectLocks/syncFetchData identity changes)
+  // Auto-sync on account change. Depends ONLY on activeAccountId — NOT wallet.
+  // useAccountSwitching sets wallet BEFORE activeAccountId. If this effect depended
+  // on wallet, it would fire with (newWallet, oldAccountId) — a mismatched pair
+  // that causes needsInitialSync to wrongly return true, triggering a blocking sync
+  // with the wrong account. By depending only on activeAccountId, the effect fires
+  // once when both wallet and accountId are correct.
   useEffect(() => {
-    if (!wallet || activeAccountId === null) return
+    const currentWallet = walletRef.current
+    if (!currentWallet || activeAccountId === null) return
 
-    // Cancellation guard: if the effect re-fires while checkSync is running,
-    // the stale invocation will stop at the next check point. This prevents
-    // a stale run from clearing pendingDiscovery params before the real run
-    // gets to them.
     let cancelled = false
 
     const checkSync = async () => {
-      // Peek at discovery params without consuming — we'll clear only if
-      // this invocation actually runs discovery (not cancelled).
+      // Read the latest wallet from ref (always current, no stale closure)
+      const w = walletRef.current
+      if (!w) return
+
       const discoveryParams = peekPendingDiscoveryRef.current()
+      const isPostSwitch = switchJustCompleted()
       logger.info('checkSync starting', {
         hasDiscoveryParams: !!discoveryParams,
-        excludeAccountId: discoveryParams?.excludeAccountId,
-        walletAddress: wallet.walletAddress?.substring(0, 12),
+        walletAddress: w.walletAddress?.substring(0, 12),
         activeAccountId,
-        accountCount: accountsRef.current.length,
-        switchInProgress: isAccountSwitchInProgress()
+        isPostSwitch,
+        accountCount: accountsRef.current.length
       })
-
-      // If an account switch just completed, useAccountSwitching already loaded
-      // all DB data with the correct keys+accountId. Skip the DB preload here
-      // and only check if a background sync is needed.
-      //
-      // If this is NOT a switch (e.g. initial app load, restore), load DB data
-      // and check if initial sync is needed.
-      const isPostSwitch = isAccountSwitchInProgress() || switchJustCompleted()
 
       let needsSync = false
 
       try {
+        // If a switch just completed, useAccountSwitching already loaded all DB
+        // data with the correct keys+accountId. Skip the DB preload here.
         if (!isPostSwitch) {
-          // Initial load or restore: load cached DB data immediately
           await fetchDataFromDBRef.current()
         }
 
         needsSync = await needsInitialSync([
-          wallet.walletAddress,
-          wallet.ordAddress,
-          wallet.identityAddress
+          w.walletAddress,
+          w.ordAddress,
+          w.identityAddress
         ], activeAccountId ?? undefined)
 
         if (needsSync && !isPostSwitch) {
@@ -269,8 +272,6 @@ function WalletApp() {
 
           if (isStale) {
             logger.info('Account data stale, background-syncing', { accountId: activeAccountId, lastSyncTime })
-            // Fire-and-forget: sync in background, don't block UI
-            // silent=true suppresses the syncing spinner — user sees instant DB data
             ;(async () => {
               try {
                 if (cancelled) return
@@ -424,7 +425,7 @@ function WalletApp() {
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
 
     return () => { cancelled = true }
-  }, [wallet, activeAccountId])
+  }, [activeAccountId])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {

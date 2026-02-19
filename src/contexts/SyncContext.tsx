@@ -79,7 +79,8 @@ interface SyncContextType {
     activeAccountId: number | null,
     isRestore?: boolean,
     forceReset?: boolean,
-    silent?: boolean
+    silent?: boolean,
+    isCancelled?: () => boolean
   ) => Promise<void>
   /** Load all data from local DB only (no API calls). Used for instant account switching. */
   fetchDataFromDB: (
@@ -248,12 +249,14 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
   // Sync wallet with blockchain
   // When silent=true, the syncing indicator is suppressed (used for background sync)
+  // When isCancelled is provided, state updates are skipped if the account changed mid-sync
   const performSync = useCallback(async (
     wallet: WalletKeys,
     activeAccountId: number | null,
     isRestore = false,
     forceReset = false,
-    silent = false
+    silent = false,
+    isCancelled?: () => boolean
   ) => {
     if (!silent) setSyncing(true)
     try {
@@ -295,6 +298,16 @@ export function SyncProvider({ children }: SyncProviderProps) {
         )
       }
       syncLogger.info('Sync complete')
+
+      // CRITICAL: If account changed during sync, do NOT update React state.
+      // The sync wrote correct data to the DB (scoped by accountId), but updating
+      // setBalance/setBasketBalances would overwrite the ACTIVE account's values
+      // with this (now-inactive) account's values — causing wrong balance display.
+      if (isCancelled?.()) {
+        syncLogger.info('performSync: account changed during sync, skipping state update', { syncedAccountId: accountId })
+        return
+      }
+
       setSyncError(null)
 
       // Update basket balances from database (scoped to account)
@@ -306,6 +319,12 @@ export function SyncProvider({ children }: SyncProviderProps) {
           getBalanceFromDatabase('locks', accountId),
           getBalanceFromDatabase('derived', accountId)
         ])
+
+        // Check again after async DB reads
+        if (isCancelled?.()) {
+          syncLogger.info('performSync: account changed after balance read, skipping state update', { syncedAccountId: accountId })
+          return
+        }
 
         setBasketBalances({
           default: defaultBal,
@@ -324,6 +343,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error'
       syncLogger.error('Sync failed', error)
+
+      // Don't set error state if account changed — it's not relevant to the new account
+      if (isCancelled?.()) return
 
       // Run diagnostics to identify the exact failure point
       try {
