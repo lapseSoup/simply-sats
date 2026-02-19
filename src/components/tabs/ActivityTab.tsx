@@ -50,7 +50,7 @@ const TransactionItem = memo(function TransactionItem({
     >
       <div className="tx-icon" aria-hidden="true">
         {ordinalOrigin ? (
-          <div style={{ width: 32, height: 32, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 6, overflow: 'hidden', flexShrink: 0, margin: -4 }}>
             <OrdinalImage
               origin={ordinalOrigin}
               contentType={ordinalContentType}

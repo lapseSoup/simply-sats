@@ -13,6 +13,7 @@ import {
   getDerivedAddresses,
   getLocks as getLocksFromDB,
   upsertOrdinalCache,
+  deleteOrdinalCacheEntry,
   getCachedOrdinalContent,
   upsertOrdinalContent,
   hasOrdinalContent,
@@ -132,10 +133,17 @@ export function SyncProvider({ children }: SyncProviderProps) {
   const [syncError, setSyncError] = useState<string | null>(null)
   const [ordinalContentCache, setOrdinalContentCache] = useState<Map<string, OrdinalContentEntry>>(new Map())
   const contentCacheRef = useRef<Map<string, OrdinalContentEntry>>(new Map())
+  // Ref so fetchData can read the current ordinals count without a stale closure
+  const ordinalsRef = useRef<Ordinal[]>(ordinals)
+  // Keep ref in sync with state
+  const setOrdinalsWithRef = useCallback((next: Ordinal[]) => {
+    ordinalsRef.current = next
+    setOrdinals(next)
+  }, [])
 
   const resetSync = useCallback((initialBalance = 0) => {
     setUtxos([])
-    setOrdinals([])
+    setOrdinalsWithRef([])
     setTxHistory([])
     setBasketBalances({ default: 0, ordinals: 0, identity: 0, derived: 0, locks: 0 })
     setBalance(initialBalance)
@@ -143,7 +151,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setSyncError(null)
     setOrdinalContentCache(new Map())
     contentCacheRef.current = new Map()
-  }, [])
+  }, [setOrdinalsWithRef])
 
   // Load all data from local DB only — no API calls. Completes fast for instant switching.
   const fetchDataFromDB = useCallback(async (
@@ -224,12 +232,12 @@ export function SyncProvider({ children }: SyncProviderProps) {
           contentType: cached.contentType,
           content: cached.contentHash
         }))
-        setOrdinals(ordinals)
+        setOrdinalsWithRef(ordinals)
       } else {
         // Cache empty — fall back to UTXOs table (basket='ordinals')
         const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
         if (isCancelled?.()) return
-        setOrdinals(dbOrdinals)
+        setOrdinalsWithRef(dbOrdinals)
       }
 
       // Load content previews from the same cache query
@@ -260,7 +268,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     // ord balance doesn't persist in the UI until the next API fetch.
     setOrdBalance(0)
     setSyncError(null)
-  }, [])
+  }, [setOrdinalsWithRef])
 
   // Sync wallet with blockchain
   // When silent=true, the syncing indicator is suppressed (used for background sync)
@@ -491,12 +499,12 @@ export function SyncProvider({ children }: SyncProviderProps) {
         // Guard: if account switched during async DB call, discard results
         if (isCancelled?.()) return
 
-        // Display DB ordinals immediately (before slow API calls)
-        // Only set from DB if we actually found ordinals — avoids clobbering state
-        // with empty results before API calls complete (fixes ordinals not showing
-        // after 12-word restore, where sync writes UTXOs but not ordinal metadata)
-        if (dbOrdinals.length > 0) {
-          setOrdinals(dbOrdinals)
+        // Display DB ordinals immediately (before slow API calls) — but ONLY on cold
+        // start (when state is currently empty). If ordinals are already in state
+        // (e.g. from an optimistic removal after a transfer), don't overwrite them
+        // with potentially stale DB data before the API results arrive.
+        if (dbOrdinals.length > 0 && ordinalsRef.current.length === 0) {
+          setOrdinalsWithRef(dbOrdinals)
         }
 
         // Load cached content from DB for instant previews
@@ -558,7 +566,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         // Guard: if account switched during slow API calls, discard results
         if (isCancelled?.()) return
 
-        setOrdinals(allOrdinals)
+        setOrdinalsWithRef(allOrdinals)
 
         // Cache ordinal metadata to DB and fetch missing content in background
         cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache, isCancelled ?? (() => false))
@@ -596,7 +604,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       }
       syncLogger.error('Failed to fetch data', error)
     }
-  }, [])
+  }, [setOrdinalsWithRef])
 
   const value: SyncContextType = useMemo(() => ({
     utxos,
@@ -608,7 +616,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     syncError,
     ordinalContentCache,
     setUtxos,
-    setOrdinals,
+    setOrdinals: setOrdinalsWithRef,
     setTxHistory,
     setBasketBalances,
     setBalance,
@@ -617,7 +625,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     performSync,
     fetchDataFromDB,
     fetchData
-  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, ordinalContentCache, setUtxos, setOrdinals, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData])
+  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, ordinalContentCache, setUtxos, setOrdinalsWithRef, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData])
 
   return (
     <SyncContext.Provider value={value}>
@@ -659,6 +667,25 @@ async function cacheOrdinalsInBackground(
       await upsertOrdinalCache(cached)
     }
     syncLogger.debug('Cached ordinal metadata', { count: allOrdinals.length })
+
+    // 1b. Prune stale entries — remove DB cache rows and in-memory content that
+    // are no longer in the API's list (e.g. transferred ordinals). Without this,
+    // fetchDataFromDB would reload the transferred ordinal's thumbnail from the
+    // stale cache entry, making it reappear in the activity item after sync.
+    if (isCancelled()) return
+    const currentOrigins = new Set(allOrdinals.map(o => o.origin))
+    let contentPruned = false
+    for (const origin of Array.from(contentCacheRef.current.keys())) {
+      if (!currentOrigins.has(origin)) {
+        await deleteOrdinalCacheEntry(origin)
+        contentCacheRef.current.delete(origin)
+        contentPruned = true
+      }
+    }
+    if (contentPruned) {
+      setOrdinalContentCache(new Map(contentCacheRef.current))
+      syncLogger.debug('Pruned stale ordinal cache entries')
+    }
 
     // 2. Fetch missing content (up to 10 per cycle)
     if (isCancelled()) return

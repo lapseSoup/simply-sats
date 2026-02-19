@@ -274,6 +274,14 @@ export async function getImageOrdinalsWithContent(): Promise<{ origin: string; c
 }
 
 /**
+ * Delete a single ordinal cache entry by origin (e.g. after a transfer)
+ */
+export async function deleteOrdinalCacheEntry(origin: string): Promise<void> {
+  const database = getDatabase()
+  await database.execute('DELETE FROM ordinal_cache WHERE origin = $1', [origin])
+}
+
+/**
  * Clear entire ordinal cache for an account
  */
 export async function clearOrdinalCache(accountId?: number): Promise<void> {
