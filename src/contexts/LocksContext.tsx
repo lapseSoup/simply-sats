@@ -104,7 +104,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
   // Lock BSV for a number of blocks
   const handleLock = useCallback(async (
-    wallet: WalletKeys,
+    _wallet: WalletKeys,
     amountSats: number,
     blocks: number,
     activeAccountId: number | null,
