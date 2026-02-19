@@ -664,6 +664,7 @@ body::-webkit-scrollbar {
 
 .ordinals-search {
   flex: 1;
+  min-width: 0;
   position: relative;
   display: flex;
   align-items: center;
