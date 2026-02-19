@@ -147,14 +147,14 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
   return (
     <>
     <div className="ordinals-tab">
-      {/* Search and Filter Bar */}
+      {/* Row 1: Search + Inscribe */}
       <div className="ordinals-controls">
         <div className="ordinals-search">
           <span className="search-icon" aria-hidden="true"><Search size={14} strokeWidth={1.75} /></span>
           <input
             type="text"
             className="search-input"
-            placeholder="Search by origin or content type..."
+            placeholder="Search ordinals..."
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
             autoComplete="off"
@@ -173,7 +173,19 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
             </button>
           )}
         </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-sm ordinals-inscribe-btn"
+          onClick={() => setShowInscribeModal(true)}
+          aria-label="Inscribe new ordinal"
+        >
+          <PenLine size={14} strokeWidth={1.75} aria-hidden="true" />
+          Inscribe
+        </button>
+      </div>
 
+      {/* Row 2: View toggle + Filter + Sort */}
+      <div className="ordinals-toolbar">
         <div className="ordinals-view-toggle">
           <button
             className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
@@ -192,19 +204,6 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
             <ListIcon size={14} strokeWidth={1.75} aria-hidden="true" />
           </button>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          onClick={() => setShowInscribeModal(true)}
-          aria-label="Inscribe new ordinal"
-        >
-          <PenLine size={14} strokeWidth={1.75} aria-hidden="true" />
-          Inscribe
-        </button>
-      </div>
-
-      {/* Filter + Sort Dropdowns */}
-      <div className="ordinals-toolbar">
         <select
           className="sort-select"
           value={filterCategory}

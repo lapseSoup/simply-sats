@@ -659,7 +659,12 @@ body::-webkit-scrollbar {
 .ordinals-controls {
   display: flex;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
+  align-items: center;
+}
+
+.ordinals-inscribe-btn {
+  flex-shrink: 0;
 }
 
 .ordinals-search {
@@ -822,7 +827,6 @@ body::-webkit-scrollbar {
 
 .ordinals-view-toggle {
   display: flex;
-  flex-shrink: 0;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -856,6 +860,7 @@ body::-webkit-scrollbar {
   display: flex;
   gap: var(--space-2);
   margin-bottom: var(--space-2);
+  align-items: center;
 }
 
 .sort-select {
