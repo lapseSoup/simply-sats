@@ -247,6 +247,23 @@ describe('discoverAccounts', () => {
     expect(createAccount).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps discovered account when initial sync fails', async () => {
+    // Account 1: has activity
+    mockActiveAccount('a', 1)
+    // Account 2: no activity
+    mockEmptyAccount()
+    // Account 3: no activity
+    mockEmptyAccount()
+
+    vi.mocked(syncWallet).mockRejectedValueOnce(new Error('sync failed'))
+
+    const found = await discoverAccounts('test mnemonic', 'password')
+
+    expect(found).toBe(1)
+    expect(createAccount).toHaveBeenCalledTimes(1)
+    expect(syncWallet).toHaveBeenCalledTimes(1)
+  })
+
   it('respects max discovery cap of 20', async () => {
     // All accounts have activity — should stop at 20
     // Each account check does 3 calls (wallet, ord, identity)

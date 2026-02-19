@@ -108,8 +108,10 @@ export async function discoverAccounts(
     // If retry also fails (API error), continue to next account.
   }
 
-  // Phase 2: Create accounts and sync (heavy API calls isolated from discovery)
-  let found = 0
+  // Phase 2: Create accounts and attempt sync.
+  // Account creation is authoritative for discovery; sync is best-effort.
+  let created = 0
+  let synced = 0
   for (const { index, keys } of discovered) {
     try {
       const createResult = await createAccount(`Account ${index + 1}`, keys, password, true, index)
@@ -117,9 +119,23 @@ export async function discoverAccounts(
         throw createResult.error
       }
       const accountId = createResult.value
-      await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
-      found++
-      accountLogger.info('Discovered and synced account', { accountIndex: index, accountId, name: `Account ${index + 1}` })
+      created++
+      try {
+        await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
+        synced++
+      } catch (syncErr) {
+        accountLogger.warn('Discovered account created but initial sync failed', {
+          accountIndex: index,
+          accountId,
+          error: String(syncErr)
+        })
+      }
+      accountLogger.info('Discovered account', {
+        accountIndex: index,
+        accountId,
+        name: `Account ${index + 1}`,
+        syncSuccessful: synced === created
+      })
     } catch (err) {
       accountLogger.error('Failed to create discovered account', err, { accountIndex: index })
       break // Don't continue if DB write fails
@@ -127,14 +143,14 @@ export async function discoverAccounts(
   }
 
   // Restore the originally active account (createAccount deactivates all others)
-  if (found > 0 && restoreActiveAccountId) {
+  if (created > 0 && restoreActiveAccountId) {
     await switchAccount(restoreActiveAccountId)
     accountLogger.info('Restored active account after discovery', { restoreActiveAccountId })
   }
 
-  if (found > 0) {
-    accountLogger.info('Account discovery complete', { found })
+  if (created > 0) {
+    accountLogger.info('Account discovery complete', { created, synced })
   }
 
-  return found
+  return created
 }

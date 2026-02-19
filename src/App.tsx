@@ -170,37 +170,56 @@ function WalletApp() {
     if (!wallet || activeAccountId === null) return
 
     const checkSync = async () => {
+      // Consume restore-discovery params up front so transient sync/token failures
+      // do not permanently skip discovery for this restore session.
+      const discoveryParams = consumePendingDiscoveryRef.current()
+      logger.info('Account discovery check', {
+        hasParams: !!discoveryParams,
+        excludeAccountId: discoveryParams?.excludeAccountId
+      })
+
+      let needsSync = false
+
       // Load DB data immediately so UI is populated while sync runs
-      await fetchDataRef.current()
+      try {
+        await fetchDataRef.current()
 
-      const needsSync = await needsInitialSync([
-        wallet.walletAddress,
-        wallet.ordAddress,
-        wallet.identityAddress
-      ], activeAccountId ?? undefined)
-      if (needsSync) {
-        logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
-        setSyncPhase('syncing')
-        await performSyncRef.current(true)
-        setSyncPhase('loading')
-      } else {
-        const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
-        if (derivedAddrs.length > 0) {
-          logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
-          await performSyncRef.current(false)
+        needsSync = await needsInitialSync([
+          wallet.walletAddress,
+          wallet.ordAddress,
+          wallet.identityAddress
+        ], activeAccountId ?? undefined)
+        if (needsSync) {
+          logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
+          setSyncPhase('syncing')
+          await performSyncRef.current(true)
+          setSyncPhase('loading')
+        } else {
+          const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
+          if (derivedAddrs.length > 0) {
+            logger.info('Auto-syncing derived addresses', { count: derivedAddrs.length, accountId: activeAccountId })
+            await performSyncRef.current(false)
+          }
         }
-      }
-      // Refresh data after sync to pick up new blockchain data
-      await fetchDataRef.current()
+        // Refresh data after sync to pick up new blockchain data
+        await fetchDataRef.current()
 
-      if (needsSync) {
-        showToast('Wallet ready ✓', 'success')
+        if (needsSync) {
+          showToast('Wallet ready ✓', 'success')
+        }
+      } catch (e) {
+        logger.error('Auto-sync pipeline failed', e)
+      } finally {
+        // Always clear sync phase regardless of success/failure
+        setSyncPhase(null)
       }
-      // Always clear sync phase regardless of whether a full sync was needed
-      setSyncPhase(null)
 
       // Sync token balances as part of initial load
-      await refreshTokensRef.current()
+      try {
+        await refreshTokensRef.current()
+      } catch (e) {
+        logger.error('Token refresh during auto-sync failed', e)
+      }
 
       // Run account discovery AFTER primary sync to avoid race conditions
       // (discoverAccounts changes activeAccountId which would discard fetchData results if concurrent)
@@ -210,11 +229,6 @@ function WalletApp() {
       // If Account 1 was previously synced (needsSync = false), additional accounts on
       // the blockchain still need to be discovered. The ref being non-null is the sole
       // gate: it's only populated during restore and consumed exactly once.
-      const discoveryParams = consumePendingDiscoveryRef.current()
-      logger.info('Account discovery check', {
-        hasParams: !!discoveryParams,
-        excludeAccountId: discoveryParams?.excludeAccountId
-      })
       if (discoveryParams) {
         try {
           const found = await discoverAccounts(
