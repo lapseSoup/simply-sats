@@ -97,6 +97,7 @@ export async function discoverAccounts(
     // Returns null if any check failed (API error — inconclusive).
     const checkActivity = async (): Promise<boolean | null> => {
       const addresses = [keys.walletAddress, keys.ordAddress, keys.identityAddress]
+      const addrLabels = ['wallet', 'ordinals', 'identity']
       let allOk = true
       for (let addrIdx = 0; addrIdx < addresses.length; addrIdx++) {
         const addr = addresses[addrIdx]!
@@ -105,7 +106,24 @@ export async function discoverAccounts(
           await new Promise(resolve => setTimeout(resolve, DISCOVERY_INTER_ADDRESS_DELAY_MS))
         }
         const result = await wocClient.getTransactionHistorySafe(addr)
-        if (!result.ok) { allOk = false; continue }
+        if (!result.ok) {
+          accountLogger.warn('Address check failed', {
+            accountIndex: i,
+            addrType: addrLabels[addrIdx],
+            addr,
+            error: result.error.message,
+            code: result.error.code,
+            status: result.error.status
+          })
+          allOk = false
+          continue
+        }
+        accountLogger.info('Address check ok', {
+          accountIndex: i,
+          addrType: addrLabels[addrIdx],
+          addr,
+          txCount: result.value.length
+        })
         if (result.value.length > 0) return true  // has activity — done
       }
       return allOk ? false : null  // false=confirmed empty, null=API error

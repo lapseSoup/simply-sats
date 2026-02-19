@@ -302,6 +302,14 @@ function WalletApp() {
       if (discoveryParams) {
         // Clear the ref now that we've committed to running discovery
         clearPendingDiscoveryRef.current()
+        // Brief cooldown after sync to let WoC rate-limit window reset.
+        // The initial restore sync makes many API calls; without this pause
+        // the first discovery checks may get rate-limited (429) responses.
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        if (cancelled) {
+          logger.info('checkSync cancelled during pre-discovery cooldown')
+          return
+        }
         logger.info('Account discovery starting', {
           excludeAccountId: discoveryParams.excludeAccountId
         })
