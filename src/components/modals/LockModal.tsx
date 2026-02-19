@@ -22,7 +22,7 @@ interface LockModalProps {
 
 export function LockModal({ onClose }: LockModalProps) {
   const { wallet, balance, utxos, networkInfo } = useWalletState()
-  const { handleLock } = useWalletActions()
+  const { handleLock, performSync } = useWalletActions()
   const { displayInSats, showToast } = useUI()
 
   const [lockAmount, setLockAmount] = useState('')
@@ -116,6 +116,8 @@ export function LockModal({ onClose }: LockModalProps) {
     if (isOk(result)) {
       if (result.value.warning) {
         showToast(result.value.warning, 'warning')
+        // Sync automatically to pick up the lock record from blockchain
+        await performSync()
       } else {
         showToast(`Locked ${lockSats.toLocaleString()} sats for ${blocks} blocks!`)
       }
