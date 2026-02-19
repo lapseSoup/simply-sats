@@ -206,18 +206,33 @@ export function SyncProvider({ children }: SyncProviderProps) {
       syncLogger.warn('fetchDataFromDB: locks read failed', { error: String(e) })
     }
 
-    // Ordinals from DB — always set, even if empty, to clear stale data from previous account
-    try {
-      const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
-      if (isCancelled?.()) return
-      setOrdinals(dbOrdinals)
-    } catch (e) {
-      syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(e) })
-    }
-
-    // Cached ordinal content from DB — always set to clear stale previews
+    // Ordinals from DB — use the ordinal_cache table as the primary source since it
+    // contains the full set from the last API fetch (across all addresses: ord, wallet,
+    // identity, derived). The UTXOs table only has ordAddress UTXOs (basket='ordinals'),
+    // which is a small subset. Fall back to UTXOs if the cache is empty.
     try {
       const cachedOrdinals = await getCachedOrdinals(activeAccountId)
+      if (isCancelled?.()) return
+
+      if (cachedOrdinals.length > 0) {
+        // Map CachedOrdinal → Ordinal for setOrdinals
+        const ordinals: Ordinal[] = cachedOrdinals.map(cached => ({
+          origin: cached.origin,
+          txid: cached.txid,
+          vout: cached.vout,
+          satoshis: cached.satoshis,
+          contentType: cached.contentType,
+          content: cached.contentHash
+        }))
+        setOrdinals(ordinals)
+      } else {
+        // Cache empty — fall back to UTXOs table (basket='ordinals')
+        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
+        if (isCancelled?.()) return
+        setOrdinals(dbOrdinals)
+      }
+
+      // Load content previews from the same cache query
       const newCache = new Map<string, OrdinalContentEntry>()
       for (const cached of cachedOrdinals) {
         if (isCancelled?.()) return
@@ -229,7 +244,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       contentCacheRef.current = newCache
       setOrdinalContentCache(new Map(newCache))
     } catch (e) {
-      syncLogger.warn('fetchDataFromDB: ordinal content cache read failed', { error: String(e) })
+      syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(e) })
     }
 
     // UTXOs from DB
