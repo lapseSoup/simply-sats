@@ -78,7 +78,8 @@ interface SyncContextType {
     wallet: WalletKeys,
     activeAccountId: number | null,
     isRestore?: boolean,
-    forceReset?: boolean
+    forceReset?: boolean,
+    silent?: boolean
   ) => Promise<void>
   /** Load all data from local DB only (no API calls). Used for instant account switching. */
   fetchDataFromDB: (
@@ -247,13 +248,15 @@ export function SyncProvider({ children }: SyncProviderProps) {
   }, [])
 
   // Sync wallet with blockchain
+  // When silent=true, the syncing indicator is suppressed (used for background sync)
   const performSync = useCallback(async (
     wallet: WalletKeys,
     activeAccountId: number | null,
     isRestore = false,
-    forceReset = false
+    forceReset = false,
+    silent = false
   ) => {
-    setSyncing(true)
+    if (!silent) setSyncing(true)
     try {
       // When forceReset, clear all UTXOs so sync rebuilds from chain state
       if (forceReset && activeAccountId) {
@@ -341,7 +344,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         setSyncError(`Sync failed: ${msg}`)
       }
     } finally {
-      setSyncing(false)
+      if (!silent) setSyncing(false)
     }
   }, [setSyncing])
 

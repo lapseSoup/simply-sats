@@ -38,7 +38,7 @@ export interface WalletActionsContextType {
   refreshContacts: () => Promise<void>
 
   // Wallet lifecycle
-  performSync: (isRestore?: boolean, forceReset?: boolean) => Promise<void>
+  performSync: (isRestore?: boolean, forceReset?: boolean, silent?: boolean) => Promise<void>
   /** Load all data from local DB only (no API calls). Used for instant account switching. */
   fetchDataFromDB: () => Promise<void>
   fetchData: () => Promise<void>

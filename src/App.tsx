@@ -249,12 +249,16 @@ function WalletApp() {
           if (isStale) {
             logger.info('Account data stale, background-syncing', { accountId: activeAccountId, lastSyncTime })
             // Fire-and-forget: sync in background, don't block UI
+            // silent=true suppresses the syncing spinner — user sees instant DB data
             ;(async () => {
               try {
                 if (cancelled) return
-                await performSyncRef.current(false)
+                await performSyncRef.current(false, false, true)
                 if (cancelled) return
-                await fetchDataRef.current()
+                // Re-load from DB after sync — avoids API calls that cause visible flicker.
+                // syncWallet already wrote fresh data to the DB; fetchDataFromDB reads it
+                // instantly without the ordinal/UTXO API calls that fetchData makes.
+                await fetchDataFromDBRef.current()
               } catch (e) {
                 logger.warn('Background sync after switch failed', { error: String(e) })
               } finally {
@@ -296,6 +300,7 @@ function WalletApp() {
       if (otherAccounts.length > 0 && !discoveryParams) {
         const sessionPwd = getSessionPassword()
         ;(async () => {
+          let syncedAny = false
           for (const account of otherAccounts) {
             try {
               const keys = await getAccountKeys(account, sessionPwd)
@@ -308,8 +313,18 @@ function WalletApp() {
                 account.id ?? undefined,
                 keys.walletPubKey
               )
+              syncedAny = true
             } catch (e) {
               logger.warn('Background sync failed for account', { accountId: account.id, error: String(e) })
+            }
+          }
+          // Refresh accounts list so Header re-fetches balances from DB
+          // (background sync wrote new UTXO data but React state doesn't know yet)
+          if (syncedAny) {
+            try {
+              await refreshAccountsRef.current()
+            } catch (e) {
+              logger.warn('Failed to refresh accounts after background sync', { error: String(e) })
             }
           }
         })()

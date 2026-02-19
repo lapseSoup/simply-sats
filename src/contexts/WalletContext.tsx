@@ -233,10 +233,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // Sync wallet with blockchain - delegates to SyncContext
   // Captures the account ID at call time and aborts if it changes mid-sync
-  const performSync = useCallback(async (isRestore = false, forceReset = false) => {
+  const performSync = useCallback(async (isRestore = false, forceReset = false, silent = false) => {
     if (!wallet) return
     const accountAtStart = activeAccountIdRef.current
-    await syncPerformSync(wallet, accountAtStart, isRestore, forceReset)
+    await syncPerformSync(wallet, accountAtStart, isRestore, forceReset, silent)
     // If account changed while sync was running, the results are already discarded
     // by the cancellation token inside syncWallet (via startNewSync)
     if (activeAccountIdRef.current !== accountAtStart) {
