@@ -87,9 +87,14 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
         signal: controller.signal
       })
 
-      // Retry on server errors (5xx) if we have attempts remaining
-      if (response.status >= 500 && attempt < WOC_MAX_RETRIES - 1) {
-        const delay = WOC_RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
+      // Retry on 429 (rate limited) and 5xx (server errors) if we have attempts remaining
+      if ((response.status === 429 || response.status >= 500) && attempt < WOC_MAX_RETRIES - 1) {
+        // For rate limiting, use a longer delay to respect the server's limit.
+        // Check for Retry-After header, fall back to exponential backoff with higher base.
+        const retryAfterSec = response.headers.get('Retry-After')
+        const delay = retryAfterSec
+          ? Number(retryAfterSec) * 1000
+          : (response.status === 429 ? 2000 : WOC_RETRY_BASE_DELAY_MS) * Math.pow(2, attempt)
         await new Promise(resolve => setTimeout(resolve, delay))
         return fetchWithTimeout(url, options, attempt + 1)
       }

@@ -32,11 +32,18 @@ const MAX_ACCOUNT_DISCOVERY = 200
 const DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT = 20
 
 /**
- * Delay between each account index check (ms) to avoid WoC rate limiting.
- * At ~500ms per account with 3 serial address checks, this keeps us well
- * under WoC's limit while still discovering 20+ accounts in a reasonable time.
+ * Delay between each address check within an account (ms).
+ * WoC allows roughly 3 req/sec. With 3 addresses per account, we need
+ * at least ~340ms between requests to stay under the limit. Use 400ms
+ * to give a comfortable margin.
  */
-const DISCOVERY_INTER_ACCOUNT_DELAY_MS = 300
+const DISCOVERY_INTER_ADDRESS_DELAY_MS = 400
+
+/**
+ * Delay between each account index check (ms) to avoid WoC rate limiting.
+ * This is additional breathing room added after all 3 address checks complete.
+ */
+const DISCOVERY_INTER_ACCOUNT_DELAY_MS = 200
 
 /**
  * Number of retries per account on API failure, with exponential backoff.
@@ -82,7 +89,12 @@ export async function discoverAccounts(
     const checkActivity = async (): Promise<boolean | null> => {
       const addresses = [keys.walletAddress, keys.ordAddress, keys.identityAddress]
       let allOk = true
-      for (const addr of addresses) {
+      for (let addrIdx = 0; addrIdx < addresses.length; addrIdx++) {
+        const addr = addresses[addrIdx]!
+        // Delay between each address request to stay under WoC rate limit
+        if (addrIdx > 0) {
+          await new Promise(resolve => setTimeout(resolve, DISCOVERY_INTER_ADDRESS_DELAY_MS))
+        }
         const result = await wocClient.getTransactionHistorySafe(addr)
         if (!result.ok) { allOk = false; continue }
         if (result.value.length > 0) return true  // has activity — done

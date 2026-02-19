@@ -132,6 +132,12 @@ function WalletApp() {
   useEffect(() => { consumePendingDiscoveryRef.current = consumePendingDiscovery }, [consumePendingDiscovery])
   const refreshAccountsRef = useRef(refreshAccounts)
   useEffect(() => { refreshAccountsRef.current = refreshAccounts }, [refreshAccounts])
+  // setSyncPhase arrives via NetworkContext's useMemo, which recreates whenever
+  // syncPhase/networkInfo/syncing/usdPrice change. Keeping it in the effect deps
+  // caused an infinite loop: setSyncPhase('syncing') → syncPhase changes →
+  // useMemo recreates → new setSyncPhase reference → effect re-fires → repeat.
+  const setSyncPhaseRef = useRef(setSyncPhase)
+  useEffect(() => { setSyncPhaseRef.current = setSyncPhase }, [setSyncPhase])
   const accountsRef = useRef(accounts)
   useEffect(() => { accountsRef.current = accounts }, [accounts])
 
@@ -195,9 +201,9 @@ function WalletApp() {
         ], activeAccountId ?? undefined)
         if (needsSync) {
           logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
-          setSyncPhase('syncing')
+          setSyncPhaseRef.current('syncing')
           await performSyncRef.current(true)
-          setSyncPhase('loading')
+          setSyncPhaseRef.current('loading')
         } else {
           const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
           if (derivedAddrs.length > 0) {
@@ -215,7 +221,7 @@ function WalletApp() {
         logger.error('Auto-sync pipeline failed', e)
       } finally {
         // Always clear sync phase regardless of success/failure
-        setSyncPhase(null)
+        setSyncPhaseRef.current(null)
       }
 
       // Sync token balances as part of initial load
@@ -277,7 +283,7 @@ function WalletApp() {
     }
 
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
-  }, [wallet, activeAccountId, showToast, setSyncPhase])
+  }, [wallet, activeAccountId, showToast])
 
   // Auto-clear mnemonic from memory after timeout (security)
   useEffect(() => {
