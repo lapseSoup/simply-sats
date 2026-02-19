@@ -23,6 +23,7 @@ import { needsInitialSync, syncWallet, getLastSyncTimeForAccount } from './servi
 import { discoverAccounts } from './services/accountDiscovery'
 import { getAccountKeys } from './services/accounts'
 import { getSessionPassword } from './services/sessionPasswordStore'
+import { isAccountSwitchInProgress } from './hooks/useAccountSwitching'
 // import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive
 
 // Tab order for keyboard navigation
@@ -215,8 +216,13 @@ function WalletApp() {
 
       // Load cached DB data immediately so UI is populated while sync runs.
       // This is DB-only (no API calls) — completes in <100ms.
+      // Skip if an account switch is in progress — useAccountSwitching already
+      // called fetchDataFromDB with the correct keys. Running it here would use
+      // stale wallet keys from the closure (the "one behind" bug).
       try {
-        await fetchDataFromDBRef.current()
+        if (!isAccountSwitchInProgress()) {
+          await fetchDataFromDBRef.current()
+        }
 
         needsSync = await needsInitialSync([
           wallet.walletAddress,
@@ -328,10 +334,10 @@ function WalletApp() {
       if (discoveryParams) {
         // Clear the ref now that we've committed to running discovery
         clearPendingDiscoveryRef.current()
-        // Cooldown after sync to let WoC rate-limit window reset.
-        // The initial restore sync makes many API calls; without this pause
-        // the first discovery checks may get rate-limited (429) responses.
-        await new Promise(resolve => setTimeout(resolve, 5000))
+        // Brief cooldown to let DB writes from restore sync settle.
+        // Discovery uses Tauri's Rust reqwest client (not WKWebView), so
+        // CDN caching and rate limiting are less of a concern.
+        await new Promise(resolve => setTimeout(resolve, 1000))
         if (cancelled) {
           logger.info('checkSync cancelled during pre-discovery cooldown')
           return

@@ -22,7 +22,7 @@ vi.mock('../domain/wallet', () => ({
   deriveWalletKeysForAccount: vi.fn()
 }))
 
-// Mock sync service
+// Mock sync service (syncWallet no longer called during discovery — sync deferred to background)
 vi.mock('./sync', () => ({
   syncWallet: vi.fn().mockResolvedValue(undefined)
 }))
@@ -62,8 +62,9 @@ const makeMockKeys = (index: number) => ({
 })
 
 /**
- * Helper: mock serial address balance checks for one account with no activity.
- * Checks wallet → ord → identity addresses.
+ * Helper: mock address balance checks for one account with no activity.
+ * All 3 addresses (wallet, ord, identity) return 0.
+ * With parallel checks, all 3 values are consumed at once.
  */
 const mockEmptyAccount = () => {
   mockWocClient.getBalanceSafe
@@ -73,22 +74,25 @@ const mockEmptyAccount = () => {
 }
 
 /**
- * Helper: mock serial address balance checks for one account with wallet activity.
- * Short-circuits after wallet returns non-zero balance (ord+identity not called).
+ * Helper: mock address balance checks for one account with wallet activity.
+ * All 3 addresses are checked in parallel, so we queue 3 values.
  */
 const mockActiveAccount = () => {
   mockWocClient.getBalanceSafe
-    .mockResolvedValueOnce({ ok: true, value: 100 }) // wallet — active, short-circuits
+    .mockResolvedValueOnce({ ok: true, value: 100 }) // wallet — active
+    .mockResolvedValueOnce({ ok: true, value: 0 })   // ord
+    .mockResolvedValueOnce({ ok: true, value: 0 })   // identity
 }
 
 /**
- * Helper: mock serial address balance checks for one account with ordinals activity.
- * wallet is empty, ord has balance — identity not called.
+ * Helper: mock address balance checks for one account with ordinals activity.
+ * All 3 addresses are checked in parallel, so we queue 3 values.
  */
 const mockOrdActiveAccount = () => {
   mockWocClient.getBalanceSafe
     .mockResolvedValueOnce({ ok: true, value: 0 })   // wallet — empty
-    .mockResolvedValueOnce({ ok: true, value: 100 }) // ord — active, short-circuits
+    .mockResolvedValueOnce({ ok: true, value: 100 }) // ord — active
+    .mockResolvedValueOnce({ ok: true, value: 0 })   // identity
 }
 
 describe('discoverAccounts', () => {
@@ -127,8 +131,8 @@ describe('discoverAccounts', () => {
     expect(deriveWalletKeysForAccount).toHaveBeenLastCalledWith('test mnemonic', 200)
   })
 
-  it('discovers accounts with wallet address activity and syncs them', async () => {
-    // Account 1 (index 1): wallet has balance — short-circuits after 1 call
+  it('discovers accounts with wallet address activity (sync deferred)', async () => {
+    // Account 1 (index 1): wallet has balance
     mockActiveAccount()
 
     const found = await runDiscovery('test mnemonic', 'password')
@@ -136,10 +140,8 @@ describe('discoverAccounts', () => {
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledTimes(1)
     expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
-    // Verify sync was called for the discovered account
-    expect(syncWallet).toHaveBeenCalledTimes(1)
-    const keys = makeMockKeys(1)
-    expect(syncWallet).toHaveBeenCalledWith(keys.walletAddress, keys.ordAddress, keys.identityAddress, 1, keys.walletPubKey)
+    // Sync is deferred to background — not called during discovery
+    expect(syncWallet).not.toHaveBeenCalled()
   })
 
   it('discovers accounts with ordinals address activity', async () => {
@@ -216,14 +218,16 @@ describe('discoverAccounts', () => {
   })
 
   it('retries on API failure and discovers account on successful retry', async () => {
-    // Index 1: all 3 addresses fail on first attempt
+    // Index 1: wallet fails on first attempt (3 parallel checks)
     mockWocClient.getBalanceSafe
       .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } }) // wallet fail
-      .mockResolvedValueOnce({ ok: true, value: 0 })  // ord ok (continues despite wallet fail)
+      .mockResolvedValueOnce({ ok: true, value: 0 })  // ord ok
       .mockResolvedValueOnce({ ok: true, value: 0 })  // identity ok — result: null (wallet failed)
-    // Retry attempt 1: wallet has balance
+    // Retry attempt 1: wallet has balance (3 parallel checks)
     mockWocClient.getBalanceSafe
       .mockResolvedValueOnce({ ok: true, value: 100 }) // wallet active — found!
+      .mockResolvedValueOnce({ ok: true, value: 0 })   // ord
+      .mockResolvedValueOnce({ ok: true, value: 0 })   // identity
 
     const found = await runDiscovery('test mnemonic', 'password')
 
@@ -264,17 +268,16 @@ describe('discoverAccounts', () => {
     expect(createAccount).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps discovered account when initial sync fails', async () => {
+  it('creates discovered account without immediate sync', async () => {
     // Account 1 (index 1): has activity
     mockActiveAccount()
-
-    vi.mocked(syncWallet).mockRejectedValueOnce(new Error('sync failed'))
 
     const found = await runDiscovery('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledTimes(1)
-    expect(syncWallet).toHaveBeenCalledTimes(1)
+    // Sync is deferred to background
+    expect(syncWallet).not.toHaveBeenCalled()
   })
 
   it('respects max discovery cap of 200', async () => {
@@ -307,14 +310,15 @@ describe('discoverAccounts', () => {
   })
 
   it('does not count API failures toward gap limit', async () => {
-    // Index 1: active
+    // Index 1: active (3 parallel address checks)
     mockActiveAccount()
-    // Index 2: API failure (wallet fails) — should NOT count toward gap limit
+    // Index 2: API failure (wallet fails, ord+identity ok) — result: null
+    // Each attempt checks 3 addresses in parallel
     mockWocClient.getBalanceSafe
       .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'fail' } }) // wallet fail
-      .mockResolvedValueOnce({ ok: true, value: 0 })
-      .mockResolvedValueOnce({ ok: true, value: 0 })
-    // All retries for index 2 also fail
+      .mockResolvedValueOnce({ ok: true, value: 0 })  // ord ok
+      .mockResolvedValueOnce({ ok: true, value: 0 })  // identity ok
+    // All 3 retries for index 2 also fail (3 addresses per retry)
     for (let i = 0; i < 3; i++) {
       mockWocClient.getBalanceSafe
         .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'fail' } })

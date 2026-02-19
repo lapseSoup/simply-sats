@@ -26,6 +26,13 @@ import { getSessionPassword, clearSessionPassword, NO_PASSWORD } from '../servic
 let _lastSwitchDiag = ''
 export function getLastSwitchDiag(): string { return _lastSwitchDiag }
 
+// Module-level flag — true while an account switch is actively in progress.
+// Prevents App.tsx checkSync from running fetchDataFromDB with stale wallet keys
+// (the "one behind" bug: activeAccountId updates before wallet, so checkSync
+// would load data using the old wallet keys for the new account ID).
+let switchInProgress = false
+export function isAccountSwitchInProgress(): boolean { return switchInProgress }
+
 interface UseAccountSwitchingOptions {
   fetchVersionRef: MutableRefObject<number>
   accountsSwitchAccount: (accountId: number, password: string | null) => Promise<WalletKeys | null>
@@ -135,6 +142,7 @@ export function useAccountSwitching({
       return false
     }
     switchingRef.current = true
+    switchInProgress = true
     _lastSwitchDiag = `START id=${accountId} accts=${accounts.length}`
     try {
       // Cancel any in-flight sync for the previous account before switching
@@ -186,12 +194,7 @@ export function useAccountSwitching({
           walletLogger.error('Failed to update active account in database')
           return false
         }
-        // Set active account state directly to avoid a DB round-trip that could
-        // return stale data if account discovery is concurrently modifying rows.
-        setActiveAccountState(account, accountId)
-        // Refresh accounts list in background (updates dropdown + balance display)
-        refreshAccounts().catch(e => walletLogger.warn('Background account refresh failed', e))
-        _lastSwitchDiag += ' | DB+refresh OK'
+        _lastSwitchDiag += ' | DB OK'
       } else {
         // FALLBACK: If Rust has no mnemonic (shouldn't happen while wallet is unlocked),
         // try the password-based approach via the module-level session password store.
@@ -228,7 +231,12 @@ export function useAccountSwitching({
           await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? ((accountId ?? 1) - 1))
         }
 
-        // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
+        // CRITICAL ORDER: Set wallet BEFORE activeAccountId to prevent "one behind" bug.
+        // App.tsx checkSync depends on [wallet, activeAccountId]. If activeAccountId
+        // changes first (via setActiveAccountState), checkSync fires with stale wallet
+        // keys from the old account, loading wrong data. By setting wallet first,
+        // checkSync won't fire until activeAccountId also changes — at which point
+        // both values are correct.
         setWallet({ ...keys, mnemonic: '' })
         setIsLocked(false)
 
@@ -259,6 +267,14 @@ export function useAccountSwitching({
           // Best-effort: full sync will pick up data anyway
         }
 
+        // Set active account state LAST — this triggers the App.tsx checkSync effect.
+        // By this point wallet keys and DB data are already correct, so checkSync
+        // will see the right wallet + accountId pair.
+        setActiveAccountState(account, accountId)
+        // Refresh accounts list in background (updates dropdown + balance display)
+        refreshAccounts().catch(e => walletLogger.warn('Background account refresh failed', e))
+        _lastSwitchDiag += ' | switch complete'
+
         walletLogger.info('Account switched successfully', { accountId })
         return true
       }
@@ -271,6 +287,7 @@ export function useAccountSwitching({
       return false
     } finally {
       switchingRef.current = false
+      switchInProgress = false
       // If another switch was requested while this one was running, execute the latest one.
       // This ensures rapid A→B→C clicking lands on C, not A.
       const pendingId = pendingSwitchRef.current

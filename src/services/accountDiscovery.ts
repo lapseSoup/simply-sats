@@ -14,7 +14,6 @@ import { deriveWalletKeysForAccount } from '../domain/wallet'
 import type { WalletKeys } from '../domain/types'
 import { createWocClient } from '../infrastructure/api/wocClient'
 import { createAccount, switchAccount, getAccountByIdentity } from './accounts'
-import { syncWallet } from './sync'
 import { accountLogger } from './logger'
 
 /** True when running inside the Tauri desktop shell. */
@@ -58,17 +57,11 @@ const MAX_ACCOUNT_DISCOVERY = 200
 const DISCOVERY_GAP_LIMIT_AFTER_FIRST_HIT = 5
 
 /**
- * Delay between each address check within an account (ms).
- * WoC allows ~10 req/sec. With 3 addresses per account at 150ms spacing
- * we use ~6.7 req/sec — safely below the limit with headroom.
+ * Delay between each account index check (ms).
+ * With parallel address checks, each account only makes 3 concurrent requests.
+ * A small inter-account delay prevents burst patterns.
  */
-const DISCOVERY_INTER_ADDRESS_DELAY_MS = 150
-
-/**
- * Delay between each account index check (ms) to avoid WoC rate limiting.
- * This is additional breathing room added after all 3 address checks complete.
- */
-const DISCOVERY_INTER_ACCOUNT_DELAY_MS = 50
+const DISCOVERY_INTER_ACCOUNT_DELAY_MS = 25
 
 /**
  * Number of retries per account on API failure, with exponential backoff.
@@ -116,7 +109,7 @@ export async function discoverAccounts(
       identityAddress: keys.identityAddress
     })
 
-    // Check all 3 addresses serially to avoid burst rate limiting.
+    // Check all 3 addresses for activity (balance > 0).
     // In Tauri: uses Rust's reqwest client via check_address_balance command,
     // which bypasses WKWebView's CDN cache that serves stale data for some addresses.
     // In browser/tests: falls back to wocClient.getBalanceSafe (webview fetch).
@@ -127,48 +120,41 @@ export async function discoverAccounts(
     const checkActivity = async (): Promise<boolean | null> => {
       const addresses = [keys.walletAddress, keys.ordAddress, keys.identityAddress]
       const addrLabels = ['wallet', 'ordinals', 'identity']
-      let allOk = true
-      for (let addrIdx = 0; addrIdx < addresses.length; addrIdx++) {
-        const addr = addresses[addrIdx]!
-        // Delay between each address request to stay under WoC rate limit
-        if (addrIdx > 0) {
-          await new Promise(resolve => setTimeout(resolve, DISCOVERY_INTER_ADDRESS_DELAY_MS))
-        }
 
-        let balance: number | null = null
+      // Check a single address for balance
+      const checkOne = async (addr: string, label: string): Promise<{ balance: number | null; ok: boolean }> => {
         if (useTauri) {
-          // Route through Rust to bypass WKWebView CDN caching
-          balance = await checkBalanceViaRust(addr)
+          const balance = await checkBalanceViaRust(addr)
           if (balance === null) {
-            accountLogger.warn('Rust address check failed', { accountIndex: i, addrType: addrLabels[addrIdx], addr })
-            allOk = false
-            continue
+            accountLogger.warn('Rust address check failed', { accountIndex: i, addrType: label, addr })
+            return { balance: null, ok: false }
           }
+          accountLogger.info('Address check ok', { accountIndex: i, addrType: label, addr, balance, via: 'rust' })
+          return { balance, ok: true }
         } else {
           const result = await wocClient.getBalanceSafe(addr)
           if (!result.ok) {
             accountLogger.warn('Address check failed', {
-              accountIndex: i,
-              addrType: addrLabels[addrIdx],
-              addr,
-              error: result.error.message,
-              code: result.error.code,
-              status: result.error.status
+              accountIndex: i, addrType: label, addr,
+              error: result.error.message, code: result.error.code, status: result.error.status
             })
-            allOk = false
-            continue
+            return { balance: null, ok: false }
           }
-          balance = result.value
+          accountLogger.info('Address check ok', { accountIndex: i, addrType: label, addr, balance: result.value, via: 'fetch' })
+          return { balance: result.value, ok: true }
         }
+      }
 
-        accountLogger.info('Address check ok', {
-          accountIndex: i,
-          addrType: addrLabels[addrIdx],
-          addr,
-          balance,
-          via: useTauri ? 'rust' : 'fetch'
-        })
-        if (balance > 0) return true  // has balance — account is active
+      // Check all 3 addresses in parallel — Rust reqwest is not rate-limited by WKWebView
+      const results = await Promise.allSettled(
+        addresses.map((addr, idx) => checkOne(addr, addrLabels[idx]!))
+      )
+
+      let allOk = true
+      for (const result of results) {
+        if (result.status === 'rejected') { allOk = false; continue }
+        if (!result.value.ok) { allOk = false; continue }
+        if (result.value.balance !== null && result.value.balance > 0) return true
       }
       return allOk ? false : null  // false=confirmed empty, null=API error
     }
@@ -233,9 +219,8 @@ export async function discoverAccounts(
   // Brief pause to let any in-flight DB writes from the restore sync settle.
   await new Promise(resolve => setTimeout(resolve, 500))
 
-  // Account creation is authoritative for discovery; sync is best-effort.
+  // Account creation is authoritative for discovery; sync is deferred to background.
   let created = 0
-  let synced = 0
   for (const { index, keys } of discovered) {
     // Retry createAccount up to 3 times on DB lock (code 5) — the restore sync
     // may still briefly hold the lock even after our wait above.
@@ -284,21 +269,14 @@ export async function discoverAccounts(
     }
 
     created++
-    try {
-      await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, accountId, keys.walletPubKey)
-      synced++
-    } catch (syncErr) {
-      accountLogger.warn('Discovered account created but initial sync failed', {
-        accountIndex: index,
-        accountId,
-        error: String(syncErr)
-      })
-    }
-    accountLogger.info('Discovered account', {
+    // Sync deferred to background — App.tsx background-syncs inactive accounts
+    // after checkSync completes, and switching to this account triggers
+    // needsInitialSync which runs a full sync. This makes discovery instant
+    // instead of waiting 10-20s per account for syncWallet.
+    accountLogger.info('Discovered account (sync deferred)', {
       accountIndex: index,
       accountId,
-      name: `Account ${index + 1}`,
-      syncSuccessful: synced === created
+      name: `Account ${index + 1}`
     })
   }
 
@@ -311,7 +289,6 @@ export async function discoverAccounts(
   const totalDurationMs = Date.now() - startTime
   accountLogger.info('Account discovery complete', {
     created,
-    synced,
     totalDurationMs,
     phase1DurationMs
   })
