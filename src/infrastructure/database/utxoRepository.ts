@@ -30,10 +30,29 @@ async function ensureColumn(probeColumn: string, ddlStatements: string[]): Promi
   const database = getDatabase()
   try {
     await database.select<Record<string, unknown>[]>(`SELECT ${probeColumn} FROM utxos LIMIT 1`)
-  } catch {
+    // Probe succeeded — column exists, nothing to do
+  } catch (probeError) {
+    // Only run DDL if this is a "no such column" error; other errors (e.g., DB busy)
+    // should not trigger DDL migrations because the column already exists and
+    // ALTER TABLE would fail with "duplicate column name", masking the real error.
+    const msg = probeError instanceof Error ? probeError.message : String(probeError)
+    if (!msg.toLowerCase().includes('no such column')) {
+      dbLogger.warn(`[DB] Column probe for '${probeColumn}' failed with non-schema error — skipping DDL`, { error: msg })
+      return
+    }
     dbLogger.debug(`[DB] Adding ${probeColumn} column(s) to utxos table...`)
     for (const ddl of ddlStatements) {
-      await database.execute(ddl)
+      try {
+        await database.execute(ddl)
+      } catch (ddlError) {
+        // Ignore "duplicate column" — the column may have been added by another path
+        const ddlMsg = ddlError instanceof Error ? ddlError.message : String(ddlError)
+        if (ddlMsg.toLowerCase().includes('duplicate column')) {
+          dbLogger.debug(`[DB] Column already exists (duplicate), skipping: ${ddl.substring(0, 60)}`)
+        } else {
+          throw ddlError
+        }
+      }
     }
   }
 }

@@ -194,9 +194,10 @@ function WalletApp() {
       await fetchDataRef.current()
 
       if (needsSync) {
-        setSyncPhase(null)
         showToast('Wallet ready ✓', 'success')
       }
+      // Always clear sync phase regardless of whether a full sync was needed
+      setSyncPhase(null)
 
       // Sync token balances as part of initial load
       await refreshTokensRef.current()

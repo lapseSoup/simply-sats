@@ -259,7 +259,7 @@ export function useAccountSwitching({
 
         // Preload transaction history from DB
         try {
-          const dbTxsResult = await getAllTransactions(30, accountId)
+          const dbTxsResult = await getAllTransactions(100, accountId)
           const dbTxs = dbTxsResult.ok ? dbTxsResult.value : []
           if (fetchVersionRef.current === preloadVersion && dbTxs.length > 0) {
             setTxHistory(dbTxs.map((tx: Transaction) => ({
