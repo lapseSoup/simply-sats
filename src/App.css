@@ -685,8 +685,7 @@ body::-webkit-scrollbar {
 }
 
 .search-input {
-  flex: 1 1 0;
-  width: 0;
+  width: 100%;
   min-width: 0;
   padding: 10px 36px 10px 36px;
   background: var(--bg-secondary);
@@ -3825,6 +3824,7 @@ a:focus-visible,
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding-right: var(--space-2);
 }
 
 .locks-section {
