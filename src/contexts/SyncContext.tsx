@@ -19,6 +19,7 @@ import {
   upsertOrdinalContent,
   hasOrdinalContent,
   getCachedOrdinals,
+  ensureOrdinalCacheRowForTransferred,
   type CachedOrdinal
 } from '../infrastructure/database'
 import {
@@ -45,6 +46,7 @@ export interface TxHistoryItem {
   amount?: number
   address?: string
   description?: string
+  createdAt?: number
 }
 
 export interface BasketBalances {
@@ -98,6 +100,12 @@ interface SyncContextType {
     onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void,
     isCancelled?: () => boolean
   ) => Promise<void>
+  /**
+   * Fetch and cache ordinal content if not already in the in-memory cache.
+   * Used by ActivityTab to lazily load thumbnails for transferred ordinals
+   * that are missing from the cache after a fresh seed restore.
+   */
+  fetchOrdinalContentIfMissing: (origin: string, contentType?: string) => Promise<void>
 }
 
 const SyncContext = createContext<SyncContextType | null>(null)
@@ -190,12 +198,14 @@ export function SyncProvider({ children }: SyncProviderProps) {
         tx_hash: tx.txid,
         height: tx.blockHeight || 0,
         amount: tx.amount,
-        description: tx.description
+        description: tx.description,
+        createdAt: tx.createdAt
       }))
       dbTxHistory.sort((a, b) => {
         const aH = a.height || 0, bH = b.height || 0
         if (aH === 0 && bH !== 0) return -1
         if (bH === 0 && aH !== 0) return 1
+        if (aH === 0 && bH === 0) return (b.createdAt ?? 0) - (a.createdAt ?? 0)
         return bH - aH
       })
       setTxHistory(dbTxHistory)
@@ -466,7 +476,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
         tx_hash: tx.txid,
         height: tx.blockHeight || 0,
         amount: tx.amount,
-        description: tx.description
+        description: tx.description,
+        createdAt: tx.createdAt
       }))
 
       dbTxHistory.sort((a, b) => {
@@ -474,6 +485,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         const bHeight = b.height || 0
         if (aHeight === 0 && bHeight !== 0) return -1
         if (bHeight === 0 && aHeight !== 0) return 1
+        if (aHeight === 0 && bHeight === 0) return (b.createdAt ?? 0) - (a.createdAt ?? 0)
         return bHeight - aHeight
       })
 
@@ -610,6 +622,39 @@ export function SyncProvider({ children }: SyncProviderProps) {
     }
   }, [setOrdinalsWithRef])
 
+  // Lazily fetch ordinal content for transferred ordinals missing from the cache.
+  // Called by ActivityTab when displaying transfer history items after a fresh restore
+  // where ordinal_cache may be empty (content was never fetched for the new wallet).
+  const fetchOrdinalContentIfMissing = useCallback(async (origin: string, contentType?: string) => {
+    if (contentCacheRef.current.has(origin)) return  // already in memory
+
+    try {
+      // Check if content exists in DB first (cheapest path)
+      const hasCached = await hasOrdinalContent(origin)
+      if (hasCached) {
+        const content = await getCachedOrdinalContent(origin)
+        if (content && (content.contentData || content.contentText)) {
+          contentCacheRef.current.set(origin, content)
+          setOrdinalContentCache(new Map(contentCacheRef.current))
+        }
+        return
+      }
+
+      // Fetch from API (GorillaPool)
+      const content = await fetchOrdinalContent(origin, contentType)
+      if (content) {
+        // Ensure a row exists so we can store the content
+        await ensureOrdinalCacheRowForTransferred(origin)
+        await upsertOrdinalContent(origin, content.contentData, content.contentText)
+        contentCacheRef.current.set(origin, content)
+        setOrdinalContentCache(new Map(contentCacheRef.current))
+        syncLogger.debug('Fetched transferred ordinal content', { origin })
+      }
+    } catch (e) {
+      syncLogger.warn('fetchOrdinalContentIfMissing failed (non-critical)', { origin, error: String(e) })
+    }
+  }, [])
+
   const value: SyncContextType = useMemo(() => ({
     utxos,
     ordinals,
@@ -628,8 +673,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
     resetSync,
     performSync,
     fetchDataFromDB,
-    fetchData
-  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, ordinalContentCache, setUtxos, setOrdinalsWithRef, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData])
+    fetchData,
+    fetchOrdinalContentIfMissing
+  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, ordinalContentCache, setUtxos, setOrdinalsWithRef, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData, fetchOrdinalContentIfMissing])
 
   return (
     <SyncContext.Provider value={value}>

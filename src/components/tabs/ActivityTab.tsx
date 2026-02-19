@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, memo, useCallback, useMemo, type ReactNode } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
-import { useWalletState } from '../../contexts'
+import { useWalletState, useSyncContext } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
@@ -13,7 +13,7 @@ const VIRTUALIZATION_THRESHOLD = 50
 const TX_ITEM_HEIGHT = 70 // ~64px item + 6px gap
 
 // Transaction type for the component
-type TxHistoryItem = { tx_hash: string; amount?: number; height: number; description?: string }
+type TxHistoryItem = { tx_hash: string; amount?: number; height: number; description?: string; createdAt?: number }
 
 // Memoized transaction item to prevent unnecessary re-renders
 const TransactionItem = memo(function TransactionItem({
@@ -92,6 +92,7 @@ const TransactionItem = memo(function TransactionItem({
 
 export function ActivityTab() {
   const { txHistory, locks, loading, activeAccountId, ordinals, ordinalContentCache } = useWalletState()
+  const { fetchOrdinalContentIfMissing } = useSyncContext()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
 
   // Sync is handled by App.tsx checkSync effect — no duplicate sync here
@@ -148,11 +149,38 @@ export function ActivityTab() {
     return map
   }, [ordinals])
 
-  const getTxTypeAndIcon = useCallback((tx: { tx_hash: string; amount?: number }) => {
+  // Collect origins of transferred ordinals whose content is not yet in the cache.
+  // After a fresh seed restore ordinal_cache is empty, so we need to lazily fetch
+  // content from GorillaPool for any ordinal transfer activity items.
+  const missingTransferOrigins = useMemo(() => {
+    const missing: Array<{ origin: string; contentType?: string }> = []
+    for (const tx of txHistory) {
+      const m = tx.description?.match(/Transferred ordinal ([0-9a-f]{64}_\d+)/)
+      if (m) {
+        const origin = m[1]!
+        if (!ordinalContentCache.has(origin)) {
+          missing.push({ origin, contentType: ordinalByOrigin.get(origin)?.contentType })
+        }
+      }
+    }
+    return missing
+  }, [txHistory, ordinalContentCache, ordinalByOrigin])
+
+  // Trigger lazy fetches for missing transferred ordinal content (fire-and-forget)
+  useEffect(() => {
+    for (const { origin, contentType } of missingTransferOrigins) {
+      void fetchOrdinalContentIfMissing(origin, contentType)
+    }
+  }, [missingTransferOrigins, fetchOrdinalContentIfMissing])
+
+  const getTxTypeAndIcon = useCallback((tx: { tx_hash: string; amount?: number; description?: string }) => {
     // Check active locks from context + historical lock labels from DB
     const isLockTx = lockTxidSet.has(tx.tx_hash) || lockTxids.has(tx.tx_hash)
     const isUnlockTx = unlockTxids.has(tx.tx_hash)
+    // Fallback: description-based detection for restored wallets where transaction_labels
+    // may not have been re-created (ordinal labels are only written during live transfers)
     const isOrdinalTx = ordinalTxids.has(tx.tx_hash)
+      || /Transferred ordinal [0-9a-f]{64}_\d+/.test(tx.description ?? '')
 
     if (isLockTx) {
       return { type: 'Locked', icon: <Lock size={14} strokeWidth={1.75} /> }
@@ -176,9 +204,12 @@ export function ActivityTab() {
   // New format: "Transferred ordinal {txid}_{vout} to {addr}..."
   // This allows thumbnail lookup from ordinalContentCache even after the ordinal
   // is no longer in the ordinals array (i.e. after it's been transferred out).
+  // Does NOT depend on ordinalTxids — description is the source of truth here,
+  // so this works correctly after a fresh seed restore where transaction_labels
+  // may not have the 'ordinal' label re-created.
   // Legacy fallback: "Transferred ordinal {txid.slice(0,8)}..." — try ordinalByOrigin map.
   const getOrdinalProps = useCallback((tx: TxHistoryItem) => {
-    if (!ordinalTxids.has(tx.tx_hash) || !tx.description) return {}
+    if (!tx.description) return {}
 
     // New format: full "txid_vout" origin embedded in description
     const newMatch = tx.description.match(/Transferred ordinal ([0-9a-f]{64}_\d+)/)
@@ -203,7 +234,7 @@ export function ActivityTab() {
       ordinalContentType: ord.contentType,
       ordinalCachedContent: ordinalContentCache.get(ord.origin)
     }
-  }, [ordinalTxids, ordinalByOrigin, ordinalContentCache])
+  }, [ordinalByOrigin, ordinalContentCache])
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {

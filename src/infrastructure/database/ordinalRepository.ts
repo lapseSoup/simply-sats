@@ -126,6 +126,28 @@ export async function getCachedOrdinalContent(origin: string): Promise<{ content
 }
 
 /**
+ * Ensure a minimal ordinal_cache row exists for a transferred ordinal.
+ * Inserts a placeholder row (transferred=1) if none exists yet, so that
+ * fetched content can be stored for historical activity tab display.
+ * Safe to call multiple times — INSERT OR IGNORE is a no-op if row exists.
+ */
+export async function ensureOrdinalCacheRowForTransferred(origin: string): Promise<void> {
+  const database = getDatabase()
+  const parts = origin.split('_')
+  const txid = parts.slice(0, -1).join('_')
+  const vout = parseInt(parts[parts.length - 1] ?? '0', 10)
+  try {
+    await database.execute(
+      `INSERT OR IGNORE INTO ordinal_cache (origin, txid, vout, satoshis, transferred, fetched_at)
+       VALUES ($1, $2, $3, 1, 1, $4)`,
+      [origin, txid || origin, vout, Date.now()]
+    )
+  } catch (_e) {
+    // Non-fatal — row may already exist or table may not exist yet
+  }
+}
+
+/**
  * Insert or update ordinal cache entry (metadata only)
  */
 export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> {
