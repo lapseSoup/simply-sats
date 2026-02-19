@@ -17,22 +17,20 @@ import { createAccount, switchAccount } from './accounts'
 import { syncWallet } from './sync'
 import { accountLogger } from './logger'
 
-const MAX_ACCOUNT_DISCOVERY = 20
-
 /**
- * Gap limit for account discovery.
- * BIP-44 recommends 20 for address gaps, but for accounts we use a smaller
- * value. We use 2 (not 1) so that a single empty or failed account doesn't
- * prematurely stop discovery when Account 5 exists but Account 4 has no activity.
+ * Maximum derivation indices to scan (1..N) when restoring from mnemonic.
+ *
+ * We intentionally scan the full window instead of stopping after a small
+ * empty-account gap, because users can delete accounts and later create new
+ * ones at higher derivation indices.
  */
-const DISCOVERY_GAP_LIMIT = 2
+const MAX_ACCOUNT_DISCOVERY = 20
 
 /**
  * Discover additional accounts with on-chain activity.
  *
  * Starting from account index 1, derives keys and checks wallet, ordinals,
- * AND identity addresses for transaction history. Stops after DISCOVERY_GAP_LIMIT
- * consecutive empty accounts (not on the first gap).
+ * AND identity addresses for transaction history.
  *
  * @param mnemonic - The BIP-39 mnemonic used to derive accounts
  * @param password - Password for encrypting discovered account keys
@@ -49,8 +47,6 @@ export async function discoverAccounts(
   // Phase 1: Lightweight discovery (just check addresses for activity)
   // No syncing here — avoids rate limiting between checks
   const discovered: { index: number; keys: WalletKeys }[] = []
-  let consecutiveEmpty = 0
-
   for (let i = 1; i <= MAX_ACCOUNT_DISCOVERY; i++) {
     const keys = await deriveWalletKeysForAccount(mnemonic, i)
     accountLogger.info('Checking account for activity', {
@@ -81,19 +77,13 @@ export async function discoverAccounts(
 
     if (walletHasActivity || ordHasActivity || idHasActivity) {
       discovered.push({ index: i, keys })
-      consecutiveEmpty = 0 // Reset gap counter on activity found
       continue
     }
 
-    // Only count toward gap on successful empty responses, not API failures
+    // Successful empty account: keep scanning remaining derivation indices.
     const allSucceeded = walletResult.ok && ordResult.ok && idResult.ok
     if (allSucceeded) {
-      consecutiveEmpty++
-      accountLogger.debug('Empty account found', { accountIndex: i, consecutiveEmpty, gapLimit: DISCOVERY_GAP_LIMIT })
-      if (consecutiveEmpty >= DISCOVERY_GAP_LIMIT) {
-        accountLogger.info('Gap limit reached, stopping discovery', { consecutiveEmpty })
-        break
-      }
+      accountLogger.debug('Empty account found', { accountIndex: i })
       continue
     }
 
@@ -112,23 +102,17 @@ export async function discoverAccounts(
       (retryI.ok && retryI.value.length > 0)
     ) {
       discovered.push({ index: i, keys })
-      consecutiveEmpty = 0
     } else if (retryW.ok && retryO.ok && retryI.ok) {
-      // Retry succeeded but all empty — count toward gap
-      consecutiveEmpty++
-      if (consecutiveEmpty >= DISCOVERY_GAP_LIMIT) {
-        accountLogger.info('Gap limit reached after retry, stopping discovery', { consecutiveEmpty })
-        break
-      }
+      accountLogger.debug('Empty account found after retry', { accountIndex: i })
     }
-    // If retry also fails (API error), don't count toward gap — just continue to next account
+    // If retry also fails (API error), continue to next account.
   }
 
   // Phase 2: Create accounts and sync (heavy API calls isolated from discovery)
   let found = 0
   for (const { index, keys } of discovered) {
     try {
-      const createResult = await createAccount(`Account ${index + 1}`, keys, password, true)
+      const createResult = await createAccount(`Account ${index + 1}`, keys, password, true, index)
       if (!createResult.ok) {
         throw createResult.error
       }

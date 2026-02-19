@@ -87,20 +87,23 @@ describe('discoverAccounts', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(deriveWalletKeysForAccount).mockImplementation((_mnemonic, index) => Promise.resolve(makeMockKeys(index)))
+    // Default all unstubbed address checks to "successful but empty" so tests can
+    // override only the account indices relevant to each scenario.
+    mockWocClient.getTransactionHistorySafe.mockResolvedValue({ ok: true, value: [] })
   })
 
-  it('discovers 0 accounts when first 2 accounts have no activity (gap limit = 2)', async () => {
+  it('discovers 0 accounts when the full discovery window has no activity', async () => {
     // Account 1: no activity
     mockEmptyAccount()
-    // Account 2: no activity (gap limit reached)
+    // Account 2: no activity
     mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(0)
     expect(createAccount).not.toHaveBeenCalled()
-    expect(deriveWalletKeysForAccount).toHaveBeenCalledWith('test mnemonic', 1)
-    expect(deriveWalletKeysForAccount).toHaveBeenCalledWith('test mnemonic', 2)
+    expect(deriveWalletKeysForAccount).toHaveBeenCalledTimes(20)
+    expect(deriveWalletKeysForAccount).toHaveBeenLastCalledWith('test mnemonic', 20)
   })
 
   it('discovers accounts with wallet address activity and syncs them', async () => {
@@ -108,14 +111,14 @@ describe('discoverAccounts', () => {
     mockActiveAccount('abc', 850000)
     // Account 2: no activity
     mockEmptyAccount()
-    // Account 3: no activity (gap limit reached)
+    // Account 3: no activity
     mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledTimes(1)
-    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true)
+    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
     // Verify sync was called for the discovered account
     expect(syncWallet).toHaveBeenCalledTimes(1)
     const keys = makeMockKeys(1)
@@ -127,13 +130,13 @@ describe('discoverAccounts', () => {
     mockOrdActiveAccount('def', 850001)
     // Account 2: no activity
     mockEmptyAccount()
-    // Account 3: no activity (gap limit reached)
+    // Account 3: no activity
     mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(1)
-    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true)
+    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
   })
 
   it('discovers accounts with identity address activity', async () => {
@@ -144,13 +147,13 @@ describe('discoverAccounts', () => {
       .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'id-tx', height: 850002 }] }) // identity active!
     // Account 2: no activity
     mockEmptyAccount()
-    // Account 3: no activity (gap limit reached)
+    // Account 3: no activity
     mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(1)
-    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true)
+    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
   })
 
   it('discovers multiple consecutive accounts', async () => {
@@ -160,32 +163,30 @@ describe('discoverAccounts', () => {
     mockActiveAccount('b', 2)
     // Account 3: no activity
     mockEmptyAccount()
-    // Account 4: no activity (gap limit reached)
+    // Account 4: no activity
     mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(2)
     expect(createAccount).toHaveBeenCalledTimes(2)
-    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true)
-    expect(createAccount).toHaveBeenCalledWith('Account 3', makeMockKeys(2), 'password', true)
+    expect(createAccount).toHaveBeenCalledWith('Account 2', makeMockKeys(1), 'password', true, 1)
+    expect(createAccount).toHaveBeenCalledWith('Account 3', makeMockKeys(2), 'password', true, 2)
   })
 
-  it('gap limit 2 allows discovering account after one empty account', async () => {
+  it('discovers account after multiple empty indices', async () => {
     // Account 1: no activity (empty)
     mockEmptyAccount()
-    // Account 2: HAS activity — gap limit 2 means we check past one empty
+    // Account 2: no activity (empty)
+    mockEmptyAccount()
+    // Account 3: has activity — should still be discovered
     mockActiveAccount('found-it', 850000)
-    // Account 3: no activity
-    mockEmptyAccount()
-    // Account 4: no activity (gap limit reached — 2 consecutive empty after last active)
-    mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
 
     expect(found).toBe(1)
     expect(createAccount).toHaveBeenCalledTimes(1)
-    expect(createAccount).toHaveBeenCalledWith('Account 3', makeMockKeys(2), 'password', true)
+    expect(createAccount).toHaveBeenCalledWith('Account 4', makeMockKeys(3), 'password', true, 3)
   })
 
   it('retries on API failure and stops only if retry also fails', async () => {
@@ -199,7 +200,7 @@ describe('discoverAccounts', () => {
       .mockResolvedValueOnce({ ok: true, value: [] })
       .mockResolvedValueOnce({ ok: true, value: [] })
       .mockResolvedValueOnce({ ok: true, value: [] })
-    // Account 2: empty (gap limit reached: 2 consecutive empty)
+    // Account 2: empty
     mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
@@ -221,7 +222,7 @@ describe('discoverAccounts', () => {
       .mockResolvedValueOnce({ ok: true, value: [] })
     // Account 2: no activity
     mockEmptyAccount()
-    // Account 3: no activity (gap limit reached)
+    // Account 3: no activity
     mockEmptyAccount()
 
     const found = await discoverAccounts('test mnemonic', 'password')
@@ -235,7 +236,7 @@ describe('discoverAccounts', () => {
     mockActiveAccount('a', 1)
     // Account 2: no activity
     mockEmptyAccount()
-    // Account 3: no activity (gap limit reached)
+    // Account 3: no activity
     mockEmptyAccount()
 
     vi.mocked(createAccount).mockRejectedValueOnce(new Error('DB write failed'))
