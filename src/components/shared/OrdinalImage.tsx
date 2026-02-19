@@ -55,8 +55,11 @@ export const OrdinalImage = memo(function OrdinalImage({
     )
   }
 
-  // For non-image types without cached content, show fallback icon
-  if (!isImage || !url) {
+  // For non-image types without cached content, show fallback icon.
+  // Exception: if contentType is unknown (undefined) but we have a URL, attempt
+  // the network load — GorillaPool serves the correct content-type header and the
+  // browser will render it if it's an image. Fall back to the Diamond icon on error.
+  if (!url || (contentType !== undefined && !isImage)) {
     return (
       <div className={`ordinal-img-fallback ordinal-img-${size}`}>
         <FallbackIcon contentType={contentType} size={size} />

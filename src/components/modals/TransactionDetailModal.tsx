@@ -1,6 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { currentMonitor } from '@tauri-apps/api/window'
+import { Maximize2 } from 'lucide-react'
 import { getTransactionByTxid } from '../../infrastructure/database'
 import { useWalletState } from '../../contexts'
 import { getWocClient } from '../../infrastructure/api/wocClient'
@@ -78,9 +81,25 @@ export function TransactionDetailModal({
   }, [transaction.description])
 
   const ordinalCachedContent = ordinalOrigin ? ordinalContentCache.get(ordinalOrigin) : undefined
-  // Derive contentType: check if cached data looks like an image (has binary content)
-  // vs text. OrdinalImage falls back to network fetch if contentType is undefined.
-  const ordinalContentType = ordinalCachedContent?.contentData ? 'image/png' : ordinalCachedContent?.contentText ? 'text/plain' : undefined
+  // contentType is intentionally left undefined when unknown — OrdinalImage will
+  // attempt a network fetch from GorillaPool and show a fallback only on error.
+  const ordinalContentType: string | undefined = undefined
+
+  const openOrdinalFullSize = useCallback(async () => {
+    if (!ordinalOrigin) return
+    const label = `ordinal-${ordinalOrigin.slice(0, 12).replace(/[^a-zA-Z0-9-_]/g, '_')}`
+    const imageUrl = `https://ordinals.gorillapool.io/content/${ordinalOrigin}`
+    const viewerUrl = `${window.location.origin}/ordinal-viewer.html?src=${encodeURIComponent(imageUrl)}`
+    let width = 800, height = 800
+    try {
+      const monitor = await currentMonitor()
+      if (monitor) {
+        width = Math.min(width, Math.floor(monitor.size.width / monitor.scaleFactor * 0.9))
+        height = Math.min(height, Math.floor(monitor.size.height / monitor.scaleFactor * 0.9))
+      }
+    } catch { /* use defaults */ }
+    new WebviewWindow(label, { url: viewerUrl, title: `Ordinal ${ordinalOrigin.slice(0, 8)}...`, width, height, resizable: true })
+  }, [ordinalOrigin])
 
   // Labels via hook (handles loading, optimistic updates, suggestions)
   const { labels, suggestedLabels: hookSuggestions, loading: labelsLoading, addLabel, removeLabel } = useTransactionLabels({
@@ -171,10 +190,18 @@ export function TransactionDetailModal({
   return (
     <Modal title="Transaction Details" onClose={onClose}>
       <div className="modal-content">
-        {/* Ordinal Thumbnail — shown for ordinal transfer txs */}
+        {/* Ordinal Preview — shown for ordinal transfer txs, same style as OrdinalModal */}
         {ordinalOrigin && (
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-            <div style={{ width: 160, height: 160, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px 0' }}>
+            <div
+              className="ordinal-preview ordinal-preview-clickable"
+              style={{ maxHeight: 200 }}
+              onClick={openOrdinalFullSize}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter') void openOrdinalFullSize() }}
+              aria-label="Open full size viewer"
+            >
               <OrdinalImage
                 origin={ordinalOrigin}
                 contentType={ordinalContentType}
@@ -183,6 +210,9 @@ export function TransactionDetailModal({
                 lazy={false}
                 cachedContent={ordinalCachedContent}
               />
+              <div className="ordinal-preview-overlay" aria-hidden="true">
+                <Maximize2 size={16} strokeWidth={2} />
+              </div>
             </div>
           </div>
         )}
