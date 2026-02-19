@@ -61,6 +61,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const {
     utxos,
     ordinals,
+    setOrdinals,
     ordinalContentCache,
     txHistory,
     basketBalances,
@@ -72,6 +73,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
     fetchDataFromDB: syncFetchDataFromDB,
     fetchData: syncFetchData
   } = useSyncContext()
+
+  // Stable ref so callbacks always see current ordinals without stale closures
+  const ordinalsRef = useRef(ordinals)
+  useEffect(() => { ordinalsRef.current = ordinals }, [ordinals])
+  const getOrdinals = useCallback(() => ordinalsRef.current, [])
 
   // Get lock state from LocksContext
   const {
@@ -339,6 +345,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     activeAccountId,
     fetchData,
     refreshTokens,
+    setOrdinals,
+    getOrdinals,
     sendTokenAction
   })
 

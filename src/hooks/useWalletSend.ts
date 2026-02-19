@@ -34,6 +34,8 @@ interface UseWalletSendOptions {
   activeAccountId: number | null
   fetchData: () => Promise<void>
   refreshTokens: () => Promise<void>
+  setOrdinals: (ordinals: Ordinal[]) => void
+  getOrdinals: () => Ordinal[]
   sendTokenAction: (
     wallet: WalletKeys,
     ticker: string,
@@ -56,6 +58,8 @@ export function useWalletSend({
   activeAccountId,
   fetchData,
   refreshTokens,
+  setOrdinals,
+  getOrdinals,
   sendTokenAction
 }: UseWalletSendOptions): UseWalletSendReturn {
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
@@ -275,12 +279,16 @@ export function useWalletSend({
         fundingUtxos
       )
 
+      // Optimistically remove the transferred ordinal from UI state immediately
+      // so the count drops right away without waiting for the next full sync.
+      setOrdinals(getOrdinals().filter(o => !(o.txid === ordinal.txid && o.vout === ordinal.vout)))
+
       await fetchData()
       return ok({ txid })
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Transfer failed')
     }
-  }, [wallet, fetchData])
+  }, [wallet, fetchData, setOrdinals, getOrdinals])
 
   const handleListOrdinal = useCallback(async (
     ordinal: Ordinal,

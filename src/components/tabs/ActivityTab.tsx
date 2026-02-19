@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, memo, useCallback, useMemo, type ReactNode } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle, ImageIcon } from 'lucide-react'
 import { List } from 'react-window'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
@@ -77,14 +77,15 @@ export function ActivityTab() {
   // Sync is handled by App.tsx checkSync effect — no duplicate sync here
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
 
-  // Fetch lock/unlock labels via hook (refreshes when txHistory or account changes)
+  // Fetch lock/unlock/ordinal labels via hook (refreshes when txHistory or account changes)
   const { txidsByLabel } = useLabeledTransactions({
-    labelNames: ['lock', 'unlock'],
+    labelNames: ['lock', 'unlock', 'ordinal'],
     accountId: activeAccountId ?? undefined,
     refreshKey: txHistory
   })
   const lockTxids = useMemo(() => txidsByLabel.get('lock') ?? new Set<string>(), [txidsByLabel])
   const unlockTxids = useMemo(() => txidsByLabel.get('unlock') ?? new Set<string>(), [txidsByLabel])
+  const ordinalTxids = useMemo(() => txidsByLabel.get('ordinal') ?? new Set<string>(), [txidsByLabel])
 
   // Virtualization state (hooks must be called unconditionally)
   const shouldVirtualize = txHistory.length >= VIRTUALIZATION_THRESHOLD
@@ -120,12 +121,16 @@ export function ActivityTab() {
     // Check active locks from context + historical lock labels from DB
     const isLockTx = lockTxidSet.has(tx.tx_hash) || lockTxids.has(tx.tx_hash)
     const isUnlockTx = unlockTxids.has(tx.tx_hash)
+    const isOrdinalTx = ordinalTxids.has(tx.tx_hash)
 
     if (isLockTx) {
       return { type: 'Locked', icon: <Lock size={14} strokeWidth={1.75} /> }
     }
     if (isUnlockTx) {
       return { type: 'Unlocked', icon: <Unlock size={14} strokeWidth={1.75} /> }
+    }
+    if (isOrdinalTx) {
+      return { type: 'Ordinal Transfer', icon: <ImageIcon size={14} strokeWidth={1.75} /> }
     }
     if (tx.amount != null && tx.amount > 0) {
       return { type: 'Received', icon: <ArrowDownLeft size={14} strokeWidth={1.75} /> }
@@ -134,7 +139,7 @@ export function ActivityTab() {
       return { type: 'Sent', icon: <ArrowUpRight size={14} strokeWidth={1.75} /> }
     }
     return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }
-  }, [lockTxidSet, lockTxids, unlockTxids])
+  }, [lockTxidSet, lockTxids, unlockTxids, ordinalTxids])
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {
