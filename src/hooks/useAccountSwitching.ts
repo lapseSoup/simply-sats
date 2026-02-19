@@ -32,6 +32,13 @@ export function getLastSwitchDiag(): string { return _lastSwitchDiag }
 let switchInProgress = false
 export function isAccountSwitchInProgress(): boolean { return switchInProgress }
 
+// Timestamp of the last switch completion. checkSync uses this to detect that
+// a switch just happened (even though switchInProgress is already false by the
+// time the effect fires). If the effect fires within 2s of switch completion,
+// it skips the blocking DB preload / initial sync — the switch already handled it.
+let lastSwitchCompletedAt = 0
+export function switchJustCompleted(): boolean { return (Date.now() - lastSwitchCompletedAt) < 2000 }
+
 interface UseAccountSwitchingOptions {
   fetchVersionRef: MutableRefObject<number>
   accountsSwitchAccount: (accountId: number, password: string | null) => Promise<WalletKeys | null>
@@ -251,9 +258,12 @@ export function useAccountSwitching({
           // Best-effort: full sync will pick up data anyway
         }
 
-        // Set active account state LAST — this triggers the App.tsx checkSync effect.
-        // By this point wallet keys and DB data are already correct, so checkSync
-        // will see the right wallet + accountId pair.
+        // Clear the switch-in-progress flag and record completion time BEFORE
+        // setting active account state. setActiveAccountState triggers the App.tsx
+        // checkSync effect. switchJustCompleted() tells checkSync to skip the
+        // blocking DB preload / initial sync since the switch already handled it.
+        switchInProgress = false
+        lastSwitchCompletedAt = Date.now()
         setActiveAccountState(account, accountId)
         // Refresh accounts list in background (updates dropdown + balance display)
         refreshAccounts().catch(e => walletLogger.warn('Background account refresh failed', e))

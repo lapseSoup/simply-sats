@@ -23,7 +23,7 @@ import { needsInitialSync, syncWallet, getLastSyncTimeForAccount } from './servi
 import { discoverAccounts } from './services/accountDiscovery'
 import { getAccountKeys } from './services/accounts'
 import { getSessionPassword } from './services/sessionPasswordStore'
-import { isAccountSwitchInProgress } from './hooks/useAccountSwitching'
+import { isAccountSwitchInProgress, switchJustCompleted } from './hooks/useAccountSwitching'
 // import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive
 
 // Tab order for keyboard navigation
@@ -209,18 +209,23 @@ function WalletApp() {
         excludeAccountId: discoveryParams?.excludeAccountId,
         walletAddress: wallet.walletAddress?.substring(0, 12),
         activeAccountId,
-        accountCount: accountsRef.current.length
+        accountCount: accountsRef.current.length,
+        switchInProgress: isAccountSwitchInProgress()
       })
+
+      // If an account switch just completed, useAccountSwitching already loaded
+      // all DB data with the correct keys+accountId. Skip the DB preload here
+      // and only check if a background sync is needed.
+      //
+      // If this is NOT a switch (e.g. initial app load, restore), load DB data
+      // and check if initial sync is needed.
+      const isPostSwitch = isAccountSwitchInProgress() || switchJustCompleted()
 
       let needsSync = false
 
-      // Load cached DB data immediately so UI is populated while sync runs.
-      // This is DB-only (no API calls) — completes in <100ms.
-      // Skip if an account switch is in progress — useAccountSwitching already
-      // called fetchDataFromDB with the correct keys. Running it here would use
-      // stale wallet keys from the closure (the "one behind" bug).
       try {
-        if (!isAccountSwitchInProgress()) {
+        if (!isPostSwitch) {
+          // Initial load or restore: load cached DB data immediately
           await fetchDataFromDBRef.current()
         }
 
@@ -230,7 +235,7 @@ function WalletApp() {
           wallet.identityAddress
         ], activeAccountId ?? undefined)
 
-        if (needsSync) {
+        if (needsSync && !isPostSwitch) {
           // First-ever sync for this account: must block — no cached data to show
           logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
           setSyncPhaseRef.current('syncing')
@@ -239,8 +244,24 @@ function WalletApp() {
           await fetchDataRef.current()
           showToastRef.current('Wallet ready ✓', 'success')
           setSyncPhaseRef.current(null)
+        } else if (needsSync && isPostSwitch) {
+          // Account was just switched to but has never been synced (e.g. discovered
+          // account). Do a background sync — DB data was already loaded by the switch.
+          logger.info('Post-switch initial sync (background)', { accountId: activeAccountId })
+          ;(async () => {
+            try {
+              if (cancelled) return
+              await performSyncRef.current(false, false, true)
+              if (cancelled) return
+              await fetchDataFromDBRef.current()
+            } catch (e) {
+              logger.warn('Post-switch background sync failed', { error: String(e) })
+            } finally {
+              setSyncPhaseRef.current(null)
+            }
+          })()
         } else {
-          // Already-synced account: DB data is already loaded (fetchDataFromDB above).
+          // Already-synced account: DB data is already loaded.
           // Only sync in background if data is stale (>5 min since last sync).
           const SYNC_COOLDOWN_MS = 5 * 60 * 1000
           const lastSyncTime = await getLastSyncTimeForAccount(activeAccountId!)
@@ -255,9 +276,6 @@ function WalletApp() {
                 if (cancelled) return
                 await performSyncRef.current(false, false, true)
                 if (cancelled) return
-                // Re-load from DB after sync — avoids API calls that cause visible flicker.
-                // syncWallet already wrote fresh data to the DB; fetchDataFromDB reads it
-                // instantly without the ordinal/UTXO API calls that fetchData makes.
                 await fetchDataFromDBRef.current()
               } catch (e) {
                 logger.warn('Background sync after switch failed', { error: String(e) })
