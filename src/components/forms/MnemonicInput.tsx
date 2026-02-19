@@ -296,7 +296,7 @@ export function MnemonicInput({
           font-size: 13px;
           line-height: 1.5;
           transition: border-color 0.2s ease, box-shadow 0.2s ease;
-          padding-right: 2.5rem;
+          padding-right: 3rem;
         }
 
         .mnemonic-clear-btn {
@@ -305,6 +305,8 @@ export function MnemonicInput({
           right: 0.5rem;
           width: 1.75rem;
           height: 1.75rem;
+          min-width: 1.75rem;
+          min-height: 1.75rem;
           border-radius: 50%;
           border: none;
           background: var(--bg-surface-2);

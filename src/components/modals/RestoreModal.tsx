@@ -48,15 +48,16 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
     return true
   }
 
-  const handleRestoreFromMnemonic = async () => {
-    if (!validatePasswordFields()) return
+  const handleRestoreFromMnemonic = async (overrideSkip?: boolean) => {
+    const willSkip = overrideSkip ?? skipPassword
+    if (!willSkip && !validatePasswordFields()) return
     try {
       const words = restoreMnemonic.trim().split(/\s+/)
       if (words.length !== 12 && words.length !== 24) {
         showToast('Please enter exactly 12 or 24 words', 'warning')
         return
       }
-      const pwd = skipPassword ? null : password
+      const pwd = willSkip ? null : password
       const success = await handleRestoreWallet(restoreMnemonic.trim(), pwd)
       if (success) {
         onSuccess()
@@ -300,7 +301,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
               </button>
               <button
                 className="btn btn-primary"
-                onClick={handleRestoreFromMnemonic}
+                onClick={() => void handleRestoreFromMnemonic()}
                 disabled={!restoreMnemonic.trim() || (!skipPassword && (!password || !confirmPassword))}
               >
                 {skipPassword ? 'Restore Without Password' : 'Restore Wallet'}
@@ -446,6 +447,10 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
                 setPassword('')
                 setConfirmPassword('')
                 setPasswordError('')
+                // If mnemonic is already complete, restore immediately — no redundant screen
+                if (restoreMnemonic.trim()) {
+                  void handleRestoreFromMnemonic(true)
+                }
               }}>
                 Continue Without Password
               </button>
