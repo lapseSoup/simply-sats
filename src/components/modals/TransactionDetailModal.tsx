@@ -3,14 +3,13 @@ import { useUI } from '../../contexts/UIContext'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { currentMonitor } from '@tauri-apps/api/window'
-import { Maximize2 } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { getTransactionByTxid } from '../../infrastructure/database'
 import { useWalletState } from '../../contexts'
 import { getWocClient } from '../../infrastructure/api/wocClient'
 import { btcToSatoshis } from '../../utils/satoshiConversion'
 import { useTransactionLabels } from '../../hooks/useTransactionLabels'
 import { Modal } from '../shared/Modal'
-import { OrdinalImage } from '../shared/OrdinalImage'
 
 // Default label suggestions (always shown as fallback)
 const DEFAULT_LABELS = ['personal', 'business', 'exchange']
@@ -69,7 +68,7 @@ export function TransactionDetailModal({
   onLabelsUpdated
 }: TransactionDetailModalProps) {
   const { copyToClipboard, showToast, formatUSD, displayInSats, formatBSVShort } = useUI()
-  const { activeAccountId, ordinalContentCache } = useWalletState()
+  const { activeAccountId } = useWalletState()
 
   // Extract ordinal origin from description if this is an ordinal transfer
   // New format: "Transferred ordinal {txid}_{vout} to {addr}..."
@@ -79,11 +78,6 @@ export function TransactionDetailModal({
     const match = desc.match(/Transferred ordinal ([0-9a-f]{64}_\d+)/)
     return match?.[1] ?? null
   }, [transaction.description])
-
-  const ordinalCachedContent = ordinalOrigin ? ordinalContentCache.get(ordinalOrigin) : undefined
-  // contentType is intentionally left undefined when unknown — OrdinalImage will
-  // attempt a network fetch from GorillaPool and show a fallback only on error.
-  const ordinalContentType: string | undefined = undefined
 
   const openOrdinalFullSize = useCallback(async () => {
     if (!ordinalOrigin) return
@@ -190,30 +184,17 @@ export function TransactionDetailModal({
   return (
     <Modal title="Transaction Details" onClose={onClose}>
       <div className="modal-content">
-        {/* Ordinal Preview — shown for ordinal transfer txs, same style as OrdinalModal */}
+        {/* View Ordinal button — opens full-size viewer for ordinal transfer txs */}
         {ordinalOrigin && (
           <div style={{ padding: '12px 16px 0' }}>
-            <div
-              className="ordinal-preview ordinal-preview-clickable"
-              style={{ maxHeight: 200 }}
-              onClick={openOrdinalFullSize}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') void openOrdinalFullSize() }}
-              aria-label="Open full size viewer"
+            <button
+              className="btn btn-secondary"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              onClick={() => void openOrdinalFullSize()}
             >
-              <OrdinalImage
-                origin={ordinalOrigin}
-                contentType={ordinalContentType}
-                size="lg"
-                alt="Transferred Ordinal"
-                lazy={false}
-                cachedContent={ordinalCachedContent}
-              />
-              <div className="ordinal-preview-overlay" aria-hidden="true">
-                <Maximize2 size={16} strokeWidth={2} />
-              </div>
-            </div>
+              <ExternalLink size={14} strokeWidth={1.75} />
+              View Ordinal
+            </button>
           </div>
         )}
 

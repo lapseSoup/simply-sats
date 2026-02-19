@@ -1,0 +1,3355 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for services/sync.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../prettify.css" />
+    <link rel="stylesheet" href="../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../index.html">All files</a> / <a href="index.html">services</a> sync.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">8.37% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>32/382</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">4.06% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>8/197</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">28% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>14/50</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">7.75% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>27/348</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a>
+<a name='L197'></a><a href='#L197'>197</a>
+<a name='L198'></a><a href='#L198'>198</a>
+<a name='L199'></a><a href='#L199'>199</a>
+<a name='L200'></a><a href='#L200'>200</a>
+<a name='L201'></a><a href='#L201'>201</a>
+<a name='L202'></a><a href='#L202'>202</a>
+<a name='L203'></a><a href='#L203'>203</a>
+<a name='L204'></a><a href='#L204'>204</a>
+<a name='L205'></a><a href='#L205'>205</a>
+<a name='L206'></a><a href='#L206'>206</a>
+<a name='L207'></a><a href='#L207'>207</a>
+<a name='L208'></a><a href='#L208'>208</a>
+<a name='L209'></a><a href='#L209'>209</a>
+<a name='L210'></a><a href='#L210'>210</a>
+<a name='L211'></a><a href='#L211'>211</a>
+<a name='L212'></a><a href='#L212'>212</a>
+<a name='L213'></a><a href='#L213'>213</a>
+<a name='L214'></a><a href='#L214'>214</a>
+<a name='L215'></a><a href='#L215'>215</a>
+<a name='L216'></a><a href='#L216'>216</a>
+<a name='L217'></a><a href='#L217'>217</a>
+<a name='L218'></a><a href='#L218'>218</a>
+<a name='L219'></a><a href='#L219'>219</a>
+<a name='L220'></a><a href='#L220'>220</a>
+<a name='L221'></a><a href='#L221'>221</a>
+<a name='L222'></a><a href='#L222'>222</a>
+<a name='L223'></a><a href='#L223'>223</a>
+<a name='L224'></a><a href='#L224'>224</a>
+<a name='L225'></a><a href='#L225'>225</a>
+<a name='L226'></a><a href='#L226'>226</a>
+<a name='L227'></a><a href='#L227'>227</a>
+<a name='L228'></a><a href='#L228'>228</a>
+<a name='L229'></a><a href='#L229'>229</a>
+<a name='L230'></a><a href='#L230'>230</a>
+<a name='L231'></a><a href='#L231'>231</a>
+<a name='L232'></a><a href='#L232'>232</a>
+<a name='L233'></a><a href='#L233'>233</a>
+<a name='L234'></a><a href='#L234'>234</a>
+<a name='L235'></a><a href='#L235'>235</a>
+<a name='L236'></a><a href='#L236'>236</a>
+<a name='L237'></a><a href='#L237'>237</a>
+<a name='L238'></a><a href='#L238'>238</a>
+<a name='L239'></a><a href='#L239'>239</a>
+<a name='L240'></a><a href='#L240'>240</a>
+<a name='L241'></a><a href='#L241'>241</a>
+<a name='L242'></a><a href='#L242'>242</a>
+<a name='L243'></a><a href='#L243'>243</a>
+<a name='L244'></a><a href='#L244'>244</a>
+<a name='L245'></a><a href='#L245'>245</a>
+<a name='L246'></a><a href='#L246'>246</a>
+<a name='L247'></a><a href='#L247'>247</a>
+<a name='L248'></a><a href='#L248'>248</a>
+<a name='L249'></a><a href='#L249'>249</a>
+<a name='L250'></a><a href='#L250'>250</a>
+<a name='L251'></a><a href='#L251'>251</a>
+<a name='L252'></a><a href='#L252'>252</a>
+<a name='L253'></a><a href='#L253'>253</a>
+<a name='L254'></a><a href='#L254'>254</a>
+<a name='L255'></a><a href='#L255'>255</a>
+<a name='L256'></a><a href='#L256'>256</a>
+<a name='L257'></a><a href='#L257'>257</a>
+<a name='L258'></a><a href='#L258'>258</a>
+<a name='L259'></a><a href='#L259'>259</a>
+<a name='L260'></a><a href='#L260'>260</a>
+<a name='L261'></a><a href='#L261'>261</a>
+<a name='L262'></a><a href='#L262'>262</a>
+<a name='L263'></a><a href='#L263'>263</a>
+<a name='L264'></a><a href='#L264'>264</a>
+<a name='L265'></a><a href='#L265'>265</a>
+<a name='L266'></a><a href='#L266'>266</a>
+<a name='L267'></a><a href='#L267'>267</a>
+<a name='L268'></a><a href='#L268'>268</a>
+<a name='L269'></a><a href='#L269'>269</a>
+<a name='L270'></a><a href='#L270'>270</a>
+<a name='L271'></a><a href='#L271'>271</a>
+<a name='L272'></a><a href='#L272'>272</a>
+<a name='L273'></a><a href='#L273'>273</a>
+<a name='L274'></a><a href='#L274'>274</a>
+<a name='L275'></a><a href='#L275'>275</a>
+<a name='L276'></a><a href='#L276'>276</a>
+<a name='L277'></a><a href='#L277'>277</a>
+<a name='L278'></a><a href='#L278'>278</a>
+<a name='L279'></a><a href='#L279'>279</a>
+<a name='L280'></a><a href='#L280'>280</a>
+<a name='L281'></a><a href='#L281'>281</a>
+<a name='L282'></a><a href='#L282'>282</a>
+<a name='L283'></a><a href='#L283'>283</a>
+<a name='L284'></a><a href='#L284'>284</a>
+<a name='L285'></a><a href='#L285'>285</a>
+<a name='L286'></a><a href='#L286'>286</a>
+<a name='L287'></a><a href='#L287'>287</a>
+<a name='L288'></a><a href='#L288'>288</a>
+<a name='L289'></a><a href='#L289'>289</a>
+<a name='L290'></a><a href='#L290'>290</a>
+<a name='L291'></a><a href='#L291'>291</a>
+<a name='L292'></a><a href='#L292'>292</a>
+<a name='L293'></a><a href='#L293'>293</a>
+<a name='L294'></a><a href='#L294'>294</a>
+<a name='L295'></a><a href='#L295'>295</a>
+<a name='L296'></a><a href='#L296'>296</a>
+<a name='L297'></a><a href='#L297'>297</a>
+<a name='L298'></a><a href='#L298'>298</a>
+<a name='L299'></a><a href='#L299'>299</a>
+<a name='L300'></a><a href='#L300'>300</a>
+<a name='L301'></a><a href='#L301'>301</a>
+<a name='L302'></a><a href='#L302'>302</a>
+<a name='L303'></a><a href='#L303'>303</a>
+<a name='L304'></a><a href='#L304'>304</a>
+<a name='L305'></a><a href='#L305'>305</a>
+<a name='L306'></a><a href='#L306'>306</a>
+<a name='L307'></a><a href='#L307'>307</a>
+<a name='L308'></a><a href='#L308'>308</a>
+<a name='L309'></a><a href='#L309'>309</a>
+<a name='L310'></a><a href='#L310'>310</a>
+<a name='L311'></a><a href='#L311'>311</a>
+<a name='L312'></a><a href='#L312'>312</a>
+<a name='L313'></a><a href='#L313'>313</a>
+<a name='L314'></a><a href='#L314'>314</a>
+<a name='L315'></a><a href='#L315'>315</a>
+<a name='L316'></a><a href='#L316'>316</a>
+<a name='L317'></a><a href='#L317'>317</a>
+<a name='L318'></a><a href='#L318'>318</a>
+<a name='L319'></a><a href='#L319'>319</a>
+<a name='L320'></a><a href='#L320'>320</a>
+<a name='L321'></a><a href='#L321'>321</a>
+<a name='L322'></a><a href='#L322'>322</a>
+<a name='L323'></a><a href='#L323'>323</a>
+<a name='L324'></a><a href='#L324'>324</a>
+<a name='L325'></a><a href='#L325'>325</a>
+<a name='L326'></a><a href='#L326'>326</a>
+<a name='L327'></a><a href='#L327'>327</a>
+<a name='L328'></a><a href='#L328'>328</a>
+<a name='L329'></a><a href='#L329'>329</a>
+<a name='L330'></a><a href='#L330'>330</a>
+<a name='L331'></a><a href='#L331'>331</a>
+<a name='L332'></a><a href='#L332'>332</a>
+<a name='L333'></a><a href='#L333'>333</a>
+<a name='L334'></a><a href='#L334'>334</a>
+<a name='L335'></a><a href='#L335'>335</a>
+<a name='L336'></a><a href='#L336'>336</a>
+<a name='L337'></a><a href='#L337'>337</a>
+<a name='L338'></a><a href='#L338'>338</a>
+<a name='L339'></a><a href='#L339'>339</a>
+<a name='L340'></a><a href='#L340'>340</a>
+<a name='L341'></a><a href='#L341'>341</a>
+<a name='L342'></a><a href='#L342'>342</a>
+<a name='L343'></a><a href='#L343'>343</a>
+<a name='L344'></a><a href='#L344'>344</a>
+<a name='L345'></a><a href='#L345'>345</a>
+<a name='L346'></a><a href='#L346'>346</a>
+<a name='L347'></a><a href='#L347'>347</a>
+<a name='L348'></a><a href='#L348'>348</a>
+<a name='L349'></a><a href='#L349'>349</a>
+<a name='L350'></a><a href='#L350'>350</a>
+<a name='L351'></a><a href='#L351'>351</a>
+<a name='L352'></a><a href='#L352'>352</a>
+<a name='L353'></a><a href='#L353'>353</a>
+<a name='L354'></a><a href='#L354'>354</a>
+<a name='L355'></a><a href='#L355'>355</a>
+<a name='L356'></a><a href='#L356'>356</a>
+<a name='L357'></a><a href='#L357'>357</a>
+<a name='L358'></a><a href='#L358'>358</a>
+<a name='L359'></a><a href='#L359'>359</a>
+<a name='L360'></a><a href='#L360'>360</a>
+<a name='L361'></a><a href='#L361'>361</a>
+<a name='L362'></a><a href='#L362'>362</a>
+<a name='L363'></a><a href='#L363'>363</a>
+<a name='L364'></a><a href='#L364'>364</a>
+<a name='L365'></a><a href='#L365'>365</a>
+<a name='L366'></a><a href='#L366'>366</a>
+<a name='L367'></a><a href='#L367'>367</a>
+<a name='L368'></a><a href='#L368'>368</a>
+<a name='L369'></a><a href='#L369'>369</a>
+<a name='L370'></a><a href='#L370'>370</a>
+<a name='L371'></a><a href='#L371'>371</a>
+<a name='L372'></a><a href='#L372'>372</a>
+<a name='L373'></a><a href='#L373'>373</a>
+<a name='L374'></a><a href='#L374'>374</a>
+<a name='L375'></a><a href='#L375'>375</a>
+<a name='L376'></a><a href='#L376'>376</a>
+<a name='L377'></a><a href='#L377'>377</a>
+<a name='L378'></a><a href='#L378'>378</a>
+<a name='L379'></a><a href='#L379'>379</a>
+<a name='L380'></a><a href='#L380'>380</a>
+<a name='L381'></a><a href='#L381'>381</a>
+<a name='L382'></a><a href='#L382'>382</a>
+<a name='L383'></a><a href='#L383'>383</a>
+<a name='L384'></a><a href='#L384'>384</a>
+<a name='L385'></a><a href='#L385'>385</a>
+<a name='L386'></a><a href='#L386'>386</a>
+<a name='L387'></a><a href='#L387'>387</a>
+<a name='L388'></a><a href='#L388'>388</a>
+<a name='L389'></a><a href='#L389'>389</a>
+<a name='L390'></a><a href='#L390'>390</a>
+<a name='L391'></a><a href='#L391'>391</a>
+<a name='L392'></a><a href='#L392'>392</a>
+<a name='L393'></a><a href='#L393'>393</a>
+<a name='L394'></a><a href='#L394'>394</a>
+<a name='L395'></a><a href='#L395'>395</a>
+<a name='L396'></a><a href='#L396'>396</a>
+<a name='L397'></a><a href='#L397'>397</a>
+<a name='L398'></a><a href='#L398'>398</a>
+<a name='L399'></a><a href='#L399'>399</a>
+<a name='L400'></a><a href='#L400'>400</a>
+<a name='L401'></a><a href='#L401'>401</a>
+<a name='L402'></a><a href='#L402'>402</a>
+<a name='L403'></a><a href='#L403'>403</a>
+<a name='L404'></a><a href='#L404'>404</a>
+<a name='L405'></a><a href='#L405'>405</a>
+<a name='L406'></a><a href='#L406'>406</a>
+<a name='L407'></a><a href='#L407'>407</a>
+<a name='L408'></a><a href='#L408'>408</a>
+<a name='L409'></a><a href='#L409'>409</a>
+<a name='L410'></a><a href='#L410'>410</a>
+<a name='L411'></a><a href='#L411'>411</a>
+<a name='L412'></a><a href='#L412'>412</a>
+<a name='L413'></a><a href='#L413'>413</a>
+<a name='L414'></a><a href='#L414'>414</a>
+<a name='L415'></a><a href='#L415'>415</a>
+<a name='L416'></a><a href='#L416'>416</a>
+<a name='L417'></a><a href='#L417'>417</a>
+<a name='L418'></a><a href='#L418'>418</a>
+<a name='L419'></a><a href='#L419'>419</a>
+<a name='L420'></a><a href='#L420'>420</a>
+<a name='L421'></a><a href='#L421'>421</a>
+<a name='L422'></a><a href='#L422'>422</a>
+<a name='L423'></a><a href='#L423'>423</a>
+<a name='L424'></a><a href='#L424'>424</a>
+<a name='L425'></a><a href='#L425'>425</a>
+<a name='L426'></a><a href='#L426'>426</a>
+<a name='L427'></a><a href='#L427'>427</a>
+<a name='L428'></a><a href='#L428'>428</a>
+<a name='L429'></a><a href='#L429'>429</a>
+<a name='L430'></a><a href='#L430'>430</a>
+<a name='L431'></a><a href='#L431'>431</a>
+<a name='L432'></a><a href='#L432'>432</a>
+<a name='L433'></a><a href='#L433'>433</a>
+<a name='L434'></a><a href='#L434'>434</a>
+<a name='L435'></a><a href='#L435'>435</a>
+<a name='L436'></a><a href='#L436'>436</a>
+<a name='L437'></a><a href='#L437'>437</a>
+<a name='L438'></a><a href='#L438'>438</a>
+<a name='L439'></a><a href='#L439'>439</a>
+<a name='L440'></a><a href='#L440'>440</a>
+<a name='L441'></a><a href='#L441'>441</a>
+<a name='L442'></a><a href='#L442'>442</a>
+<a name='L443'></a><a href='#L443'>443</a>
+<a name='L444'></a><a href='#L444'>444</a>
+<a name='L445'></a><a href='#L445'>445</a>
+<a name='L446'></a><a href='#L446'>446</a>
+<a name='L447'></a><a href='#L447'>447</a>
+<a name='L448'></a><a href='#L448'>448</a>
+<a name='L449'></a><a href='#L449'>449</a>
+<a name='L450'></a><a href='#L450'>450</a>
+<a name='L451'></a><a href='#L451'>451</a>
+<a name='L452'></a><a href='#L452'>452</a>
+<a name='L453'></a><a href='#L453'>453</a>
+<a name='L454'></a><a href='#L454'>454</a>
+<a name='L455'></a><a href='#L455'>455</a>
+<a name='L456'></a><a href='#L456'>456</a>
+<a name='L457'></a><a href='#L457'>457</a>
+<a name='L458'></a><a href='#L458'>458</a>
+<a name='L459'></a><a href='#L459'>459</a>
+<a name='L460'></a><a href='#L460'>460</a>
+<a name='L461'></a><a href='#L461'>461</a>
+<a name='L462'></a><a href='#L462'>462</a>
+<a name='L463'></a><a href='#L463'>463</a>
+<a name='L464'></a><a href='#L464'>464</a>
+<a name='L465'></a><a href='#L465'>465</a>
+<a name='L466'></a><a href='#L466'>466</a>
+<a name='L467'></a><a href='#L467'>467</a>
+<a name='L468'></a><a href='#L468'>468</a>
+<a name='L469'></a><a href='#L469'>469</a>
+<a name='L470'></a><a href='#L470'>470</a>
+<a name='L471'></a><a href='#L471'>471</a>
+<a name='L472'></a><a href='#L472'>472</a>
+<a name='L473'></a><a href='#L473'>473</a>
+<a name='L474'></a><a href='#L474'>474</a>
+<a name='L475'></a><a href='#L475'>475</a>
+<a name='L476'></a><a href='#L476'>476</a>
+<a name='L477'></a><a href='#L477'>477</a>
+<a name='L478'></a><a href='#L478'>478</a>
+<a name='L479'></a><a href='#L479'>479</a>
+<a name='L480'></a><a href='#L480'>480</a>
+<a name='L481'></a><a href='#L481'>481</a>
+<a name='L482'></a><a href='#L482'>482</a>
+<a name='L483'></a><a href='#L483'>483</a>
+<a name='L484'></a><a href='#L484'>484</a>
+<a name='L485'></a><a href='#L485'>485</a>
+<a name='L486'></a><a href='#L486'>486</a>
+<a name='L487'></a><a href='#L487'>487</a>
+<a name='L488'></a><a href='#L488'>488</a>
+<a name='L489'></a><a href='#L489'>489</a>
+<a name='L490'></a><a href='#L490'>490</a>
+<a name='L491'></a><a href='#L491'>491</a>
+<a name='L492'></a><a href='#L492'>492</a>
+<a name='L493'></a><a href='#L493'>493</a>
+<a name='L494'></a><a href='#L494'>494</a>
+<a name='L495'></a><a href='#L495'>495</a>
+<a name='L496'></a><a href='#L496'>496</a>
+<a name='L497'></a><a href='#L497'>497</a>
+<a name='L498'></a><a href='#L498'>498</a>
+<a name='L499'></a><a href='#L499'>499</a>
+<a name='L500'></a><a href='#L500'>500</a>
+<a name='L501'></a><a href='#L501'>501</a>
+<a name='L502'></a><a href='#L502'>502</a>
+<a name='L503'></a><a href='#L503'>503</a>
+<a name='L504'></a><a href='#L504'>504</a>
+<a name='L505'></a><a href='#L505'>505</a>
+<a name='L506'></a><a href='#L506'>506</a>
+<a name='L507'></a><a href='#L507'>507</a>
+<a name='L508'></a><a href='#L508'>508</a>
+<a name='L509'></a><a href='#L509'>509</a>
+<a name='L510'></a><a href='#L510'>510</a>
+<a name='L511'></a><a href='#L511'>511</a>
+<a name='L512'></a><a href='#L512'>512</a>
+<a name='L513'></a><a href='#L513'>513</a>
+<a name='L514'></a><a href='#L514'>514</a>
+<a name='L515'></a><a href='#L515'>515</a>
+<a name='L516'></a><a href='#L516'>516</a>
+<a name='L517'></a><a href='#L517'>517</a>
+<a name='L518'></a><a href='#L518'>518</a>
+<a name='L519'></a><a href='#L519'>519</a>
+<a name='L520'></a><a href='#L520'>520</a>
+<a name='L521'></a><a href='#L521'>521</a>
+<a name='L522'></a><a href='#L522'>522</a>
+<a name='L523'></a><a href='#L523'>523</a>
+<a name='L524'></a><a href='#L524'>524</a>
+<a name='L525'></a><a href='#L525'>525</a>
+<a name='L526'></a><a href='#L526'>526</a>
+<a name='L527'></a><a href='#L527'>527</a>
+<a name='L528'></a><a href='#L528'>528</a>
+<a name='L529'></a><a href='#L529'>529</a>
+<a name='L530'></a><a href='#L530'>530</a>
+<a name='L531'></a><a href='#L531'>531</a>
+<a name='L532'></a><a href='#L532'>532</a>
+<a name='L533'></a><a href='#L533'>533</a>
+<a name='L534'></a><a href='#L534'>534</a>
+<a name='L535'></a><a href='#L535'>535</a>
+<a name='L536'></a><a href='#L536'>536</a>
+<a name='L537'></a><a href='#L537'>537</a>
+<a name='L538'></a><a href='#L538'>538</a>
+<a name='L539'></a><a href='#L539'>539</a>
+<a name='L540'></a><a href='#L540'>540</a>
+<a name='L541'></a><a href='#L541'>541</a>
+<a name='L542'></a><a href='#L542'>542</a>
+<a name='L543'></a><a href='#L543'>543</a>
+<a name='L544'></a><a href='#L544'>544</a>
+<a name='L545'></a><a href='#L545'>545</a>
+<a name='L546'></a><a href='#L546'>546</a>
+<a name='L547'></a><a href='#L547'>547</a>
+<a name='L548'></a><a href='#L548'>548</a>
+<a name='L549'></a><a href='#L549'>549</a>
+<a name='L550'></a><a href='#L550'>550</a>
+<a name='L551'></a><a href='#L551'>551</a>
+<a name='L552'></a><a href='#L552'>552</a>
+<a name='L553'></a><a href='#L553'>553</a>
+<a name='L554'></a><a href='#L554'>554</a>
+<a name='L555'></a><a href='#L555'>555</a>
+<a name='L556'></a><a href='#L556'>556</a>
+<a name='L557'></a><a href='#L557'>557</a>
+<a name='L558'></a><a href='#L558'>558</a>
+<a name='L559'></a><a href='#L559'>559</a>
+<a name='L560'></a><a href='#L560'>560</a>
+<a name='L561'></a><a href='#L561'>561</a>
+<a name='L562'></a><a href='#L562'>562</a>
+<a name='L563'></a><a href='#L563'>563</a>
+<a name='L564'></a><a href='#L564'>564</a>
+<a name='L565'></a><a href='#L565'>565</a>
+<a name='L566'></a><a href='#L566'>566</a>
+<a name='L567'></a><a href='#L567'>567</a>
+<a name='L568'></a><a href='#L568'>568</a>
+<a name='L569'></a><a href='#L569'>569</a>
+<a name='L570'></a><a href='#L570'>570</a>
+<a name='L571'></a><a href='#L571'>571</a>
+<a name='L572'></a><a href='#L572'>572</a>
+<a name='L573'></a><a href='#L573'>573</a>
+<a name='L574'></a><a href='#L574'>574</a>
+<a name='L575'></a><a href='#L575'>575</a>
+<a name='L576'></a><a href='#L576'>576</a>
+<a name='L577'></a><a href='#L577'>577</a>
+<a name='L578'></a><a href='#L578'>578</a>
+<a name='L579'></a><a href='#L579'>579</a>
+<a name='L580'></a><a href='#L580'>580</a>
+<a name='L581'></a><a href='#L581'>581</a>
+<a name='L582'></a><a href='#L582'>582</a>
+<a name='L583'></a><a href='#L583'>583</a>
+<a name='L584'></a><a href='#L584'>584</a>
+<a name='L585'></a><a href='#L585'>585</a>
+<a name='L586'></a><a href='#L586'>586</a>
+<a name='L587'></a><a href='#L587'>587</a>
+<a name='L588'></a><a href='#L588'>588</a>
+<a name='L589'></a><a href='#L589'>589</a>
+<a name='L590'></a><a href='#L590'>590</a>
+<a name='L591'></a><a href='#L591'>591</a>
+<a name='L592'></a><a href='#L592'>592</a>
+<a name='L593'></a><a href='#L593'>593</a>
+<a name='L594'></a><a href='#L594'>594</a>
+<a name='L595'></a><a href='#L595'>595</a>
+<a name='L596'></a><a href='#L596'>596</a>
+<a name='L597'></a><a href='#L597'>597</a>
+<a name='L598'></a><a href='#L598'>598</a>
+<a name='L599'></a><a href='#L599'>599</a>
+<a name='L600'></a><a href='#L600'>600</a>
+<a name='L601'></a><a href='#L601'>601</a>
+<a name='L602'></a><a href='#L602'>602</a>
+<a name='L603'></a><a href='#L603'>603</a>
+<a name='L604'></a><a href='#L604'>604</a>
+<a name='L605'></a><a href='#L605'>605</a>
+<a name='L606'></a><a href='#L606'>606</a>
+<a name='L607'></a><a href='#L607'>607</a>
+<a name='L608'></a><a href='#L608'>608</a>
+<a name='L609'></a><a href='#L609'>609</a>
+<a name='L610'></a><a href='#L610'>610</a>
+<a name='L611'></a><a href='#L611'>611</a>
+<a name='L612'></a><a href='#L612'>612</a>
+<a name='L613'></a><a href='#L613'>613</a>
+<a name='L614'></a><a href='#L614'>614</a>
+<a name='L615'></a><a href='#L615'>615</a>
+<a name='L616'></a><a href='#L616'>616</a>
+<a name='L617'></a><a href='#L617'>617</a>
+<a name='L618'></a><a href='#L618'>618</a>
+<a name='L619'></a><a href='#L619'>619</a>
+<a name='L620'></a><a href='#L620'>620</a>
+<a name='L621'></a><a href='#L621'>621</a>
+<a name='L622'></a><a href='#L622'>622</a>
+<a name='L623'></a><a href='#L623'>623</a>
+<a name='L624'></a><a href='#L624'>624</a>
+<a name='L625'></a><a href='#L625'>625</a>
+<a name='L626'></a><a href='#L626'>626</a>
+<a name='L627'></a><a href='#L627'>627</a>
+<a name='L628'></a><a href='#L628'>628</a>
+<a name='L629'></a><a href='#L629'>629</a>
+<a name='L630'></a><a href='#L630'>630</a>
+<a name='L631'></a><a href='#L631'>631</a>
+<a name='L632'></a><a href='#L632'>632</a>
+<a name='L633'></a><a href='#L633'>633</a>
+<a name='L634'></a><a href='#L634'>634</a>
+<a name='L635'></a><a href='#L635'>635</a>
+<a name='L636'></a><a href='#L636'>636</a>
+<a name='L637'></a><a href='#L637'>637</a>
+<a name='L638'></a><a href='#L638'>638</a>
+<a name='L639'></a><a href='#L639'>639</a>
+<a name='L640'></a><a href='#L640'>640</a>
+<a name='L641'></a><a href='#L641'>641</a>
+<a name='L642'></a><a href='#L642'>642</a>
+<a name='L643'></a><a href='#L643'>643</a>
+<a name='L644'></a><a href='#L644'>644</a>
+<a name='L645'></a><a href='#L645'>645</a>
+<a name='L646'></a><a href='#L646'>646</a>
+<a name='L647'></a><a href='#L647'>647</a>
+<a name='L648'></a><a href='#L648'>648</a>
+<a name='L649'></a><a href='#L649'>649</a>
+<a name='L650'></a><a href='#L650'>650</a>
+<a name='L651'></a><a href='#L651'>651</a>
+<a name='L652'></a><a href='#L652'>652</a>
+<a name='L653'></a><a href='#L653'>653</a>
+<a name='L654'></a><a href='#L654'>654</a>
+<a name='L655'></a><a href='#L655'>655</a>
+<a name='L656'></a><a href='#L656'>656</a>
+<a name='L657'></a><a href='#L657'>657</a>
+<a name='L658'></a><a href='#L658'>658</a>
+<a name='L659'></a><a href='#L659'>659</a>
+<a name='L660'></a><a href='#L660'>660</a>
+<a name='L661'></a><a href='#L661'>661</a>
+<a name='L662'></a><a href='#L662'>662</a>
+<a name='L663'></a><a href='#L663'>663</a>
+<a name='L664'></a><a href='#L664'>664</a>
+<a name='L665'></a><a href='#L665'>665</a>
+<a name='L666'></a><a href='#L666'>666</a>
+<a name='L667'></a><a href='#L667'>667</a>
+<a name='L668'></a><a href='#L668'>668</a>
+<a name='L669'></a><a href='#L669'>669</a>
+<a name='L670'></a><a href='#L670'>670</a>
+<a name='L671'></a><a href='#L671'>671</a>
+<a name='L672'></a><a href='#L672'>672</a>
+<a name='L673'></a><a href='#L673'>673</a>
+<a name='L674'></a><a href='#L674'>674</a>
+<a name='L675'></a><a href='#L675'>675</a>
+<a name='L676'></a><a href='#L676'>676</a>
+<a name='L677'></a><a href='#L677'>677</a>
+<a name='L678'></a><a href='#L678'>678</a>
+<a name='L679'></a><a href='#L679'>679</a>
+<a name='L680'></a><a href='#L680'>680</a>
+<a name='L681'></a><a href='#L681'>681</a>
+<a name='L682'></a><a href='#L682'>682</a>
+<a name='L683'></a><a href='#L683'>683</a>
+<a name='L684'></a><a href='#L684'>684</a>
+<a name='L685'></a><a href='#L685'>685</a>
+<a name='L686'></a><a href='#L686'>686</a>
+<a name='L687'></a><a href='#L687'>687</a>
+<a name='L688'></a><a href='#L688'>688</a>
+<a name='L689'></a><a href='#L689'>689</a>
+<a name='L690'></a><a href='#L690'>690</a>
+<a name='L691'></a><a href='#L691'>691</a>
+<a name='L692'></a><a href='#L692'>692</a>
+<a name='L693'></a><a href='#L693'>693</a>
+<a name='L694'></a><a href='#L694'>694</a>
+<a name='L695'></a><a href='#L695'>695</a>
+<a name='L696'></a><a href='#L696'>696</a>
+<a name='L697'></a><a href='#L697'>697</a>
+<a name='L698'></a><a href='#L698'>698</a>
+<a name='L699'></a><a href='#L699'>699</a>
+<a name='L700'></a><a href='#L700'>700</a>
+<a name='L701'></a><a href='#L701'>701</a>
+<a name='L702'></a><a href='#L702'>702</a>
+<a name='L703'></a><a href='#L703'>703</a>
+<a name='L704'></a><a href='#L704'>704</a>
+<a name='L705'></a><a href='#L705'>705</a>
+<a name='L706'></a><a href='#L706'>706</a>
+<a name='L707'></a><a href='#L707'>707</a>
+<a name='L708'></a><a href='#L708'>708</a>
+<a name='L709'></a><a href='#L709'>709</a>
+<a name='L710'></a><a href='#L710'>710</a>
+<a name='L711'></a><a href='#L711'>711</a>
+<a name='L712'></a><a href='#L712'>712</a>
+<a name='L713'></a><a href='#L713'>713</a>
+<a name='L714'></a><a href='#L714'>714</a>
+<a name='L715'></a><a href='#L715'>715</a>
+<a name='L716'></a><a href='#L716'>716</a>
+<a name='L717'></a><a href='#L717'>717</a>
+<a name='L718'></a><a href='#L718'>718</a>
+<a name='L719'></a><a href='#L719'>719</a>
+<a name='L720'></a><a href='#L720'>720</a>
+<a name='L721'></a><a href='#L721'>721</a>
+<a name='L722'></a><a href='#L722'>722</a>
+<a name='L723'></a><a href='#L723'>723</a>
+<a name='L724'></a><a href='#L724'>724</a>
+<a name='L725'></a><a href='#L725'>725</a>
+<a name='L726'></a><a href='#L726'>726</a>
+<a name='L727'></a><a href='#L727'>727</a>
+<a name='L728'></a><a href='#L728'>728</a>
+<a name='L729'></a><a href='#L729'>729</a>
+<a name='L730'></a><a href='#L730'>730</a>
+<a name='L731'></a><a href='#L731'>731</a>
+<a name='L732'></a><a href='#L732'>732</a>
+<a name='L733'></a><a href='#L733'>733</a>
+<a name='L734'></a><a href='#L734'>734</a>
+<a name='L735'></a><a href='#L735'>735</a>
+<a name='L736'></a><a href='#L736'>736</a>
+<a name='L737'></a><a href='#L737'>737</a>
+<a name='L738'></a><a href='#L738'>738</a>
+<a name='L739'></a><a href='#L739'>739</a>
+<a name='L740'></a><a href='#L740'>740</a>
+<a name='L741'></a><a href='#L741'>741</a>
+<a name='L742'></a><a href='#L742'>742</a>
+<a name='L743'></a><a href='#L743'>743</a>
+<a name='L744'></a><a href='#L744'>744</a>
+<a name='L745'></a><a href='#L745'>745</a>
+<a name='L746'></a><a href='#L746'>746</a>
+<a name='L747'></a><a href='#L747'>747</a>
+<a name='L748'></a><a href='#L748'>748</a>
+<a name='L749'></a><a href='#L749'>749</a>
+<a name='L750'></a><a href='#L750'>750</a>
+<a name='L751'></a><a href='#L751'>751</a>
+<a name='L752'></a><a href='#L752'>752</a>
+<a name='L753'></a><a href='#L753'>753</a>
+<a name='L754'></a><a href='#L754'>754</a>
+<a name='L755'></a><a href='#L755'>755</a>
+<a name='L756'></a><a href='#L756'>756</a>
+<a name='L757'></a><a href='#L757'>757</a>
+<a name='L758'></a><a href='#L758'>758</a>
+<a name='L759'></a><a href='#L759'>759</a>
+<a name='L760'></a><a href='#L760'>760</a>
+<a name='L761'></a><a href='#L761'>761</a>
+<a name='L762'></a><a href='#L762'>762</a>
+<a name='L763'></a><a href='#L763'>763</a>
+<a name='L764'></a><a href='#L764'>764</a>
+<a name='L765'></a><a href='#L765'>765</a>
+<a name='L766'></a><a href='#L766'>766</a>
+<a name='L767'></a><a href='#L767'>767</a>
+<a name='L768'></a><a href='#L768'>768</a>
+<a name='L769'></a><a href='#L769'>769</a>
+<a name='L770'></a><a href='#L770'>770</a>
+<a name='L771'></a><a href='#L771'>771</a>
+<a name='L772'></a><a href='#L772'>772</a>
+<a name='L773'></a><a href='#L773'>773</a>
+<a name='L774'></a><a href='#L774'>774</a>
+<a name='L775'></a><a href='#L775'>775</a>
+<a name='L776'></a><a href='#L776'>776</a>
+<a name='L777'></a><a href='#L777'>777</a>
+<a name='L778'></a><a href='#L778'>778</a>
+<a name='L779'></a><a href='#L779'>779</a>
+<a name='L780'></a><a href='#L780'>780</a>
+<a name='L781'></a><a href='#L781'>781</a>
+<a name='L782'></a><a href='#L782'>782</a>
+<a name='L783'></a><a href='#L783'>783</a>
+<a name='L784'></a><a href='#L784'>784</a>
+<a name='L785'></a><a href='#L785'>785</a>
+<a name='L786'></a><a href='#L786'>786</a>
+<a name='L787'></a><a href='#L787'>787</a>
+<a name='L788'></a><a href='#L788'>788</a>
+<a name='L789'></a><a href='#L789'>789</a>
+<a name='L790'></a><a href='#L790'>790</a>
+<a name='L791'></a><a href='#L791'>791</a>
+<a name='L792'></a><a href='#L792'>792</a>
+<a name='L793'></a><a href='#L793'>793</a>
+<a name='L794'></a><a href='#L794'>794</a>
+<a name='L795'></a><a href='#L795'>795</a>
+<a name='L796'></a><a href='#L796'>796</a>
+<a name='L797'></a><a href='#L797'>797</a>
+<a name='L798'></a><a href='#L798'>798</a>
+<a name='L799'></a><a href='#L799'>799</a>
+<a name='L800'></a><a href='#L800'>800</a>
+<a name='L801'></a><a href='#L801'>801</a>
+<a name='L802'></a><a href='#L802'>802</a>
+<a name='L803'></a><a href='#L803'>803</a>
+<a name='L804'></a><a href='#L804'>804</a>
+<a name='L805'></a><a href='#L805'>805</a>
+<a name='L806'></a><a href='#L806'>806</a>
+<a name='L807'></a><a href='#L807'>807</a>
+<a name='L808'></a><a href='#L808'>808</a>
+<a name='L809'></a><a href='#L809'>809</a>
+<a name='L810'></a><a href='#L810'>810</a>
+<a name='L811'></a><a href='#L811'>811</a>
+<a name='L812'></a><a href='#L812'>812</a>
+<a name='L813'></a><a href='#L813'>813</a>
+<a name='L814'></a><a href='#L814'>814</a>
+<a name='L815'></a><a href='#L815'>815</a>
+<a name='L816'></a><a href='#L816'>816</a>
+<a name='L817'></a><a href='#L817'>817</a>
+<a name='L818'></a><a href='#L818'>818</a>
+<a name='L819'></a><a href='#L819'>819</a>
+<a name='L820'></a><a href='#L820'>820</a>
+<a name='L821'></a><a href='#L821'>821</a>
+<a name='L822'></a><a href='#L822'>822</a>
+<a name='L823'></a><a href='#L823'>823</a>
+<a name='L824'></a><a href='#L824'>824</a>
+<a name='L825'></a><a href='#L825'>825</a>
+<a name='L826'></a><a href='#L826'>826</a>
+<a name='L827'></a><a href='#L827'>827</a>
+<a name='L828'></a><a href='#L828'>828</a>
+<a name='L829'></a><a href='#L829'>829</a>
+<a name='L830'></a><a href='#L830'>830</a>
+<a name='L831'></a><a href='#L831'>831</a>
+<a name='L832'></a><a href='#L832'>832</a>
+<a name='L833'></a><a href='#L833'>833</a>
+<a name='L834'></a><a href='#L834'>834</a>
+<a name='L835'></a><a href='#L835'>835</a>
+<a name='L836'></a><a href='#L836'>836</a>
+<a name='L837'></a><a href='#L837'>837</a>
+<a name='L838'></a><a href='#L838'>838</a>
+<a name='L839'></a><a href='#L839'>839</a>
+<a name='L840'></a><a href='#L840'>840</a>
+<a name='L841'></a><a href='#L841'>841</a>
+<a name='L842'></a><a href='#L842'>842</a>
+<a name='L843'></a><a href='#L843'>843</a>
+<a name='L844'></a><a href='#L844'>844</a>
+<a name='L845'></a><a href='#L845'>845</a>
+<a name='L846'></a><a href='#L846'>846</a>
+<a name='L847'></a><a href='#L847'>847</a>
+<a name='L848'></a><a href='#L848'>848</a>
+<a name='L849'></a><a href='#L849'>849</a>
+<a name='L850'></a><a href='#L850'>850</a>
+<a name='L851'></a><a href='#L851'>851</a>
+<a name='L852'></a><a href='#L852'>852</a>
+<a name='L853'></a><a href='#L853'>853</a>
+<a name='L854'></a><a href='#L854'>854</a>
+<a name='L855'></a><a href='#L855'>855</a>
+<a name='L856'></a><a href='#L856'>856</a>
+<a name='L857'></a><a href='#L857'>857</a>
+<a name='L858'></a><a href='#L858'>858</a>
+<a name='L859'></a><a href='#L859'>859</a>
+<a name='L860'></a><a href='#L860'>860</a>
+<a name='L861'></a><a href='#L861'>861</a>
+<a name='L862'></a><a href='#L862'>862</a>
+<a name='L863'></a><a href='#L863'>863</a>
+<a name='L864'></a><a href='#L864'>864</a>
+<a name='L865'></a><a href='#L865'>865</a>
+<a name='L866'></a><a href='#L866'>866</a>
+<a name='L867'></a><a href='#L867'>867</a>
+<a name='L868'></a><a href='#L868'>868</a>
+<a name='L869'></a><a href='#L869'>869</a>
+<a name='L870'></a><a href='#L870'>870</a>
+<a name='L871'></a><a href='#L871'>871</a>
+<a name='L872'></a><a href='#L872'>872</a>
+<a name='L873'></a><a href='#L873'>873</a>
+<a name='L874'></a><a href='#L874'>874</a>
+<a name='L875'></a><a href='#L875'>875</a>
+<a name='L876'></a><a href='#L876'>876</a>
+<a name='L877'></a><a href='#L877'>877</a>
+<a name='L878'></a><a href='#L878'>878</a>
+<a name='L879'></a><a href='#L879'>879</a>
+<a name='L880'></a><a href='#L880'>880</a>
+<a name='L881'></a><a href='#L881'>881</a>
+<a name='L882'></a><a href='#L882'>882</a>
+<a name='L883'></a><a href='#L883'>883</a>
+<a name='L884'></a><a href='#L884'>884</a>
+<a name='L885'></a><a href='#L885'>885</a>
+<a name='L886'></a><a href='#L886'>886</a>
+<a name='L887'></a><a href='#L887'>887</a>
+<a name='L888'></a><a href='#L888'>888</a>
+<a name='L889'></a><a href='#L889'>889</a>
+<a name='L890'></a><a href='#L890'>890</a>
+<a name='L891'></a><a href='#L891'>891</a>
+<a name='L892'></a><a href='#L892'>892</a>
+<a name='L893'></a><a href='#L893'>893</a>
+<a name='L894'></a><a href='#L894'>894</a>
+<a name='L895'></a><a href='#L895'>895</a>
+<a name='L896'></a><a href='#L896'>896</a>
+<a name='L897'></a><a href='#L897'>897</a>
+<a name='L898'></a><a href='#L898'>898</a>
+<a name='L899'></a><a href='#L899'>899</a>
+<a name='L900'></a><a href='#L900'>900</a>
+<a name='L901'></a><a href='#L901'>901</a>
+<a name='L902'></a><a href='#L902'>902</a>
+<a name='L903'></a><a href='#L903'>903</a>
+<a name='L904'></a><a href='#L904'>904</a>
+<a name='L905'></a><a href='#L905'>905</a>
+<a name='L906'></a><a href='#L906'>906</a>
+<a name='L907'></a><a href='#L907'>907</a>
+<a name='L908'></a><a href='#L908'>908</a>
+<a name='L909'></a><a href='#L909'>909</a>
+<a name='L910'></a><a href='#L910'>910</a>
+<a name='L911'></a><a href='#L911'>911</a>
+<a name='L912'></a><a href='#L912'>912</a>
+<a name='L913'></a><a href='#L913'>913</a>
+<a name='L914'></a><a href='#L914'>914</a>
+<a name='L915'></a><a href='#L915'>915</a>
+<a name='L916'></a><a href='#L916'>916</a>
+<a name='L917'></a><a href='#L917'>917</a>
+<a name='L918'></a><a href='#L918'>918</a>
+<a name='L919'></a><a href='#L919'>919</a>
+<a name='L920'></a><a href='#L920'>920</a>
+<a name='L921'></a><a href='#L921'>921</a>
+<a name='L922'></a><a href='#L922'>922</a>
+<a name='L923'></a><a href='#L923'>923</a>
+<a name='L924'></a><a href='#L924'>924</a>
+<a name='L925'></a><a href='#L925'>925</a>
+<a name='L926'></a><a href='#L926'>926</a>
+<a name='L927'></a><a href='#L927'>927</a>
+<a name='L928'></a><a href='#L928'>928</a>
+<a name='L929'></a><a href='#L929'>929</a>
+<a name='L930'></a><a href='#L930'>930</a>
+<a name='L931'></a><a href='#L931'>931</a>
+<a name='L932'></a><a href='#L932'>932</a>
+<a name='L933'></a><a href='#L933'>933</a>
+<a name='L934'></a><a href='#L934'>934</a>
+<a name='L935'></a><a href='#L935'>935</a>
+<a name='L936'></a><a href='#L936'>936</a>
+<a name='L937'></a><a href='#L937'>937</a>
+<a name='L938'></a><a href='#L938'>938</a>
+<a name='L939'></a><a href='#L939'>939</a>
+<a name='L940'></a><a href='#L940'>940</a>
+<a name='L941'></a><a href='#L941'>941</a>
+<a name='L942'></a><a href='#L942'>942</a>
+<a name='L943'></a><a href='#L943'>943</a>
+<a name='L944'></a><a href='#L944'>944</a>
+<a name='L945'></a><a href='#L945'>945</a>
+<a name='L946'></a><a href='#L946'>946</a>
+<a name='L947'></a><a href='#L947'>947</a>
+<a name='L948'></a><a href='#L948'>948</a>
+<a name='L949'></a><a href='#L949'>949</a>
+<a name='L950'></a><a href='#L950'>950</a>
+<a name='L951'></a><a href='#L951'>951</a>
+<a name='L952'></a><a href='#L952'>952</a>
+<a name='L953'></a><a href='#L953'>953</a>
+<a name='L954'></a><a href='#L954'>954</a>
+<a name='L955'></a><a href='#L955'>955</a>
+<a name='L956'></a><a href='#L956'>956</a>
+<a name='L957'></a><a href='#L957'>957</a>
+<a name='L958'></a><a href='#L958'>958</a>
+<a name='L959'></a><a href='#L959'>959</a>
+<a name='L960'></a><a href='#L960'>960</a>
+<a name='L961'></a><a href='#L961'>961</a>
+<a name='L962'></a><a href='#L962'>962</a>
+<a name='L963'></a><a href='#L963'>963</a>
+<a name='L964'></a><a href='#L964'>964</a>
+<a name='L965'></a><a href='#L965'>965</a>
+<a name='L966'></a><a href='#L966'>966</a>
+<a name='L967'></a><a href='#L967'>967</a>
+<a name='L968'></a><a href='#L968'>968</a>
+<a name='L969'></a><a href='#L969'>969</a>
+<a name='L970'></a><a href='#L970'>970</a>
+<a name='L971'></a><a href='#L971'>971</a>
+<a name='L972'></a><a href='#L972'>972</a>
+<a name='L973'></a><a href='#L973'>973</a>
+<a name='L974'></a><a href='#L974'>974</a>
+<a name='L975'></a><a href='#L975'>975</a>
+<a name='L976'></a><a href='#L976'>976</a>
+<a name='L977'></a><a href='#L977'>977</a>
+<a name='L978'></a><a href='#L978'>978</a>
+<a name='L979'></a><a href='#L979'>979</a>
+<a name='L980'></a><a href='#L980'>980</a>
+<a name='L981'></a><a href='#L981'>981</a>
+<a name='L982'></a><a href='#L982'>982</a>
+<a name='L983'></a><a href='#L983'>983</a>
+<a name='L984'></a><a href='#L984'>984</a>
+<a name='L985'></a><a href='#L985'>985</a>
+<a name='L986'></a><a href='#L986'>986</a>
+<a name='L987'></a><a href='#L987'>987</a>
+<a name='L988'></a><a href='#L988'>988</a>
+<a name='L989'></a><a href='#L989'>989</a>
+<a name='L990'></a><a href='#L990'>990</a>
+<a name='L991'></a><a href='#L991'>991</a>
+<a name='L992'></a><a href='#L992'>992</a>
+<a name='L993'></a><a href='#L993'>993</a>
+<a name='L994'></a><a href='#L994'>994</a>
+<a name='L995'></a><a href='#L995'>995</a>
+<a name='L996'></a><a href='#L996'>996</a>
+<a name='L997'></a><a href='#L997'>997</a>
+<a name='L998'></a><a href='#L998'>998</a>
+<a name='L999'></a><a href='#L999'>999</a>
+<a name='L1000'></a><a href='#L1000'>1000</a>
+<a name='L1001'></a><a href='#L1001'>1001</a>
+<a name='L1002'></a><a href='#L1002'>1002</a>
+<a name='L1003'></a><a href='#L1003'>1003</a>
+<a name='L1004'></a><a href='#L1004'>1004</a>
+<a name='L1005'></a><a href='#L1005'>1005</a>
+<a name='L1006'></a><a href='#L1006'>1006</a>
+<a name='L1007'></a><a href='#L1007'>1007</a>
+<a name='L1008'></a><a href='#L1008'>1008</a>
+<a name='L1009'></a><a href='#L1009'>1009</a>
+<a name='L1010'></a><a href='#L1010'>1010</a>
+<a name='L1011'></a><a href='#L1011'>1011</a>
+<a name='L1012'></a><a href='#L1012'>1012</a>
+<a name='L1013'></a><a href='#L1013'>1013</a>
+<a name='L1014'></a><a href='#L1014'>1014</a>
+<a name='L1015'></a><a href='#L1015'>1015</a>
+<a name='L1016'></a><a href='#L1016'>1016</a>
+<a name='L1017'></a><a href='#L1017'>1017</a>
+<a name='L1018'></a><a href='#L1018'>1018</a>
+<a name='L1019'></a><a href='#L1019'>1019</a>
+<a name='L1020'></a><a href='#L1020'>1020</a>
+<a name='L1021'></a><a href='#L1021'>1021</a>
+<a name='L1022'></a><a href='#L1022'>1022</a>
+<a name='L1023'></a><a href='#L1023'>1023</a>
+<a name='L1024'></a><a href='#L1024'>1024</a>
+<a name='L1025'></a><a href='#L1025'>1025</a>
+<a name='L1026'></a><a href='#L1026'>1026</a>
+<a name='L1027'></a><a href='#L1027'>1027</a>
+<a name='L1028'></a><a href='#L1028'>1028</a>
+<a name='L1029'></a><a href='#L1029'>1029</a>
+<a name='L1030'></a><a href='#L1030'>1030</a>
+<a name='L1031'></a><a href='#L1031'>1031</a>
+<a name='L1032'></a><a href='#L1032'>1032</a>
+<a name='L1033'></a><a href='#L1033'>1033</a>
+<a name='L1034'></a><a href='#L1034'>1034</a>
+<a name='L1035'></a><a href='#L1035'>1035</a>
+<a name='L1036'></a><a href='#L1036'>1036</a>
+<a name='L1037'></a><a href='#L1037'>1037</a>
+<a name='L1038'></a><a href='#L1038'>1038</a>
+<a name='L1039'></a><a href='#L1039'>1039</a>
+<a name='L1040'></a><a href='#L1040'>1040</a>
+<a name='L1041'></a><a href='#L1041'>1041</a>
+<a name='L1042'></a><a href='#L1042'>1042</a>
+<a name='L1043'></a><a href='#L1043'>1043</a>
+<a name='L1044'></a><a href='#L1044'>1044</a>
+<a name='L1045'></a><a href='#L1045'>1045</a>
+<a name='L1046'></a><a href='#L1046'>1046</a>
+<a name='L1047'></a><a href='#L1047'>1047</a>
+<a name='L1048'></a><a href='#L1048'>1048</a>
+<a name='L1049'></a><a href='#L1049'>1049</a>
+<a name='L1050'></a><a href='#L1050'>1050</a>
+<a name='L1051'></a><a href='#L1051'>1051</a>
+<a name='L1052'></a><a href='#L1052'>1052</a>
+<a name='L1053'></a><a href='#L1053'>1053</a>
+<a name='L1054'></a><a href='#L1054'>1054</a>
+<a name='L1055'></a><a href='#L1055'>1055</a>
+<a name='L1056'></a><a href='#L1056'>1056</a>
+<a name='L1057'></a><a href='#L1057'>1057</a>
+<a name='L1058'></a><a href='#L1058'>1058</a>
+<a name='L1059'></a><a href='#L1059'>1059</a>
+<a name='L1060'></a><a href='#L1060'>1060</a>
+<a name='L1061'></a><a href='#L1061'>1061</a>
+<a name='L1062'></a><a href='#L1062'>1062</a>
+<a name='L1063'></a><a href='#L1063'>1063</a>
+<a name='L1064'></a><a href='#L1064'>1064</a>
+<a name='L1065'></a><a href='#L1065'>1065</a>
+<a name='L1066'></a><a href='#L1066'>1066</a>
+<a name='L1067'></a><a href='#L1067'>1067</a>
+<a name='L1068'></a><a href='#L1068'>1068</a>
+<a name='L1069'></a><a href='#L1069'>1069</a>
+<a name='L1070'></a><a href='#L1070'>1070</a>
+<a name='L1071'></a><a href='#L1071'>1071</a>
+<a name='L1072'></a><a href='#L1072'>1072</a>
+<a name='L1073'></a><a href='#L1073'>1073</a>
+<a name='L1074'></a><a href='#L1074'>1074</a>
+<a name='L1075'></a><a href='#L1075'>1075</a>
+<a name='L1076'></a><a href='#L1076'>1076</a>
+<a name='L1077'></a><a href='#L1077'>1077</a>
+<a name='L1078'></a><a href='#L1078'>1078</a>
+<a name='L1079'></a><a href='#L1079'>1079</a>
+<a name='L1080'></a><a href='#L1080'>1080</a>
+<a name='L1081'></a><a href='#L1081'>1081</a>
+<a name='L1082'></a><a href='#L1082'>1082</a>
+<a name='L1083'></a><a href='#L1083'>1083</a>
+<a name='L1084'></a><a href='#L1084'>1084</a>
+<a name='L1085'></a><a href='#L1085'>1085</a>
+<a name='L1086'></a><a href='#L1086'>1086</a>
+<a name='L1087'></a><a href='#L1087'>1087</a>
+<a name='L1088'></a><a href='#L1088'>1088</a>
+<a name='L1089'></a><a href='#L1089'>1089</a>
+<a name='L1090'></a><a href='#L1090'>1090</a>
+<a name='L1091'></a><a href='#L1091'>1091</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * Sync Service for Simply Sats
+ *
+ * Fetches UTXOs from WhatsOnChain and populates the local database.
+ * This bridges the gap between legacy wallet infrastructure and BRC-100
+ * by maintaining a local cache of UTXOs that can be queried instantly.
+ */
+&nbsp;
+import { P2PKH } from '@bsv/sdk'
+import { BASKETS } from '../domain/types'
+import type { LockedUTXO } from './wallet/types'
+import type { DerivedAddress } from './database/types'
+import {
+  addUTXO,
+  markUTXOSpent,
+  getSpendableUTXOs,
+  getLastSyncedHeight,
+  updateSyncState,
+  upsertTransaction,
+  addTransaction,
+  getDerivedAddresses as getDerivedAddressesFromDB,
+  updateDerivedAddressSyncTime,
+  markUtxosPendingSpend,
+  confirmUtxosSpent,
+  rollbackPendingSpend,
+  getPendingUtxos,
+  getUtxoByOutpoint,
+  getPendingTransactionTxids,
+  type UTXO as DBUtxo,
+  getTransactionLabels,
+  updateTransactionLabels,
+  getKnownTxids,
+  updateTransactionStatus,
+  addLockIfNotExists,
+  markLockUnlockedByTxid,
+  getAllTransactions,
+  updateTransactionAmount
+} from './database'
+import { RATE_LIMITS } from './config'
+import { getWocClient, type WocTransaction } from '../infrastructure/api/wocClient'
+import {
+  type CancellationToken,
+  startNewSync,
+  cancelSync,
+  isCancellationError,
+  cancellableDelay,
+  acquireSyncLock,
+  isSyncInProgress
+} from './cancellation'
+import { syncLogger } from './logger'
+import { btcToSatoshis } from '../utils/satoshiConversion'
+import { parseTimelockScript } from './wallet/locks'
+import { publicKeyToHash } from '../domain/locks'
+&nbsp;
+// Re-export cancellation functions for external use
+export { cancelSync, startNewSync, isSyncInProgress }
+&nbsp;
+/**
+ * Sync health diagnostic results
+ */
+export interface SyncHealthResult {
+  dbConnected: boolean
+  apiReachable: boolean
+  derivedAddressQuery: boolean
+  utxoQuery: boolean
+  errors: string[]
+  timings: Record&lt;string, number&gt;
+}
+&nbsp;
+/**
+ * Diagnose sync health by testing each component independently.
+ * Useful for identifying the exact failure point on Windows.
+ */
+export async function <span class="fstat-no" title="function not covered" >diagnoseSyncHealth(a</span>ccountId?: number): Promise&lt;SyncHealthResult&gt; {
+  const errors: string[] = <span class="cstat-no" title="statement not covered" >[]</span>
+  const timings: Record&lt;string, number&gt; = <span class="cstat-no" title="statement not covered" >{}</span>
+  let dbConnected = <span class="cstat-no" title="statement not covered" >false</span>
+  let apiReachable = <span class="cstat-no" title="statement not covered" >false</span>
+  let derivedAddressQuery = <span class="cstat-no" title="statement not covered" >false</span>
+  let utxoQuery = <span class="cstat-no" title="statement not covered" >false</span>
+&nbsp;
+  // Test 1: Database connectivity
+  const dbStart = <span class="cstat-no" title="statement not covered" >Date.now()</span>
+<span class="cstat-no" title="statement not covered" >  try {</span>
+    const { getDatabase } = <span class="cstat-no" title="statement not covered" >await import('./database')</span>
+    const db = <span class="cstat-no" title="statement not covered" >getDatabase()</span>
+<span class="cstat-no" title="statement not covered" >    await db.select('SELECT 1 as test')</span>
+<span class="cstat-no" title="statement not covered" >    dbConnected = true</span>
+  } catch (e) {
+<span class="cstat-no" title="statement not covered" >    errors.push(`DB: ${e instanceof Error ? e.message : String(e)}`)</span>
+  }
+<span class="cstat-no" title="statement not covered" >  timings.db = Date.now() - dbStart</span>
+&nbsp;
+  // Test 2: WoC API reachability
+  const apiStart = <span class="cstat-no" title="statement not covered" >Date.now()</span>
+<span class="cstat-no" title="statement not covered" >  try {</span>
+    const result = <span class="cstat-no" title="statement not covered" >await getWocClient().getBlockHeightSafe()</span>
+<span class="cstat-no" title="statement not covered" >    apiReachable = result.ok</span>
+<span class="cstat-no" title="statement not covered" >    if (!result.ok) <span class="cstat-no" title="statement not covered" >errors.push(`API: ${result.error.message}`)</span></span>
+  } catch (e) {
+<span class="cstat-no" title="statement not covered" >    errors.push(`API: ${e instanceof Error ? e.message : String(e)}`)</span>
+  }
+<span class="cstat-no" title="statement not covered" >  timings.api = Date.now() - apiStart</span>
+&nbsp;
+  // Test 3: Derived address query
+  const derivedStart = <span class="cstat-no" title="statement not covered" >Date.now()</span>
+<span class="cstat-no" title="statement not covered" >  try {</span>
+<span class="cstat-no" title="statement not covered" >    await getDerivedAddressesFromDB(accountId)</span>
+<span class="cstat-no" title="statement not covered" >    derivedAddressQuery = true</span>
+  } catch (e) {
+<span class="cstat-no" title="statement not covered" >    errors.push(`DerivedAddr: ${e instanceof Error ? e.message : String(e)}`)</span>
+  }
+<span class="cstat-no" title="statement not covered" >  timings.derived = Date.now() - derivedStart</span>
+&nbsp;
+  // Test 4: UTXO query
+  const utxoStart = <span class="cstat-no" title="statement not covered" >Date.now()</span>
+<span class="cstat-no" title="statement not covered" >  try {</span>
+<span class="cstat-no" title="statement not covered" >    await getSpendableUTXOs(accountId)</span>
+<span class="cstat-no" title="statement not covered" >    utxoQuery = true</span>
+  } catch (e) {
+<span class="cstat-no" title="statement not covered" >    errors.push(`UTXO: ${e instanceof Error ? e.message : String(e)}`)</span>
+  }
+<span class="cstat-no" title="statement not covered" >  timings.utxo = Date.now() - utxoStart</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  syncLogger.info('[DIAG] Sync health check', {</span>
+    dbConnected, apiReachable, derivedAddressQuery, utxoQuery,
+    errors, timings
+  })
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  return { dbConnected, apiReachable, derivedAddressQuery, utxoQuery, errors, timings }</span>
+}
+&nbsp;
+// Re-export BASKETS from domain/types (single source of truth)
+export { BASKETS } from '../domain/types'
+&nbsp;
+// Address info for syncing
+export interface AddressInfo {
+  address: string
+  basket: string
+  wif?: string // Optional - for signing
+  accountId?: number // Account ID for scoping data
+}
+&nbsp;
+&nbsp;
+// Sync result
+export interface SyncResult {
+  address: string
+  basket: string
+  newUtxos: number
+  spentUtxos: number
+  totalBalance: number
+}
+&nbsp;
+/**
+ * Fetch current blockchain height using infrastructure layer
+ */
+export async function getCurrentBlockHeight(): Promise&lt;number&gt; {
+  return getWocClient().getBlockHeight()
+}
+&nbsp;
+/**
+ * Fetch UTXOs for an address using infrastructure layer
+ * Returns UTXOs in the format needed by the sync logic
+ */
+async function <span class="fstat-no" title="function not covered" >fetchUtxosFromWoc(a</span>ddress: string): Promise&lt;{ txid: string; vout: number; satoshis: number }[] | null&gt; {
+  // Use Safe variant to distinguish "zero UTXOs" from "API error"
+  // Returns null on error so callers can skip destructive operations (marking UTXOs spent)
+  const result = <span class="cstat-no" title="statement not covered" >await getWocClient().getUtxosSafe(address)</span>
+<span class="cstat-no" title="statement not covered" >  if (!result.ok) {</span>
+<span class="cstat-no" title="statement not covered" >    syncLogger.error(`[SYNC] WoC UTXO fetch failed for ${address.slice(0,12)}...: ${result.error.message}`)</span>
+<span class="cstat-no" title="statement not covered" >    return null</span>
+  }
+<span class="cstat-no" title="statement not covered" >  return result.value.map(<span class="fstat-no" title="function not covered" >u =&gt; (<span class="cstat-no" title="statement not covered" >{</span></span></span>
+    txid: u.txid,
+    vout: u.vout,
+    satoshis: u.satoshis
+  }))
+}
+&nbsp;
+/**
+ * Generate P2PKH locking script for an address
+ */
+function <span class="fstat-no" title="function not covered" >getLockingScript(a</span>ddress: string): string {
+<span class="cstat-no" title="statement not covered" >  return new P2PKH().lock(address).toHex()</span>
+}
+&nbsp;
+// ---------------------------------------------------------------------------
+// Batched concurrency helper
+// ---------------------------------------------------------------------------
+&nbsp;
+/**
+ * Execute an async function over a list of items in batches with controlled
+ * concurrency.  Uses `Promise.allSettled` so a single failure never aborts the
+ * remaining items.
+ *
+ * @param items - Items to process
+ * @param fn - Async function to apply to each item
+ * @param concurrency - Maximum number of items processed at once
+ * @param isCancelled - Optional cancellation predicate checked between batches
+ */
+async function <span class="fstat-no" title="function not covered" >batchWithConcurrency&lt;T, R&gt;(</span>
+  items: T[],
+  fn: (item: T) =&gt; Promise&lt;R&gt;,
+  concurrency: number,
+  isCancelled?: () =&gt; boolean
+): Promise&lt;PromiseSettledResult&lt;R&gt;[]&gt; {
+  const results: PromiseSettledResult&lt;R&gt;[] = <span class="cstat-no" title="statement not covered" >[]</span>
+  const totalBatches = <span class="cstat-no" title="statement not covered" >Math.ceil(items.length / concurrency)</span>
+<span class="cstat-no" title="statement not covered" >  for (let i = <span class="cstat-no" title="statement not covered" >0; i</span> &lt; items.length; i += concurrency) {</span>
+<span class="cstat-no" title="statement not covered" >    if (isCancelled?.()) <span class="cstat-no" title="statement not covered" >break</span></span>
+    const batchNum = <span class="cstat-no" title="statement not covered" >Math.floor(i / concurrency) + 1</span>
+<span class="cstat-no" title="statement not covered" >    syncLogger.debug(`[SYNC] Batch ${batchNum}/${totalBatches} (items ${i + 1}–${Math.min(i + concurrency, items.length)})`)</span>
+    const batch = <span class="cstat-no" title="statement not covered" >items.slice(i, i + concurrency)</span>
+    const batchResults = <span class="cstat-no" title="statement not covered" >await Promise.allSettled(batch.map(fn))</span>
+<span class="cstat-no" title="statement not covered" >    results.push(...batchResults)</span>
+  }
+<span class="cstat-no" title="statement not covered" >  return results</span>
+}
+&nbsp;
+// ---------------------------------------------------------------------------
+// Transaction detail cache — prevents redundant API calls for the same parent
+// tx across multiple addresses within a single sync cycle.
+// Cleared at the end of every syncWallet() call.
+// ---------------------------------------------------------------------------
+const txDetailCache = new Map&lt;string, WocTransaction&gt;()
+&nbsp;
+/** Clear the per-sync tx detail cache (call after each sync cycle). */
+function <span class="fstat-no" title="function not covered" >clearTxDetailCache(): void {</span>
+<span class="cstat-no" title="statement not covered" >  txDetailCache.clear()</span>
+}
+&nbsp;
+// Simple counter for debugging sync order
+let syncCounter = 0
+&nbsp;
+/**
+ * Sync a single address - fetches UTXOs and updates the database
+ * Now uses address field for precise tracking (no more locking script matching)
+ */
+export async function <span class="fstat-no" title="function not covered" >syncAddress(a</span>ddressInfo: AddressInfo): Promise&lt;SyncResult&gt; {
+  const { address, basket, accountId } = <span class="cstat-no" title="statement not covered" >addressInfo</span>
+  const syncId = <span class="cstat-no" title="statement not covered" >++syncCounter</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  syncLogger.debug(`[SYNC #${syncId}] START: ${address.slice(0,12)}... (basket: ${basket})`)</span>
+&nbsp;
+  // Generate locking script for this specific address
+  const lockingScript = <span class="cstat-no" title="statement not covered" >getLockingScript(address)</span>
+&nbsp;
+  // Fetch current UTXOs from WhatsOnChain
+  const wocUtxos = <span class="cstat-no" title="statement not covered" >await fetchUtxosFromWoc(address)</span>
+&nbsp;
+  // If API call failed, skip this address entirely to avoid marking UTXOs as spent
+<span class="cstat-no" title="statement not covered" >  if (wocUtxos === null) {</span>
+<span class="cstat-no" title="statement not covered" >    syncLogger.warn(`[SYNC #${syncId}] SKIPPED: ${address.slice(0,12)}... (API error — preserving existing UTXOs)`)</span>
+<span class="cstat-no" title="statement not covered" >    return {</span>
+      address,
+      basket,
+      newUtxos: 0,
+      spentUtxos: 0,
+      totalBalance: 0
+    }
+  }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  syncLogger.debug(`[SYNC] Found ${wocUtxos.length} UTXOs on-chain for ${address.slice(0,12)}...`)</span>
+&nbsp;
+  // Get existing spendable UTXOs from database FOR THIS SPECIFIC ADDRESS AND ACCOUNT
+  const existingUtxos = <span class="cstat-no" title="statement not covered" >await getSpendableUTXOs(accountId)</span>
+  const existingMap = <span class="cstat-no" title="statement not covered" >new Map&lt;string, DBUtxo&gt;()</span>
+<span class="cstat-no" title="statement not covered" >  for (const utxo of existingUtxos) {</span>
+    // Match by address field (new way) OR locking script (fallback for old records)
+<span class="cstat-no" title="statement not covered" >    if (utxo.address === address || utxo.lockingScript === lockingScript) {</span>
+<span class="cstat-no" title="statement not covered" >      existingMap.set(`${utxo.txid}:${utxo.vout}`, utxo)</span>
+    }
+  }
+&nbsp;
+  // Build set of current UTXOs from WoC
+  const currentUtxoKeys = <span class="cstat-no" title="statement not covered" >new Set&lt;string&gt;()</span>
+<span class="cstat-no" title="statement not covered" >  for (const u of wocUtxos) {</span>
+<span class="cstat-no" title="statement not covered" >    currentUtxoKeys.add(`${u.txid}:${u.vout}`)</span>
+  }
+&nbsp;
+  // Guard: If WoC returns zero UTXOs but we have local UTXOs for this address,
+  // this could be an API issue (rate limit, temporary outage) OR a legitimate
+  // sweep where all UTXOs were spent. Distinguish by checking tx history:
+  // - If the address has transaction history → sweep is legitimate, allow spend-marking
+  // - If history check fails or returns empty → assume API issue, preserve UTXOs
+<span class="cstat-no" title="statement not covered" >  if (wocUtxos.length === 0 &amp;&amp; existingMap.size &gt; 0) {</span>
+    const <span class="cstat-no" title="statement not covered" >wocClient = getWocClient()</span>
+    const historyResult = <span class="cstat-no" title="statement not covered" >await wocClient.getTransactionHistorySafe(address)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (!historyResult.ok || historyResult.value.length === 0) {</span>
+      // History check failed or returned empty — likely an API outage, keep existing UTXOs
+<span class="cstat-no" title="statement not covered" >      syncLogger.warn(</span>
+        `[SYNC #${syncId}] WoC returned 0 UTXOs but ${existingMap.size} exist locally for ${address.slice(0, 12)}... — skipping spend-marking (no tx history to confirm sweep)`
+      )
+<span class="cstat-no" title="statement not covered" >      return { address, basket, newUtxos: 0, spentUtxos: 0, totalBalance: 0 }</span>
+    }
+&nbsp;
+    // History returned successfully with entries — the address was genuinely swept
+<span class="cstat-no" title="statement not covered" >    syncLogger.info(</span>
+      `[SYNC #${syncId}] WoC returned 0 UTXOs for ${address.slice(0, 12)}... with ${historyResult.value.length} tx history entries — address was swept, proceeding with spend-marking`
+    )
+  }
+&nbsp;
+  let newUtxos = <span class="cstat-no" title="statement not covered" >0</span>
+  let spentUtxos = <span class="cstat-no" title="statement not covered" >0</span>
+  let totalBalance = <span class="cstat-no" title="statement not covered" >0</span>
+&nbsp;
+  // Add new UTXOs (with address field!)
+<span class="cstat-no" title="statement not covered" >  for (const wocUtxo of wocUtxos) {</span>
+    const key = <span class="cstat-no" title="statement not covered" >`${wocUtxo.txid}:${wocUtxo.vout}`</span>
+<span class="cstat-no" title="statement not covered" >    totalBalance += wocUtxo.satoshis</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (!existingMap.has(key)) {</span>
+      // New UTXO - add to database with address and account ID
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug(`[SYNC] Adding UTXO: ${wocUtxo.txid.slice(0,8)}:${wocUtxo.vout} = ${wocUtxo.satoshis} sats (account=${accountId ?? 1})`)</span>
+<span class="cstat-no" title="statement not covered" >      try {</span>
+<span class="cstat-no" title="statement not covered" >        await addUTXO({</span>
+          txid: wocUtxo.txid,
+          vout: wocUtxo.vout,
+          satoshis: wocUtxo.satoshis,
+          lockingScript,
+          address,  // Store the address!
+          basket,
+          spendable: true,
+          createdAt: Date.now(),
+          tags: basket === BASKETS.ORDINALS &amp;&amp; wocUtxo.satoshis === 1 ? ['ordinal'] : []
+        }, accountId)
+      } catch (e) {
+<span class="cstat-no" title="statement not covered" >        syncLogger.error(`[SYNC] Failed to add UTXO:`, { error: e })</span>
+      }
+<span class="cstat-no" title="statement not covered" >      newUtxos++</span>
+    }
+  }
+&nbsp;
+  // Mark spent UTXOs - only for UTXOs belonging to THIS address
+  // Protect change outputs from recently broadcast transactions: skip UTXOs whose
+  // txid matches a pending (unconfirmed) transaction we recorded locally.
+  // This replaces the old time-based grace period which was fragile.
+  const pendingTxids = <span class="cstat-no" title="statement not covered" >await getPendingTransactionTxids(accountId)</span>
+<span class="cstat-no" title="statement not covered" >  for (const [key, utxo] of existingMap) {</span>
+<span class="cstat-no" title="statement not covered" >    if (!currentUtxoKeys.has(key)) {</span>
+      // Skip UTXOs that are outputs of our own pending (unconfirmed) transactions —
+      // the blockchain API hasn't indexed them yet but we know they exist
+<span class="cstat-no" title="statement not covered" >      if (pendingTxids.has(utxo.txid)) {</span>
+<span class="cstat-no" title="statement not covered" >        syncLogger.debug(`[SYNC] Skipping UTXO from pending tx (${utxo.txid.slice(0, 8)}...): ${key}`)</span>
+<span class="cstat-no" title="statement not covered" >        continue</span>
+      }
+      // UTXO no longer exists at this address - mark as spent
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug(`[SYNC] Marking spent: ${key}`)</span>
+<span class="cstat-no" title="statement not covered" >      await markUTXOSpent(utxo.txid, utxo.vout, 'unknown', accountId)</span>
+<span class="cstat-no" title="statement not covered" >      spentUtxos++</span>
+    }
+  }
+&nbsp;
+  // Update sync state
+  const currentHeight = <span class="cstat-no" title="statement not covered" >await getCurrentBlockHeight()</span>
+<span class="cstat-no" title="statement not covered" >  await updateSyncState(address, currentHeight)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  syncLogger.debug(`[SYNC #${syncId}] DONE: ${newUtxos} new, ${spentUtxos} spent, ${totalBalance} sats`)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  return {</span>
+    address,
+    basket,
+    newUtxos,
+    spentUtxos,
+    totalBalance
+  }
+}
+&nbsp;
+/**
+ * Check if a transaction output belongs to a specific address.
+ * Prefers the `addresses` array from WoC (faster, clearer), falls back to script hex comparison.
+ */
+function <span class="fstat-no" title="function not covered" >isOurOutput(</span>
+  vout: { scriptPubKey: { hex: string; addresses?: string[] } },
+  address: string,
+  lockingScriptHex: string
+): boolean {
+<span class="cstat-no" title="statement not covered" >  if (vout.scriptPubKey.addresses?.length) {</span>
+<span class="cstat-no" title="statement not covered" >    return vout.scriptPubKey.addresses.includes(address)</span>
+  }
+<span class="cstat-no" title="statement not covered" >  return vout.scriptPubKey.hex === lockingScriptHex</span>
+}
+&nbsp;
+/**
+ * Check if a transaction output belongs to any of our wallet addresses.
+ * Prefers the `addresses` array, falls back to script hex comparison.
+ */
+function <span class="fstat-no" title="function not covered" >isOurOutputMulti(</span>
+  vout: { scriptPubKey: { hex: string; addresses?: string[] } },
+  addressSet: Set&lt;string&gt;,
+  lockingScriptSet: Set&lt;string&gt;
+): boolean {
+<span class="cstat-no" title="statement not covered" >  if (vout.scriptPubKey.addresses?.length) {</span>
+<span class="cstat-no" title="statement not covered" >    return vout.scriptPubKey.addresses.some(<span class="fstat-no" title="function not covered" >a =&gt; <span class="cstat-no" title="statement not covered" >a</span>ddressSet.has(a))</span></span>
+  }
+<span class="cstat-no" title="statement not covered" >  return lockingScriptSet.has(vout.scriptPubKey.hex)</span>
+}
+&nbsp;
+/**
+ * Calculate the net amount change for an address from a transaction
+ * Positive = received, Negative = sent (including fee)
+ *
+ * Strategy: First try local UTXO DB (cheap), then fetch parent tx from API (reliable).
+ * Spent UTXOs may not exist in the local DB after a fresh sync (only current UTXOs
+ * are fetched from blockchain), so the API fallback is essential for accuracy.
+ *
+ * @param tx - Transaction details from WoC
+ * @param primaryAddress - The address whose history we're syncing (used for received calculation)
+ * @param allWalletAddresses - ALL wallet addresses (wallet, ord, identity, derived) to identify our inputs
+ * @param accountId - Account ID for DB lookups
+ */
+async function <span class="fstat-no" title="function not covered" >calculateTxAmount(</span>
+  tx: WocTransaction,
+  primaryAddress: string,
+  allWalletAddresses: string[],
+  accountId?: number
+): Promise&lt;number&gt; {
+  const primaryLockingScript = <span class="cstat-no" title="statement not covered" >getLockingScript(primaryAddress)</span>
+  const allLockingScripts = <span class="cstat-no" title="statement not covered" >new Set(allWalletAddresses.map(<span class="fstat-no" title="function not covered" >a =&gt; <span class="cstat-no" title="statement not covered" >g</span>etLockingScript(a))</span>)</span>
+  const <span class="cstat-no" title="statement not covered" >wocClient = getWocClient()</span>
+  const allAddressSet = <span class="cstat-no" title="statement not covered" >new Set(allWalletAddresses)</span>
+  let received = <span class="cstat-no" title="statement not covered" >0</span>
+&nbsp;
+  // Sum outputs going TO the primary address (the one whose history we're viewing)
+  // Prefer address matching (faster, clearer) with script hex fallback
+<span class="cstat-no" title="statement not covered" >  for (const vout of tx.vout) {</span>
+<span class="cstat-no" title="statement not covered" >    if (isOurOutput(vout, primaryAddress, primaryLockingScript)) {</span>
+<span class="cstat-no" title="statement not covered" >      received += btcToSatoshis(vout.value)</span>
+    }
+  }
+&nbsp;
+  // Check if we spent any of our UTXOs in this transaction's inputs
+  // Match against ALL wallet addresses (not just primary) to catch cross-address spends
+  let spent = <span class="cstat-no" title="statement not covered" >0</span>
+<span class="cstat-no" title="statement not covered" >  for (const vin of tx.vin) {</span>
+<span class="cstat-no" title="statement not covered" >    if (vin.txid &amp;&amp; vin.vout !== undefined) {</span>
+      // Try 1: Local UTXO DB lookup (fast, works for UTXOs we've seen before)
+      const utxo = <span class="cstat-no" title="statement not covered" >await getUtxoByOutpoint(vin.txid, vin.vout, accountId)</span>
+<span class="cstat-no" title="statement not covered" >      if (utxo) {</span>
+<span class="cstat-no" title="statement not covered" >        spent += utxo.satoshis</span>
+<span class="cstat-no" title="statement not covered" >        continue</span>
+      }
+&nbsp;
+      // Try 2: Fetch parent transaction from API (reliable, works after fresh sync)
+      //         Use txDetailCache to avoid refetching the same parent tx
+<span class="cstat-no" title="statement not covered" >      try {</span>
+        let prevTx = <span class="cstat-no" title="statement not covered" >txDetailCache.get(vin.txid) ?? null</span>
+<span class="cstat-no" title="statement not covered" >        if (!prevTx) {</span>
+<span class="cstat-no" title="statement not covered" >          prevTx = await wocClient.getTransactionDetails(vin.txid)</span>
+<span class="cstat-no" title="statement not covered" >          if (prevTx) <span class="cstat-no" title="statement not covered" >txDetailCache.set(vin.txid, prevTx)</span></span>
+        }
+<span class="cstat-no" title="statement not covered" >        if (prevTx?.vout?.[vin.vout]) {</span>
+          const prevOutput = <span class="cstat-no" title="statement not covered" >prevTx.vout[vin.vout]!</span>
+<span class="cstat-no" title="statement not covered" >          if (isOurOutputMulti(prevOutput, allAddressSet, allLockingScripts)) {</span>
+<span class="cstat-no" title="statement not covered" >            spent += btcToSatoshis(prevOutput.value)</span>
+          }
+        }
+      } catch (e) {
+<span class="cstat-no" title="statement not covered" >        syncLogger.warn('Failed to fetch parent tx for amount calculation', {</span>
+          txid: vin.txid,
+          error: String(e)
+        })
+      }
+    }
+  }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  return received - spent</span>
+}
+&nbsp;
+/**
+ * Sync transaction history for an address
+ * Fetches from WhatsOnChain and stores in database
+ * @param address - The address to sync
+ * @param limit - Maximum transactions to sync
+ * @param accountId - Account ID for scoping data
+ */
+async function <span class="fstat-no" title="function not covered" >syncTransactionHistory(a</span>ddress: string, limit: number = <span class="branch-0 cbranch-no" title="branch not covered" >50, a</span>ccountId?: number, allWalletAddresses?: string[], walletPubKey?: string): Promise&lt;number&gt; {
+  const <span class="cstat-no" title="statement not covered" >wocClient = getWocClient()</span>
+&nbsp;
+  // Fetch transaction history
+  const historyResult = <span class="cstat-no" title="statement not covered" >await wocClient.getTransactionHistorySafe(address)</span>
+<span class="cstat-no" title="statement not covered" >  if (!historyResult.ok) {</span>
+<span class="cstat-no" title="statement not covered" >    syncLogger.warn(`Failed to fetch tx history for ${address.slice(0,12)}...`, { error: historyResult.error })</span>
+<span class="cstat-no" title="statement not covered" >    return 0</span>
+  }
+&nbsp;
+  const history = <span class="cstat-no" title="statement not covered" >historyResult.value.slice(0, limit)</span>
+  let newTxCount = <span class="cstat-no" title="statement not covered" >0</span>
+&nbsp;
+  // Skip already-known transactions to avoid wasteful API calls
+  const knownTxids = <span class="cstat-no" title="statement not covered" >await getKnownTxids(accountId)</span>
+  const newHistory = <span class="cstat-no" title="statement not covered" >history.filter(<span class="fstat-no" title="function not covered" >txRef =&gt; <span class="cstat-no" title="statement not covered" >!</span>knownTxids.has(txRef.tx_hash))</span></span>
+<span class="cstat-no" title="statement not covered" >  syncLogger.debug('Incremental tx sync', {</span>
+    total: history.length,
+    new: newHistory.length,
+    skipped: history.length - newHistory.length
+  })
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  for (const txRef of newHistory) {</span>
+    // Get transaction details to calculate amount
+    const txDetails = <span class="cstat-no" title="statement not covered" >await wocClient.getTransactionDetails(txRef.tx_hash)</span>
+&nbsp;
+    let amount: number | undefined
+<span class="cstat-no" title="statement not covered" >    if (txDetails) {</span>
+<span class="cstat-no" title="statement not covered" >      amount = await calculateTxAmount(txDetails, address, allWalletAddresses || [address], accountId)</span>
+    }
+&nbsp;
+    // Check if this is a lock transaction (works for both active and spent locks)
+    let txLabel: 'lock' | 'unlock' | undefined
+    let txDescription: string | undefined
+    let lockSats: number | undefined
+<span class="cstat-no" title="statement not covered" >    if (txDetails) {</span>
+      // Check outputs for timelock scripts (lock creation)
+<span class="cstat-no" title="statement not covered" >      for (const vout of txDetails.vout) {</span>
+        const <span class="cstat-no" title="statement not covered" >parsed = parseTimelockScript(vout.scriptPubKey.hex)</span>
+<span class="cstat-no" title="statement not covered" >        if (parsed) {</span>
+<span class="cstat-no" title="statement not covered" >          lockSats = btcToSatoshis(vout.value)</span>
+<span class="cstat-no" title="statement not covered" >          txDescription = `Locked ${lockSats.toLocaleString()} sats until block ${parsed.unlockBlock.toLocaleString()}`</span>
+<span class="cstat-no" title="statement not covered" >          txLabel = 'lock'</span>
+<span class="cstat-no" title="statement not covered" >          break</span>
+        }
+      }
+&nbsp;
+      // Persist detected lock to database (idempotent — safe for re-runs)
+<span class="cstat-no" title="statement not covered" >      if (txLabel === 'lock' &amp;&amp; walletPubKey) {</span>
+<span class="cstat-no" title="statement not covered" >        try {</span>
+          const <span class="cstat-no" title="statement not covered" >expectedPkh = publicKeyToHash(walletPubKey)</span>
+<span class="cstat-no" title="statement not covered" >          for (let i = <span class="cstat-no" title="statement not covered" >0; i</span> &lt; txDetails.vout.length; i++) {</span>
+            const lockVout = <span class="cstat-no" title="statement not covered" >txDetails.vout[i]!</span>
+            const <span class="cstat-no" title="statement not covered" >parsed = parseTimelockScript(lockVout.scriptPubKey.hex)</span>
+<span class="cstat-no" title="statement not covered" >            if (!parsed || parsed.publicKeyHash !== expectedPkh) <span class="cstat-no" title="statement not covered" >continue</span></span>
+&nbsp;
+            const utxoId = <span class="cstat-no" title="statement not covered" >await addUTXO({</span>
+              txid: txRef.tx_hash,
+              vout: i,
+              satoshis: btcToSatoshis(lockVout.value),
+              lockingScript: lockVout.scriptPubKey.hex,
+              basket: 'locks',
+              spendable: false,
+              createdAt: Date.now()
+            }, accountId)
+&nbsp;
+<span class="cstat-no" title="statement not covered" >            await addLockIfNotExists({</span>
+              utxoId,
+              unlockBlock: parsed.unlockBlock,
+              lockBlock: txRef.height &gt; 0 ? txRef.height : undefined,
+              createdAt: Date.now()
+            }, accountId)
+&nbsp;
+<span class="cstat-no" title="statement not covered" >            syncLogger.info('Persisted lock during sync', {</span>
+              txid: txRef.tx_hash, vout: i, unlockBlock: parsed.unlockBlock
+            })
+&nbsp;
+            // Check if this lock's UTXO has already been spent (i.e. already unlocked).
+            // After a 12-word restore, we may detect lock creation before we see the unlock tx.
+            // If the UTXO is spent, mark the lock as unlocked immediately.
+<span class="cstat-no" title="statement not covered" >            try {</span>
+              const spentResult = <span class="cstat-no" title="statement not covered" >await wocClient.isOutputSpentSafe(txRef.tx_hash, i)</span>
+<span class="cstat-no" title="statement not covered" >              if (spentResult.ok &amp;&amp; spentResult.value !== null) {</span>
+<span class="cstat-no" title="statement not covered" >                await markLockUnlockedByTxid(txRef.tx_hash, i, accountId)</span>
+<span class="cstat-no" title="statement not covered" >                syncLogger.info('Lock already spent on-chain — marked as unlocked', {</span>
+                  txid: txRef.tx_hash, vout: i, spendingTxid: spentResult.value
+                })
+              }
+            } catch (_spentErr) {
+              // Best-effort — detectLockedUtxos will also check later
+            }
+<span class="cstat-no" title="statement not covered" >            break</span>
+          }
+        } catch (lockErr) {
+<span class="cstat-no" title="statement not covered" >          syncLogger.warn('Failed to persist lock during sync (non-fatal)', {</span>
+            txid: txRef.tx_hash, error: String(lockErr)
+          })
+        }
+      }
+&nbsp;
+      // If not a lock creation, check if this is an unlock (spending a timelock UTXO)
+      // Uses locktime + sequence as sufficient signal — no parent tx fetch needed
+<span class="cstat-no" title="statement not covered" >      if (!txLabel &amp;&amp; txDetails.locktime &gt; 500000) {</span>
+        const hasNLockTimeInput = <span class="cstat-no" title="statement not covered" >txDetails.vin.some(<span class="fstat-no" title="function not covered" >v =&gt; <span class="cstat-no" title="statement not covered" >v</span>.sequence === 4294967294)</span></span>
+<span class="cstat-no" title="statement not covered" >        if (hasNLockTimeInput) {</span>
+          const totalOutput = <span class="cstat-no" title="statement not covered" >txDetails.vout.reduce(<span class="fstat-no" title="function not covered" >(s</span>um, v) =&gt; <span class="cstat-no" title="statement not covered" >sum + btcToSatoshis(v.value), 0</span>)</span>
+<span class="cstat-no" title="statement not covered" >          txDescription = `Unlocked ${totalOutput.toLocaleString()} sats`</span>
+<span class="cstat-no" title="statement not covered" >          txLabel = 'unlock'</span>
+<span class="cstat-no" title="statement not covered" >          amount = totalOutput // Use actual received amount, not received-spent (which gives negative fee)</span>
+          // Mark the source lock(s) as unlocked in DB (prevents stale lock flash on restore)
+<span class="cstat-no" title="statement not covered" >          for (const vin of txDetails.vin) {</span>
+<span class="cstat-no" title="statement not covered" >            if (vin.txid &amp;&amp; vin.vout !== undefined) {</span>
+<span class="cstat-no" title="statement not covered" >              try {</span>
+<span class="cstat-no" title="statement not covered" >                await markLockUnlockedByTxid(vin.txid, vin.vout, accountId)</span>
+              } catch (_e) { /* best-effort — lock may not exist in DB yet */ }
+            }
+          }
+        }
+      }
+    }
+&nbsp;
+    // Store in database (addTransaction won't overwrite existing)
+<span class="cstat-no" title="statement not covered" >    try {</span>
+<span class="cstat-no" title="statement not covered" >      await addTransaction({</span>
+        txid: txRef.tx_hash,
+        createdAt: Date.now(),
+        blockHeight: txRef.height &gt; 0 ? txRef.height : undefined,
+        status: txRef.height &gt; 0 ? 'confirmed' : 'pending',
+        amount: txLabel === 'lock' &amp;&amp; lockSats &amp;&amp; amount !== undefined &amp;&amp; amount &gt; 0 ? -lockSats : amount,
+        description: txDescription
+      }, accountId)
+<span class="cstat-no" title="statement not covered" >      newTxCount++</span>
+    } catch (_e) {
+      // Ignore duplicates — but still label transactions that already exist
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug(`Tx ${txRef.tx_hash.slice(0,8)} already exists in database`)</span>
+    }
+&nbsp;
+    // Label lock/unlock transactions (idempotent — safe for both new and existing txs)
+<span class="cstat-no" title="statement not covered" >    if (txLabel &amp;&amp; txDescription) {</span>
+<span class="cstat-no" title="statement not covered" >      try {</span>
+        const existingLabels = <span class="cstat-no" title="statement not covered" >await getTransactionLabels(txRef.tx_hash, accountId)</span>
+<span class="cstat-no" title="statement not covered" >        if (!existingLabels.includes(txLabel)) {</span>
+<span class="cstat-no" title="statement not covered" >          await updateTransactionLabels(txRef.tx_hash, [...existingLabels, txLabel], accountId)</span>
+        }
+        // Update description and fix amount if needed (handles existing txs from prior sync)
+<span class="cstat-no" title="statement not covered" >        await upsertTransaction({</span>
+          txid: txRef.tx_hash,
+          createdAt: Date.now(),
+          blockHeight: txRef.height &gt; 0 ? txRef.height : undefined,
+          status: txRef.height &gt; 0 ? 'confirmed' : 'pending',
+          description: txDescription,
+          ...(txLabel === 'lock' &amp;&amp; lockSats &amp;&amp; amount !== undefined &amp;&amp; amount &gt; 0 ? { amount: -lockSats } : {}),
+          ...(txLabel === 'unlock' &amp;&amp; amount !== undefined ? { amount } : {})
+        }, accountId)
+      } catch (_e) {
+        // Best-effort: don't fail sync if labeling fails
+      }
+    }
+  }
+&nbsp;
+  // Update block heights for pending transactions that are now confirmed
+<span class="cstat-no" title="statement not covered" >  for (const txRef of history) {</span>
+<span class="cstat-no" title="statement not covered" >    if (knownTxids.has(txRef.tx_hash) &amp;&amp; txRef.height &gt; 0) {</span>
+<span class="cstat-no" title="statement not covered" >      try {</span>
+<span class="cstat-no" title="statement not covered" >        await updateTransactionStatus(txRef.tx_hash, 'confirmed', txRef.height, accountId)</span>
+      } catch (_e) {
+        // Ignore errors updating confirmed height
+      }
+    }
+  }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  syncLogger.debug(`[TX HISTORY] Synced ${newTxCount} transactions for ${address.slice(0,12)}... (account=${accountId ?? 1})`)</span>
+<span class="cstat-no" title="statement not covered" >  return newTxCount</span>
+}
+&nbsp;
+/**
+ * Sync all wallet addresses using batched concurrency.
+ *
+ * Addresses are processed in batches of `RATE_LIMITS.maxConcurrentRequests`
+ * (default 3) with an inter-batch delay of `RATE_LIMITS.addressSyncDelay` to
+ * stay within WoC rate limits.  Each batch uses `Promise.allSettled` so a
+ * single address failure never aborts the rest.
+ *
+ * @param addresses - List of addresses to sync
+ * @param token - Optional cancellation token to abort the sync
+ */
+export async function <span class="fstat-no" title="function not covered" >syncAllAddresses(</span>
+  addresses: AddressInfo[],
+  token?: CancellationToken
+): Promise&lt;SyncResult[]&gt; {
+  const results: SyncResult[] = <span class="cstat-no" title="statement not covered" >[]</span>
+  const concurrency = <span class="cstat-no" title="statement not covered" >RATE_LIMITS.maxConcurrentRequests</span>
+&nbsp;
+  const totalBatches = <span class="cstat-no" title="statement not covered" >Math.ceil(addresses.length / concurrency)</span>
+<span class="cstat-no" title="statement not covered" >  syncLogger.debug(`[SYNC] syncAllAddresses: ${addresses.length} addresses in ~${totalBatches} batches (concurrency=${concurrency})`)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  for (let i = <span class="cstat-no" title="statement not covered" >0; i</span> &lt; addresses.length; i += concurrency) {</span>
+    // Check for cancellation before each batch
+<span class="cstat-no" title="statement not covered" >    if (token?.isCancelled) {</span>
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug('[SYNC] Cancelled - stopping address sync')</span>
+<span class="cstat-no" title="statement not covered" >      break</span>
+    }
+&nbsp;
+    // Inter-batch delay (skip before the first batch)
+<span class="cstat-no" title="statement not covered" >    if (i &gt; 0) {</span>
+<span class="cstat-no" title="statement not covered" >      if (token) {</span>
+<span class="cstat-no" title="statement not covered" >        await cancellableDelay(RATE_LIMITS.addressSyncDelay, token)</span>
+      } else {
+<span class="cstat-no" title="statement not covered" >        await new Promise(<span class="fstat-no" title="function not covered" >resolve =&gt; <span class="cstat-no" title="statement not covered" >s</span>etTimeout(resolve, RATE_LIMITS.addressSyncDelay))</span></span>
+      }
+    }
+&nbsp;
+    const batch = <span class="cstat-no" title="statement not covered" >addresses.slice(i, i + concurrency)</span>
+    const batchNum = <span class="cstat-no" title="statement not covered" >Math.floor(i / concurrency) + 1</span>
+<span class="cstat-no" title="statement not covered" >    syncLogger.debug(`[SYNC] Batch ${batchNum}/${totalBatches}: syncing ${batch.map(<span class="fstat-no" title="function not covered" >a =&gt; <span class="cstat-no" title="statement not covered" >a</span>.address.slice(0, 8))</span>.join(', ')}...`)</span>
+&nbsp;
+    const settled = <span class="cstat-no" title="statement not covered" >await Promise.allSettled(</span>
+      batch.map(<span class="fstat-no" title="function not covered" >addr =&gt; <span class="cstat-no" title="statement not covered" >s</span>yncAddress(addr))</span>
+    )
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    for (let j = <span class="cstat-no" title="statement not covered" >0; j</span> &lt; settled.length; j++) {</span>
+      const outcome = <span class="cstat-no" title="statement not covered" >settled[j]!</span>
+      const addr = <span class="cstat-no" title="statement not covered" >batch[j]!</span>
+<span class="cstat-no" title="statement not covered" >      if (outcome.status === 'fulfilled') {</span>
+<span class="cstat-no" title="statement not covered" >        results.push(outcome.value)</span>
+<span class="cstat-no" title="statement not covered" >        syncLogger.info(`Synced ${addr.basket}: ${outcome.value.newUtxos} new, ${outcome.value.spentUtxos} spent, ${outcome.value.totalBalance} sats`)</span>
+      } else {
+<span class="cstat-no" title="statement not covered" >        if (isCancellationError(outcome.reason)) {</span>
+<span class="cstat-no" title="statement not covered" >          syncLogger.debug('[SYNC] Cancelled during address sync')</span>
+          // Don't break here — other addresses in the batch may have completed
+        } else {
+<span class="cstat-no" title="statement not covered" >          syncLogger.error(`Failed to sync ${addr.address}:`, outcome.reason)</span>
+        }
+      }
+    }
+  }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  return results</span>
+}
+&nbsp;
+/**
+ * Backfill NULL transaction amounts.
+ *
+ * After a 12-word restore the sync may store transactions with amount=NULL when
+ * the WoC API times out or rate-limits during the initial heavy sync burst.
+ * This function re-fetches transaction details in batches and recalculates
+ * amounts for any transactions that still have NULL amounts.
+ *
+ * Uses `getTransactionDetailsBatch` for efficient concurrent fetching and
+ * the module-level `txDetailCache` to avoid redundant API calls.
+ *
+ * Safe to call repeatedly — only touches rows where amount IS NULL.
+ */
+async function <span class="fstat-no" title="function not covered" >backfillNullAmounts(</span>
+  allWalletAddresses: string[],
+  accountId?: number
+): Promise&lt;number&gt; {
+<span class="cstat-no" title="statement not covered" >  try {</span>
+    // Get all transactions for this account (up to 200 — covers typical restore)
+    const allTxs = <span class="cstat-no" title="statement not covered" >await getAllTransactions(200, accountId)</span>
+    const nullAmountTxs = <span class="cstat-no" title="statement not covered" >allTxs.filter(<span class="fstat-no" title="function not covered" >tx =&gt; <span class="cstat-no" title="statement not covered" >t</span>x.amount === undefined || tx.amount === null)</span></span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (nullAmountTxs.length === 0) <span class="cstat-no" title="statement not covered" >return 0</span></span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    syncLogger.info(`[BACKFILL] Found ${nullAmountTxs.length} transactions with NULL amounts, recalculating...`)</span>
+&nbsp;
+    const <span class="cstat-no" title="statement not covered" >wocClient = getWocClient()</span>
+    const primaryAddress = <span class="cstat-no" title="statement not covered" >allWalletAddresses[0]</span>
+<span class="cstat-no" title="statement not covered" >    if (!primaryAddress) <span class="cstat-no" title="statement not covered" >return 0</span></span>
+&nbsp;
+    // --- Batch-fetch all missing tx details in one go ---
+    // Filter out txids that are already in the cache
+    const txidsToFetch = <span class="cstat-no" title="statement not covered" >nullAmountTxs</span>
+      .map(<span class="fstat-no" title="function not covered" >tx =&gt; <span class="cstat-no" title="statement not covered" >t</span>x.txid)</span>
+      .filter(<span class="fstat-no" title="function not covered" >txid =&gt; <span class="cstat-no" title="statement not covered" >!</span>txDetailCache.has(txid))</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (txidsToFetch.length &gt; 0) {</span>
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug(`[BACKFILL] Batch-fetching ${txidsToFetch.length} tx details (concurrency=${RATE_LIMITS.maxConcurrentRequests})`)</span>
+      const batchMap = <span class="cstat-no" title="statement not covered" >await wocClient.getTransactionDetailsBatch(</span>
+        txidsToFetch,
+        RATE_LIMITS.maxConcurrentRequests
+      )
+      // Merge into the module-level cache
+<span class="cstat-no" title="statement not covered" >      for (const [txid, detail] of batchMap) {</span>
+<span class="cstat-no" title="statement not covered" >        txDetailCache.set(txid, detail)</span>
+      }
+    }
+&nbsp;
+    // --- Calculate amounts using cached details ---
+    let fixed = <span class="cstat-no" title="statement not covered" >0</span>
+    const calcResults = <span class="cstat-no" title="statement not covered" >await batchWithConcurrency(</span>
+      nullAmountTxs,
+<span class="fstat-no" title="function not covered" >      async (t</span>x) =&gt; {
+        const txDetails = <span class="cstat-no" title="statement not covered" >txDetailCache.get(tx.txid) ?? null</span>
+<span class="cstat-no" title="statement not covered" >        if (!txDetails) {</span>
+<span class="cstat-no" title="statement not covered" >          syncLogger.debug(`[BACKFILL] Could not fetch tx ${tx.txid.slice(0, 8)}... — skipping`)</span>
+<span class="cstat-no" title="statement not covered" >          return null</span>
+        }
+        const amount = <span class="cstat-no" title="statement not covered" >await calculateTxAmount(txDetails, primaryAddress, allWalletAddresses, accountId)</span>
+<span class="cstat-no" title="statement not covered" >        await updateTransactionAmount(tx.txid, amount, accountId)</span>
+<span class="cstat-no" title="statement not covered" >        syncLogger.debug(`[BACKFILL] Fixed amount for ${tx.txid.slice(0, 8)}... → ${amount} sats`)</span>
+<span class="cstat-no" title="statement not covered" >        return { txid: tx.txid, amount }</span>
+      },
+      RATE_LIMITS.maxConcurrentRequests
+    )
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    for (const r of calcResults) {</span>
+<span class="cstat-no" title="statement not covered" >      if (r.status === 'fulfilled' &amp;&amp; r.value !== null) <span class="cstat-no" title="statement not covered" >fixed++</span></span>
+    }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    syncLogger.info(`[BACKFILL] Fixed ${fixed}/${nullAmountTxs.length} transaction amounts`)</span>
+<span class="cstat-no" title="statement not covered" >    return fixed</span>
+  } catch (e) {
+<span class="cstat-no" title="statement not covered" >    syncLogger.warn('[BACKFILL] backfillNullAmounts failed (non-fatal)', { error: String(e) })</span>
+<span class="cstat-no" title="statement not covered" >    return 0</span>
+  }
+}
+&nbsp;
+/**
+ * Full wallet sync - syncs all three address types plus derived addresses
+ * Automatically cancels any previous sync in progress
+ * @param walletAddress - Main wallet address
+ * @param ordAddress - Ordinals address
+ * @param identityAddress - Identity address
+ * @param accountId - Account ID for scoping data (optional, defaults to 1)
+ * @returns Object with total balance and sync results, or undefined if cancelled
+ */
+export async function <span class="fstat-no" title="function not covered" >syncWallet(</span>
+  walletAddress: string,
+  ordAddress: string,
+  identityAddress: string,
+  accountId?: number,
+  walletPubKey?: string
+): Promise&lt;{ total: number; results: SyncResult[] } | undefined&gt; {
+  // Acquire sync lock to prevent database race conditions
+  // This ensures only one sync runs at a time
+  const releaseLock = <span class="cstat-no" title="statement not covered" >await acquireSyncLock(accountId ?? 1)</span>
+&nbsp;
+  // Start new sync (cancels any previous sync)
+  const <span class="cstat-no" title="statement not covered" >token = startNewSync()</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  try {</span>
+    // Recover any UTXOs stuck in 'pending' state for more than 5 minutes
+    // These can occur when a broadcast fails after marking UTXOs as pending
+<span class="cstat-no" title="statement not covered" >    try {</span>
+      const stuckUtxos = <span class="cstat-no" title="statement not covered" >await getPendingUtxos(5 * 60 * 1000)</span>
+<span class="cstat-no" title="statement not covered" >      if (stuckUtxos.length &gt; 0) {</span>
+<span class="cstat-no" title="statement not covered" >        syncLogger.warn(`[SYNC] Found ${stuckUtxos.length} stuck pending UTXOs — rolling back`)</span>
+<span class="cstat-no" title="statement not covered" >        await rollbackPendingSpend(stuckUtxos.map(<span class="fstat-no" title="function not covered" >u =&gt; (<span class="cstat-no" title="statement not covered" >{</span> txid: u.txid, vout: u.vout }))</span>)</span>
+      }
+    } catch (error) {
+<span class="cstat-no" title="statement not covered" >      syncLogger.warn('[SYNC] Failed to recover pending UTXOs', { error: String(error) })</span>
+    }
+&nbsp;
+    // Sync derived addresses FIRST (most important for correct balance)
+    let derivedAddresses: DerivedAddress[]
+<span class="cstat-no" title="statement not covered" >    try {</span>
+<span class="cstat-no" title="statement not covered" >      derivedAddresses = await getDerivedAddressesFromDB(accountId)</span>
+    } catch (e) {
+<span class="cstat-no" title="statement not covered" >      syncLogger.error('[SYNC] DB query failed: getDerivedAddressesFromDB', e)</span>
+<span class="cstat-no" title="statement not covered" >      throw new Error(`Database query failed (derived addresses): ${e instanceof Error ? e.message : String(e)}`)</span>
+    }
+<span class="cstat-no" title="statement not covered" >    if (!Array.isArray(derivedAddresses)) {</span>
+<span class="cstat-no" title="statement not covered" >      syncLogger.warn('[SYNC] getDerivedAddressesFromDB returned non-array, defaulting to empty', { type: typeof derivedAddresses })</span>
+<span class="cstat-no" title="statement not covered" >      derivedAddresses = []</span>
+    }
+<span class="cstat-no" title="statement not covered" >    syncLogger.debug(`[SYNC] Found ${derivedAddresses.length} derived addresses in database`)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (token.isCancelled) {</span>
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug('[SYNC] Cancelled before starting')</span>
+<span class="cstat-no" title="statement not covered" >      return undefined</span>
+    }
+&nbsp;
+    const addresses: AddressInfo[] = <span class="cstat-no" title="statement not covered" >[]</span>
+&nbsp;
+    // Add derived addresses first (priority)
+<span class="cstat-no" title="statement not covered" >    for (const derived of derivedAddresses) {</span>
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug(`[SYNC] Adding derived address to sync (priority): ${derived.address}`)</span>
+<span class="cstat-no" title="statement not covered" >      addresses.push({</span>
+        address: derived.address,
+        basket: BASKETS.DERIVED,
+        wif: derived.privateKeyWif,
+        accountId
+      })
+    }
+&nbsp;
+    // Then add main addresses
+<span class="cstat-no" title="statement not covered" >    addresses.push(</span>
+      { address: walletAddress, basket: BASKETS.DEFAULT, accountId },
+      { address: ordAddress, basket: BASKETS.ORDINALS, accountId },
+      { address: identityAddress, basket: BASKETS.IDENTITY, accountId }
+    )
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    syncLogger.debug(`[SYNC] Total addresses to sync: ${addresses.length}`)</span>
+    const results = <span class="cstat-no" title="statement not covered" >await syncAllAddresses(addresses, token)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (token.isCancelled) {</span>
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug('[SYNC] Cancelled during sync')</span>
+<span class="cstat-no" title="statement not covered" >      return undefined</span>
+    }
+&nbsp;
+    // Sync transaction history for main addresses (not ordinals/identity to reduce API calls)
+    // Include derived addresses since they receive payments
+    const txHistoryAddresses = <span class="cstat-no" title="statement not covered" >[walletAddress, ...derivedAddresses.map(<span class="fstat-no" title="function not covered" >d =&gt; <span class="cstat-no" title="statement not covered" >d</span>.address)</span>]</span>
+    // All wallet addresses for accurate input matching in calculateTxAmount
+    const allWalletAddresses = <span class="cstat-no" title="statement not covered" >[walletAddress, ordAddress, identityAddress, ...derivedAddresses.map(<span class="fstat-no" title="function not covered" >d =&gt; <span class="cstat-no" title="statement not covered" >d</span>.address)</span>]</span>
+<span class="cstat-no" title="statement not covered" >    syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses (account=${accountId ?? 1})`)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    for (const addr of txHistoryAddresses) {</span>
+<span class="cstat-no" title="statement not covered" >      if (token.isCancelled) <span class="cstat-no" title="statement not covered" >break</span></span>
+<span class="cstat-no" title="statement not covered" >      try {</span>
+<span class="cstat-no" title="statement not covered" >        await syncTransactionHistory(addr, 30, accountId, allWalletAddresses, walletPubKey)</span>
+        // Small delay to avoid rate limiting
+<span class="cstat-no" title="statement not covered" >        await new Promise(<span class="fstat-no" title="function not covered" >resolve =&gt; <span class="cstat-no" title="statement not covered" >s</span>etTimeout(resolve, RATE_LIMITS.addressSyncDelay))</span></span>
+      } catch (e) {
+<span class="cstat-no" title="statement not covered" >        syncLogger.warn(`Failed to sync tx history for ${addr.slice(0,12)}...`, { error: String(e) })</span>
+      }
+    }
+&nbsp;
+    // Backfill any transactions that were stored with NULL amounts
+    // (common after 12-word restore when API rate limits cause failures)
+<span class="cstat-no" title="statement not covered" >    if (!token.isCancelled) {</span>
+<span class="cstat-no" title="statement not covered" >      await backfillNullAmounts(allWalletAddresses, accountId)</span>
+    }
+&nbsp;
+    // Update sync timestamps for derived addresses
+<span class="cstat-no" title="statement not covered" >    for (const derived of derivedAddresses) {</span>
+      const result = <span class="cstat-no" title="statement not covered" >results.find(<span class="fstat-no" title="function not covered" >r =&gt; <span class="cstat-no" title="statement not covered" >r</span>.address === derived.address)</span></span>
+<span class="cstat-no" title="statement not covered" >      if (result) {</span>
+<span class="cstat-no" title="statement not covered" >        await updateDerivedAddressSyncTime(derived.address)</span>
+      }
+    }
+&nbsp;
+    const total = <span class="cstat-no" title="statement not covered" >results.reduce(<span class="fstat-no" title="function not covered" >(s</span>um, r) =&gt; <span class="cstat-no" title="statement not covered" >sum + r.totalBalance, 0</span>)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    return { total, results }</span>
+  } catch (error) {
+<span class="cstat-no" title="statement not covered" >    if (isCancellationError(error)) {</span>
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug('[SYNC] Wallet sync cancelled')</span>
+<span class="cstat-no" title="statement not covered" >      return undefined</span>
+    }
+<span class="cstat-no" title="statement not covered" >    throw error</span>
+  } finally {
+    // Always release the lock and clear per-sync caches when done
+<span class="cstat-no" title="statement not covered" >    clearTxDetailCache()</span>
+<span class="cstat-no" title="statement not covered" >    releaseLock()</span>
+  }
+}
+&nbsp;
+/**
+ * Quick balance check - just sums current spendable UTXOs from database
+ * Much faster than fetching from blockchain
+ * @param basket - Optional basket filter
+ * @param accountId - Account ID to filter by (optional)
+ */
+export async function getBalanceFromDatabase(basket?: string, accountId?: number): Promise&lt;number&gt; {
+  const utxos = await getSpendableUTXOs(accountId)
+&nbsp;
+  if (basket) {
+    const filtered = utxos.filter(u =&gt; u.basket === basket)
+    const balance = filtered.reduce((sum, u) =&gt; sum + u.satoshis, 0)
+    syncLogger.debug(`[BALANCE] getBalanceFromDatabase('${basket}', account=${accountId}): ${filtered.length} UTXOs, ${balance} sats`)
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (basket === 'derived' &amp;&amp; <span class="branch-1 cbranch-no" title="branch not covered" >filtered.length &gt; 0) {</span>
+<span class="cstat-no" title="statement not covered" >      syncLogger.debug('[BALANCE] Derived UTXOs', { utxos: filtered.map(<span class="fstat-no" title="function not covered" >u =&gt; (<span class="cstat-no" title="statement not covered" >{</span> txid: u.txid.slice(0, 8), vout: u.vout, sats: u.satoshis, basket: u.basket }))</span> })</span>
+    }
+    return balance
+  }
+&nbsp;
+  return utxos.reduce((sum, u) =&gt; sum + u.satoshis, 0)
+}
+&nbsp;
+/**
+ * Get UTXOs for spending from database
+ * Returns UTXOs from the specified basket, sorted by value (smallest first for coin selection)
+ * @param basket - The basket to filter by
+ * @param accountId - Account ID to filter by (optional)
+ */
+export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEFAULT, accountId?: number): Promise&lt;DBUtxo[]&gt; {
+  const allUtxos = await getSpendableUTXOs(accountId)
+  return allUtxos
+    .filter(u =&gt; u.basket === basket)
+    .sort((a, b) =&gt; a.satoshis - b.satoshis)
+}
+&nbsp;
+/**
+ * Map database lock records to LockedUTXO format.
+ * Used by WalletContext and SyncContext when preloading locks from DB.
+ */
+export function <span class="fstat-no" title="function not covered" >mapDbLocksToLockedUtxos(</span>
+  dbLocks: Awaited&lt;ReturnType&lt;typeof import('./database').getLocks&gt;&gt;,
+  walletPubKey: string
+): LockedUTXO[] {
+<span class="cstat-no" title="statement not covered" >  return dbLocks.map(<span class="fstat-no" title="function not covered" >lock =&gt; (<span class="cstat-no" title="statement not covered" >{</span></span></span>
+    txid: lock.utxo.txid,
+    vout: lock.utxo.vout,
+    satoshis: lock.utxo.satoshis,
+    lockingScript: lock.utxo.lockingScript,
+    unlockBlock: lock.unlockBlock,
+    publicKeyHex: walletPubKey,
+    createdAt: lock.createdAt,
+    lockBlock: lock.lockBlock
+  }))
+}
+&nbsp;
+/**
+ * Get ordinals from the database (ordinals basket)
+ * Returns ordinals that are stored in the database from syncing
+ * @param accountId - Account ID to filter by (optional)
+ */
+export async function getOrdinalsFromDatabase(accountId?: number): Promise&lt;{ txid: string; vout: number; satoshis: number; origin: string }[]&gt; {
+  const allUtxos = await getSpendableUTXOs(accountId)
+  const ordinalUtxos = allUtxos.filter(u =&gt; u.basket === BASKETS.ORDINALS)
+  syncLogger.debug(`[Ordinals] Found ${ordinalUtxos.length} ordinals in database (account=${accountId})`)
+  return ordinalUtxos.map(u =&gt; ({
+    txid: u.txid,
+    vout: u.vout,
+    satoshis: u.satoshis,
+    origin: `${u.txid}_${u.vout}`
+  }))
+}
+&nbsp;
+/**
+ * Record a transaction we sent
+ * @param txid - Transaction ID
+ * @param rawTx - Raw transaction hex
+ * @param description - Transaction description
+ * @param labels - Transaction labels
+ * @param amount - Transaction amount in satoshis
+ * @param accountId - Account ID for scoping data
+ */
+export async function recordSentTransaction(
+  txid: string,
+  rawTx: string,
+  description: string,
+  labels: string[] = [],
+  amount?: number,
+  accountId?: number
+): Promise&lt;void&gt; {
+  await upsertTransaction({
+    txid,
+    rawTx,
+    description,
+    createdAt: Date.now(),
+    status: 'pending',
+    labels,
+    amount
+  }, accountId)
+}
+&nbsp;
+/**
+ * Mark UTXOs as spent after sending a transaction
+ */
+export async function markUtxosSpent(
+  utxos: { txid: string; vout: number }[],
+  spendingTxid: string,
+  accountId?: number
+): Promise&lt;void&gt; {
+  for (const utxo of utxos) {
+    await markUTXOSpent(utxo.txid, utxo.vout, spendingTxid, accountId)
+  }
+}
+&nbsp;
+// Re-export pending spend functions from database for race condition prevention
+export {
+  markUtxosPendingSpend,
+  confirmUtxosSpent,
+  rollbackPendingSpend,
+  getPendingUtxos
+}
+&nbsp;
+/**
+ * Check if initial sync is needed
+ */
+export async function needsInitialSync(addresses: string[]): Promise&lt;boolean&gt; {
+  for (const addr of addresses) {
+    const lastHeight = await getLastSyncedHeight(addr)
+    if (lastHeight === 0) {
+      return true
+    }
+  }
+  return false
+}
+&nbsp;
+/**
+ * Restore wallet - full sync that rebuilds the database from blockchain
+ * This is what happens when you restore from 12 words
+ * @param walletAddress - Main wallet address
+ * @param ordAddress - Ordinals address
+ * @param identityAddress - Identity address
+ * @param accountId - Account ID for scoping data
+ */
+export async function <span class="fstat-no" title="function not covered" >restoreFromBlockchain(</span>
+  walletAddress: string,
+  ordAddress: string,
+  identityAddress: string,
+  accountId?: number,
+  walletPubKey?: string
+): Promise&lt;{ total: number; results: SyncResult[] }&gt; {
+<span class="cstat-no" title="statement not covered" >  syncLogger.info('Starting wallet restore from blockchain...')</span>
+&nbsp;
+  // Perform full sync
+  const result = <span class="cstat-no" title="statement not covered" >await syncWallet(walletAddress, ordAddress, identityAddress, accountId, walletPubKey)</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  syncLogger.info(`Restore complete: ${result?.total ?? 0} total satoshis found`)</span>
+<span class="cstat-no" title="statement not covered" >  if (result) {</span>
+<span class="cstat-no" title="statement not covered" >    syncLogger.debug('Results', { results: result.results })</span>
+  }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  if (!result) {</span>
+<span class="cstat-no" title="statement not covered" >    throw new Error('Wallet restore was cancelled')</span>
+  }
+<span class="cstat-no" title="statement not covered" >  return result</span>
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-02-17T17:52:34.721Z
+            </div>
+        <script src="../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../sorter.js"></script>
+        <script src="../block-navigation.js"></script>
+    </body>
+</html>
+    

@@ -9,12 +9,12 @@ interface OrdinalImageProps {
   alt?: string
   lazy?: boolean
   /** Cached content for rendering text/JSON previews or data-URL images */
-  cachedContent?: { contentData?: Uint8Array; contentText?: string }
+  cachedContent?: { contentData?: Uint8Array; contentText?: string; contentType?: string }
 }
 
 export const OrdinalImage = memo(function OrdinalImage({
   origin,
-  contentType,
+  contentType: contentTypeProp,
   size = 'md',
   alt = 'Ordinal',
   lazy = true,
@@ -22,6 +22,11 @@ export const OrdinalImage = memo(function OrdinalImage({
 }: OrdinalImageProps) {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading')
   const url = getOrdinalContentUrl(origin)
+
+  // Prefer contentType from cached DB entry (resolved from HTTP header during fetch)
+  // over the prop — the prop may be undefined for transferred ordinals on restore.
+  const contentType = cachedContent?.contentType ?? contentTypeProp
+
   const isImage = isImageOrdinal(contentType)
   const isText = contentType?.startsWith('text/') && !contentType?.includes('html')
   const isJson = contentType?.includes('json')
@@ -56,9 +61,8 @@ export const OrdinalImage = memo(function OrdinalImage({
   }
 
   // For non-image types without cached content, show fallback icon.
-  // Exception: if contentType is unknown (undefined) but we have a URL, attempt
-  // the network load — GorillaPool serves the correct content-type header and the
-  // browser will render it if it's an image. Fall back to the Diamond icon on error.
+  // If contentType is still unknown after checking the cache, attempt the GorillaPool
+  // network load — the browser will render it if it's an image.
   if (!url || (contentType !== undefined && !isImage)) {
     return (
       <div className={`ordinal-img-fallback ordinal-img-${size}`}>

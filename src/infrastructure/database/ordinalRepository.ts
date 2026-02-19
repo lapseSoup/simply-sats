@@ -104,12 +104,12 @@ export async function markOrdinalTransferred(origin: string): Promise<void> {
 /**
  * Get cached content for a specific ordinal
  */
-export async function getCachedOrdinalContent(origin: string): Promise<{ contentData?: Uint8Array; contentText?: string } | null> {
+export async function getCachedOrdinalContent(origin: string): Promise<{ contentData?: Uint8Array; contentText?: string; contentType?: string } | null> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<Pick<OrdinalCacheRow, 'content_data' | 'content_text'>[]>(
-      'SELECT content_data, content_text FROM ordinal_cache WHERE origin = $1',
+    const rows = await database.select<Pick<OrdinalCacheRow, 'content_data' | 'content_text' | 'content_type'>[]>(
+      'SELECT content_data, content_text, content_type FROM ordinal_cache WHERE origin = $1',
       [origin]
     )
 
@@ -118,7 +118,8 @@ export async function getCachedOrdinalContent(origin: string): Promise<{ content
     const row = rows[0]!
     return {
       contentData: row.content_data ? new Uint8Array(row.content_data) : undefined,
-      contentText: row.content_text ?? undefined
+      contentText: row.content_text ?? undefined,
+      contentType: row.content_type ?? undefined
     }
   } catch (_e) {
     return null
@@ -170,19 +171,27 @@ export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> 
 }
 
 /**
- * Store fetched content for an ordinal
+ * Store fetched content for an ordinal (also updates content_type if provided)
  */
 export async function upsertOrdinalContent(
   origin: string,
   contentData?: Uint8Array,
-  contentText?: string
+  contentText?: string,
+  contentType?: string
 ): Promise<void> {
   const database = getDatabase()
 
-  await database.execute(
-    'UPDATE ordinal_cache SET content_data = $1, content_text = $2 WHERE origin = $3',
-    [contentData ? Array.from(contentData) : null, contentText || null, origin]
-  )
+  if (contentType) {
+    await database.execute(
+      'UPDATE ordinal_cache SET content_data = $1, content_text = $2, content_type = $3 WHERE origin = $4',
+      [contentData ? Array.from(contentData) : null, contentText || null, contentType, origin]
+    )
+  } else {
+    await database.execute(
+      'UPDATE ordinal_cache SET content_data = $1, content_text = $2 WHERE origin = $3',
+      [contentData ? Array.from(contentData) : null, contentText || null, origin]
+    )
+  }
 }
 
 /**

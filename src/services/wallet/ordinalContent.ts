@@ -20,7 +20,7 @@ import { gpOrdinalsApi } from '../../infrastructure/api/clients'
 export async function fetchOrdinalContent(
   origin: string,
   contentType?: string
-): Promise<{ contentData?: Uint8Array; contentText?: string } | null> {
+): Promise<{ contentData?: Uint8Array; contentText?: string; contentType?: string } | null> {
   try {
     const result = await gpOrdinalsApi.fetch(`/content/${origin}`)
 
@@ -35,14 +35,17 @@ export async function fetchOrdinalContent(
       return null
     }
 
-    const isText = contentType?.startsWith('text/') || contentType?.includes('json')
+    // Read actual content-type from response header — use it when caller didn't know it
+    const resolvedContentType = response.headers.get('content-type')?.split(';')[0]?.trim() || contentType
+
+    const isText = resolvedContentType?.startsWith('text/') || resolvedContentType?.includes('json')
 
     if (isText) {
       const text = await response.text()
-      return { contentText: text }
+      return { contentText: text, contentType: resolvedContentType }
     } else {
       const buffer = await response.arrayBuffer()
-      return { contentData: new Uint8Array(buffer) }
+      return { contentData: new Uint8Array(buffer), contentType: resolvedContentType }
     }
   } catch (e) {
     syncLogger.debug(`[OrdinalContent] Error fetching ${origin}: ${e}`)

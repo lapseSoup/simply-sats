@@ -38,6 +38,8 @@ import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 export interface OrdinalContentEntry {
   contentData?: Uint8Array
   contentText?: string
+  /** Actual MIME type resolved from HTTP response header — used to render the correct preview */
+  contentType?: string
 }
 
 export interface TxHistoryItem {
@@ -645,7 +647,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       if (content) {
         // Ensure a row exists so we can store the content
         await ensureOrdinalCacheRowForTransferred(origin)
-        await upsertOrdinalContent(origin, content.contentData, content.contentText)
+        await upsertOrdinalContent(origin, content.contentData, content.contentText, content.contentType)
         contentCacheRef.current.set(origin, content)
         setOrdinalContentCache(new Map(contentCacheRef.current))
         syncLogger.debug('Fetched transferred ordinal content', { origin })
@@ -753,8 +755,8 @@ async function cacheOrdinalsInBackground(
       if (isCancelled()) return
       const content = await fetchOrdinalContent(ord.origin, ord.contentType)
       if (content) {
-        // Save to DB
-        await upsertOrdinalContent(ord.origin, content.contentData, content.contentText)
+        // Save to DB (also update content_type if resolved from response header)
+        await upsertOrdinalContent(ord.origin, content.contentData, content.contentText, content.contentType)
         // Update in-memory cache
         contentCacheRef.current.set(ord.origin, content)
         contentAdded = true
