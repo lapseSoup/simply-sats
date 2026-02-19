@@ -7,7 +7,7 @@
 
 import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode, type SetStateAction, type MutableRefObject } from 'react'
 import type { WalletKeys, LockedUTXO, UTXO } from '../services/wallet'
-import { getUTXOs, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
+import { getUTXOsFromDB, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
 import { ok, err, type WalletResult } from '../domain/types'
 import { useNetwork } from './NetworkContext'
 import { walletLogger } from '../services/logger'
@@ -129,7 +129,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
         return err('A lock with this amount and duration was just created')
       }
 
-      const walletUtxos = await getUTXOs(wallet.walletAddress)
+      const walletUtxos = await getUTXOsFromDB(undefined, activeAccountId ?? undefined)
 
       const lockResult = await lockBSV(amountSats, unlockBlock, walletUtxos, undefined, currentHeight, activeAccountId ?? undefined)
       if (!lockResult.ok) {
