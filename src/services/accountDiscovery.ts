@@ -17,6 +17,29 @@ import { createAccount, switchAccount, getAccountByIdentity } from './accounts'
 import { syncWallet } from './sync'
 import { accountLogger } from './logger'
 
+/** True when running inside the Tauri desktop shell. */
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+/**
+ * Check address balance via the Rust backend (bypasses WKWebView fetch).
+ * Returns balance in satoshis, or null on error.
+ *
+ * The WKWebView CDN cache can serve stale [] for /history and 0 for /balance
+ * even when the address has on-chain activity. Routing through Rust's reqwest
+ * client completely avoids this issue.
+ */
+async function checkBalanceViaRust(address: string): Promise<number | null> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const balance = await invoke<number>('check_address_balance', { address })
+    return balance >= 0 ? balance : null // -1 signals error
+  } catch {
+    return null
+  }
+}
+
 /**
  * Maximum derivation indices to scan (1..N) when restoring from mnemonic.
  *
@@ -92,12 +115,13 @@ export async function discoverAccounts(
     })
 
     // Check all 3 addresses serially to avoid burst rate limiting.
-    // Uses the /balance endpoint (not /history) for discovery: it returns a
-    // scalar {confirmed, unconfirmed} which is unaffected by the CDN-level
-    // caching that can cause /history to return stale empty arrays in Tauri.
-    // Returns true if any address has a non-zero balance or tx history.
-    // Returns false if all addresses confirmed empty.
+    // In Tauri: uses Rust's reqwest client via check_address_balance command,
+    // which bypasses WKWebView's CDN cache that serves stale data for some addresses.
+    // In browser/tests: falls back to wocClient.getBalanceSafe (webview fetch).
+    // Returns true if any address has a non-zero balance (account is active).
+    // Returns false if all addresses confirmed at zero balance.
     // Returns null if any check failed (API error — inconclusive).
+    const useTauri = isTauri()
     const checkActivity = async (): Promise<boolean | null> => {
       const addresses = [keys.walletAddress, keys.ordAddress, keys.identityAddress]
       const addrLabels = ['wallet', 'ordinals', 'identity']
@@ -108,26 +132,41 @@ export async function discoverAccounts(
         if (addrIdx > 0) {
           await new Promise(resolve => setTimeout(resolve, DISCOVERY_INTER_ADDRESS_DELAY_MS))
         }
-        const result = await wocClient.getBalanceSafe(addr)
-        if (!result.ok) {
-          accountLogger.warn('Address check failed', {
-            accountIndex: i,
-            addrType: addrLabels[addrIdx],
-            addr,
-            error: result.error.message,
-            code: result.error.code,
-            status: result.error.status
-          })
-          allOk = false
-          continue
+
+        let balance: number | null = null
+        if (useTauri) {
+          // Route through Rust to bypass WKWebView CDN caching
+          balance = await checkBalanceViaRust(addr)
+          if (balance === null) {
+            accountLogger.warn('Rust address check failed', { accountIndex: i, addrType: addrLabels[addrIdx], addr })
+            allOk = false
+            continue
+          }
+        } else {
+          const result = await wocClient.getBalanceSafe(addr)
+          if (!result.ok) {
+            accountLogger.warn('Address check failed', {
+              accountIndex: i,
+              addrType: addrLabels[addrIdx],
+              addr,
+              error: result.error.message,
+              code: result.error.code,
+              status: result.error.status
+            })
+            allOk = false
+            continue
+          }
+          balance = result.value
         }
+
         accountLogger.info('Address check ok', {
           accountIndex: i,
           addrType: addrLabels[addrIdx],
           addr,
-          balance: result.value
+          balance,
+          via: useTauri ? 'rust' : 'fetch'
         })
-        if (result.value > 0) return true  // has balance — account is active
+        if (balance > 0) return true  // has balance — account is active
       }
       return allOk ? false : null  // false=confirmed empty, null=API error
     }

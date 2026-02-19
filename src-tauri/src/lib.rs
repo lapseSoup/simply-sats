@@ -472,6 +472,43 @@ pub struct BRC100Error {
     pub message: String,
 }
 
+/// Check the confirmed + unconfirmed balance of a BSV address via WhatsOnChain.
+///
+/// Uses Rust's reqwest HTTP client rather than the webview's fetch() API.
+/// This bypasses WKWebView CDN caching issues that cause the /history and
+/// /balance endpoints to return stale empty data for some addresses.
+///
+/// Returns the total balance in satoshis (confirmed + unconfirmed), or -1 on error.
+#[tauri::command]
+async fn check_address_balance(address: String) -> i64 {
+    let url = format!(
+        "https://api.whatsonchain.com/v1/bsv/main/address/{}/balance",
+        address
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_default();
+    match client
+        .get(&url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(data) => {
+                    let confirmed = data["confirmed"].as_i64().unwrap_or(0);
+                    let unconfirmed = data["unconfirmed"].as_i64().unwrap_or(0);
+                    confirmed + unconfirmed
+                }
+                Err(_) => -1,
+            }
+        }
+        _ => -1,
+    }
+}
+
 // Command to respond to a BRC-100 request from the frontend
 #[tauri::command]
 async fn respond_to_brc100(
@@ -599,6 +636,7 @@ pub fn run() {
         .manage(rate_limit_manager)
         .manage(key_store)
         .invoke_handler(tauri::generate_handler![
+            check_address_balance,
             respond_to_brc100,
             get_session_token,
             generate_csrf_nonce,
