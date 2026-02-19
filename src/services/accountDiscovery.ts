@@ -92,8 +92,11 @@ export async function discoverAccounts(
     })
 
     // Check all 3 addresses serially to avoid burst rate limiting.
-    // Returns true if we got a definitive "has activity" answer.
-    // Returns false if definitely empty (all 3 returned ok + empty).
+    // Uses the /balance endpoint (not /history) for discovery: it returns a
+    // scalar {confirmed, unconfirmed} which is unaffected by the CDN-level
+    // caching that can cause /history to return stale empty arrays in Tauri.
+    // Returns true if any address has a non-zero balance or tx history.
+    // Returns false if all addresses confirmed empty.
     // Returns null if any check failed (API error — inconclusive).
     const checkActivity = async (): Promise<boolean | null> => {
       const addresses = [keys.walletAddress, keys.ordAddress, keys.identityAddress]
@@ -105,7 +108,7 @@ export async function discoverAccounts(
         if (addrIdx > 0) {
           await new Promise(resolve => setTimeout(resolve, DISCOVERY_INTER_ADDRESS_DELAY_MS))
         }
-        const result = await wocClient.getTransactionHistorySafe(addr)
+        const result = await wocClient.getBalanceSafe(addr)
         if (!result.ok) {
           accountLogger.warn('Address check failed', {
             accountIndex: i,
@@ -122,9 +125,9 @@ export async function discoverAccounts(
           accountIndex: i,
           addrType: addrLabels[addrIdx],
           addr,
-          txCount: result.value.length
+          balance: result.value
         })
-        if (result.value.length > 0) return true  // has activity — done
+        if (result.value > 0) return true  // has balance — account is active
       }
       return allOk ? false : null  // false=confirmed empty, null=API error
     }

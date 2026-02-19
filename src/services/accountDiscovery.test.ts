@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // Mock WocClient BEFORE imports
 vi.mock('../infrastructure/api/wocClient', () => {
   const mockClient = {
-    getTransactionHistorySafe: vi.fn()
+    getBalanceSafe: vi.fn()
   }
   return {
     createWocClient: () => mockClient
@@ -13,7 +13,8 @@ vi.mock('../infrastructure/api/wocClient', () => {
 // Mock accounts service
 vi.mock('./accounts', () => ({
   createAccount: vi.fn().mockResolvedValue({ ok: true, value: 1 }),
-  switchAccount: vi.fn().mockResolvedValue(true)
+  switchAccount: vi.fn().mockResolvedValue(true),
+  getAccountByIdentity: vi.fn().mockResolvedValue(null)
 }))
 
 // Mock domain wallet key derivation
@@ -43,7 +44,7 @@ import { syncWallet } from './sync'
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 
 const mockWocClient = createWocClient() as unknown as {
-  getTransactionHistorySafe: ReturnType<typeof vi.fn>
+  getBalanceSafe: ReturnType<typeof vi.fn>
 }
 
 const makeMockKeys = (index: number) => ({
@@ -61,33 +62,33 @@ const makeMockKeys = (index: number) => ({
 })
 
 /**
- * Helper: mock serial address checks for one account with no activity.
- * New implementation checks addresses one at a time (wallet → ord → identity).
+ * Helper: mock serial address balance checks for one account with no activity.
+ * Checks wallet → ord → identity addresses.
  */
 const mockEmptyAccount = () => {
-  mockWocClient.getTransactionHistorySafe
-    .mockResolvedValueOnce({ ok: true, value: [] }) // wallet
-    .mockResolvedValueOnce({ ok: true, value: [] }) // ord
-    .mockResolvedValueOnce({ ok: true, value: [] }) // identity
+  mockWocClient.getBalanceSafe
+    .mockResolvedValueOnce({ ok: true, value: 0 }) // wallet
+    .mockResolvedValueOnce({ ok: true, value: 0 }) // ord
+    .mockResolvedValueOnce({ ok: true, value: 0 }) // identity
 }
 
 /**
- * Helper: mock serial address checks for one account with wallet activity.
- * Short-circuits after wallet returns activity (ord+identity not called for this account).
+ * Helper: mock serial address balance checks for one account with wallet activity.
+ * Short-circuits after wallet returns non-zero balance (ord+identity not called).
  */
-const mockActiveAccount = (txHash = 'abc', height = 850000) => {
-  mockWocClient.getTransactionHistorySafe
-    .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: txHash, height }] }) // wallet — active, short-circuits
+const mockActiveAccount = () => {
+  mockWocClient.getBalanceSafe
+    .mockResolvedValueOnce({ ok: true, value: 100 }) // wallet — active, short-circuits
 }
 
 /**
- * Helper: mock serial address checks for one account with ordinals activity.
- * wallet is checked first (empty), then ord (active) — identity not called.
+ * Helper: mock serial address balance checks for one account with ordinals activity.
+ * wallet is empty, ord has balance — identity not called.
  */
-const mockOrdActiveAccount = (txHash = 'def', height = 850001) => {
-  mockWocClient.getTransactionHistorySafe
-    .mockResolvedValueOnce({ ok: true, value: [] })                             // wallet — empty
-    .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: txHash, height }] }) // ord — active, short-circuits
+const mockOrdActiveAccount = () => {
+  mockWocClient.getBalanceSafe
+    .mockResolvedValueOnce({ ok: true, value: 0 })   // wallet — empty
+    .mockResolvedValueOnce({ ok: true, value: 100 }) // ord — active, short-circuits
 }
 
 describe('discoverAccounts', () => {
@@ -95,9 +96,9 @@ describe('discoverAccounts', () => {
     vi.clearAllMocks()
     vi.useFakeTimers()
     vi.mocked(deriveWalletKeysForAccount).mockImplementation((_mnemonic, index) => Promise.resolve(makeMockKeys(index)))
-    // Default all unstubbed address checks to "successful but empty" so tests can
+    // Default all unstubbed address checks to "successful but zero balance" so tests can
     // override only the account indices relevant to each scenario.
-    mockWocClient.getTransactionHistorySafe.mockResolvedValue({ ok: true, value: [] })
+    mockWocClient.getBalanceSafe.mockResolvedValue({ ok: true, value: 0 })
   })
 
   afterEach(() => {
@@ -127,8 +128,8 @@ describe('discoverAccounts', () => {
   })
 
   it('discovers accounts with wallet address activity and syncs them', async () => {
-    // Account 1 (index 1): wallet has activity — short-circuits after 1 call
-    mockActiveAccount('abc', 850000)
+    // Account 1 (index 1): wallet has balance — short-circuits after 1 call
+    mockActiveAccount()
 
     const found = await runDiscovery('test mnemonic', 'password')
 
@@ -142,8 +143,8 @@ describe('discoverAccounts', () => {
   })
 
   it('discovers accounts with ordinals address activity', async () => {
-    // Account 1 (index 1): wallet empty, ord has activity
-    mockOrdActiveAccount('def', 850001)
+    // Account 1 (index 1): wallet empty, ord has balance
+    mockOrdActiveAccount()
 
     const found = await runDiscovery('test mnemonic', 'password')
 
@@ -153,10 +154,10 @@ describe('discoverAccounts', () => {
 
   it('discovers accounts with identity address activity', async () => {
     // Account 1 (index 1): wallet empty, ord empty, identity active
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ ok: true, value: [] }) // wallet
-      .mockResolvedValueOnce({ ok: true, value: [] }) // ord
-      .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'id-tx', height: 850002 }] }) // identity active
+    mockWocClient.getBalanceSafe
+      .mockResolvedValueOnce({ ok: true, value: 0 })   // wallet
+      .mockResolvedValueOnce({ ok: true, value: 0 })   // ord
+      .mockResolvedValueOnce({ ok: true, value: 100 }) // identity active
 
     const found = await runDiscovery('test mnemonic', 'password')
 
@@ -166,9 +167,9 @@ describe('discoverAccounts', () => {
 
   it('discovers multiple consecutive accounts', async () => {
     // Account 1 (index 1): wallet active — short-circuits
-    mockActiveAccount('a', 1)
+    mockActiveAccount()
     // Account 2 (index 2): wallet active — short-circuits
-    mockActiveAccount('b', 2)
+    mockActiveAccount()
     // Accounts 3+ return the default empty
 
     const found = await runDiscovery('test mnemonic', 'password')
@@ -184,7 +185,7 @@ describe('discoverAccounts', () => {
     mockEmptyAccount() // index 1
     mockEmptyAccount() // index 2
     // Account 3 (index 3): wallet active — should still be discovered (no gap limit before first hit)
-    mockActiveAccount('found-it', 850000)
+    mockActiveAccount()
 
     const found = await runDiscovery('test mnemonic', 'password')
 
@@ -195,16 +196,16 @@ describe('discoverAccounts', () => {
 
   it('discovers account at high derivation index beyond legacy cap', async () => {
     // Use a dynamic mock so index 50 is the first with activity.
-    mockWocClient.getTransactionHistorySafe.mockImplementation(async (address: string) => {
+    mockWocClient.getBalanceSafe.mockImplementation(async (address: string) => {
       const match = address.match(/-(\d+)$/)
       const index = match ? Number(match[1]) : -1
       const isWalletAddress = address.startsWith('wallet-addr-')
 
       if (isWalletAddress && index === 50) {
-        return { ok: true, value: [{ tx_hash: 'high-index-tx', height: 850123 }] }
+        return { ok: true, value: 100 }
       }
 
-      return { ok: true, value: [] }
+      return { ok: true, value: 0 }
     })
 
     const found = await runDiscovery('test mnemonic', 'password')
@@ -216,13 +217,13 @@ describe('discoverAccounts', () => {
 
   it('retries on API failure and discovers account on successful retry', async () => {
     // Index 1: all 3 addresses fail on first attempt
-    mockWocClient.getTransactionHistorySafe
+    mockWocClient.getBalanceSafe
       .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } }) // wallet fail
-      .mockResolvedValueOnce({ ok: true, value: [] })  // ord ok (continues despite wallet fail)
-      .mockResolvedValueOnce({ ok: true, value: [] })  // identity ok — result: null (wallet failed)
-    // Retry attempt 1: wallet has activity
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValueOnce({ ok: true, value: [{ tx_hash: 'abc', height: 850000 }] }) // wallet active — found!
+      .mockResolvedValueOnce({ ok: true, value: 0 })  // ord ok (continues despite wallet fail)
+      .mockResolvedValueOnce({ ok: true, value: 0 })  // identity ok — result: null (wallet failed)
+    // Retry attempt 1: wallet has balance
+    mockWocClient.getBalanceSafe
+      .mockResolvedValueOnce({ ok: true, value: 100 }) // wallet active — found!
 
     const found = await runDiscovery('test mnemonic', 'password')
 
@@ -233,16 +234,16 @@ describe('discoverAccounts', () => {
 
   it('skips account when all retries fail (API error persists)', async () => {
     // Index 1: wallet fails — makes result null
-    mockWocClient.getTransactionHistorySafe
+    mockWocClient.getBalanceSafe
       .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } }) // wallet fail
-      .mockResolvedValueOnce({ ok: true, value: [] })  // ord ok
-      .mockResolvedValueOnce({ ok: true, value: [] })  // identity ok — null (wallet failed)
+      .mockResolvedValueOnce({ ok: true, value: 0 })  // ord ok
+      .mockResolvedValueOnce({ ok: true, value: 0 })  // identity ok — null (wallet failed)
     // All 3 retries also fail (wallet always fails)
     for (let i = 0; i < 3; i++) {
-      mockWocClient.getTransactionHistorySafe
+      mockWocClient.getBalanceSafe
         .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'Timeout' } }) // wallet fail
-        .mockResolvedValueOnce({ ok: true, value: [] })  // ord ok
-        .mockResolvedValueOnce({ ok: true, value: [] })  // identity ok — still null
+        .mockResolvedValueOnce({ ok: true, value: 0 })  // ord ok
+        .mockResolvedValueOnce({ ok: true, value: 0 })  // identity ok — still null
     }
 
     const found = await runDiscovery('test mnemonic', 'password')
@@ -253,7 +254,7 @@ describe('discoverAccounts', () => {
 
   it('stops on createAccount failure', async () => {
     // Account 1 (index 1): has activity
-    mockActiveAccount('a', 1)
+    mockActiveAccount()
 
     vi.mocked(createAccount).mockRejectedValueOnce(new Error('DB write failed'))
 
@@ -265,7 +266,7 @@ describe('discoverAccounts', () => {
 
   it('keeps discovered account when initial sync fails', async () => {
     // Account 1 (index 1): has activity
-    mockActiveAccount('a', 1)
+    mockActiveAccount()
 
     vi.mocked(syncWallet).mockRejectedValueOnce(new Error('sync failed'))
 
@@ -277,9 +278,9 @@ describe('discoverAccounts', () => {
   })
 
   it('respects max discovery cap of 200', async () => {
-    // All accounts have activity — wallet short-circuits after 1 call per account
-    mockWocClient.getTransactionHistorySafe
-      .mockResolvedValue({ ok: true, value: [{ tx_hash: 'x', height: 1 }] })
+    // All accounts have balance — wallet short-circuits after 1 call per account
+    mockWocClient.getBalanceSafe
+      .mockResolvedValue({ ok: true, value: 100 })
 
     const found = await runDiscovery('test mnemonic', 'password')
 
@@ -292,7 +293,7 @@ describe('discoverAccounts', () => {
 
   it('stops after gap limit of 20 consecutive confirmed-empty accounts post-first-hit', async () => {
     // Index 1: active
-    mockActiveAccount('a', 1)
+    mockActiveAccount()
     // Indices 2-21: all empty (20 consecutive empties after first hit)
     for (let i = 0; i < 20; i++) {
       mockEmptyAccount()
@@ -307,21 +308,21 @@ describe('discoverAccounts', () => {
 
   it('does not count API failures toward gap limit', async () => {
     // Index 1: active
-    mockActiveAccount('a', 1)
+    mockActiveAccount()
     // Index 2: API failure (wallet fails) — should NOT count toward gap limit
-    mockWocClient.getTransactionHistorySafe
+    mockWocClient.getBalanceSafe
       .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'fail' } }) // wallet fail
-      .mockResolvedValueOnce({ ok: true, value: [] })
-      .mockResolvedValueOnce({ ok: true, value: [] })
+      .mockResolvedValueOnce({ ok: true, value: 0 })
+      .mockResolvedValueOnce({ ok: true, value: 0 })
     // All retries for index 2 also fail
     for (let i = 0; i < 3; i++) {
-      mockWocClient.getTransactionHistorySafe
+      mockWocClient.getBalanceSafe
         .mockResolvedValueOnce({ ok: false, error: { code: 'NETWORK_ERROR', message: 'fail' } })
-        .mockResolvedValueOnce({ ok: true, value: [] })
-        .mockResolvedValueOnce({ ok: true, value: [] })
+        .mockResolvedValueOnce({ ok: true, value: 0 })
+        .mockResolvedValueOnce({ ok: true, value: 0 })
     }
     // Index 3: active — still discoverable because index 2 didn't count as empty
-    mockActiveAccount('b', 3)
+    mockActiveAccount()
 
     const found = await runDiscovery('test mnemonic', 'password')
 
