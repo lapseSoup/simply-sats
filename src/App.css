@@ -664,9 +664,10 @@ body::-webkit-scrollbar {
   align-items: center;
 }
 
-.ordinals-inscribe-btn {
+.ordinals-controls .ordinals-inscribe-btn {
   flex: 0 0 auto;
   width: auto;
+  white-space: nowrap;
   padding-left: var(--space-5);
   padding-right: var(--space-5);
 }
