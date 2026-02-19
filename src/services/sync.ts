@@ -532,7 +532,7 @@ async function syncTransactionHistory(address: string, accountId?: number, allWa
     }
 
     // Check if this is a lock transaction (works for both active and spent locks)
-    let txLabel: 'lock' | 'unlock' | undefined
+    let txLabel: 'lock' | 'unlock' | 'ordinal' | undefined
     let txDescription: string | undefined
     let lockSats: number | undefined
     if (txDetails) {
@@ -626,6 +626,26 @@ async function syncTransactionHistory(address: string, accountId?: number, allWa
                 await markLockUnlockedByTxid(vin.txid, vin.vout, accountId)
               } catch (_e) { /* best-effort — lock may not exist in DB yet */ }
             }
+          }
+        }
+      }
+
+      // If not a lock/unlock, detect ordinal transfers: an input spending a 1-sat UTXO
+      // signals an ordinal being transferred out. txDetailCache is already populated by
+      // calculateTxAmount above — no extra API calls needed.
+      if (!txLabel && amount !== undefined && amount < 0) {
+        for (const vin of txDetails.vin) {
+          if (!vin.txid || vin.vout === undefined) continue
+          const parentTx = txDetailCache.get(vin.txid)
+          const parentOut = parentTx?.vout?.[vin.vout]
+          if (parentOut && parentOut.value === 1e-8) {
+            const ordinalOrigin = `${vin.txid}_${vin.vout}`
+            // Find the 1-sat output that received the ordinal (recipient)
+            const recipientOut = txDetails.vout.find(v => Math.round(v.value * 1e8) === 1)
+            const recipientAddr = recipientOut?.scriptPubKey?.addresses?.[0]
+            txDescription = `Transferred ordinal ${ordinalOrigin} to ${recipientAddr ? recipientAddr.slice(0, 8) : 'unknown'}...`
+            txLabel = 'ordinal'
+            break
           }
         }
       }
