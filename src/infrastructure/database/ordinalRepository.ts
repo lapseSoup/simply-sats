@@ -41,15 +41,16 @@ export async function ensureOrdinalCacheTable(): Promise<void> {
 }
 
 /**
- * Get all cached ordinals (metadata only, no content blobs)
+ * Get OWNED cached ordinals (transferred = 0, metadata only, no content blobs).
+ * Used for the active ordinals inventory count and list.
  */
 export async function getCachedOrdinals(accountId?: number): Promise<CachedOrdinal[]> {
   const database = getDatabase()
 
   try {
     const query = accountId !== undefined
-      ? 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at FROM ordinal_cache WHERE account_id = $1 ORDER BY fetched_at DESC'
-      : 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at FROM ordinal_cache ORDER BY fetched_at DESC'
+      ? 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at FROM ordinal_cache WHERE account_id = $1 AND transferred = 0 ORDER BY fetched_at DESC'
+      : 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at FROM ordinal_cache WHERE transferred = 0 ORDER BY fetched_at DESC'
     const params = accountId !== undefined ? [accountId] : []
 
     const rows = await database.select<Omit<OrdinalCacheRow, 'content_data' | 'content_text'>[]>(query, params)
@@ -69,6 +70,35 @@ export async function getCachedOrdinals(accountId?: number): Promise<CachedOrdin
     // Table may not exist yet
     return []
   }
+}
+
+/**
+ * Get ALL cached ordinal origins for an account, including transferred ones.
+ * Used to populate the in-memory content cache for activity tab thumbnails.
+ * Returns only origins (not full content blobs) for efficiency.
+ */
+export async function getAllCachedOrdinalOrigins(accountId?: number): Promise<string[]> {
+  const database = getDatabase()
+
+  try {
+    const query = accountId !== undefined
+      ? 'SELECT origin FROM ordinal_cache WHERE account_id = $1 ORDER BY fetched_at DESC'
+      : 'SELECT origin FROM ordinal_cache ORDER BY fetched_at DESC'
+    const params = accountId !== undefined ? [accountId] : []
+    const rows = await database.select<{ origin: string }[]>(query, params)
+    return rows.map(r => r.origin)
+  } catch (_e) {
+    return []
+  }
+}
+
+/**
+ * Mark an ordinal as transferred out (keeps the row for historical display).
+ * Call this immediately after a successful ordinal transfer broadcast.
+ */
+export async function markOrdinalTransferred(origin: string): Promise<void> {
+  const database = getDatabase()
+  await database.execute('UPDATE ordinal_cache SET transferred = 1 WHERE origin = $1', [origin])
 }
 
 /**
@@ -271,14 +301,6 @@ export async function getImageOrdinalsWithContent(): Promise<{ origin: string; c
   } catch (_e) {
     return []
   }
-}
-
-/**
- * Delete a single ordinal cache entry by origin (e.g. after a transfer)
- */
-export async function deleteOrdinalCacheEntry(origin: string): Promise<void> {
-  const database = getDatabase()
-  await database.execute('DELETE FROM ordinal_cache WHERE origin = $1', [origin])
 }
 
 /**

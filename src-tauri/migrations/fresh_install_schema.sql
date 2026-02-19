@@ -278,7 +278,8 @@ CREATE TABLE IF NOT EXISTS ordinal_cache (
     content_data BLOB,
     content_text TEXT,
     account_id INTEGER,
-    fetched_at INTEGER NOT NULL
+    fetched_at INTEGER NOT NULL,
+    transferred INTEGER NOT NULL DEFAULT 0
 );
 
 -- ==================== INDEXES ====================
@@ -315,6 +316,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_account ON audit_log(account_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_origin ON audit_log(origin);
 CREATE INDEX IF NOT EXISTS idx_ordinal_cache_origin ON ordinal_cache(origin);
 CREATE INDEX IF NOT EXISTS idx_ordinal_cache_account ON ordinal_cache(account_id);
+CREATE INDEX IF NOT EXISTS idx_ordinal_cache_transferred ON ordinal_cache(transferred);
 
 -- ==================== DEFAULT DATA ====================
 

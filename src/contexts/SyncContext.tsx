@@ -13,7 +13,8 @@ import {
   getDerivedAddresses,
   getLocks as getLocksFromDB,
   upsertOrdinalCache,
-  deleteOrdinalCacheEntry,
+  markOrdinalTransferred,
+  getAllCachedOrdinalOrigins,
   getCachedOrdinalContent,
   upsertOrdinalContent,
   hasOrdinalContent,
@@ -240,13 +241,15 @@ export function SyncProvider({ children }: SyncProviderProps) {
         setOrdinalsWithRef(dbOrdinals)
       }
 
-      // Load content previews from the same cache query
+      // Load content previews — include ALL cached origins (transferred + owned)
+      // so activity tab thumbnails work for ordinals no longer in the wallet.
+      const allOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
       const newCache = new Map<string, OrdinalContentEntry>()
-      for (const cached of cachedOrdinals) {
+      for (const origin of allOrigins) {
         if (isCancelled?.()) return
-        const content = await getCachedOrdinalContent(cached.origin)
+        const content = await getCachedOrdinalContent(origin)
         if (content && (content.contentData || content.contentText)) {
-          newCache.set(cached.origin, content)
+          newCache.set(origin, content)
         }
       }
       contentCacheRef.current = newCache
@@ -507,15 +510,16 @@ export function SyncProvider({ children }: SyncProviderProps) {
           setOrdinalsWithRef(dbOrdinals)
         }
 
-        // Load cached content from DB for instant previews
-        const cachedOrdinals = await getCachedOrdinals(activeAccountId)
+        // Load cached content from DB for instant previews.
+        // Use getAllCachedOrdinalOrigins (includes transferred=1 rows) so that
+        // activity tab thumbnails work even for ordinals no longer owned.
+        const allCachedOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
         const newCache = new Map<string, OrdinalContentEntry>()
-        for (const cached of cachedOrdinals) {
+        for (const origin of allCachedOrigins) {
           if (isCancelled?.()) return
-          // Load actual content for ordinals that have it cached
-          const content = await getCachedOrdinalContent(cached.origin)
+          const content = await getCachedOrdinalContent(origin)
           if (content && (content.contentData || content.contentText)) {
-            newCache.set(cached.origin, content)
+            newCache.set(origin, content)
           }
         }
         if (newCache.size > 0) {
@@ -668,28 +672,18 @@ async function cacheOrdinalsInBackground(
     }
     syncLogger.debug('Cached ordinal metadata', { count: allOrdinals.length })
 
-    // 1b. Prune stale entries — remove DB cache rows and in-memory content that
-    // are no longer in the API's list (e.g. transferred ordinals). Without this,
-    // fetchDataFromDB would reload the transferred ordinal from the stale DB cache
-    // row and set the count back to 621 on next launch. We must prune the DB table
-    // (not just the in-memory content map) since most ordinals have no cached content.
+    // 1b. Mark transferred ordinals — any owned (transferred=0) cache entry whose
+    // origin is no longer returned by the API is assumed to have been transferred out.
+    // We mark it transferred=1 (NOT delete) so it stays available for historical
+    // display in the activity tab thumbnails and tx detail modal.
     if (isCancelled()) return
     const currentOrigins = new Set(allOrdinals.map(o => o.origin))
-    const allCachedRows = await getCachedOrdinals(activeAccountId)
-    let contentPruned = false
-    for (const row of allCachedRows) {
+    const ownedCachedRows = await getCachedOrdinals(activeAccountId)
+    for (const row of ownedCachedRows) {
       if (!currentOrigins.has(row.origin)) {
-        await deleteOrdinalCacheEntry(row.origin)
-        // Also remove from in-memory content cache if present
-        if (contentCacheRef.current.has(row.origin)) {
-          contentCacheRef.current.delete(row.origin)
-          contentPruned = true
-        }
-        syncLogger.debug('Pruned stale ordinal cache entry', { origin: row.origin })
+        await markOrdinalTransferred(row.origin)
+        syncLogger.debug('Marked ordinal as transferred in cache', { origin: row.origin })
       }
-    }
-    if (contentPruned) {
-      setOrdinalContentCache(new Map(contentCacheRef.current))
     }
 
     // 2. Fetch missing content (up to 10 per cycle)

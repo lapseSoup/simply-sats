@@ -14,6 +14,7 @@ import {
   recordSentTransaction,
   confirmUtxosSpent
 } from '../sync'
+import { markOrdinalTransferred } from '../../infrastructure/database'
 import { walletLogger } from '../logger'
 import {
   mapGpItemToOrdinal,
@@ -354,6 +355,17 @@ export async function transferOrdinal(
     // activity tab can look up the thumbnail from ordinalContentCache even
     // after the ordinal is transferred and removed from the ordinals array.
     const ordinalOrigin = `${ordinalUtxo.txid}_${ordinalUtxo.vout}`
+
+    // Mark the ordinal as transferred in the DB cache immediately — this drops
+    // it from getCachedOrdinals() (owned count) while keeping the row so
+    // content data (thumbnails) remains available for historical display.
+    try {
+      await markOrdinalTransferred(ordinalOrigin)
+      ordLogger.debug('Marked ordinal as transferred in cache', { origin: ordinalOrigin })
+    } catch (e) {
+      ordLogger.warn('Failed to mark ordinal transferred in cache', { error: String(e) })
+    }
+
     await recordSentTransaction(
       txid,
       tx.toHex(),
