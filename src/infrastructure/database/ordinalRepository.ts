@@ -132,16 +132,19 @@ export async function getCachedOrdinalContent(origin: string): Promise<{ content
  * fetched content can be stored for historical activity tab display.
  * Safe to call multiple times — INSERT OR IGNORE is a no-op if row exists.
  */
-export async function ensureOrdinalCacheRowForTransferred(origin: string): Promise<void> {
+export async function ensureOrdinalCacheRowForTransferred(
+  origin: string,
+  accountId?: number
+): Promise<void> {
   const database = getDatabase()
   const parts = origin.split('_')
   const txid = parts.slice(0, -1).join('_')
   const vout = parseInt(parts[parts.length - 1] ?? '0', 10)
   try {
     await database.execute(
-      `INSERT OR IGNORE INTO ordinal_cache (origin, txid, vout, satoshis, transferred, fetched_at)
-       VALUES ($1, $2, $3, 1, 1, $4)`,
-      [origin, txid || origin, vout, Date.now()]
+      `INSERT OR IGNORE INTO ordinal_cache (origin, txid, vout, satoshis, transferred, account_id, fetched_at)
+       VALUES ($1, $2, $3, 1, 1, $4, $5)`,
+      [origin, txid || origin, vout, accountId ?? null, Date.now()]
     )
   } catch (_e) {
     // Non-fatal — row may already exist or table may not exist yet

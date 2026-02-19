@@ -166,12 +166,14 @@ export function ActivityTab() {
     return missing
   }, [txHistory, ordinalContentCache, ordinalByOrigin])
 
-  // Trigger lazy fetches for missing transferred ordinal content (fire-and-forget)
+  // Trigger lazy fetches for missing transferred ordinal content (fire-and-forget).
+  // Pass activeAccountId so the DB row is saved with the correct account_id and
+  // found by account-scoped queries on subsequent app launches (not re-fetched every time).
   useEffect(() => {
     for (const { origin, contentType } of missingTransferOrigins) {
-      void fetchOrdinalContentIfMissing(origin, contentType)
+      void fetchOrdinalContentIfMissing(origin, contentType, activeAccountId ?? undefined)
     }
-  }, [missingTransferOrigins, fetchOrdinalContentIfMissing])
+  }, [missingTransferOrigins, fetchOrdinalContentIfMissing, activeAccountId])
 
   const getTxTypeAndIcon = useCallback((tx: { tx_hash: string; amount?: number; description?: string }) => {
     // Check active locks from context + historical lock labels from DB

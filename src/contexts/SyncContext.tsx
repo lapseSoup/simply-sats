@@ -107,7 +107,7 @@ interface SyncContextType {
    * Used by ActivityTab to lazily load thumbnails for transferred ordinals
    * that are missing from the cache after a fresh seed restore.
    */
-  fetchOrdinalContentIfMissing: (origin: string, contentType?: string) => Promise<void>
+  fetchOrdinalContentIfMissing: (origin: string, contentType?: string, accountId?: number) => Promise<void>
 }
 
 const SyncContext = createContext<SyncContextType | null>(null)
@@ -627,7 +627,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
   // Lazily fetch ordinal content for transferred ordinals missing from the cache.
   // Called by ActivityTab when displaying transfer history items after a fresh restore
   // where ordinal_cache may be empty (content was never fetched for the new wallet).
-  const fetchOrdinalContentIfMissing = useCallback(async (origin: string, contentType?: string) => {
+  const fetchOrdinalContentIfMissing = useCallback(async (origin: string, contentType?: string, accountId?: number) => {
     if (contentCacheRef.current.has(origin)) return  // already in memory
 
     try {
@@ -645,8 +645,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
       // Fetch from API (GorillaPool)
       const content = await fetchOrdinalContent(origin, contentType)
       if (content) {
-        // Ensure a row exists so we can store the content
-        await ensureOrdinalCacheRowForTransferred(origin)
+        // Ensure a row exists with the correct account_id so it's found by
+        // account-scoped DB queries on subsequent launches.
+        await ensureOrdinalCacheRowForTransferred(origin, accountId)
         await upsertOrdinalContent(origin, content.contentData, content.contentText, content.contentType)
         contentCacheRef.current.set(origin, content)
         setOrdinalContentCache(new Map(contentCacheRef.current))
