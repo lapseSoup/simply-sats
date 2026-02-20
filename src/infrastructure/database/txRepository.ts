@@ -585,3 +585,27 @@ export async function deleteTransactionsForAccount(accountId: number): Promise<R
     return err(new DbError(`deleteTransactionsForAccount failed: ${e instanceof Error ? e.message : String(e)}`, 'QUERY_FAILED', e))
   }
 }
+
+/**
+ * Delete a single transaction (and its labels) by txid.
+ * Used to remove phantom transactions that were never broadcast (e.g. when a lock
+ * operation was falsely treated as successful but the txid is 404 on-chain).
+ * @param txid - Transaction ID to delete
+ * @param accountId - Account ID to scope the delete (prevents cross-account deletion)
+ */
+export async function deleteTransactionByTxid(txid: string, accountId: number): Promise<Result<void, DbError>> {
+  try {
+    const database = getDatabase()
+    await database.execute(
+      'DELETE FROM transaction_labels WHERE txid = $1 AND account_id = $2',
+      [txid, accountId]
+    )
+    await database.execute(
+      'DELETE FROM transactions WHERE txid = $1 AND account_id = $2',
+      [txid, accountId]
+    )
+    return ok(undefined)
+  } catch (e) {
+    return err(new DbError(`deleteTransactionByTxid failed: ${e instanceof Error ? e.message : String(e)}`, 'QUERY_FAILED', e))
+  }
+}

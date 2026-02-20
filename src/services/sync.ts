@@ -34,6 +34,7 @@ import {
   addLockIfNotExists,
   markLockUnlockedByTxid,
   getLocks,
+  deleteTransactionByTxid,
   getAllTransactions,
   updateTransactionAmount
 } from './database'
@@ -1050,6 +1051,11 @@ export async function syncWallet(
           if (!txResult.ok && txResult.error.status === 404) {
             syncLogger.warn('[SYNC] Voiding phantom lock — txid not on-chain', { txid: txid.slice(0, 12), vout })
             await markLockUnlockedByTxid(txid, vout, accountId)
+            // Also delete the phantom transaction record so it disappears from Activity tab
+            if (accountId !== undefined) {
+              await deleteTransactionByTxid(txid, accountId)
+              syncLogger.warn('[SYNC] Deleted phantom transaction record', { txid: txid.slice(0, 12) })
+            }
           }
         }
       } catch (phantomErr) {

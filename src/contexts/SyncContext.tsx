@@ -378,6 +378,32 @@ export function SyncProvider({ children }: SyncProviderProps) {
       } catch (e) {
         syncLogger.error('Failed to get basket balances', e)
       }
+
+      // Reload txHistory from DB so deleted phantom transactions vanish from Activity tab.
+      // syncWallet may delete phantom transaction records, but performSync never refreshes
+      // txHistory state — stale records linger until fetchData runs otherwise.
+      try {
+        const dbTxsResult = await getAllTransactions(accountId)
+        if (dbTxsResult.ok && !isCancelled?.()) {
+          const dbTxHistory: TxHistoryItem[] = dbTxsResult.value.map(tx => ({
+            tx_hash: tx.txid,
+            height: tx.blockHeight || 0,
+            amount: tx.amount,
+            description: tx.description,
+            createdAt: tx.createdAt
+          }))
+          dbTxHistory.sort((a, b) => {
+            const aH = a.height || 0, bH = b.height || 0
+            if (aH === 0 && bH !== 0) return -1
+            if (bH === 0 && aH !== 0) return 1
+            if (aH === 0 && bH === 0) return (b.createdAt ?? 0) - (a.createdAt ?? 0)
+            return bH - aH
+          })
+          setTxHistory(dbTxHistory)
+        }
+      } catch (_e) {
+        // Non-fatal: stale txHistory in UI is better than crash
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error'
       syncLogger.error('Sync failed', error)
