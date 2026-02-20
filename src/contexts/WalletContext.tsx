@@ -10,8 +10,7 @@ import { useAccounts } from './AccountsContext'
 import { useSyncContext } from './SyncContext'
 import { useLocksContext } from './LocksContext'
 import { reconcileLocks } from '../services/wallet/lockReconciliation'
-import { getLocks } from '../infrastructure/database'
-import { mapDbLocksToLockedUtxos } from '../services/sync'
+
 import type { WalletResult } from '../domain/types'
 import { useTokens } from './TokensContext'
 import { walletLogger } from '../services/logger'
@@ -249,22 +248,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     // would overwrite Account Y's displayed balance with Account X's balance.
     const isCancelled = () => activeAccountIdRef.current !== accountAtStart
     await syncPerformSync(wallet, accountAtStart, isRestore, forceReset, silent, isCancelled)
-
-    // Reload locks from DB so the UI reflects any phantom locks voided during sync.
-    // syncWallet may call markLockUnlockedByTxid for phantom locks, but performSync
-    // never calls setLocks — so stale lock state lingers in the UI until fetchData runs.
-    if (!isCancelled()) {
-      const currentAccountId = activeAccountIdRef.current
-      if (currentAccountId) {
-        try {
-          const dbLocks = await getLocks(0, currentAccountId)
-          setLocks(mapDbLocksToLockedUtxos(dbLocks, wallet.walletPubKey))
-        } catch (_e) {
-          // Non-fatal: stale lock list is better than a crash
-        }
-      }
-    }
-  }, [wallet, syncPerformSync, setLocks])
+  }, [wallet, syncPerformSync])
 
   // Fetch data from database and API - delegates to SyncContext with lock detection callback
   const fetchData = useCallback(async () => {

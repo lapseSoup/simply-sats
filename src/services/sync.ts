@@ -49,6 +49,7 @@ import {
   isSyncInProgress
 } from './cancellation'
 import { syncLogger } from './logger'
+import { getDatabase } from '../infrastructure/database/connection'
 import { btcToSatoshis } from '../utils/satoshiConversion'
 import { parseTimelockScript } from './wallet/locks'
 import { publicKeyToHash } from '../domain/locks'
@@ -1072,7 +1073,6 @@ export async function syncWallet(
             })
 
             // Direct DELETE by primary key — bypasses account_id subquery entirely
-            const { getDatabase } = await import('../infrastructure/database/connection')
             const db = getDatabase()
             await db.execute('DELETE FROM locks WHERE utxo_id = $1', [utxoId])
             await db.execute('DELETE FROM utxos WHERE id = $1', [utxoId])
