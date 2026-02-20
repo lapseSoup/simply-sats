@@ -142,8 +142,12 @@ export async function ensureOrdinalCacheRowForTransferred(
   const vout = parseInt(parts[parts.length - 1] ?? '0', 10)
   try {
     await database.execute(
-      `INSERT OR IGNORE INTO ordinal_cache (origin, txid, vout, satoshis, transferred, account_id, fetched_at)
-       VALUES ($1, $2, $3, 1, 1, $4, $5)`,
+      `INSERT INTO ordinal_cache (origin, txid, vout, satoshis, transferred, account_id, fetched_at)
+       VALUES ($1, $2, $3, 1, 1, $4, $5)
+       ON CONFLICT(origin) DO UPDATE SET
+         account_id = COALESCE(excluded.account_id, ordinal_cache.account_id),
+         transferred = 1,
+         fetched_at = excluded.fetched_at`,
       [origin, txid || origin, vout, accountId ?? null, Date.now()]
     )
   } catch (_e) {
