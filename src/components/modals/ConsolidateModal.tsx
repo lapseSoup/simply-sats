@@ -15,7 +15,7 @@ interface ConsolidateModalProps {
 
 export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModalProps) {
   const { wallet, activeAccountId } = useWalletState()
-  const { fetchData } = useWalletActions()
+  const { fetchData, performSync } = useWalletActions()
   const { formatUSD } = useUI()
   const [status, setStatus] = useState<'preview' | 'confirming' | 'success' | 'error'>('preview')
   const [error, setError] = useState<string | null>(null)
@@ -74,8 +74,10 @@ export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModal
     setTxid(result.value.txid)
     setStatus('success')
 
-    // Refresh wallet data
+    // Refresh wallet data from local DB instantly
     await fetchData()
+    // Background sync to confirm balance from blockchain
+    void performSync()
 
     uiLogger.info('Consolidation successful', { txid: result.value.txid })
   }
