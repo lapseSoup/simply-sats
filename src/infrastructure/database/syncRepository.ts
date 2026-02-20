@@ -66,6 +66,29 @@ export async function updateSyncState(address: string, height: number, accountId
 }
 
 /**
+ * Reset sync timestamps for all addresses belonging to an account.
+ * Preserves `last_synced_height` so incremental sync still works;
+ * only clears `last_synced_at` so the staleness check fires again
+ * on next account switch — ensuring a fresh API fetch for tx history.
+ */
+export async function clearSyncTimesForAccount(accountId: number): Promise<Result<void, DbError>> {
+  try {
+    const database = getDatabase()
+    await database.execute(
+      'UPDATE sync_state SET last_synced_at = 0 WHERE account_id = $1',
+      [accountId]
+    )
+    return ok(undefined)
+  } catch (e) {
+    return err(new DbError(
+      `clearSyncTimesForAccount failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
+  }
+}
+
+/**
  * Get all sync states for export
  */
 export async function getAllSyncStates(accountId?: number): Promise<Result<{ address: string; height: number; syncedAt: number }[], DbError>> {

@@ -1291,6 +1291,17 @@ export async function getLastSyncTimeForAccount(accountId: number): Promise<numb
 }
 
 /**
+ * Clear sync timestamps for an account so it's treated as "stale" on next
+ * visit. Preserves last_synced_height for incremental sync efficiency.
+ * Used after a background pre-sync to ensure the staleness check fires a
+ * fresh API fetch when the user actually switches to that account.
+ */
+export async function clearSyncTimesForAccount(accountId: number): Promise<void> {
+  const { clearSyncTimesForAccount: clearFn } = await import('../infrastructure/database/syncRepository')
+  await clearFn(accountId)
+}
+
+/**
  * Restore wallet - full sync that rebuilds the database from blockchain
  * This is what happens when you restore from 12 words
  * @param walletAddress - Main wallet address

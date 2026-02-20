@@ -25,7 +25,7 @@ import { useAccountSwitching } from '../hooks/useAccountSwitching'
 import { hasPassword } from '../services/wallet/storage'
 import { getAccountKeys } from '../services/accounts'
 import { getSessionPassword } from '../services/sessionPasswordStore'
-import { syncWallet } from '../services/sync'
+import { syncWallet, clearSyncTimesForAccount } from '../services/sync'
 
 // Split context objects
 import { WalletStateContext, useWalletState, type WalletStateContextType } from './WalletStateContext'
@@ -340,6 +340,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Background-sync all inactive accounts after a send so the receiving account
   // shows the incoming TX immediately when the user switches to it — mirrors
   // the same pattern App.tsx uses after the active account's initial sync.
+  //
+  // After syncWallet completes we deliberately reset last_synced_at → 0 so the
+  // staleness check fires a fresh performSync when the user switches to that
+  // account. This is necessary because syncWallet sets last_synced_at during the
+  // UTXO phase (before TX history is fetched), meaning the account would appear
+  // "not stale" at switch time and the Activity tab would never show the new TX
+  // without a manual refresh.
   const syncInactiveAccountsBackground = useCallback(() => {
     const accountSnapshot = accounts
     const activeId = activeAccountIdRef.current
@@ -351,6 +358,11 @@ export function WalletProvider({ children }: WalletProviderProps) {
           if (!keys) continue
           await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, account.id ?? undefined, keys.walletPubKey)
           try { await refreshAccounts() } catch { /* non-critical */ }
+          // Reset sync timestamp so the staleness check fires a fresh full sync
+          // (including TX history) when the user actually switches to this account.
+          if (account.id !== undefined) {
+            try { await clearSyncTimesForAccount(account.id) } catch { /* non-critical */ }
+          }
         } catch (e) {
           walletLogger.warn('Background sync failed for inactive account', { accountId: account.id, error: String(e) })
         }
