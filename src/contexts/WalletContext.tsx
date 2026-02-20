@@ -23,6 +23,9 @@ import { useWalletActions as useWalletActionsHook } from '../hooks/useWalletActi
 import { useWalletSend } from '../hooks/useWalletSend'
 import { useAccountSwitching } from '../hooks/useAccountSwitching'
 import { hasPassword } from '../services/wallet/storage'
+import { getAccountKeys } from '../services/accounts'
+import { getSessionPassword } from '../services/sessionPasswordStore'
+import { syncWallet } from '../services/sync'
 
 // Split context objects
 import { WalletStateContext, useWalletState, type WalletStateContextType } from './WalletStateContext'
@@ -334,6 +337,27 @@ export function WalletProvider({ children }: WalletProviderProps) {
     return locksHandleUnlock(wallet, lock, activeAccountId, fetchData)
   }, [wallet, activeAccountId, locksHandleUnlock, fetchData])
 
+  // Background-sync all inactive accounts after a send so the receiving account
+  // shows the incoming TX immediately when the user switches to it — mirrors
+  // the same pattern App.tsx uses after the active account's initial sync.
+  const syncInactiveAccountsBackground = useCallback(() => {
+    const accountSnapshot = accounts
+    const activeId = activeAccountIdRef.current
+    void (async () => {
+      const sessionPwd = getSessionPassword()
+      for (const account of accountSnapshot.filter(a => a.id !== activeId)) {
+        try {
+          const keys = await getAccountKeys(account, sessionPwd)
+          if (!keys) continue
+          await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, account.id ?? undefined, keys.walletPubKey)
+          try { await refreshAccounts() } catch { /* non-critical */ }
+        } catch (e) {
+          walletLogger.warn('Background sync failed for inactive account', { accountId: account.id, error: String(e) })
+        }
+      }
+    })()
+  }, [accounts, refreshAccounts])
+
   // Send operations - from useWalletSend
   const {
     handleSend,
@@ -348,7 +372,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     refreshTokens,
     setOrdinals,
     getOrdinals,
-    sendTokenAction
+    sendTokenAction,
+    syncInactiveAccountsBackground
   })
 
   // Settings

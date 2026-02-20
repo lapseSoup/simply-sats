@@ -43,6 +43,8 @@ interface UseWalletSendOptions {
     amount: string,
     toAddress: string
   ) => Promise<Result<{ txid: string }, string>>
+  /** Fire-and-forget: background-sync all inactive accounts after a send. */
+  syncInactiveAccountsBackground?: () => void
 }
 
 interface UseWalletSendReturn {
@@ -60,7 +62,8 @@ export function useWalletSend({
   refreshTokens,
   setOrdinals,
   getOrdinals,
-  sendTokenAction
+  sendTokenAction,
+  syncInactiveAccountsBackground
 }: UseWalletSendOptions): UseWalletSendReturn {
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
     if (!wallet) return err('No wallet loaded')
@@ -150,6 +153,7 @@ export function useWalletSend({
       }
       const { txid } = sendResult.value
       await fetchData()
+      syncInactiveAccountsBackground?.()
       audit.transactionSent(txid, amountSats, activeAccountId ?? undefined)
       return ok({ txid })
     } catch (e) {
@@ -157,7 +161,7 @@ export function useWalletSend({
     } finally {
       derivedMap.clear()
     }
-  }, [wallet, fetchData, activeAccountId])
+  }, [wallet, fetchData, activeAccountId, syncInactiveAccountsBackground])
 
 
   const handleSendMulti = useCallback(async (recipients: RecipientOutput[], selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
@@ -238,6 +242,7 @@ export function useWalletSend({
       }
       const { txid } = sendResult.value
       await fetchData()
+      syncInactiveAccountsBackground?.()
       audit.transactionSent(txid, totalSent, activeAccountId ?? undefined)
       return ok({ txid })
     } catch (e) {
@@ -245,7 +250,7 @@ export function useWalletSend({
     } finally {
       derivedMap.clear()
     }
-  }, [wallet, fetchData, activeAccountId])
+  }, [wallet, fetchData, activeAccountId, syncInactiveAccountsBackground])
 
   const handleTransferOrdinal = useCallback(async (
     ordinal: Ordinal,
