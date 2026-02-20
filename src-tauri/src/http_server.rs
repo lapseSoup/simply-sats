@@ -263,11 +263,16 @@ pub async fn start_server(
     });
 
     // REST-style routes matching HTTPWalletJSON substrate format from @bsv/sdk
-    let v1_routes = Router::new()
+
+    // Public routes — no session token required (called before a token exists)
+    let public_routes = Router::new()
         .route("/getVersion", post(handle_get_version))
-        .route("/getNetwork", post(handle_get_network))
         .route("/isAuthenticated", post(handle_is_authenticated))
-        .route("/waitForAuthentication", post(handle_wait_for_authentication))
+        .route("/waitForAuthentication", post(handle_wait_for_authentication));
+
+    // Protected routes — require a valid session token
+    let protected_routes = Router::new()
+        .route("/getNetwork", post(handle_get_network))
         .route("/getHeight", post(handle_get_height))
         .route("/getNonce", post(handle_get_nonce))
         .route("/getPublicKey", post(handle_get_public_key))
@@ -276,14 +281,17 @@ pub async fn start_server(
         .route("/listOutputs", post(handle_list_outputs))
         .route("/lockBSV", post(handle_lock_bsv))
         .route("/unlockBSV", post(handle_unlock_bsv))
-        .route("/listLocks", post(handle_list_locks));
+        .route("/listLocks", post(handle_list_locks))
+        .layer(middleware::from_fn_with_state(state.clone(), validate_session_token));
 
     // Legacy routes at root (backward compat) + versioned routes under /v1
     let app = Router::new()
-        .merge(v1_routes.clone())
-        .nest("/v1", v1_routes)
+        .merge(public_routes.clone())
+        .merge(protected_routes.clone())
+        .nest("/v1", Router::new()
+            .merge(public_routes)
+            .merge(protected_routes))
         .layer(response_signing)
-        .layer(middleware::from_fn_with_state(state.clone(), validate_session_token))
         .layer(middleware::from_fn(validate_host_header))
         .layer(security_headers)
         .layer(cors)
