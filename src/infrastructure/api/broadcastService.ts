@@ -294,7 +294,7 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       const match = cleaned.match(pattern)
       if (match) return match[0]
     }
-    return 'broadcast rejected'
+    return cleaned || 'broadcast rejected'
   })
 
   const uniqueReasons = [...new Set(sanitized)]
