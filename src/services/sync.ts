@@ -33,6 +33,7 @@ import {
   updateTransactionStatus,
   addLockIfNotExists,
   markLockUnlockedByTxid,
+  getLocks,
   getAllTransactions,
   updateTransactionAmount
 } from './database'
@@ -1032,6 +1033,28 @@ export async function syncWallet(
     // may not appear in the sliced window and never get status updated to confirmed.
     if (!token.isCancelled) {
       await resolvePendingTransactions(accountId)
+    }
+
+    // Void phantom locks — DB lock records whose txid doesn't exist on-chain.
+    // These are created when a broadcast failure (e.g. txn-mempool-conflict) was
+    // falsely treated as success, writing a lock with a locally-computed txid that
+    // was never actually broadcast. A 404 from WoC confirms the tx never existed.
+    if (!token.isCancelled) {
+      try {
+        const woc = getWocClient()
+        const dbLocks = await getLocks(0, accountId)
+        for (const lock of dbLocks) {
+          if (token.isCancelled) break
+          const { txid, vout } = lock.utxo
+          const txResult = await woc.getTransactionDetailsSafe(txid)
+          if (!txResult.ok && txResult.error.status === 404) {
+            syncLogger.warn('[SYNC] Voiding phantom lock — txid not on-chain', { txid: txid.slice(0, 12), vout })
+            await markLockUnlockedByTxid(txid, vout, accountId)
+          }
+        }
+      } catch (phantomErr) {
+        syncLogger.warn('[SYNC] Phantom lock cleanup failed (non-fatal)', { error: String(phantomErr) })
+      }
     }
 
     // Update sync timestamps for derived addresses
