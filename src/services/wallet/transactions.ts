@@ -98,7 +98,8 @@ export async function executeBroadcast(
 
   // Now broadcast the transaction
   try {
-    const txid = await broadcastTransaction(txOrHex)
+    const txHex = typeof txOrHex === 'string' ? txOrHex : txOrHex.toHex()
+    const txid = await infraBroadcast(txHex, pendingTxid)
     if (!txid) {
       throw new Error('Broadcast returned empty transaction ID')
     }

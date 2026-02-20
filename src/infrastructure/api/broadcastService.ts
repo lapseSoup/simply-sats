@@ -21,9 +21,11 @@ import { apiLogger } from '../../services/logger'
  */
 const TXN_ALREADY_KNOWN_PATTERNS = [
   'txn-already-known',
+  'txn-mempool-conflict',
   'transaction already in the mempool',
   'transaction already known',
   '257:',
+  '258:',
 ]
 
 export function isTxAlreadyKnown(errorMessage: string): boolean {
@@ -294,7 +296,7 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
       const match = cleaned.match(pattern)
       if (match) return match[0]
     }
-    return cleaned || 'broadcast rejected'
+    return 'broadcast rejected'
   })
 
   const uniqueReasons = [...new Set(sanitized)]
