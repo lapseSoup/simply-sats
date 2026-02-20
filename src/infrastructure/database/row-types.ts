@@ -345,7 +345,7 @@ export interface OrdinalCacheRow {
   satoshis: number
   content_type: string | null
   content_hash: string | null
-  content_data: ArrayBuffer | null  // BLOB returns as ArrayBuffer
+  content_data: ArrayBuffer | string | null  // BLOB stored as JSON number-array string via Array.from(); ArrayBuffer kept for future-proof
   content_text: string | null
   account_id: number | null
   fetched_at: number

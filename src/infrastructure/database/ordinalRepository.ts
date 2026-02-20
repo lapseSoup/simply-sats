@@ -12,6 +12,27 @@ import type { CachedOrdinal } from './types'
 import type { OrdinalCacheRow, OrdinalCacheStatsRow } from './row-types'
 
 /**
+ * Parse content_data from the DB into a Uint8Array.
+ * Tauri's sql plugin stores Array.from(Uint8Array) params as a JSON text string
+ * ("[137,80,78,71,...]") rather than a true BLOB.  This helper handles both the
+ * string format (existing rows) and a real ArrayBuffer (future-proof).
+ */
+function parseContentData(raw: ArrayBuffer | string | null | undefined): Uint8Array | undefined {
+  if (!raw) return undefined
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as number[]
+      return new Uint8Array(parsed)
+    } catch {
+      return undefined
+    }
+  }
+  // Real ArrayBuffer path — slice to detach from any shared backing buffer
+  const arr = new Uint8Array(raw)
+  return new Uint8Array(arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength))
+}
+
+/**
  * Ensure ordinal_cache table exists (for imports/upgrades)
  */
 export async function ensureOrdinalCacheTable(): Promise<void> {
@@ -116,13 +137,8 @@ export async function getCachedOrdinalContent(origin: string): Promise<{ content
     if (rows.length === 0) return null
 
     const row = rows[0]!
-    // Slice the Uint8Array to get a fresh ArrayBuffer copy — the raw DB response
-    // may be a view into a larger shared buffer with a non-zero byteOffset, which
-    // causes Blob creation (for data-URL images) to include garbage prefix bytes.
-    const rawData = row.content_data ? new Uint8Array(row.content_data) : undefined
-    const contentData = rawData ? new Uint8Array(rawData.buffer.slice(rawData.byteOffset, rawData.byteOffset + rawData.byteLength)) : undefined
     return {
-      contentData,
+      contentData: parseContentData(row.content_data),
       contentText: row.content_text ?? undefined,
       contentType: row.content_type ?? undefined
     }
@@ -245,7 +261,7 @@ export async function getCachedOrdinalsWithContent(accountId?: number): Promise<
       satoshis: row.satoshis,
       contentType: row.content_type ?? undefined,
       contentHash: row.content_hash ?? undefined,
-      contentData: row.content_data ? new Uint8Array(row.content_data) : undefined,
+      contentData: parseContentData(row.content_data),
       contentText: row.content_text ?? undefined,
       accountId: row.account_id ?? undefined,
       fetchedAt: row.fetched_at
@@ -338,7 +354,7 @@ export async function getImageOrdinalsWithContent(): Promise<{ origin: string; c
       .filter(row => row.content_data !== null)
       .map(row => ({
         origin: row.origin,
-        contentData: new Uint8Array(row.content_data!),
+        contentData: parseContentData(row.content_data)!,
         contentType: row.content_type!
       }))
   } catch (_e) {
