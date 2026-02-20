@@ -14,8 +14,10 @@ import {
   getTransactionLabels,
   updateTransactionLabels,
   getTransactionByTxid,
-  upsertTransaction
+  upsertTransaction,
+  markLockUnlockedByTxid
 } from '../database'
+import { getWocClient } from '../../infrastructure/api/wocClient'
 import { walletLogger } from '../logger'
 
 /** Average block interval in milliseconds (used for lockBlock estimation) */
@@ -203,12 +205,64 @@ export function combineLocksWithExisting(
  * @param accountId - Active account ID (used for DB operations)
  * @returns Merged locks (detected + preloaded data backfilled)
  */
+/**
+ * Void phantom locks — DB locks whose txid doesn't exist on-chain.
+ *
+ * When a broadcast failure was incorrectly treated as success (e.g. due to
+ * txn-mempool-conflict being misclassified as txn-already-known), a lock
+ * record gets written to the DB with a locally-computed txid that was never
+ * accepted. These "phantom" locks show as Pending forever.
+ *
+ * For each preloaded lock that wasn't detected on-chain, verify the tx exists
+ * on WoC. If it returns 404, mark the lock as unlocked (voided) in the DB.
+ * Best-effort — any failure is silently ignored.
+ */
+async function voidPhantomLocks(
+  detectedLocks: LockedUTXO[],
+  preloadedLocks: LockedUTXO[],
+  accountId: number | undefined
+): Promise<LockedUTXO[]> {
+  const detectedKeys = new Set(detectedLocks.map(l => `${l.txid}:${l.vout}`))
+  const wocClient = getWocClient()
+  const voidedKeys = new Set<string>()
+
+  for (const preloaded of preloadedLocks) {
+    const key = `${preloaded.txid}:${preloaded.vout}`
+    if (detectedKeys.has(key)) continue // confirmed on-chain — skip
+
+    // Check if the tx exists at all on-chain
+    try {
+      const txResult = await wocClient.getTransactionDetailsSafe(preloaded.txid)
+      if (!txResult.ok && txResult.error.status === 404) {
+        // Tx doesn't exist on-chain — this is a phantom lock
+        walletLogger.warn('Voiding phantom lock (txid not on-chain)', {
+          txid: preloaded.txid, vout: preloaded.vout
+        })
+        await markLockUnlockedByTxid(preloaded.txid, preloaded.vout, accountId)
+        voidedKeys.add(key)
+      }
+      // If txResult.ok or a non-404 error, leave the lock in place
+      // (could be a pending/unconfirmed tx not yet in WoC, or a network error)
+    } catch (_e) {
+      // Best-effort — don't remove locks on transient network errors
+    }
+  }
+
+  // Return preloaded locks minus the voided phantoms
+  return preloadedLocks.filter(l => !voidedKeys.has(`${l.txid}:${l.vout}`))
+}
+
 export async function reconcileLocks(
   detectedLocks: LockedUTXO[],
   preloadedLocks: LockedUTXO[],
   accountId: number | undefined
 ): Promise<LockedUTXO[]> {
-  const mergedLocks = mergeWithPreloaded(detectedLocks, preloadedLocks)
+  // Remove any phantom locks (txid not on-chain) from preloaded set before merging.
+  // This prevents broadcast failures that were falsely treated as success from
+  // showing as permanent "Pending" locks.
+  const validPreloaded = await voidPhantomLocks(detectedLocks, preloadedLocks, accountId)
+
+  const mergedLocks = mergeWithPreloaded(detectedLocks, validPreloaded)
 
   // Persist and label in parallel (both are best-effort)
   await Promise.all([

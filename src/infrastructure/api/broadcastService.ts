@@ -21,11 +21,9 @@ import { apiLogger } from '../../services/logger'
  */
 const TXN_ALREADY_KNOWN_PATTERNS = [
   'txn-already-known',
-  'txn-mempool-conflict',
   'transaction already in the mempool',
   'transaction already known',
   '257:',
-  '258:',
 ]
 
 export function isTxAlreadyKnown(errorMessage: string): boolean {
@@ -277,6 +275,7 @@ export async function broadcastTransaction(txHex: string, localTxid?: string): P
   // User-facing message: whitelist known safe error patterns, strip infrastructure details
   const SAFE_ERROR_PATTERNS = [
     /txn-already-known/i,
+    /txn-mempool-conflict/i,
     /insufficient.*(?:fee|funds|priority)/i,
     /dust/i,
     /double.?spend/i,
