@@ -406,16 +406,16 @@ describe('locks service', () => {
       )
     })
 
-    it('should return ok with warning when post-broadcast DB tracking fails', async () => {
+    it('should return ok without warning when post-broadcast DB tracking fails', async () => {
       vi.mocked(recordSentTransaction).mockRejectedValueOnce(new Error('DB write failed'))
 
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      // Broadcast succeeded so we return ok — modal closes, warning shown as toast
+      // Broadcast succeeded so we return ok — modal closes cleanly, background sync reconciles
       const result = await lockBSV(10_000, 900_000, utxos)
       expect(result.ok).toBe(true)
       if (!result.ok) return
-      expect(result.value.warning).toMatch(/Lock confirmed/)
+      expect(result.value.warning).toBeUndefined()
     })
 
     it('should use the correct fee calculation', async () => {

@@ -304,12 +304,11 @@ export async function lockBSV(
     })
   } catch (error) {
     walletLogger.error('CRITICAL: Failed to record lock transaction locally', error, { txid })
-    // Broadcast succeeded — return ok with a warning so the modal closes and the
-    // user is not alarmed by an inline error that could prompt a dangerous retry.
+    // Broadcast succeeded — return ok so the modal closes cleanly. Background sync
+    // in LockModal will reconcile the local DB from the blockchain.
     return ok({
       txid,
       lockedUtxo,
-      warning: 'Lock confirmed. Local record will update on next sync.'
     })
   }
 
