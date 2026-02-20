@@ -118,12 +118,16 @@ export function LockModal({ onClose }: LockModalProps) {
         showToast(result.value.warning, 'warning')
         // Sync automatically to pick up the lock record from blockchain
         await performSync()
+        await fetchData()
+        onClose()
       } else {
         showToast(`Locked ${lockSats.toLocaleString()} sats for ${blocks} blocks!`)
+        // Ensure Activity tab reflects the new lock transaction immediately
+        await fetchData()
+        onClose()
+        // Background sync to confirm balance from blockchain after local DB update
+        void performSync()
       }
-      // Ensure Activity tab reflects the new lock transaction immediately
-      await fetchData()
-      onClose()
     } else {
       setLockError(result.error || 'Lock failed')
     }
