@@ -18,7 +18,7 @@ interface SendModalProps {
 
 export function SendModal({ onClose }: SendModalProps) {
   const { wallet, balance, utxos, feeRateKB } = useWalletState()
-  const { handleSend, handleSendMulti } = useWalletActions()
+  const { handleSend, handleSendMulti, performSync } = useWalletActions()
   const { displayInSats, showToast, formatUSD } = useUI()
 
   const [sendAddress, setSendAddress] = useState('')
@@ -130,13 +130,14 @@ export function SendModal({ onClose }: SendModalProps) {
       if (isOk(result)) {
         showToast(`Sent ${sendSats.toLocaleString()} sats!`)
         onClose()
+        void performSync()
       } else {
         const errorMsg = result.error || 'Send failed'
-        // Broadcast succeeded but local DB write failed — tx is on-chain, close and warn via toast.
-        // Detect via BROADCAST_SUCCEEDED_DB_FAILED error code or legacy "broadcast succeeded" substring.
         if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
-          showToast('Sent! Balance may take a moment to update.', 'warning')
+          // TX is on-chain. Show clean success toast and silently sync to reconcile balance.
+          showToast(`Sent ${sendSats.toLocaleString()} sats!`)
           onClose()
+          void performSync()
         } else {
           setSendError(errorMsg)
         }
@@ -158,17 +159,20 @@ export function SendModal({ onClose }: SendModalProps) {
         : btcToSatoshis(parseFloat(r.amount || '0'))
     }))
 
+    const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
     const result = await handleSendMulti(parsedRecipients, selectedUtxos ?? undefined)
 
     if (isOk(result)) {
-      const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
       showToast(`Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`)
       onClose()
+      void performSync()
     } else {
       const errorMsg = result.error || 'Send failed'
       if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
-        showToast('Sent! Balance may take a moment to update.', 'warning')
+        // TX is on-chain. Show clean success toast and silently sync to reconcile balance.
+        showToast(`Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`)
         onClose()
+        void performSync()
       } else {
         setSendError(errorMsg)
       }
