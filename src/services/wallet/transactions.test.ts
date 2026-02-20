@@ -294,7 +294,7 @@ describe('Transaction Service', () => {
       const txid = await executeBroadcast('deadbeef', 'pending-123', outpoints)
 
       expect(mockMarkUtxosPendingSpend).toHaveBeenCalledWith(outpoints, 'pending-123')
-      expect(mockInfraBroadcast).toHaveBeenCalledWith('deadbeef', undefined)
+      expect(mockInfraBroadcast).toHaveBeenCalledWith('deadbeef', 'pending-123')
       expect(txid).toBe(MOCK_TXID)
       // Should NOT rollback on success
       expect(mockRollbackPendingSpend).not.toHaveBeenCalled()

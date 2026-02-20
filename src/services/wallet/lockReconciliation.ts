@@ -39,7 +39,7 @@ function mergeWithPreloaded(
     preloadedLocks.map(l => [`${l.txid}:${l.vout}`, l])
   )
 
-  return detectedLocks.map(lock => {
+  const merged = detectedLocks.map(lock => {
     const preloaded = preloadMap.get(`${lock.txid}:${lock.vout}`)
     if (!preloaded) return lock
 
@@ -66,6 +66,20 @@ function mergeWithPreloaded(
       createdAt: earlierCreatedAt
     }
   })
+
+  // Include any preloaded locks that weren't detected on-chain yet.
+  // This happens for unconfirmed locks: the tx is in mempool but WoC's
+  // getTransactionHistory hasn't indexed it yet, so detectLockedUtxos
+  // won't find it. We keep these preloaded (DB-persisted) locks in state
+  // so they don't flash away between creation and first confirmation.
+  const detectedKeys = new Set(detectedLocks.map(l => `${l.txid}:${l.vout}`))
+  for (const preloaded of preloadedLocks) {
+    if (!detectedKeys.has(`${preloaded.txid}:${preloaded.vout}`)) {
+      merged.push(preloaded)
+    }
+  }
+
+  return merged
 }
 
 /**
