@@ -38,7 +38,12 @@ export const OrdinalImage = memo(function OrdinalImage({
   const cachedImageUrl = useMemo(() => {
     if (isImage && cachedContent?.contentData && cachedContent.contentData.length > 0) {
       try {
-        const blob = new Blob([cachedContent.contentData.buffer as ArrayBuffer], { type: contentType || 'image/png' })
+        // Use a sliced copy of the buffer — the Uint8Array may be a view into a
+        // larger shared ArrayBuffer (e.g. from SQLite), so .buffer alone can include
+        // extra bytes before byteOffset, corrupting the image.
+        const data = cachedContent.contentData
+        const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+        const blob = new Blob([buf], { type: contentType || 'image/png' })
         return URL.createObjectURL(blob)
       } catch {
         return undefined

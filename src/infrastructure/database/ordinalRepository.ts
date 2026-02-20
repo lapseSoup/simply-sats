@@ -116,8 +116,13 @@ export async function getCachedOrdinalContent(origin: string): Promise<{ content
     if (rows.length === 0) return null
 
     const row = rows[0]!
+    // Slice the Uint8Array to get a fresh ArrayBuffer copy — the raw DB response
+    // may be a view into a larger shared buffer with a non-zero byteOffset, which
+    // causes Blob creation (for data-URL images) to include garbage prefix bytes.
+    const rawData = row.content_data ? new Uint8Array(row.content_data) : undefined
+    const contentData = rawData ? new Uint8Array(rawData.buffer.slice(rawData.byteOffset, rawData.byteOffset + rawData.byteLength)) : undefined
     return {
-      contentData: row.content_data ? new Uint8Array(row.content_data) : undefined,
+      contentData,
       contentText: row.content_text ?? undefined,
       contentType: row.content_type ?? undefined
     }
