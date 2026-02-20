@@ -29,10 +29,25 @@ export async function fetchOrdinalContent(
       return null
     }
 
-    const response = result.value
+    let response = result.value
+
+    // If the outpoint isn't an inscription origin (404), resolve the real
+    // inscription origin via the txos endpoint and retry.  This happens for
+    // transferred ordinals where sync.ts stores the spending outpoint in the
+    // tx description rather than the inscription origin.
     if (!response.ok) {
-      syncLogger.debug(`[OrdinalContent] Failed to fetch ${origin}: ${response.status}`)
-      return null
+      const inscriptionOrigin = await resolveInscriptionOrigin(origin)
+      if (!inscriptionOrigin || inscriptionOrigin === origin) {
+        syncLogger.debug(`[OrdinalContent] Failed to fetch ${origin}: ${response.status}`)
+        return null
+      }
+      const retry = await gpOrdinalsApi.fetch(`/content/${inscriptionOrigin}`)
+      if (!retry.ok || !retry.value.ok) {
+        syncLogger.debug(`[OrdinalContent] Failed to fetch resolved origin ${inscriptionOrigin}: ${retry.ok ? retry.value.status : retry.error.message}`)
+        return null
+      }
+      response = retry.value
+      syncLogger.debug(`[OrdinalContent] Resolved ${origin} → inscription origin ${inscriptionOrigin}`)
     }
 
     // Read actual content-type from response header — use it when caller didn't know it
@@ -49,6 +64,22 @@ export async function fetchOrdinalContent(
     }
   } catch (e) {
     syncLogger.debug(`[OrdinalContent] Error fetching ${origin}: ${e}`)
+    return null
+  }
+}
+
+/**
+ * Resolve the inscription origin for a given outpoint.
+ * GorillaPool's /content/ endpoint requires the inscription origin, not
+ * the current outpoint.  The /api/txos/ endpoint returns the inscription
+ * origin in its response.
+ */
+async function resolveInscriptionOrigin(outpoint: string): Promise<string | null> {
+  try {
+    const result = await gpOrdinalsApi.get<{ origin?: { outpoint?: string } }>(`/api/txos/${outpoint}`, { noRetry: true })
+    if (!result.ok) return null
+    return result.value?.origin?.outpoint ?? null
+  } catch {
     return null
   }
 }

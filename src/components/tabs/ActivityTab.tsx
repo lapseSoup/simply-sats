@@ -37,7 +37,7 @@ const TransactionItem = memo(function TransactionItem({
   formatBSVShort: (sats: number) => string
   ordinalOrigin?: string
   ordinalContentType?: string
-  ordinalCachedContent?: { contentData?: Uint8Array; contentText?: string }
+  ordinalCachedContent?: { contentData?: Uint8Array; contentText?: string; contentType?: string }
 }) {
   return (
     <div
