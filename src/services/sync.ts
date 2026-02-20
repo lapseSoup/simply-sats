@@ -34,7 +34,6 @@ import {
   addLockIfNotExists,
   markLockUnlockedByTxid,
   getLocks,
-  deleteTransactionByTxid,
   getAllTransactions,
   updateTransactionAmount
 } from './database'
@@ -1040,22 +1039,47 @@ export async function syncWallet(
     // These are created when a broadcast failure (e.g. txn-mempool-conflict) was
     // falsely treated as success, writing a lock with a locally-computed txid that
     // was never actually broadcast. A 404 from WoC confirms the tx never existed.
+    //
+    // Uses direct DELETE by primary key — previous approach via markLockUnlockedByTxid
+    // silently updated 0 rows due to account_id subquery mismatches between the
+    // locks and utxos tables.
     if (!token.isCancelled) {
       try {
         const woc = getWocClient()
         const dbLocks = await getLocks(0, accountId)
+        syncLogger.info('[SYNC] Phantom lock check: scanning locks', { count: dbLocks.length, accountId })
+
         for (const lock of dbLocks) {
           if (token.isCancelled) break
           const { txid, vout } = lock.utxo
+          const utxoId = lock.utxo.id
+          syncLogger.debug('[SYNC] Checking lock on-chain', { txid: txid.slice(0, 12), vout })
+
           const txResult = await woc.getTransactionDetailsSafe(txid)
+
+          if (!txResult.ok) {
+            syncLogger.info('[SYNC] Lock tx fetch failed', {
+              txid: txid.slice(0, 12),
+              code: txResult.error.code,
+              status: txResult.error.status,
+              message: txResult.error.message
+            })
+          }
+
           if (!txResult.ok && txResult.error.status === 404) {
-            syncLogger.warn('[SYNC] Voiding phantom lock — txid not on-chain', { txid: txid.slice(0, 12), vout })
-            await markLockUnlockedByTxid(txid, vout, accountId)
-            // Also delete the phantom transaction record so it disappears from Activity tab
-            if (accountId !== undefined) {
-              await deleteTransactionByTxid(txid, accountId)
-              syncLogger.warn('[SYNC] Deleted phantom transaction record', { txid: txid.slice(0, 12) })
-            }
+            syncLogger.warn('[SYNC] PHANTOM DETECTED — purging lock, UTXO, and transaction', {
+              txid: txid.slice(0, 12), vout, utxoId
+            })
+
+            // Direct DELETE by primary key — bypasses account_id subquery entirely
+            const { getDatabase } = await import('../infrastructure/database/connection')
+            const db = getDatabase()
+            await db.execute('DELETE FROM locks WHERE utxo_id = $1', [utxoId])
+            await db.execute('DELETE FROM utxos WHERE id = $1', [utxoId])
+            await db.execute('DELETE FROM transaction_labels WHERE txid = $1', [txid])
+            await db.execute('DELETE FROM transactions WHERE txid = $1', [txid])
+
+            syncLogger.warn('[SYNC] Phantom lock fully purged from all tables', { txid: txid.slice(0, 12) })
           }
         }
       } catch (phantomErr) {
