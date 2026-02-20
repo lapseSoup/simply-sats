@@ -10,6 +10,7 @@ import { getWocClient } from '../../infrastructure/api/wocClient'
 import { btcToSatoshis } from '../../utils/satoshiConversion'
 import { useTransactionLabels } from '../../hooks/useTransactionLabels'
 import { Modal } from '../shared/Modal'
+import { resolveInscriptionOrigin } from '../../services/wallet/ordinalContent'
 
 // Default label suggestions (always shown as fallback)
 const DEFAULT_LABELS = ['personal', 'business', 'exchange']
@@ -81,8 +82,11 @@ export function TransactionDetailModal({
 
   const openOrdinalFullSize = useCallback(async () => {
     if (!ordinalOrigin) return
-    const label = `ordinal-${ordinalOrigin.slice(0, 12).replace(/[^a-zA-Z0-9-_]/g, '_')}`
-    const imageUrl = `https://ordinals.gorillapool.io/content/${ordinalOrigin}`
+    // Resolve the inscription origin — the outpoint in the tx description may
+    // differ from the inscription origin that GorillaPool's /content/ endpoint expects.
+    const resolvedOrigin = await resolveInscriptionOrigin(ordinalOrigin) || ordinalOrigin
+    const label = `ordinal-${resolvedOrigin.slice(0, 12).replace(/[^a-zA-Z0-9-_]/g, '_')}`
+    const imageUrl = `https://ordinals.gorillapool.io/content/${resolvedOrigin}`
     const viewerUrl = `${window.location.origin}/ordinal-viewer.html?src=${encodeURIComponent(imageUrl)}`
     let width = 800, height = 800
     try {
@@ -92,7 +96,7 @@ export function TransactionDetailModal({
         height = Math.min(height, Math.floor(monitor.size.height / monitor.scaleFactor * 0.9))
       }
     } catch { /* use defaults */ }
-    new WebviewWindow(label, { url: viewerUrl, title: `Ordinal ${ordinalOrigin.slice(0, 8)}...`, width, height, resizable: true })
+    new WebviewWindow(label, { url: viewerUrl, title: `Ordinal ${resolvedOrigin.slice(0, 8)}...`, width, height, resizable: true })
   }, [ordinalOrigin])
 
   // Labels via hook (handles loading, optimistic updates, suggestions)

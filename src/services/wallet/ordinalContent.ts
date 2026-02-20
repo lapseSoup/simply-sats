@@ -74,7 +74,7 @@ export async function fetchOrdinalContent(
  * the current outpoint.  The /api/txos/ endpoint returns the inscription
  * origin in its response.
  */
-async function resolveInscriptionOrigin(outpoint: string): Promise<string | null> {
+export async function resolveInscriptionOrigin(outpoint: string): Promise<string | null> {
   try {
     const result = await gpOrdinalsApi.get<{ origin?: { outpoint?: string } }>(`/api/txos/${outpoint}`, { noRetry: true })
     if (!result.ok) return null
