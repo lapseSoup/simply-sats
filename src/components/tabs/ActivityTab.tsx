@@ -12,6 +12,24 @@ import { OrdinalImage } from '../shared/OrdinalImage'
 const VIRTUALIZATION_THRESHOLD = 50
 const TX_ITEM_HEIGHT = 80 // ~68px item + 12px gap
 
+function formatTxDate(createdAt?: number): string | null {
+  if (!createdAt) return null
+  const diff = Date.now() - createdAt
+  const mins = Math.floor(diff / 60000)
+  if (mins < 2) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(diff / 3600000)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(diff / 86400000)
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days}d ago`
+  if (days < 30) return `${Math.floor(days / 7)}w ago`
+  return new Date(createdAt).toLocaleDateString(undefined, {
+    month: 'short', day: 'numeric',
+    ...(days > 365 ? { year: 'numeric' } : {})
+  })
+}
+
 // Transaction type for the component
 type TxHistoryItem = { tx_hash: string; amount?: number; height: number; description?: string; createdAt?: number }
 
@@ -65,7 +83,7 @@ const TransactionItem = memo(function TransactionItem({
       <div className="tx-info">
         <div className="tx-type">{txType}</div>
         <div className="tx-meta">
-          <span className="tx-hash" title={tx.tx_hash}>{tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}</span>
+          {formatTxDate(tx.createdAt) && <span>{formatTxDate(tx.createdAt)}</span>}
           {tx.height > 0 && <span>• Block {tx.height.toLocaleString()}</span>}
         </div>
       </div>

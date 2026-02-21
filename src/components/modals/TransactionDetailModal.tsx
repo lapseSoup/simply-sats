@@ -69,7 +69,7 @@ export function TransactionDetailModal({
   onLabelsUpdated
 }: TransactionDetailModalProps) {
   const { copyToClipboard, showToast, formatUSD, displayInSats, formatBSVShort } = useUI()
-  const { activeAccountId } = useWalletState()
+  const { activeAccountId, ordinals } = useWalletState()
 
   // Extract ordinal origin from description if this is an ordinal transfer
   // New format: "Transferred ordinal {txid}_{vout} to {addr}..."
@@ -80,11 +80,20 @@ export function TransactionDetailModal({
     return match?.[1] ?? null
   }, [transaction.description])
 
+  // Look up ordinal by receive txid (for "Ordinal Received" rows that have no description)
+  const receivedOrdinalOrigin = useMemo(() =>
+    ordinals.find(o => o.txid === transaction.tx_hash)?.origin ?? null,
+    [ordinals, transaction.tx_hash]
+  )
+
+  // Effective origin: transfer description takes precedence, then received lookup
+  const effectiveOrdinalOrigin = ordinalOrigin ?? receivedOrdinalOrigin
+
   const openOrdinalFullSize = useCallback(async () => {
-    if (!ordinalOrigin) return
+    if (!effectiveOrdinalOrigin) return
     // Resolve the inscription origin — the outpoint in the tx description may
     // differ from the inscription origin that GorillaPool's /content/ endpoint expects.
-    const resolvedOrigin = await resolveInscriptionOrigin(ordinalOrigin) || ordinalOrigin
+    const resolvedOrigin = await resolveInscriptionOrigin(effectiveOrdinalOrigin) || effectiveOrdinalOrigin
     const label = `ordinal-${resolvedOrigin.slice(0, 12).replace(/[^a-zA-Z0-9-_]/g, '_')}`
     const imageUrl = `https://ordinals.gorillapool.io/content/${resolvedOrigin}`
     const viewerUrl = `${window.location.origin}/ordinal-viewer.html?src=${encodeURIComponent(imageUrl)}`
@@ -97,7 +106,7 @@ export function TransactionDetailModal({
       }
     } catch { /* use defaults */ }
     new WebviewWindow(label, { url: viewerUrl, title: `Ordinal ${resolvedOrigin.slice(0, 8)}...`, width, height, resizable: true })
-  }, [ordinalOrigin])
+  }, [effectiveOrdinalOrigin])
 
   // Labels via hook (handles loading, optimistic updates, suggestions)
   const { labels, suggestedLabels: hookSuggestions, loading: labelsLoading, addLabel, removeLabel } = useTransactionLabels({
@@ -187,10 +196,11 @@ export function TransactionDetailModal({
 
   return (
     <Modal title="Transaction Details" onClose={onClose}>
-      <div className="modal-content">
-        {/* View Ordinal button — opens full-size viewer for ordinal transfer txs */}
-        {ordinalOrigin && (
-          <div style={{ padding: '12px 16px 0' }}>
+      {/* Scrollable area: ordinal button + detail rows + labels */}
+      <div className="modal-content modal-content-scroll">
+        {/* View Ordinal button — opens full-size viewer for ordinal transfer and received txs */}
+        {effectiveOrdinalOrigin && (
+          <div style={{ paddingBottom: 16 }}>
             <button
               className="btn btn-secondary"
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
@@ -259,14 +269,14 @@ export function TransactionDetailModal({
 
           <div className="tx-detail-row">
             <span className="tx-detail-label">Status</span>
-            <span className={`tx-detail-value tx-status ${transaction.height > 0 ? 'confirmed' : 'pending'}`}>
-              {transaction.height > 0 ? 'Confirmed' : 'Pending'}
+            <span className={`tx-detail-value tx-status ${transaction.height !== 0 ? 'confirmed' : 'pending'}`}>
+              {transaction.height !== 0 ? 'Confirmed' : 'Pending'}
             </span>
           </div>
         </div>
 
         {/* Labels Section */}
-        <div className="tx-labels-section">
+        <div className="tx-labels-section" style={{ marginBottom: 0 }}>
           <div className="tx-labels-header">Labels</div>
 
           {labelsLoading ? (
@@ -336,21 +346,20 @@ export function TransactionDetailModal({
             </>
           )}
         </div>
-
-        {/* Actions */}
-        <div className="modal-actions">
-          <button
-            className="btn btn-secondary"
-            onClick={() => copyToClipboard(transaction.tx_hash, 'TXID copied!')}
-          >
-            Copy TXID
-          </button>
-          <button className="btn btn-primary" onClick={openOnWoC}>
-            View on Explorer
-          </button>
-        </div>
       </div>
 
+      {/* Pinned footer: always visible at bottom */}
+      <div className="modal-footer-actions">
+        <button
+          className="btn btn-secondary"
+          onClick={() => copyToClipboard(transaction.tx_hash, 'TXID copied!')}
+        >
+          Copy TXID
+        </button>
+        <button className="btn btn-primary" onClick={openOnWoC}>
+          View on Explorer
+        </button>
+      </div>
     </Modal>
   )
 }
