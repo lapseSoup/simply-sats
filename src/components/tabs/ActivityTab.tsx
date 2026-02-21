@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, memo, useCallback, useMemo, type ReactNode } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
-import { useWalletState, useSyncContext } from '../../contexts'
+import { useWalletState, useSyncContext, useNetwork } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
@@ -12,9 +12,15 @@ import { OrdinalImage } from '../shared/OrdinalImage'
 const VIRTUALIZATION_THRESHOLD = 50
 const TX_ITEM_HEIGHT = 80 // ~68px item + 12px gap
 
-function formatTxDate(createdAt?: number): string | null {
-  if (!createdAt) return null
-  const diff = Date.now() - createdAt
+function formatTxDate(height: number, currentHeight: number, createdAt?: number): string | null {
+  // Use block height to estimate confirmation time when available (more accurate than createdAt)
+  const effectiveTs: number | null = (height > 0 && currentHeight > 0)
+    ? Date.now() - (currentHeight - height) * 10 * 60 * 1000
+    : (createdAt ?? null)
+
+  if (!effectiveTs || effectiveTs <= 0) return null
+
+  const diff = Date.now() - effectiveTs
   const mins = Math.floor(diff / 60000)
   if (mins < 2) return 'Just now'
   if (mins < 60) return `${mins}m ago`
@@ -24,7 +30,7 @@ function formatTxDate(createdAt?: number): string | null {
   if (days === 1) return 'Yesterday'
   if (days < 7) return `${days}d ago`
   if (days < 30) return `${Math.floor(days / 7)}w ago`
-  return new Date(createdAt).toLocaleDateString(undefined, {
+  return new Date(effectiveTs).toLocaleDateString(undefined, {
     month: 'short', day: 'numeric',
     ...(days > 365 ? { year: 'numeric' } : {})
   })
@@ -44,7 +50,8 @@ const TransactionItem = memo(function TransactionItem({
   formatBSVShort,
   ordinalOrigin,
   ordinalContentType,
-  ordinalCachedContent
+  ordinalCachedContent,
+  currentHeight
 }: {
   tx: TxHistoryItem
   txType: string
@@ -56,6 +63,7 @@ const TransactionItem = memo(function TransactionItem({
   ordinalOrigin?: string
   ordinalContentType?: string
   ordinalCachedContent?: { contentData?: Uint8Array; contentText?: string; contentType?: string }
+  currentHeight: number
 }) {
   return (
     <div
@@ -83,7 +91,7 @@ const TransactionItem = memo(function TransactionItem({
       <div className="tx-info">
         <div className="tx-type">{txType}</div>
         <div className="tx-meta">
-          {formatTxDate(tx.createdAt) && <span>{formatTxDate(tx.createdAt)}</span>}
+          {formatTxDate(tx.height, currentHeight, tx.createdAt) && <span>{formatTxDate(tx.height, currentHeight, tx.createdAt)}</span>}
           {tx.height > 0 && <span>• Block {tx.height.toLocaleString()}</span>}
         </div>
       </div>
@@ -112,6 +120,8 @@ export function ActivityTab() {
   const { txHistory, locks, loading, activeAccountId, ordinals, ordinalContentCache } = useWalletState()
   const { fetchOrdinalContentIfMissing } = useSyncContext()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
+  const { networkInfo } = useNetwork()
+  const currentHeight = networkInfo?.blockHeight ?? 0
 
   // Sync is handled by App.tsx checkSync effect — no duplicate sync here
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
@@ -327,6 +337,7 @@ export function ActivityTab() {
                     formatUSD={formatUSD}
                     displayInSats={displayInSats}
                     formatBSVShort={formatBSVShort}
+                    currentHeight={currentHeight}
                     {...ordinalProps}
                   />
                 </div>
@@ -362,6 +373,7 @@ export function ActivityTab() {
               formatUSD={formatUSD}
               displayInSats={displayInSats}
               formatBSVShort={formatBSVShort}
+              currentHeight={currentHeight}
               {...ordinalProps}
             />
           )
