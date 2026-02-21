@@ -221,6 +221,7 @@ export interface Ordinal {
   contentType?: string
   content?: string
   number?: number
+  blockHeight?: number
 }
 
 // ============================================
@@ -315,6 +316,7 @@ export interface GpOrdinalItem {
   satoshis?: number
   outpoint?: string
   origin?: GpOrdinalOrigin
+  height?: number
 }
 
 // ============================================

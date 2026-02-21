@@ -70,8 +70,8 @@ export async function getCachedOrdinals(accountId?: number): Promise<CachedOrdin
 
   try {
     const query = accountId !== undefined
-      ? 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at FROM ordinal_cache WHERE account_id = $1 AND transferred = 0 ORDER BY fetched_at DESC'
-      : 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at FROM ordinal_cache WHERE transferred = 0 ORDER BY fetched_at DESC'
+      ? 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height FROM ordinal_cache WHERE account_id = $1 AND transferred = 0 ORDER BY fetched_at DESC'
+      : 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height FROM ordinal_cache WHERE transferred = 0 ORDER BY fetched_at DESC'
     const params = accountId !== undefined ? [accountId] : []
 
     const rows = await database.select<Omit<OrdinalCacheRow, 'content_data' | 'content_text'>[]>(query, params)
@@ -85,7 +85,8 @@ export async function getCachedOrdinals(accountId?: number): Promise<CachedOrdin
       contentType: row.content_type ?? undefined,
       contentHash: row.content_hash ?? undefined,
       accountId: row.account_id ?? undefined,
-      fetchedAt: row.fetched_at
+      fetchedAt: row.fetched_at,
+      blockHeight: row.block_height ?? undefined
     }))
   } catch (_e) {
     // Table may not exist yet
@@ -183,8 +184,8 @@ export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> 
   const database = getDatabase()
 
   await database.execute(
-    `INSERT OR REPLACE INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    `INSERT OR REPLACE INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       ordinal.origin,
       ordinal.txid,
@@ -193,7 +194,8 @@ export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> 
       ordinal.contentType || null,
       ordinal.contentHash || null,
       ordinal.accountId || null,
-      ordinal.fetchedAt
+      ordinal.fetchedAt,
+      ordinal.blockHeight ?? null
     ]
   )
 }

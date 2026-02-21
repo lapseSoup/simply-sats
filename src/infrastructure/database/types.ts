@@ -113,6 +113,7 @@ export interface CachedOrdinal {
   contentText?: string      // Text/JSON content
   accountId?: number
   fetchedAt: number
+  blockHeight?: number      // Block height at which this ordinal was received (from GorillaPool)
 }
 
 // Database backup format

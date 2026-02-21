@@ -198,6 +198,7 @@ export interface Ordinal {
   satoshis: number
   contentType?: string
   content?: string
+  blockHeight?: number
 }
 
 // Ordinal details from GorillaPool API

@@ -349,6 +349,7 @@ export interface OrdinalCacheRow {
   content_text: string | null
   account_id: number | null
   fetched_at: number
+  block_height: number | null
 }
 
 /**

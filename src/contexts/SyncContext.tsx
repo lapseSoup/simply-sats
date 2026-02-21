@@ -112,29 +112,30 @@ interface SyncContextType {
 
 /**
  * Merge synthetic TxHistoryItems for ordinal receives whose txids are not in
- * the DB transactions table. Uses height=-1 sentinel so they sort to the bottom
- * of the feed (correct for old confirmed ordinals with unknown block heights).
+ * the DB transactions table. Uses real block heights from ordinal_cache when
+ * available; falls back to -1 sentinel for ordinals without cached height.
  * Mutates `dbTxHistory` in place. No API calls — reads from local SQLite only.
  */
 async function mergeOrdinalTxEntries(
   dbTxHistory: TxHistoryItem[],
   accountId: number | null
 ): Promise<void> {
-  const ordinalTxids = new Set<string>()
+  // Map<txid, blockHeight> — -1 sentinel means height unknown
+  const ordinalTxidHeights = new Map<string, number>()
   try {
     const cachedOrds = await getCachedOrdinals(accountId ?? undefined)
     if (cachedOrds.length > 0) {
-      for (const c of cachedOrds) ordinalTxids.add(c.txid)
+      for (const c of cachedOrds) ordinalTxidHeights.set(c.txid, c.blockHeight ?? -1)
     } else {
       const dbOrds = await getOrdinalsFromDatabase(accountId ?? undefined)
-      for (const o of dbOrds) ordinalTxids.add(o.txid)
+      for (const o of dbOrds) ordinalTxidHeights.set(o.txid, -1)  // utxos table has no height
     }
   } catch { /* non-critical — ordinal data loaded fully elsewhere */ }
 
   const dbTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
-  for (const txid of ordinalTxids) {
+  for (const [txid, height] of ordinalTxidHeights) {
     if (!dbTxidSet.has(txid)) {
-      dbTxHistory.push({ tx_hash: txid, height: -1, amount: 1, createdAt: 0 })
+      dbTxHistory.push({ tx_hash: txid, height, amount: 1, createdAt: 0 })
     }
   }
 }
@@ -778,7 +779,8 @@ async function cacheOrdinalsInBackground(
         contentType: ord.contentType,
         contentHash: ord.content,
         accountId: activeAccountId,
-        fetchedAt: now
+        fetchedAt: now,
+        blockHeight: ord.blockHeight
       }
       await upsertOrdinalCache(cached)
     }

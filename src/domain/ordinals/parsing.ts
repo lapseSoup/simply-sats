@@ -78,7 +78,8 @@ export function mapGpItemToOrdinal(item: GpOrdinalItem): Ordinal {
     vout: item.vout,
     satoshis: item.satoshis || 1,
     contentType: item.origin?.data?.insc?.file?.type,
-    content: item.origin?.data?.insc?.file?.hash
+    content: item.origin?.data?.insc?.file?.hash,
+    blockHeight: item.height
   }
 }
 
