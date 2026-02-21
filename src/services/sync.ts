@@ -1004,9 +1004,9 @@ export async function syncWallet(
       return undefined
     }
 
-    // Sync transaction history for main addresses (not ordinals/identity to reduce API calls)
-    // Include derived addresses since they receive payments
-    const txHistoryAddresses = [walletAddress, ...derivedAddresses.map(d => d.address)]
+    // Sync transaction history for main + ordinals addresses (ordinals receive at ordAddress)
+    // Identity address excluded to reduce API calls; derived addresses included for payments
+    const txHistoryAddresses = [walletAddress, ordAddress, ...derivedAddresses.map(d => d.address)]
     // All wallet addresses for accurate input matching in calculateTxAmount
     const allWalletAddresses = [walletAddress, ordAddress, identityAddress, ...derivedAddresses.map(d => d.address)]
     syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses (account=${accountId ?? 1})`)

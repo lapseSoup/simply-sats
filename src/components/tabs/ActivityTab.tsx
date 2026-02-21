@@ -50,7 +50,7 @@ const TransactionItem = memo(function TransactionItem({
     >
       <div className="tx-icon" aria-hidden="true">
         {ordinalOrigin ? (
-          <div style={{ width: 40, height: 40, borderRadius: 6, overflow: 'hidden', flexShrink: 0, margin: -4 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
             <OrdinalImage
               origin={ordinalOrigin}
               contentType={ordinalContentType}
@@ -113,10 +113,16 @@ export function ActivityTab() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerHeight, setContainerHeight] = useState(400)
 
-  // Measure container height for virtualized list
+  // Measure the content area height for the virtualized list.
+  // We observe #main-content (the bounded flex child of .app) rather than
+  // the virtual container div, because the container has no intrinsic height
+  // of its own — measuring it would be circular (its height = List height = containerHeight).
+  // Observing #main-content gives us the actual available viewport height and
+  // correctly updates when the window is resized.
   useEffect(() => {
-    if (!shouldVirtualize || !containerRef.current) return
-    const el = containerRef.current
+    if (!shouldVirtualize) return
+    const el = document.getElementById('main-content')
+    if (!el) return
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setContainerHeight(entry.contentRect.height)
@@ -282,7 +288,7 @@ export function ActivityTab() {
   if (shouldVirtualize) {
     return (
       <>
-        <div ref={containerRef} className="tx-list-virtual-container" role="list" aria-label="Transaction history">
+        <div ref={containerRef} className="tx-list-virtual-container" role="list" aria-label="Transaction history" style={{ height: containerHeight }}>
           <List
             rowCount={txHistory.length}
             rowHeight={TX_ITEM_HEIGHT}
