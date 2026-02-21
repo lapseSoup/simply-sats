@@ -1022,23 +1022,6 @@ export async function syncWallet(
       }
     }
 
-    // Ensure all held ordinals have a corresponding transaction record.
-    // WoC history may not reach far enough back for old ordinal receives,
-    // so insert lightweight synthetic records for any missing txids.
-    // addTransaction uses INSERT OR IGNORE — existing records are untouched.
-    if (!token.isCancelled) {
-      const ordinalUtxos = await getOrdinalsFromDatabase(accountId)
-      for (const ord of ordinalUtxos) {
-        await addTransaction({
-          txid: ord.txid,
-          createdAt: Date.now(),
-          status: 'confirmed',
-          amount: ord.satoshis,  // 1 sat for ordinals
-        }, accountId)
-      }
-      syncLogger.debug(`[SYNC] Ensured tx records for ${ordinalUtxos.length} ordinals (account=${accountId ?? 1})`)
-    }
-
     // Backfill any transactions that were stored with NULL amounts
     // (common after 12-word restore when API rate limits cause failures)
     if (!token.isCancelled) {

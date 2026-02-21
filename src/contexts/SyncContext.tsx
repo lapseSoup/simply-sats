@@ -110,6 +110,35 @@ interface SyncContextType {
   fetchOrdinalContentIfMissing: (origin: string, contentType?: string, accountId?: number) => Promise<void>
 }
 
+/**
+ * Merge synthetic TxHistoryItems for ordinal receives whose txids are not in
+ * the DB transactions table. Uses height=-1 sentinel so they sort to the bottom
+ * of the feed (correct for old confirmed ordinals with unknown block heights).
+ * Mutates `dbTxHistory` in place. No API calls — reads from local SQLite only.
+ */
+async function mergeOrdinalTxEntries(
+  dbTxHistory: TxHistoryItem[],
+  accountId: number | null
+): Promise<void> {
+  const ordinalTxids = new Set<string>()
+  try {
+    const cachedOrds = await getCachedOrdinals(accountId ?? undefined)
+    if (cachedOrds.length > 0) {
+      for (const c of cachedOrds) ordinalTxids.add(c.txid)
+    } else {
+      const dbOrds = await getOrdinalsFromDatabase(accountId ?? undefined)
+      for (const o of dbOrds) ordinalTxids.add(o.txid)
+    }
+  } catch { /* non-critical — ordinal data loaded fully elsewhere */ }
+
+  const dbTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
+  for (const txid of ordinalTxids) {
+    if (!dbTxidSet.has(txid)) {
+      dbTxHistory.push({ tx_hash: txid, height: -1, amount: 1, createdAt: 0 })
+    }
+  }
+}
+
 const SyncContext = createContext<SyncContextType | null>(null)
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -203,6 +232,10 @@ export function SyncProvider({ children }: SyncProviderProps) {
         description: tx.description,
         createdAt: tx.createdAt
       }))
+
+      // Merge ordinal receives not in DB transactions (old ordinals WoC missed)
+      await mergeOrdinalTxEntries(dbTxHistory, activeAccountId)
+
       dbTxHistory.sort((a, b) => {
         const aH = a.height || 0, bH = b.height || 0
         if (aH === 0 && bH !== 0) return -1
@@ -392,6 +425,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
             description: tx.description,
             createdAt: tx.createdAt
           }))
+          await mergeOrdinalTxEntries(dbTxHistory, accountId)
           dbTxHistory.sort((a, b) => {
             const aH = a.height || 0, bH = b.height || 0
             if (aH === 0 && bH !== 0) return -1
@@ -507,6 +541,9 @@ export function SyncProvider({ children }: SyncProviderProps) {
         description: tx.description,
         createdAt: tx.createdAt
       }))
+
+      // Merge ordinal receives not in DB transactions (old ordinals WoC missed)
+      await mergeOrdinalTxEntries(dbTxHistory, activeAccountId)
 
       dbTxHistory.sort((a, b) => {
         const aHeight = a.height || 0

@@ -10,7 +10,7 @@ import { ActivityListSkeleton } from '../shared/Skeleton'
 import { OrdinalImage } from '../shared/OrdinalImage'
 
 const VIRTUALIZATION_THRESHOLD = 50
-const TX_ITEM_HEIGHT = 70 // ~64px item + 6px gap
+const TX_ITEM_HEIGHT = 80 // ~68px item + 12px gap
 
 // Transaction type for the component
 type TxHistoryItem = { tx_hash: string; amount?: number; height: number; description?: string; createdAt?: number }
@@ -300,7 +300,7 @@ export function ActivityTab() {
               const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
               const ordinalProps = getOrdinalProps(tx)
               return (
-                <div style={{ ...style, paddingBottom: 6 }}>
+                <div style={{ ...style, paddingBottom: 12 }}>
                   <TransactionItem
                     tx={tx}
                     txType={txType}
