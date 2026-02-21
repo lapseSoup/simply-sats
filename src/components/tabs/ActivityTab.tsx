@@ -48,20 +48,20 @@ const TransactionItem = memo(function TransactionItem({
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
       style={{ cursor: 'pointer' }}
     >
-      <div className="tx-icon" aria-hidden="true">
-        {ordinalOrigin ? (
-          <div style={{ width: 32, height: 32, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
-            <OrdinalImage
-              origin={ordinalOrigin}
-              contentType={ordinalContentType}
-              size="sm"
-              alt="Ordinal"
-              lazy={false}
-              cachedContent={ordinalCachedContent}
-            />
-          </div>
-        ) : txIcon}
-      </div>
+      {ordinalOrigin ? (
+        <OrdinalImage
+          origin={ordinalOrigin}
+          contentType={ordinalContentType}
+          size="sm"
+          alt="Ordinal"
+          lazy={false}
+          cachedContent={ordinalCachedContent}
+        />
+      ) : (
+        <div className="tx-icon" aria-hidden="true">
+          {txIcon}
+        </div>
+      )}
       <div className="tx-info">
         <div className="tx-type">{txType}</div>
         <div className="tx-meta">

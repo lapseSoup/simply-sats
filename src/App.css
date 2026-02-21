@@ -567,6 +567,22 @@ body::-webkit-scrollbar {
   min-height: 0;
 }
 
+/* Thin scrollbar for the virtualized tx list — keeps content horizontally centered */
+.tx-list-virtual-container > div {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.tx-list-virtual-container > div::-webkit-scrollbar {
+  width: 4px;
+}
+.tx-list-virtual-container > div::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+.tx-list-virtual-container > div::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .tx-item {
   display: flex;
   align-items: center;
