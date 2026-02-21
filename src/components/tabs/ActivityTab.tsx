@@ -149,6 +149,16 @@ export function ActivityTab() {
     return map
   }, [ordinals])
 
+  // Build reverse map: receive txid → ordinal, for detecting received ordinals in activity feed.
+  // Covers owned ordinals (transferred=0); once transferred, the receive tx reverts to plain "Received".
+  const ordinalByTxid = useMemo(() => {
+    const map = new Map<string, typeof ordinals[number]>()
+    for (const ord of ordinals) {
+      map.set(ord.txid, ord)
+    }
+    return map
+  }, [ordinals])
+
   // Collect origins of transferred ordinals whose content is not yet in the cache.
   // After a fresh seed restore ordinal_cache is empty, so we need to lazily fetch
   // content from GorillaPool for any ordinal transfer activity items.
@@ -183,6 +193,7 @@ export function ActivityTab() {
     // may not have been re-created (ordinal labels are only written during live transfers)
     const isOrdinalTx = ordinalTxids.has(tx.tx_hash)
       || /Transferred ordinal [0-9a-f]{64}_\d+/.test(tx.description ?? '')
+    const isOrdinalReceiveTx = ordinalByTxid.has(tx.tx_hash)
 
     if (isLockTx) {
       return { type: 'Locked', icon: <Lock size={14} strokeWidth={1.75} /> }
@@ -193,6 +204,9 @@ export function ActivityTab() {
     if (isOrdinalTx) {
       return { type: 'Ordinal Transfer', icon: null }
     }
+    if (isOrdinalReceiveTx) {
+      return { type: 'Ordinal Received', icon: null }
+    }
     if (tx.amount != null && tx.amount > 0) {
       return { type: 'Received', icon: <ArrowDownLeft size={14} strokeWidth={1.75} /> }
     }
@@ -200,7 +214,7 @@ export function ActivityTab() {
       return { type: 'Sent', icon: <ArrowUpRight size={14} strokeWidth={1.75} /> }
     }
     return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }
-  }, [lockTxidSet, lockTxids, unlockTxids, ordinalTxids])
+  }, [lockTxidSet, lockTxids, unlockTxids, ordinalTxids, ordinalByTxid])
 
   // For ordinal transfer txs, extract the origin directly from the description.
   // New format: "Transferred ordinal {txid}_{vout} to {addr}..."
@@ -211,6 +225,16 @@ export function ActivityTab() {
   // may not have the 'ordinal' label re-created.
   // Legacy fallback: "Transferred ordinal {txid.slice(0,8)}..." — try ordinalByOrigin map.
   const getOrdinalProps = useCallback((tx: TxHistoryItem) => {
+    // Check if this is a received ordinal (currently owned, transferred=false)
+    const receivedOrdinal = ordinalByTxid.get(tx.tx_hash)
+    if (receivedOrdinal) {
+      return {
+        ordinalOrigin: receivedOrdinal.origin,
+        ordinalContentType: receivedOrdinal.contentType,
+        ordinalCachedContent: ordinalContentCache.get(receivedOrdinal.origin)
+      }
+    }
+
     if (!tx.description) return {}
 
     // New format: full "txid_vout" origin embedded in description
@@ -236,7 +260,7 @@ export function ActivityTab() {
       ordinalContentType: ord.contentType,
       ordinalCachedContent: ordinalContentCache.get(ord.origin)
     }
-  }, [ordinalByOrigin, ordinalContentCache])
+  }, [ordinalByTxid, ordinalByOrigin, ordinalContentCache])
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {
