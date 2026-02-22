@@ -130,7 +130,7 @@ async function mergeOrdinalTxEntries(
       const dbOrds = await getOrdinalsFromDatabase(accountId ?? undefined)
       for (const o of dbOrds) ordinalTxidHeights.set(o.txid, -1)  // utxos table has no height
     }
-  } catch { /* non-critical — ordinal data loaded fully elsewhere */ }
+  } catch (e) { console.warn('[SyncContext] mergeOrdinalTxEntries failed:', e) }
 
   const dbTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
   for (const [txid, height] of ordinalTxidHeights) {

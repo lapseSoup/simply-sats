@@ -51,11 +51,17 @@ export async function ensureOrdinalCacheTable(): Promise<void> {
         content_data BLOB,
         content_text TEXT,
         account_id INTEGER,
-        fetched_at INTEGER NOT NULL
+        fetched_at INTEGER NOT NULL,
+        transferred INTEGER NOT NULL DEFAULT 0,
+        block_height INTEGER
       )
     `)
     await database.execute('CREATE INDEX IF NOT EXISTS idx_ordinal_cache_origin ON ordinal_cache(origin)')
     await database.execute('CREATE INDEX IF NOT EXISTS idx_ordinal_cache_account ON ordinal_cache(account_id)')
+    await database.execute('CREATE INDEX IF NOT EXISTS idx_ordinal_cache_transferred ON ordinal_cache(transferred)')
+    // Ensure newer columns exist on tables created before these columns were added
+    try { await database.execute('ALTER TABLE ordinal_cache ADD COLUMN transferred INTEGER NOT NULL DEFAULT 0') } catch { /* already exists */ }
+    try { await database.execute('ALTER TABLE ordinal_cache ADD COLUMN block_height INTEGER') } catch { /* already exists */ }
   } catch (e) {
     dbLogger.error('Failed to ensure ordinal_cache table:', e)
   }
@@ -183,21 +189,25 @@ export async function ensureOrdinalCacheRowForTransferred(
 export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> {
   const database = getDatabase()
 
-  await database.execute(
-    `INSERT OR REPLACE INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [
-      ordinal.origin,
-      ordinal.txid,
-      ordinal.vout,
-      ordinal.satoshis,
-      ordinal.contentType || null,
-      ordinal.contentHash || null,
-      ordinal.accountId || null,
-      ordinal.fetchedAt,
-      ordinal.blockHeight ?? null
-    ]
-  )
+  try {
+    await database.execute(
+      `INSERT OR REPLACE INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        ordinal.origin,
+        ordinal.txid,
+        ordinal.vout,
+        ordinal.satoshis,
+        ordinal.contentType || null,
+        ordinal.contentHash || null,
+        ordinal.accountId || null,
+        ordinal.fetchedAt,
+        ordinal.blockHeight ?? null
+      ]
+    )
+  } catch (e) {
+    dbLogger.error('Failed to upsert ordinal cache:', e)
+  }
 }
 
 /**

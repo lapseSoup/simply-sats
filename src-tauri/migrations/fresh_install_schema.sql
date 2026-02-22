@@ -279,7 +279,8 @@ CREATE TABLE IF NOT EXISTS ordinal_cache (
     content_text TEXT,
     account_id INTEGER,
     fetched_at INTEGER NOT NULL,
-    transferred INTEGER NOT NULL DEFAULT 0
+    transferred INTEGER NOT NULL DEFAULT 0,
+    block_height INTEGER
 );
 
 -- ==================== INDEXES ====================
