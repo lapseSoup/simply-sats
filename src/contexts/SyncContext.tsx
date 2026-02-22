@@ -661,7 +661,10 @@ export function SyncProvider({ children }: SyncProviderProps) {
           let historyChanged = false
           for (const ord of allOrdinals) {
             if (!liveTxidSet.has(ord.txid)) {
-              dbTxHistory.push({ tx_hash: ord.txid, height: ord.blockHeight ?? -1, amount: 1, createdAt: 0 })
+              // blockHeight may not exist if allOrdinals came from DB fallback (getOrdinalsFromDatabase)
+              // rather than from API. Use -1 sentinel as fallback.
+              const blockHeight = (ord as any).blockHeight ?? -1
+              dbTxHistory.push({ tx_hash: ord.txid, height: blockHeight, amount: 1, createdAt: 0 })
               liveTxidSet.add(ord.txid)
               historyChanged = true
             }
