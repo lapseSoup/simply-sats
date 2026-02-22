@@ -250,6 +250,37 @@ export function ActivityTab() {
     return { type: 'Transaction', icon: <Circle size={14} strokeWidth={1.75} /> }
   }, [lockTxidSet, lockTxids, unlockTxids, ordinalTxids, ordinalByTxid])
 
+  // Stabilize content cache object references — when ordinalContentCache Map identity
+  // changes (new Map created in SyncContext), the actual content entries are usually the
+  // same objects. We keep a stable state Map so downstream memo/components see the same
+  // reference and don't flicker-re-render just because the Map wrapper changed.
+  // The ref tracks the previous entries for diffing; state holds the render-safe value.
+  const prevContentRef = useRef(new Map<string, { contentData?: Uint8Array; contentText?: string; contentType?: string }>())
+  const [stableContent, setStableContent] = useState(() => new Map<string, { contentData?: Uint8Array; contentText?: string; contentType?: string }>())
+  useEffect(() => {
+    const prev = prevContentRef.current
+    let changed = false
+    const next = new Map(prev)
+    for (const [origin, content] of ordinalContentCache) {
+      const existing = prev.get(origin)
+      if (!existing || existing.contentData !== content.contentData || existing.contentText !== content.contentText) {
+        next.set(origin, content)
+        changed = true
+      }
+    }
+    // Remove entries no longer in cache (account switch cleared them)
+    for (const origin of prev.keys()) {
+      if (!ordinalContentCache.has(origin)) {
+        next.delete(origin)
+        changed = true
+      }
+    }
+    if (changed) {
+      prevContentRef.current = next
+      setStableContent(next)
+    }
+  }, [ordinalContentCache])
+
   // For ordinal transfer txs, extract the origin directly from the description.
   // New format: "Transferred ordinal {txid}_{vout} to {addr}..."
   // This allows thumbnail lookup from ordinalContentCache even after the ordinal
@@ -265,7 +296,7 @@ export function ActivityTab() {
       return {
         ordinalOrigin: receivedOrdinal.origin,
         ordinalContentType: receivedOrdinal.contentType,
-        ordinalCachedContent: ordinalContentCache.get(receivedOrdinal.origin)
+        ordinalCachedContent: stableContent.get(receivedOrdinal.origin)
       }
     }
 
@@ -275,7 +306,7 @@ export function ActivityTab() {
     const newMatch = tx.description.match(/Transferred ordinal ([0-9a-f]{64}_\d+)/)
     if (newMatch) {
       const origin = newMatch[1]!
-      const cachedContent = ordinalContentCache.get(origin)
+      const cachedContent = stableContent.get(origin)
       // Get contentType from ordinals array if still present, else undefined
       const contentType = ordinalByOrigin.get(origin)?.contentType
       return { ordinalOrigin: origin, ordinalContentType: contentType, ordinalCachedContent: cachedContent }
@@ -292,9 +323,9 @@ export function ActivityTab() {
     return {
       ordinalOrigin: ord.origin,
       ordinalContentType: ord.contentType,
-      ordinalCachedContent: ordinalContentCache.get(ord.origin)
+      ordinalCachedContent: stableContent.get(ord.origin)
     }
-  }, [ordinalByTxid, ordinalByOrigin, ordinalContentCache])
+  }, [ordinalByTxid, ordinalByOrigin, stableContent])
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {

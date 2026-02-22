@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, memo } from 'react'
+import { useState, useCallback, useEffect, memo } from 'react'
 import { Image, FileText, Braces, Diamond } from 'lucide-react'
 import { getOrdinalContentUrl, isImageOrdinal } from '../../utils/ordinals'
 
@@ -34,8 +34,11 @@ export const OrdinalImage = memo(function OrdinalImage({
   const handleLoad = useCallback(() => setStatus('loaded'), [])
   const handleError = useCallback(() => setStatus('error'), [])
 
-  // Generate data URL for cached images
-  const cachedImageUrl = useMemo(() => {
+  // Generate blob URL for cached images with proper lifecycle management.
+  // useEffect + useState (not useMemo) so we can revoke the old URL on cleanup,
+  // preventing memory leaks from orphaned blob references.
+  const [cachedImageUrl, setCachedImageUrl] = useState<string | undefined>()
+  useEffect(() => {
     if (isImage && cachedContent?.contentData && cachedContent.contentData.length > 0) {
       try {
         // Use a sliced copy of the buffer — the Uint8Array may be a view into a
@@ -44,12 +47,15 @@ export const OrdinalImage = memo(function OrdinalImage({
         const data = cachedContent.contentData
         const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
         const blob = new Blob([buf], { type: contentType || 'image/png' })
-        return URL.createObjectURL(blob)
+        const url = URL.createObjectURL(blob)
+        setCachedImageUrl(url)
+        return () => URL.revokeObjectURL(url)
       } catch {
-        return undefined
+        setCachedImageUrl(undefined)
       }
+    } else {
+      setCachedImageUrl(undefined)
     }
-    return undefined
   }, [isImage, cachedContent?.contentData, contentType])
 
   // Render text/JSON previews if we have cached content

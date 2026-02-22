@@ -259,7 +259,7 @@ function WalletApp() {
               if (cancelled) return
               await performSyncRef.current(false, false, true)
               if (cancelled) return
-              await fetchDataFromDBRef.current()
+              await fetchDataRef.current()
             } catch (e) {
               logger.warn('Post-switch background sync failed', { error: String(e) })
             } finally {
@@ -268,27 +268,42 @@ function WalletApp() {
           })()
         } else {
           // Already-synced account: DB data is already loaded.
-          // Only sync in background if data is stale (>5 min since last sync).
-          const SYNC_COOLDOWN_MS = 5 * 60 * 1000
-          const lastSyncTime = await getLastSyncTimeForAccount(activeAccountId!)
-          const isStale = (Date.now() - lastSyncTime) > SYNC_COOLDOWN_MS
-
-          if (isStale) {
-            logger.info('Account data stale, background-syncing', { accountId: activeAccountId, lastSyncTime })
+          // After account switch: always do a full API fetch so ordinals are populated
+          // even if the ordinal_cache is empty for this account. Without this, ordinals
+          // only appear after manual refresh because fetchDataFromDB reads an empty cache.
+          if (isPostSwitch) {
+            logger.info('Post-switch data fetch (background)', { accountId: activeAccountId })
             ;(async () => {
               try {
                 if (cancelled) return
-                await performSyncRef.current(false, false, true)
-                if (cancelled) return
-                await fetchDataFromDBRef.current()
+                await fetchDataRef.current()
               } catch (e) {
-                logger.warn('Background sync after switch failed', { error: String(e) })
-              } finally {
-                setSyncPhaseRef.current(null)
+                logger.warn('Post-switch data fetch failed', { error: String(e) })
               }
             })()
           } else {
-            logger.info('Account data fresh, skipping sync', { accountId: activeAccountId, lastSyncTime })
+            // Non-switch: only sync in background if data is stale (>5 min since last sync).
+            const SYNC_COOLDOWN_MS = 5 * 60 * 1000
+            const lastSyncTime = await getLastSyncTimeForAccount(activeAccountId!)
+            const isStale = (Date.now() - lastSyncTime) > SYNC_COOLDOWN_MS
+
+            if (isStale) {
+              logger.info('Account data stale, background-syncing', { accountId: activeAccountId, lastSyncTime })
+              ;(async () => {
+                try {
+                  if (cancelled) return
+                  await performSyncRef.current(false, false, true)
+                  if (cancelled) return
+                  await fetchDataRef.current()
+                } catch (e) {
+                  logger.warn('Background sync after switch failed', { error: String(e) })
+                } finally {
+                  setSyncPhaseRef.current(null)
+                }
+              })()
+            } else {
+              logger.info('Account data fresh, skipping sync', { accountId: activeAccountId, lastSyncTime })
+            }
           }
         }
       } catch (e) {
