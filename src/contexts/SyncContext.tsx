@@ -650,6 +650,34 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
         setOrdinalsWithRef(allOrdinals)
 
+        // Re-merge ordinal txids into tx history using the live API ordinals.
+        // This handles the case where ordinal_cache was empty at the start of fetchData()
+        // (e.g. first sync for a new account). The earlier mergeOrdinalTxEntries call at
+        // line 547 reads from DB cache — if that cache is empty, it adds 0 synthetic entries
+        // and setTxHistory is called with only the 51 DB txs. Now that we have the real
+        // ordinals from the API, fill in any missing synthetic entries.
+        {
+          const liveTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
+          let historyChanged = false
+          for (const ord of allOrdinals) {
+            if (!liveTxidSet.has(ord.txid)) {
+              dbTxHistory.push({ tx_hash: ord.txid, height: ord.blockHeight ?? -1, amount: 1, createdAt: 0 })
+              liveTxidSet.add(ord.txid)
+              historyChanged = true
+            }
+          }
+          if (historyChanged) {
+            dbTxHistory.sort((a, b) => {
+              const aH = a.height || 0, bH = b.height || 0
+              if (aH === 0 && bH !== 0) return -1
+              if (bH === 0 && aH !== 0) return 1
+              if (aH === 0 && bH === 0) return (b.createdAt ?? 0) - (a.createdAt ?? 0)
+              return bH - aH
+            })
+            if (!isCancelled?.()) setTxHistory([...dbTxHistory])
+          }
+        }
+
         // Cache ordinal metadata to DB and fetch missing content in background
         cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache, isCancelled ?? (() => false))
       } catch (e) {
