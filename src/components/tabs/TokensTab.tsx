@@ -23,8 +23,20 @@ const TokenCard = memo(function TokenCard({
   balance: TokenBalance
   onSend: (balance: TokenBalance) => void
 }) {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      onSend(balance)
+    }
+  }, [onSend, balance])
+
   return (
-    <div className="token-card">
+    <div
+      className="token-card"
+      tabIndex={0}
+      role="button"
+      onKeyDown={handleKeyDown}
+      aria-label={`${balance.token.ticker} — ${formatTokenAmount(balance.total, balance.token.decimals)}`}
+    >
       <div className="token-icon">
         {balance.token.iconUrl ? (
           <img src={balance.token.iconUrl} alt={balance.token.ticker} />
@@ -51,6 +63,7 @@ const TokenCard = memo(function TokenCard({
           className="send-button"
           onClick={() => onSend(balance)}
           disabled={balance.confirmed <= 0n}
+          title={balance.confirmed <= 0n ? 'No confirmed tokens to send' : undefined}
         >
           Send
         </button>
@@ -199,6 +212,7 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
             placeholder="Search tokens..."
             value={filter}
             onChange={e => setFilter(e.target.value)}
+            aria-label="Search tokens"
           />
         </div>
         <button

@@ -11,29 +11,46 @@ function BalanceDisplayComponent() {
 
   const totalBalance = balance + ordBalance
   const lockedBalance = locks.reduce((sum, l) => sum + l.satoshis, 0)
+  const isInitialSync = totalBalance === 0 && syncing
 
   return (
     <div className="balance-row" aria-live="polite">
-      <div
-        className="balance-main"
-        onClick={toggleDisplayUnit}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => e.key === 'Enter' && toggleDisplayUnit()}
-        aria-label={`Balance: ${displayInSats ? totalBalance.toLocaleString() + ' sats' : formatBSVShort(totalBalance) + ' BSV'}. Click to toggle display unit.`}
-      >
-        {displayInSats ? (
-          <>
-            <span className={`balance-value${syncing ? ' updating' : ''}`} style={{ fontVariantNumeric: 'tabular-nums' }}>{totalBalance.toLocaleString()}</span>{' '}
-            <span className="balance-unit clickable">sats</span>
-          </>
-        ) : (
-          <>
-            <span className={`balance-value${syncing ? ' updating' : ''}`} style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBSVShort(totalBalance)}</span>{' '}
-            <span className="balance-unit clickable">BSV</span>
-          </>
-        )}
-      </div>
+      {isInitialSync ? (
+        <>
+          <div className="balance-main">
+            <div className="balance-skeleton-bar balance-skeleton-bar--main skeleton" aria-label="Loading balance..." />
+          </div>
+          <div className="balance-sub">
+            <div className="balance-skeleton-bar balance-skeleton-bar--sub skeleton" />
+          </div>
+        </>
+      ) : (
+        <>
+          <div
+            className="balance-main"
+            onClick={toggleDisplayUnit}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && toggleDisplayUnit()}
+            aria-label={`Balance: ${displayInSats ? totalBalance.toLocaleString() + ' sats' : formatBSVShort(totalBalance) + ' BSV'}. Click to toggle display unit.`}
+          >
+            {displayInSats ? (
+              <>
+                <span className={`balance-value${syncing ? ' updating' : ''}`} style={{ fontVariantNumeric: 'tabular-nums' }}>{totalBalance.toLocaleString()}</span>{' '}
+                <span className="balance-unit clickable">sats</span>
+              </>
+            ) : (
+              <>
+                <span className={`balance-value${syncing ? ' updating' : ''}`} style={{ fontVariantNumeric: 'tabular-nums' }}>{formatBSVShort(totalBalance)}</span>{' '}
+                <span className="balance-unit clickable">BSV</span>
+              </>
+            )}
+          </div>
+          <div className="balance-sub">
+            ${formatUSD(totalBalance)} USD
+          </div>
+        </>
+      )}
       {lockedBalance > 0 && (
         <div className="balance-locked">
           <Lock size={11} strokeWidth={2} />
@@ -43,9 +60,6 @@ function BalanceDisplayComponent() {
           }
         </div>
       )}
-      <div className="balance-sub">
-        ${formatUSD(totalBalance)} USD
-      </div>
     </div>
   )
 }

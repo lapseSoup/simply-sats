@@ -611,7 +611,6 @@ describe('Transaction Service', () => {
   // =========================================================================
 
   describe('consolidateUtxos', () => {
-    const wif = 'L1testWif'
     const utxoIds = [
       { txid: 'aa'.repeat(32), vout: 0, satoshis: 3000, script: '76a914...88ac' },
       { txid: 'bb'.repeat(32), vout: 1, satoshis: 4000, script: '76a914...88ac' },
@@ -623,7 +622,7 @@ describe('Transaction Service', () => {
     })
 
     it('should consolidate UTXOs successfully', async () => {
-      const result = await consolidateUtxos(wif, utxoIds, 1)
+      const result = await consolidateUtxos(utxoIds, 1)
 
       expect(result.ok).toBe(true)
       if (!result.ok) return
@@ -632,8 +631,9 @@ describe('Transaction Service', () => {
       expect(result.value.fee).toBe(150)
       expect(mockAcquireSyncLock).toHaveBeenCalled()
       expect(mockReleaseLock).toHaveBeenCalled()
+      // S-21: WIF is no longer passed from the caller — builder uses Rust key store in Tauri
       expect(mockBuildConsolidationTx).toHaveBeenCalledWith({
-        wif,
+        wif: '',
         utxos: utxoIds,
         feeRate: 0.5,
       })
@@ -641,7 +641,7 @@ describe('Transaction Service', () => {
     })
 
     it('should record the consolidated UTXO at vout 0', async () => {
-      const result = await consolidateUtxos(wif, utxoIds, 1)
+      const result = await consolidateUtxos(utxoIds, 1)
 
       expect(result.ok).toBe(true)
       expect(mockAddUTXO).toHaveBeenCalledWith(
@@ -657,7 +657,7 @@ describe('Transaction Service', () => {
     })
 
     it('should confirm spent outpoints after broadcast', async () => {
-      const result = await consolidateUtxos(wif, utxoIds, 1)
+      const result = await consolidateUtxos(utxoIds, 1)
 
       expect(result.ok).toBe(true)
       const builtSpentOutpoints = makeBuiltConsolidationTx().spentOutpoints
@@ -674,7 +674,7 @@ describe('Transaction Service', () => {
         })
       )
 
-      const result = await consolidateUtxos(wif, singleUtxo, 1)
+      const result = await consolidateUtxos(singleUtxo, 1)
 
       expect(result.ok).toBe(true)
       if (!result.ok) return
@@ -687,14 +687,14 @@ describe('Transaction Service', () => {
 
       // Unexpected errors (non-AppError) still propagate as thrown exceptions
       await expect(
-        consolidateUtxos(wif, utxoIds, 1)
+        consolidateUtxos(utxoIds, 1)
       ).rejects.toThrow('build failed')
 
       expect(mockReleaseLock).toHaveBeenCalled()
     })
 
     it('should return err Result when accountId is missing', async () => {
-      const result = await consolidateUtxos(wif, utxoIds)
+      const result = await consolidateUtxos(utxoIds)
 
       expect(result.ok).toBe(false)
       if (result.ok) return
@@ -705,7 +705,7 @@ describe('Transaction Service', () => {
       mockAddUTXO.mockResolvedValue({ ok: false, error: new DbError('UNIQUE constraint failed', 'CONSTRAINT') })
 
       // Should NOT return err — duplicate is non-fatal
-      const result = await consolidateUtxos(wif, utxoIds, 1)
+      const result = await consolidateUtxos(utxoIds, 1)
       expect(result.ok).toBe(true)
       if (!result.ok) return
       expect(result.value.txid).toBe(MOCK_TXID)
@@ -714,7 +714,7 @@ describe('Transaction Service', () => {
     it('should return err Result on unexpected addUTXO error', async () => {
       mockAddUTXO.mockResolvedValue({ ok: false, error: new DbError('disk full', 'QUERY_FAILED') })
 
-      const result = await consolidateUtxos(wif, utxoIds, 1)
+      const result = await consolidateUtxos(utxoIds, 1)
       expect(result.ok).toBe(false)
       if (result.ok) return
       expect(result.error.message).toMatch(/failed to record locally/)
@@ -723,7 +723,7 @@ describe('Transaction Service', () => {
     it('should return err Result with helpful message if recording fails post-broadcast', async () => {
       mockRecordSentTransaction.mockRejectedValue(new Error('DB write error'))
 
-      const result = await consolidateUtxos(wif, utxoIds, 1)
+      const result = await consolidateUtxos(utxoIds, 1)
       expect(result.ok).toBe(false)
       if (result.ok) return
       expect(result.error.message).toMatch(/broadcast succeeded.*failed to record locally/)

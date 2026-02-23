@@ -189,8 +189,8 @@ export async function getBatchOrdinalContent(
         }
       }
     }
-  } catch (_e) {
-    // Table may not exist yet
+  } catch (e) {
+    dbLogger.warn('getBatchOrdinalContent failed', { error: String(e), originCount: origins.length })
   }
 
   return result
@@ -226,15 +226,27 @@ export async function ensureOrdinalCacheRowForTransferred(
 }
 
 /**
- * Insert or update ordinal cache entry (metadata only)
+ * Insert or update ordinal cache entry (metadata only).
+ * Uses COALESCE on conflict to preserve existing non-null metadata —
+ * this prevents DB-fallback ordinals (which lack contentType/blockHeight)
+ * from overwriting previously cached values with null.
  */
 export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> {
   const database = getDatabase()
 
   try {
     await database.execute(
-      `INSERT OR REPLACE INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      `INSERT INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT(origin) DO UPDATE SET
+         txid = excluded.txid,
+         vout = excluded.vout,
+         satoshis = excluded.satoshis,
+         content_type = COALESCE(excluded.content_type, ordinal_cache.content_type),
+         content_hash = COALESCE(excluded.content_hash, ordinal_cache.content_hash),
+         account_id = COALESCE(excluded.account_id, ordinal_cache.account_id),
+         fetched_at = excluded.fetched_at,
+         block_height = COALESCE(excluded.block_height, ordinal_cache.block_height)`,
       [
         ordinal.origin,
         ordinal.txid,

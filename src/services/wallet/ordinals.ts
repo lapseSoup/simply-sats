@@ -14,6 +14,7 @@ import {
   recordSentTransaction,
   confirmUtxosSpent
 } from '../sync'
+import { acquireSyncLock } from '../cancellation'
 import { markOrdinalTransferred } from '../../infrastructure/database'
 import { walletLogger } from '../logger'
 import {
@@ -248,142 +249,149 @@ export async function transferOrdinal(
   ordinalUtxo: UTXO,
   toAddress: string,
   fundingWif: string,
-  fundingUtxos: UTXO[]
+  fundingUtxos: UTXO[],
+  accountId: number
 ): Promise<string> {
-  const ordPrivateKey = PrivateKey.fromWif(ordWif)
-  const ordPublicKey = ordPrivateKey.toPublicKey()
-  const ordFromAddress = ordPublicKey.toAddress()
-  // Use the stored locking script if available (ordinals have inscription envelope scripts,
-  // not plain P2PKH). Falling back to derived P2PKH only when no script is provided.
-  const ordSourceLockingScript = ordinalUtxo.script
-    ? Script.fromHex(ordinalUtxo.script)
-    : new P2PKH().lock(ordFromAddress)
+  // Acquire sync lock to prevent concurrent sync from modifying UTXOs during transfer
+  const releaseLock = await acquireSyncLock(accountId)
+  try {
+    const ordPrivateKey = PrivateKey.fromWif(ordWif)
+    const ordPublicKey = ordPrivateKey.toPublicKey()
+    const ordFromAddress = ordPublicKey.toAddress()
+    // Use the stored locking script if available (ordinals have inscription envelope scripts,
+    // not plain P2PKH). Falling back to derived P2PKH only when no script is provided.
+    const ordSourceLockingScript = ordinalUtxo.script
+      ? Script.fromHex(ordinalUtxo.script)
+      : new P2PKH().lock(ordFromAddress)
 
-  const fundingPrivateKey = PrivateKey.fromWif(fundingWif)
-  const fundingPublicKey = fundingPrivateKey.toPublicKey()
-  const fundingFromAddress = fundingPublicKey.toAddress()
-  const fundingSourceLockingScript = new P2PKH().lock(fundingFromAddress)
+    const fundingPrivateKey = PrivateKey.fromWif(fundingWif)
+    const fundingPublicKey = fundingPrivateKey.toPublicKey()
+    const fundingFromAddress = fundingPublicKey.toAddress()
+    const fundingSourceLockingScript = new P2PKH().lock(fundingFromAddress)
 
-  const tx = new Transaction()
+    const tx = new Transaction()
 
-  // Add ordinal input first (the 1-sat inscription)
-  tx.addInput({
-    sourceTXID: ordinalUtxo.txid,
-    sourceOutputIndex: ordinalUtxo.vout,
-    unlockingScriptTemplate: new P2PKH().unlock(
-      ordPrivateKey,
-      'all',
-      false,
-      ordinalUtxo.satoshis,
-      ordSourceLockingScript
-    ),
-    sequence: 0xffffffff
-  })
-
-  // Select funding UTXOs first, then calculate fee with actual input count
-  const fundingToUse: UTXO[] = []
-  let totalFunding = 0
-
-  // Use preliminary estimate for selection loop
-  const prelimFee = calculateTxFee(1 + Math.min(fundingUtxos.length, 2), 2)
-  for (const utxo of fundingUtxos) {
-    fundingToUse.push(utxo)
-    totalFunding += utxo.satoshis
-    if (totalFunding >= prelimFee + 100) break
-  }
-
-  // Recalculate fee with actual input count
-  const estimatedFee = calculateTxFee(1 + fundingToUse.length, 2)
-
-  if (totalFunding < estimatedFee) {
-    throw new Error(`Insufficient funds for fee (need ~${estimatedFee} sats)`)
-  }
-
-  // Add funding inputs
-  for (const utxo of fundingToUse) {
+    // Add ordinal input first (the 1-sat inscription)
     tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
+      sourceTXID: ordinalUtxo.txid,
+      sourceOutputIndex: ordinalUtxo.vout,
       unlockingScriptTemplate: new P2PKH().unlock(
-        fundingPrivateKey,
+        ordPrivateKey,
         'all',
         false,
-        utxo.satoshis,
-        fundingSourceLockingScript
+        ordinalUtxo.satoshis,
+        ordSourceLockingScript
       ),
       sequence: 0xffffffff
     })
-  }
 
-  // Add ordinal output first (important: ordinals go to first output)
-  tx.addOutput({
-    lockingScript: new P2PKH().lock(toAddress),
-    satoshis: 1 // Always 1 sat for ordinals
-  })
+    // Select funding UTXOs first, then calculate fee with actual input count
+    const fundingToUse: UTXO[] = []
+    let totalFunding = 0
 
-  // Calculate actual fee and change
-  const totalInput = ordinalUtxo.satoshis + totalFunding
-  const actualFee = calculateTxFee(1 + fundingToUse.length, 2)
-  const change = totalInput - 1 - actualFee
+    // Use preliminary estimate for selection loop
+    const prelimFee = calculateTxFee(1 + Math.min(fundingUtxos.length, 2), 2)
+    for (const utxo of fundingUtxos) {
+      fundingToUse.push(utxo)
+      totalFunding += utxo.satoshis
+      if (totalFunding >= prelimFee + 100) break
+    }
 
-  // Add change output if there is any change
-  // Note: BSV has no dust limit - all change amounts are valid
-  if (change > 0) {
+    // Recalculate fee with actual input count
+    const estimatedFee = calculateTxFee(1 + fundingToUse.length, 2)
+
+    if (totalFunding < estimatedFee) {
+      throw new Error(`Insufficient funds for fee (need ~${estimatedFee} sats)`)
+    }
+
+    // Add funding inputs
+    for (const utxo of fundingToUse) {
+      tx.addInput({
+        sourceTXID: utxo.txid,
+        sourceOutputIndex: utxo.vout,
+        unlockingScriptTemplate: new P2PKH().unlock(
+          fundingPrivateKey,
+          'all',
+          false,
+          utxo.satoshis,
+          fundingSourceLockingScript
+        ),
+        sequence: 0xffffffff
+      })
+    }
+
+    // Add ordinal output first (important: ordinals go to first output)
     tx.addOutput({
-      lockingScript: new P2PKH().lock(fundingFromAddress),
-      satoshis: change
+      lockingScript: new P2PKH().lock(toAddress),
+      satoshis: 1 // Always 1 sat for ordinals
     })
-  }
 
-  await tx.sign()
+    // Calculate actual fee and change
+    const totalInput = ordinalUtxo.satoshis + totalFunding
+    const actualFee = calculateTxFee(1 + fundingToUse.length, 2)
+    const change = totalInput - 1 - actualFee
 
-  // Get the UTXOs we're about to spend
-  const utxosToSpend = [
-    { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
-    ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
-  ]
+    // Add change output if there is any change
+    // Note: BSV has no dust limit - all change amounts are valid
+    if (change > 0) {
+      tx.addOutput({
+        lockingScript: new P2PKH().lock(fundingFromAddress),
+        satoshis: change
+      })
+    }
 
-  // Compute txid before broadcast for pending marking
-  const pendingTxid = tx.id('hex')
+    await tx.sign()
 
-  // Mark pending → broadcast → rollback on failure (shared pattern)
-  const txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
+    // Get the UTXOs we're about to spend
+    const utxosToSpend = [
+      { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
+      ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+    ]
 
-  // Track transaction locally
-  try {
-    // Embed the full ordinal origin (txid_vout) in the description so the
-    // activity tab can look up the thumbnail from ordinalContentCache even
-    // after the ordinal is transferred and removed from the ordinals array.
-    const ordinalOrigin = `${ordinalUtxo.txid}_${ordinalUtxo.vout}`
+    // Compute txid before broadcast for pending marking
+    const pendingTxid = tx.id('hex')
 
-    // Mark the ordinal as transferred in the DB cache immediately — this drops
-    // it from getCachedOrdinals() (owned count) while keeping the row so
-    // content data (thumbnails) remains available for historical display.
+    // Mark pending → broadcast → rollback on failure (shared pattern)
+    const txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
+
+    // Track transaction locally
     try {
-      await markOrdinalTransferred(ordinalOrigin)
-      ordLogger.debug('Marked ordinal as transferred in cache', { origin: ordinalOrigin })
-    } catch (e) {
-      ordLogger.warn('Failed to mark ordinal transferred in cache', { error: String(e) })
+      // Embed the full ordinal origin (txid_vout) in the description so the
+      // activity tab can look up the thumbnail from ordinalContentCache even
+      // after the ordinal is transferred and removed from the ordinals array.
+      const ordinalOrigin = `${ordinalUtxo.txid}_${ordinalUtxo.vout}`
+
+      // Mark the ordinal as transferred in the DB cache immediately — this drops
+      // it from getCachedOrdinals() (owned count) while keeping the row so
+      // content data (thumbnails) remains available for historical display.
+      try {
+        await markOrdinalTransferred(ordinalOrigin)
+        ordLogger.debug('Marked ordinal as transferred in cache', { origin: ordinalOrigin })
+      } catch (e) {
+        ordLogger.warn('Failed to mark ordinal transferred in cache', { error: String(e) })
+      }
+
+      await recordSentTransaction(
+        txid,
+        tx.toHex(),
+        `Transferred ordinal ${ordinalOrigin} to ${toAddress.slice(0, 8)}...`,
+        ['ordinal', 'transfer'],
+        -actualFee  // Fee sats only — the ordinal sat is not counted in BSV balance
+      )
+
+      // Confirm UTXOs as spent (updates from pending -> spent)
+      const confirmResult = await confirmUtxosSpent(utxosToSpend, txid)
+      if (!confirmResult.ok) {
+        ordLogger.warn('Failed to confirm UTXOs as spent', { txid, error: confirmResult.error.message })
+      }
+
+      ordLogger.info('Ordinal transfer tracked locally', { txid })
+    } catch (error) {
+      ordLogger.warn('Failed to track ordinal transfer locally', { error: String(error) })
     }
 
-    await recordSentTransaction(
-      txid,
-      tx.toHex(),
-      `Transferred ordinal ${ordinalOrigin} to ${toAddress.slice(0, 8)}...`,
-      ['ordinal', 'transfer'],
-      -actualFee  // Fee sats only — the ordinal sat is not counted in BSV balance
-    )
-
-    // Confirm UTXOs as spent (updates from pending -> spent)
-    const confirmResult = await confirmUtxosSpent(utxosToSpend, txid)
-    if (!confirmResult.ok) {
-      ordLogger.warn('Failed to confirm UTXOs as spent', { txid, error: confirmResult.error.message })
-    }
-
-    ordLogger.info('Ordinal transfer tracked locally', { txid })
-  } catch (error) {
-    ordLogger.warn('Failed to track ordinal transfer locally', { error: String(error) })
+    return txid
+  } finally {
+    releaseLock()
   }
-
-  return txid
 }

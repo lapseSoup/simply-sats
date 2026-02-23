@@ -1,9 +1,10 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
 import { AlertTriangle, Crosshair, Settings } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
 import { useAddressValidation } from '../../hooks/useAddressValidation'
+import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { isOk } from '../../domain/types'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
@@ -37,6 +38,35 @@ export function SendModal({ onClose }: SendModalProps) {
     [{ id: 0, address: '', amount: '' }]
   )
   const [nextRecipientId, setNextRecipientId] = useState(1)
+  const [recipientErrors, setRecipientErrors] = useState<Record<number, string>>({})
+
+  // Validate a single recipient address and update per-row error state
+  const validateRecipientAddress = useCallback((id: number, address: string) => {
+    setRecipientErrors(prev => {
+      if (!address) {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      }
+      if (!isValidBSVAddress(address)) {
+        return { ...prev, [id]: 'Invalid BSV address' }
+      }
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
+
+  // Multi-recipient total sats (for confirmation threshold checks)
+  const multiTotalSats = useMemo(() => {
+    if (!multiRecipient) return 0
+    return recipients.reduce((sum, r) => {
+      const raw = displayInSats
+        ? Math.round(parseFloat(r.amount || '0'))
+        : btcToSatoshis(parseFloat(r.amount || '0'))
+      return sum + (Number.isNaN(raw) ? 0 : raw)
+    }, 0)
+  }, [multiRecipient, recipients, displayInSats])
 
   // Use fee rate from settings (convert from sats/KB to sats/byte), fallback to 0.05 sat/byte
   const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : 0.05
@@ -105,6 +135,11 @@ export function SendModal({ onClose }: SendModalProps) {
   const requiresConfirmation = sendSats >= SEND_CONFIRMATION_THRESHOLD
   const isHighValue = sendSats >= HIGH_VALUE_THRESHOLD
 
+  // Multi-recipient confirmation thresholds
+  const multiRequiresConfirmation = multiTotalSats >= SEND_CONFIRMATION_THRESHOLD
+  const multiIsHighValue = multiTotalSats >= HIGH_VALUE_THRESHOLD
+  const hasRecipientErrors = Object.keys(recipientErrors).length > 0
+
   const handleSubmitClick = () => {
     if (sendingRef.current) return
     if (!sendAddress || !sendAmount) return
@@ -114,6 +149,30 @@ export function SendModal({ onClose }: SendModalProps) {
       setShowConfirmation(true)
     } else {
       executeSend()
+    }
+  }
+
+  const handleMultiSubmitClick = () => {
+    if (sendingRef.current) return
+
+    // Validate all recipient addresses before proceeding
+    const errors: Record<number, string> = {}
+    for (const r of recipients) {
+      if (!r.address) continue
+      if (!isValidBSVAddress(r.address)) {
+        errors[r.id] = 'Invalid BSV address'
+      }
+    }
+    if (Object.keys(errors).length > 0) {
+      setRecipientErrors(errors)
+      return
+    }
+
+    // Show confirmation for large amounts
+    if (multiRequiresConfirmation) {
+      setShowConfirmation(true)
+    } else {
+      executeSendMulti()
     }
   }
 
@@ -149,36 +208,41 @@ export function SendModal({ onClose }: SendModalProps) {
   }
 
   const executeSendMulti = async () => {
+    if (sendingRef.current) return
+    sendingRef.current = true
+    setShowConfirmation(false)
     setSending(true)
     setSendError('')
 
-    const parsedRecipients: RecipientOutput[] = recipients.map(r => ({
-      address: r.address,
-      satoshis: displayInSats
-        ? Math.round(parseFloat(r.amount || '0'))
-        : btcToSatoshis(parseFloat(r.amount || '0'))
-    }))
+    try {
+      const parsedRecipients: RecipientOutput[] = recipients.map(r => ({
+        address: r.address,
+        satoshis: displayInSats
+          ? Math.round(parseFloat(r.amount || '0'))
+          : btcToSatoshis(parseFloat(r.amount || '0'))
+      }))
 
-    const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
-    const result = await handleSendMulti(parsedRecipients, selectedUtxos ?? undefined)
+      const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
+      const result = await handleSendMulti(parsedRecipients, selectedUtxos ?? undefined)
 
-    if (isOk(result)) {
-      showToast(`Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`)
-      onClose()
-      void performSync()
-    } else {
-      const errorMsg = result.error || 'Send failed'
-      if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
-        // TX is on-chain. Show clean success toast and silently sync to reconcile balance.
+      if (isOk(result)) {
         showToast(`Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`)
         onClose()
         void performSync()
       } else {
-        setSendError(errorMsg)
+        const errorMsg = result.error || 'Send failed'
+        if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
+          showToast(`Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`)
+          onClose()
+          void performSync()
+        } else {
+          setSendError(errorMsg)
+        }
       }
+    } finally {
+      setSending(false)
+      sendingRef.current = false
     }
-
-    setSending(false)
   }
 
   // Format amount for display in confirmation
@@ -191,7 +255,7 @@ export function SendModal({ onClose }: SendModalProps) {
 
   return (
     <>
-      {showConfirmation && (
+      {showConfirmation && !multiRecipient && (
         <ConfirmationModal
           title={isHighValue ? 'Large Transaction' : 'Confirm Send'}
           message={
@@ -206,6 +270,23 @@ export function SendModal({ onClose }: SendModalProps) {
           onConfirm={executeSend}
           onCancel={() => setShowConfirmation(false)}
           confirmDelaySeconds={isHighValue ? 3 : 0}
+        />
+      )}
+      {showConfirmation && multiRecipient && (
+        <ConfirmationModal
+          title={multiIsHighValue ? 'Large Transaction' : 'Confirm Multi-Send'}
+          message={
+            multiIsHighValue
+              ? `You are about to send a large amount to ${recipients.length} recipients. Please verify carefully.`
+              : `Are you sure you want to send to ${recipients.length} recipients?`
+          }
+          details={`Total: ${formatAmount(multiTotalSats)}\nRecipients: ${recipients.length}\n${recipients.map(r => `  ${r.address.slice(0, 12)}... → ${r.amount} ${displayInSats ? 'sats' : 'BSV'}`).join('\n')}`}
+          type={multiIsHighValue ? 'warning' : 'info'}
+          confirmText="Send"
+          cancelText="Cancel"
+          onConfirm={executeSendMulti}
+          onCancel={() => setShowConfirmation(false)}
+          confirmDelaySeconds={multiIsHighValue ? 3 : 0}
         />
       )}
     <Modal onClose={onClose} title="Send BSV" className="send-modal">
@@ -241,6 +322,7 @@ export function SendModal({ onClose }: SendModalProps) {
                 className="form-input"
                 placeholder={displayInSats ? '0' : '0.00000000'}
                 step={displayInSats ? '1' : '0.00000001'}
+                min="0"
                 value={sendAmount}
                 onChange={e => setSendAmount(e.target.value)}
                 autoComplete="off"
@@ -287,39 +369,50 @@ export function SendModal({ onClose }: SendModalProps) {
                 </button>
               </div>
               {recipients.map((r) => (
-                <div key={r.id} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'flex-start' }}>
-                  <input
-                    type="text"
-                    className="form-input mono"
-                    placeholder="BSV address"
-                    value={r.address}
-                    onChange={e => {
-                      setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, address: e.target.value } : x))
-                    }}
-                    style={{ flex: 2 }}
-                    autoComplete="off"
-                  />
-                  <input
-                    type="number"
-                    className="form-input"
-                    placeholder={displayInSats ? '0' : '0.00000000'}
-                    step={displayInSats ? '1' : '0.00000001'}
-                    value={r.amount}
-                    onChange={e => {
-                      setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, amount: e.target.value } : x))
-                    }}
-                    style={{ flex: 1 }}
-                    autoComplete="off"
-                  />
-                  {recipients.length > 1 && (
-                    <button
-                      type="button"
-                      style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 18, lineHeight: 1, paddingTop: 8 }}
-                      onClick={() => setRecipients(prev => prev.filter(x => x.id !== r.id))}
-                      aria-label="Remove recipient"
-                    >
-                      -
-                    </button>
+                <div key={r.id} style={{ marginBottom: 6 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <input
+                      type="text"
+                      className={`form-input mono ${recipientErrors[r.id] ? 'input-error' : ''}`}
+                      placeholder="BSV address"
+                      value={r.address}
+                      onChange={e => {
+                        setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, address: e.target.value } : x))
+                        validateRecipientAddress(r.id, e.target.value)
+                      }}
+                      style={{ flex: 2 }}
+                      autoComplete="off"
+                      aria-invalid={!!recipientErrors[r.id]}
+                    />
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder={displayInSats ? '0' : '0.00000000'}
+                      step={displayInSats ? '1' : '0.00000001'}
+                      min="0"
+                      value={r.amount}
+                      onChange={e => {
+                        setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, amount: e.target.value } : x))
+                      }}
+                      style={{ flex: 1 }}
+                      autoComplete="off"
+                    />
+                    {recipients.length > 1 && (
+                      <button
+                        type="button"
+                        style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 18, lineHeight: 1, paddingTop: 8 }}
+                        onClick={() => {
+                          setRecipients(prev => prev.filter(x => x.id !== r.id))
+                          setRecipientErrors(prev => { const next = { ...prev }; delete next[r.id]; return next })
+                        }}
+                        aria-label="Remove recipient"
+                      >
+                        -
+                      </button>
+                    )}
+                  </div>
+                  {recipientErrors[r.id] && (
+                    <div className="form-error" role="alert" style={{ fontSize: 11, marginTop: 2 }}>{recipientErrors[r.id]}</div>
                   )}
                 </div>
               ))}
@@ -422,8 +515,8 @@ export function SendModal({ onClose }: SendModalProps) {
           {multiRecipient ? (
             <button
               className="btn btn-primary"
-              onClick={executeSendMulti}
-              disabled={sending || recipients.some(r => !r.address || !r.amount) || recipients.length === 0}
+              onClick={handleMultiSubmitClick}
+              disabled={sending || recipients.some(r => !r.address || !r.amount) || recipients.length === 0 || hasRecipientErrors}
               aria-busy={sending}
               type="button"
             >

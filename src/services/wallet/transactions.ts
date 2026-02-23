@@ -415,11 +415,15 @@ export async function sendBSVMultiKey(
 }
 
 /**
- * Consolidate multiple UTXOs into a single UTXO, then broadcast and record
- * Combines all selected UTXOs minus fees into one output back to the wallet address
+ * Consolidate multiple UTXOs into a single UTXO, then broadcast and record.
+ * Combines all selected UTXOs minus fees into one output back to the wallet address.
+ *
+ * In Tauri (desktop), the transaction is built and signed entirely in Rust
+ * via the key store — no WIF is needed from the JS side (S-21 migration).
+ * In browser dev mode, the builder falls back to JS signing with a dummy WIF
+ * which will fail — consolidation is only supported in the desktop app.
  */
 export async function consolidateUtxos(
-  wif: string,
   utxoIds: Array<{ txid: string; vout: number; satoshis: number; script: string }>,
   accountId?: number
 ): Promise<Result<{ txid: string; outputSats: number; fee: number }, AppError>> {
@@ -433,7 +437,10 @@ export async function consolidateUtxos(
   const releaseLock = await acquireSyncLock(accountId)
   try {
     const feeRate = getFeeRate()
-    const built = await buildConsolidationTx({ wif, utxos: utxoIds, feeRate })
+    // WIF is unused in Tauri mode — the Rust key store provides the signing key.
+    // Pass empty string for the JS fallback (browser dev only — consolidation
+    // requires the desktop app for security).
+    const built = await buildConsolidationTx({ wif: '', utxos: utxoIds, feeRate })
     const { rawTx, txid: pendingTxid, fee, outputSats, address, spentOutpoints } = built
     const totalInput = utxoIds.reduce((sum, u) => sum + u.satoshis, 0)
 

@@ -22,6 +22,20 @@ const OrdinalTransferModal = lazy(() => import('./components/modals/OrdinalTrans
 const OrdinalListModal = lazy(() => import('./components/modals/OrdinalListModal').then(m => ({ default: m.OrdinalListModal })))
 
 /**
+ * Loading fallback for lazy-loaded modals - shows a spinner overlay
+ * while the modal chunk is being fetched on slow connections.
+ */
+function ModalLoadingFallback() {
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true">
+      <div className="modal modal-loading">
+        <div className="loading-spinner" />
+      </div>
+    </div>
+  )
+}
+
+/**
  * Fallback UI for modal errors - shows error with close button
  */
 function ModalErrorFallback({ modalName, error, reset, onClose }: {
@@ -116,7 +130,7 @@ export function AppModals({
             <ModalErrorFallback modalName="Send" error={error} reset={reset} onClose={closeModal} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <SendModal onClose={closeModal} />
           </Suspense>
         </ErrorBoundary>
@@ -128,7 +142,7 @@ export function AppModals({
             <ModalErrorFallback modalName="Lock" error={error} reset={reset} onClose={closeModal} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <LockModal onClose={closeModal} />
           </Suspense>
         </ErrorBoundary>
@@ -140,7 +154,7 @@ export function AppModals({
             <ModalErrorFallback modalName="Receive" error={error} reset={reset} onClose={closeModal} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <ReceiveModal onClose={closeModal} />
           </Suspense>
         </ErrorBoundary>
@@ -152,7 +166,7 @@ export function AppModals({
             <ModalErrorFallback modalName="Settings" error={error} reset={reset} onClose={closeModal} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <SettingsModal onClose={closeModal} />
           </Suspense>
         </ErrorBoundary>
@@ -165,7 +179,7 @@ export function AppModals({
             <ModalErrorFallback modalName="Ordinal" error={error} reset={reset} onClose={closeModal} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <OrdinalModal
               ordinal={selectedOrdinal}
               onClose={closeModal}
@@ -183,7 +197,7 @@ export function AppModals({
             <ModalErrorFallback modalName="Transfer Ordinal" error={error} reset={reset} onClose={completeTransfer} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <OrdinalTransferModal
               ordinal={ordinalToTransfer}
               onClose={completeTransfer}
@@ -199,7 +213,7 @@ export function AppModals({
             <ModalErrorFallback modalName="List Ordinal" error={error} reset={reset} onClose={completeList} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <OrdinalListModal
               ordinal={ordinalToList}
               onClose={completeList}
@@ -215,7 +229,7 @@ export function AppModals({
             <ModalErrorFallback modalName="BRC-100 Request" error={error} reset={reset} onClose={onRejectBRC100} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <BRC100Modal
               request={brc100Request}
               onApprove={onApproveBRC100}
@@ -243,7 +257,7 @@ export function AppModals({
             <ModalErrorFallback modalName="Account" error={error} reset={reset} onClose={closeModal} />
           )}
         >
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <AccountModal
               isOpen={true}
               onClose={closeModal}

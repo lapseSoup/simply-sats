@@ -653,6 +653,7 @@ pub fn run() {
 
     // Key store — holds WIFs in Rust-only memory (never exposed to JS)
     let key_store: key_store::SharedKeyStore = Arc::new(Mutex::new(key_store::KeyStoreInner::new()));
+    let key_store_for_server = key_store.clone();
 
     // Rate limiter — generate/load per-installation HMAC key, then load persisted state.
     // This happens before Tauri builder so the manager is ready for .manage().
@@ -738,6 +739,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let brc100_state = brc100_state_for_server;
             let session_state = session_state_for_server;
+            let key_store = key_store_for_server;
 
             // Load persisted rate limit state from disk using the manager's integrity key
             let manager = rate_limit_manager_for_setup.clone();
@@ -751,7 +753,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
-                    if let Err(e) = http_server::start_server(app_handle, brc100_state, session_state).await {
+                    if let Err(e) = http_server::start_server(app_handle, brc100_state, session_state, key_store).await {
                         log::error!("HTTP server error: {}", e);
                     }
                 });

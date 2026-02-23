@@ -17,6 +17,7 @@ use subtle::ConstantTimeEq;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use crate::{SharedBRC100State, SharedSessionState};
+use crate::key_store::SharedKeyStore;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -71,6 +72,7 @@ struct AppState {
     brc100_state: SharedBRC100State,
     session_state: SharedSessionState,
     rate_limiter: SharedRateLimiter,
+    key_store: SharedKeyStore,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
@@ -186,6 +188,7 @@ pub async fn start_server(
     app_handle: AppHandle,
     brc100_state: SharedBRC100State,
     session_state: SharedSessionState,
+    key_store: SharedKeyStore,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Create rate limiter: RATE_LIMIT_PER_MINUTE requests per minute
     let quota = Quota::per_minute(NonZeroU32::new(RATE_LIMIT_PER_MINUTE).unwrap());
@@ -196,6 +199,7 @@ pub async fn start_server(
         brc100_state,
         session_state,
         rate_limiter,
+        key_store,
     };
 
     // Configure CORS to only allow localhost and Tauri webview origins
@@ -337,19 +341,26 @@ async fn handle_get_network(Json(_args): Json<EmptyArgs>) -> Json<NetworkRespons
     })
 }
 
-async fn handle_is_authenticated(Json(_args): Json<EmptyArgs>) -> Json<AuthResponse> {
-    log::debug!("isAuthenticated request");
-    Json(AuthResponse {
-        authenticated: true,
-    })
+async fn handle_is_authenticated(
+    State(state): State<AppState>,
+    Json(_args): Json<EmptyArgs>,
+) -> Json<AuthResponse> {
+    let store = state.key_store.lock().await;
+    let authenticated = store.has_keys();
+    drop(store);
+    log::debug!("isAuthenticated request: {}", authenticated);
+    Json(AuthResponse { authenticated })
 }
 
-async fn handle_wait_for_authentication(Json(_args): Json<EmptyArgs>) -> Json<AuthResponse> {
+async fn handle_wait_for_authentication(
+    State(state): State<AppState>,
+    Json(_args): Json<EmptyArgs>,
+) -> Json<AuthResponse> {
     log::debug!("waitForAuthentication request");
-    // Simply Sats is always authenticated when wallet is loaded
-    Json(AuthResponse {
-        authenticated: true,
-    })
+    let store = state.key_store.lock().await;
+    let authenticated = store.has_keys();
+    drop(store);
+    Json(AuthResponse { authenticated })
 }
 
 async fn handle_get_height(Json(_args): Json<EmptyArgs>) -> Json<HeightResponse> {

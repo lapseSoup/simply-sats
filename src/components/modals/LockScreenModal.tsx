@@ -5,8 +5,14 @@
  * due to inactivity. Requires password to unlock.
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Lock, Eye, EyeOff } from 'lucide-react'
+import {
+  checkUnlockRateLimit,
+  recordFailedUnlockAttempt,
+  getRemainingAttempts,
+  formatLockoutTime
+} from '../../services/rateLimiter'
 
 interface LockScreenModalProps {
   onUnlock: (password: string) => Promise<boolean>
@@ -23,12 +29,54 @@ export function LockScreenModal({
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null)
+  const [lockoutMs, setLockoutMs] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const lockoutTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Focus input on mount
-  useEffect(() => {
-    inputRef.current?.focus()
+  const isLockedOut = lockoutMs > 0
+
+  const clearLockoutTimer = useCallback(() => {
+    if (lockoutTimerRef.current) {
+      clearInterval(lockoutTimerRef.current)
+      lockoutTimerRef.current = null
+    }
   }, [])
+
+  const startLockoutCountdown = useCallback((ms: number) => {
+    clearLockoutTimer()
+    setLockoutMs(ms)
+    const startTime = Date.now()
+    const endTime = startTime + ms
+
+    lockoutTimerRef.current = setInterval(() => {
+      const remaining = Math.max(0, endTime - Date.now())
+      setLockoutMs(remaining)
+      if (remaining <= 0) {
+        clearLockoutTimer()
+        setError('')
+        setAttemptsRemaining(null)
+        inputRef.current?.focus()
+      }
+    }, 1000)
+  }, [clearLockoutTimer])
+
+  // Check rate limit on mount and focus input
+  useEffect(() => {
+    async function checkInitialState() {
+      const rateLimit = await checkUnlockRateLimit()
+      if (rateLimit.isLimited && rateLimit.remainingMs > 0) {
+        setError(`Too many attempts. Locked for ${formatLockoutTime(rateLimit.remainingMs)}.`)
+        startLockoutCountdown(rateLimit.remainingMs)
+      } else {
+        const remaining = await getRemainingAttempts()
+        setAttemptsRemaining(remaining)
+        inputRef.current?.focus()
+      }
+    }
+    checkInitialState()
+    return clearLockoutTimer
+  }, [startLockoutCountdown, clearLockoutTimer])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,9 +86,19 @@ export function LockScreenModal({
     try {
       const success = await onUnlock(password)
       if (!success) {
-        setError('Incorrect password')
+        const result = await recordFailedUnlockAttempt()
+        setAttemptsRemaining(result.attemptsRemaining)
+
+        if (result.isLocked) {
+          setError(`Too many attempts. Locked for ${formatLockoutTime(result.lockoutMs)}.`)
+          startLockoutCountdown(result.lockoutMs)
+        } else {
+          setError(`Incorrect password. ${result.attemptsRemaining} attempt${result.attemptsRemaining !== 1 ? 's' : ''} remaining.`)
+        }
         setPassword('')
-        inputRef.current?.focus()
+        if (!result.isLocked) {
+          inputRef.current?.focus()
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unlock')
@@ -73,10 +131,10 @@ export function LockScreenModal({
               onChange={e => setPassword(e.target.value)}
               placeholder="Enter your password"
               className={`lock-screen-input ${error ? 'error' : ''}`}
-              disabled={loading}
+              disabled={loading || isLockedOut}
               autoComplete="current-password"
-              aria-invalid={!!error}
-              aria-describedby={error ? 'password-error' : undefined}
+              aria-invalid={!!error || isLockedOut}
+              aria-describedby={error || isLockedOut ? 'password-error' : undefined}
             />
             <button
               type="button"
@@ -92,16 +150,28 @@ export function LockScreenModal({
             </button>
           </div>
 
-          {error && (
+          {isLockedOut && (
+            <p id="password-error" className="lock-screen-error" role="alert">
+              Too many attempts. Locked for {formatLockoutTime(lockoutMs)}.
+            </p>
+          )}
+
+          {!isLockedOut && error && (
             <p id="password-error" className="lock-screen-error" role="alert">
               {error}
+            </p>
+          )}
+
+          {!isLockedOut && !error && attemptsRemaining !== null && attemptsRemaining < 5 && (
+            <p className="lock-screen-attempts-hint">
+              {attemptsRemaining} attempt{attemptsRemaining !== 1 ? 's' : ''} remaining
             </p>
           )}
 
           <button
             type="submit"
             className="lock-screen-button"
-            disabled={loading}
+            disabled={loading || isLockedOut}
           >
             {loading ? (
               <span className="loading-spinner" />

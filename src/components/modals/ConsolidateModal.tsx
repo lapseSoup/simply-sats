@@ -2,8 +2,7 @@ import { useState, useMemo } from 'react'
 import { CircleCheck, AlertTriangle } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { consolidateUtxos, getWifForOperation } from '../../services/wallet'
-import { calculateTxFee } from '../../services/wallet'
+import { consolidateUtxos, calculateTxFee } from '../../services/wallet'
 import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { uiLogger } from '../../services/logger'
 
@@ -53,17 +52,9 @@ export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModal
       script: u.lockingScript
     }))
 
-    let walletWif: string
-    try {
-      walletWif = await getWifForOperation('wallet', 'consolidateUTXOs', wallet)
-    } catch (e) {
-      uiLogger.error('Failed to get WIF for consolidation', e)
-      setError(e instanceof Error ? e.message : 'Failed to access wallet key')
-      setStatus('error')
-      return
-    }
-
-    const result = await consolidateUtxos(walletWif, utxoIds, activeAccountId ?? undefined)
+    // S-21: Transaction is built and signed entirely in Rust via the key store.
+    // No WIF is retrieved or passed through the JS context.
+    const result = await consolidateUtxos(utxoIds, activeAccountId ?? undefined)
     if (!result.ok) {
       uiLogger.error('Consolidation failed', result.error)
       setError(result.error.message)

@@ -35,9 +35,11 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
   const [newContactLabel, setNewContactLabel] = useState('')
   const [currentInvoiceIndex, setCurrentInvoiceIndex] = useState<number>(1)
   const [localContacts, setLocalContacts] = useState(contacts)
+  const [derivationError, setDerivationError] = useState<string | null>(null)
 
   const deriveReceiveAddress = async (senderPubKey: string, invoiceIndex: number): Promise<string> => {
     if (!wallet) return ''
+    setDerivationError(null)
     try {
       const { getWifForOperation } = await import('../../services/wallet')
       const identityWif = await getWifForOperation('identity', 'deriveReceiveAddress', wallet)
@@ -47,6 +49,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       return deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
     } catch (e) {
       uiLogger.error('Failed to derive address:', e)
+      setDerivationError('Failed to derive address. Check the sender public key.')
       return ''
     }
   }
@@ -88,6 +91,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
     } else {
       setSenderPubKeyInput('')
       setDerivedReceiveAddress('')
+      setDerivationError(null)
       setCurrentInvoiceIndex(1)
     }
   }
@@ -101,6 +105,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       setDerivedReceiveAddress(await deriveReceiveAddress(val, nextIndex))
     } else {
       setDerivedReceiveAddress('')
+      setDerivationError(null)
       setCurrentInvoiceIndex(1)
     }
   }
@@ -327,6 +332,10 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                         This address is unique to this sender. A new one will be generated after payment.
                       </div>
                     </>
+                  ) : derivationError ? (
+                    <div className="form-error" role="alert">
+                      {derivationError}
+                    </div>
                   ) : (
                     <div className="address-type-hint receive-hint-centered">
                       {localContacts.length > 0
@@ -341,6 +350,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
                       setShowDeriveMode(false)
                       setSenderPubKeyInput('')
                       setDerivedReceiveAddress('')
+                      setDerivationError(null)
                       setSelectedContactId(null)
                       setShowAddContact(false)
                     }}

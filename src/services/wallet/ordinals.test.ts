@@ -29,6 +29,7 @@ const {
   mockExtractContentTypeFromScript,
   mockIsOneSatOutput,
   mockFormatOrdinalOrigin,
+  mockAcquireSyncLock,
 } = vi.hoisted(() => ({
   mockGpOrdinalsGet: vi.fn(),
   mockGetUtxosSafe: vi.fn(),
@@ -46,6 +47,7 @@ const {
   mockExtractContentTypeFromScript: vi.fn(),
   mockIsOneSatOutput: vi.fn(),
   mockFormatOrdinalOrigin: vi.fn(),
+  mockAcquireSyncLock: vi.fn(),
 }))
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,10 @@ vi.mock('./balance', () => ({
 vi.mock('../sync', () => ({
   recordSentTransaction: (...args: unknown[]) => mockRecordSentTransaction(...args),
   confirmUtxosSpent: (...args: unknown[]) => mockConfirmUtxosSpent(...args),
+}))
+
+vi.mock('../cancellation', () => ({
+  acquireSyncLock: (...args: unknown[]) => mockAcquireSyncLock(...args),
 }))
 
 vi.mock('../logger', () => ({
@@ -482,10 +488,11 @@ describe('Ordinals Service', () => {
       mockExecuteBroadcast.mockResolvedValue(MOCK_TXID)
       mockRecordSentTransaction.mockResolvedValue(undefined)
       mockConfirmUtxosSpent.mockResolvedValue(undefined)
+      mockAcquireSyncLock.mockResolvedValue(vi.fn())
     })
 
     it('should transfer ordinal successfully', async () => {
-      const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos)
+      const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
       expect(mockExecuteBroadcast).toHaveBeenCalled()
@@ -505,7 +512,7 @@ describe('Ordinals Service', () => {
       await expect(
         transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, [
           { txid: 'bb'.repeat(32), vout: 0, satoshis: 100, script: '76a914...88ac' },
-        ])
+        ], 1)
       ).rejects.toThrow('Insufficient funds for fee')
     })
 
@@ -513,7 +520,7 @@ describe('Ordinals Service', () => {
       mockRecordSentTransaction.mockRejectedValue(new Error('DB error'))
 
       // Should still return txid even if tracking fails
-      const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos)
+      const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
     })
@@ -526,7 +533,7 @@ describe('Ordinals Service', () => {
       ]
       mockCalculateTxFee.mockReturnValue(150)
 
-      const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, multipleUtxos)
+      const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, multipleUtxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
     })

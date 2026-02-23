@@ -49,23 +49,27 @@ export function AppProviders({ children }: AppProvidersProps) {
                   <ConnectedAppsProvider>
                     <ErrorBoundary context="AccountsProvider">
                       <AccountsProvider>
-                        <TokensProvider>
-                          <ErrorBoundary context="SyncProvider">
-                            <SyncProvider>
-                              <ErrorBoundary context="LocksProvider">
-                                <LocksProvider>
-                                  <ModalProvider>
-                                    <ErrorBoundary context="WalletProvider">
+                        <ErrorBoundary context="TokensProvider">
+                          <TokensProvider>
+                            <ErrorBoundary context="SyncProvider">
+                              <SyncProvider>
+                                <ErrorBoundary context="LocksProvider">
+                                  <LocksProvider>
+                                    <ErrorBoundary context="ModalProvider">
+                                      <ModalProvider>
+                                        <ErrorBoundary context="WalletProvider">
                                       <WalletProvider>
                                         {children}
                                       </WalletProvider>
                                     </ErrorBoundary>
-                                  </ModalProvider>
-                                </LocksProvider>
-                              </ErrorBoundary>
-                            </SyncProvider>
-                          </ErrorBoundary>
-                        </TokensProvider>
+                                      </ModalProvider>
+                                    </ErrorBoundary>
+                                  </LocksProvider>
+                                </ErrorBoundary>
+                              </SyncProvider>
+                            </ErrorBoundary>
+                          </TokensProvider>
+                        </ErrorBoundary>
                       </AccountsProvider>
                     </ErrorBoundary>
                   </ConnectedAppsProvider>
