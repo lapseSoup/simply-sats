@@ -26,45 +26,7 @@ import { syncLogger } from '../services/logger'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 import type { OrdinalContentEntry, TxHistoryItem } from '../contexts/SyncContext'
 import { cacheOrdinalsInBackground } from './useOrdinalCache'
-
-/** Sort transactions: unconfirmed first, then by block height descending, createdAt tiebreaker */
-function compareTxByHeight(a: TxHistoryItem, b: TxHistoryItem): number {
-  const aH = a.height || 0, bH = b.height || 0
-  if (aH === 0 && bH !== 0) return -1
-  if (bH === 0 && aH !== 0) return 1
-  if (aH === 0 && bH === 0) return (b.createdAt ?? 0) - (a.createdAt ?? 0)
-  return bH - aH
-}
-
-/**
- * Merge synthetic TxHistoryItems for ordinal receives whose txids are not in
- * the DB transactions table. Uses real block heights from ordinal_cache when
- * available; falls back to -1 sentinel for ordinals without cached height.
- * Mutates `dbTxHistory` in place. No API calls -- reads from local SQLite only.
- */
-async function mergeOrdinalTxEntries(
-  dbTxHistory: TxHistoryItem[],
-  accountId: number | null
-): Promise<void> {
-  // Map<txid, blockHeight> -- -1 sentinel means height unknown
-  const ordinalTxidHeights = new Map<string, number>()
-  try {
-    const cachedOrds = await getCachedOrdinals(accountId ?? undefined)
-    if (cachedOrds.length > 0) {
-      for (const c of cachedOrds) ordinalTxidHeights.set(c.txid, c.blockHeight ?? -1)
-    } else {
-      const dbOrds = await getOrdinalsFromDatabase(accountId ?? undefined)
-      for (const o of dbOrds) ordinalTxidHeights.set(o.txid, -1)  // utxos table has no height
-    }
-  } catch (e) { console.warn('[SyncContext] mergeOrdinalTxEntries failed:', e) }
-
-  const dbTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
-  for (const [txid, height] of ordinalTxidHeights) {
-    if (!dbTxidSet.has(txid)) {
-      dbTxHistory.push({ tx_hash: txid, height, amount: 1, createdAt: 0 })
-    }
-  }
-}
+import { compareTxByHeight, mergeOrdinalTxEntries } from '../utils/syncHelpers'
 
 interface UseSyncDataOptions {
   setBalance: (balance: number) => void
@@ -238,6 +200,19 @@ export function useSyncData({
       walletAddress: wallet.walletAddress.slice(0, 12) + '...'
     })
 
+    // Create an AbortController so that when isCancelled() fires (account switch),
+    // in-flight HTTP requests are aborted immediately instead of wasting bandwidth.
+    const abortController = new AbortController()
+    const signal = abortController.signal
+    // Wrap isCancelled to also abort the controller
+    const checkCancelled = () => {
+      if (isCancelled?.()) {
+        if (!signal.aborted) abortController.abort()
+        return true
+      }
+      return false
+    }
+
     // Track partial failures so the user knows when data may be stale
     const partialErrors: string[] = []
 
@@ -246,7 +221,7 @@ export function useSyncData({
         getBalanceFromDatabase('default', activeAccountId),
         getBalanceFromDatabase('derived', activeAccountId)
       ])
-      if (isCancelled?.()) return
+      if (checkCancelled()) return
       const totalBalance = defaultBal + derivedBal
       // Guard against NaN/Infinity from unexpected DB values -- don't corrupt displayed balance
       if (Number.isFinite(totalBalance)) {
@@ -260,8 +235,8 @@ export function useSyncData({
       // Get ordinals balance from API (use allSettled so one failure doesn't lose the other)
       try {
         const results = await Promise.allSettled([
-          getBalance(wallet.ordAddress),
-          getBalance(wallet.identityAddress)
+          getBalance(wallet.ordAddress, signal),
+          getBalance(wallet.identityAddress, signal)
         ])
         const ordBal = results[0].status === 'fulfilled' ? results[0].value : 0
         const idBal = results[1].status === 'fulfilled' ? results[1].value : 0
@@ -269,7 +244,7 @@ export function useSyncData({
           syncLogger.warn('Partial failure fetching ord balance')
         }
         const totalOrdBalance = ordBal + idBal
-        if (isCancelled?.()) return
+        if (checkCancelled()) return
         // Guard against NaN/Infinity from API values
         if (Number.isFinite(totalOrdBalance)) {
           setOrdBalance(totalOrdBalance)
@@ -302,7 +277,7 @@ export function useSyncData({
 
       dbTxHistory.sort(compareTxByHeight)
 
-      if (isCancelled?.()) return
+      if (checkCancelled()) return
       setTxHistory(dbTxHistory)
 
       // Load locks from database instantly so they appear before blockchain detection
@@ -325,7 +300,7 @@ export function useSyncData({
         syncLogger.debug('Found ordinals in database', { count: dbOrdinals.length, accountId: activeAccountId })
 
         // Guard: if account switched during async DB call, discard results
-        if (isCancelled?.()) return
+        if (checkCancelled()) return
 
         // Display DB ordinals immediately (before slow API calls) -- but ONLY on cold
         // start (when state is currently empty). If ordinals are already in state
@@ -339,7 +314,7 @@ export function useSyncData({
         // Use getAllCachedOrdinalOrigins (includes transferred=1 rows) so that
         // activity tab thumbnails work even for ordinals no longer owned.
         const allCachedOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
-        if (isCancelled?.()) return
+        if (checkCancelled()) return
         const newCache = await getBatchOrdinalContent(allCachedOrigins)
         if (newCache.size > 0) {
           contentCacheRef.current = newCache
@@ -350,12 +325,12 @@ export function useSyncData({
         // Get derived addresses (scoped to active account)
         const derivedAddrs = await getDerivedAddresses(activeAccountId)
 
-        // Fetch from all addresses in parallel
+        // Fetch from all addresses in parallel (with abort signal for cancellation)
         const ordinalResults = await Promise.allSettled([
-          getOrdinals(wallet.ordAddress),
-          getOrdinals(wallet.walletAddress),
-          getOrdinals(wallet.identityAddress),
-          ...derivedAddrs.map(d => getOrdinals(d.address))
+          getOrdinals(wallet.ordAddress, signal),
+          getOrdinals(wallet.walletAddress, signal),
+          getOrdinals(wallet.identityAddress, signal),
+          ...derivedAddrs.map(d => getOrdinals(d.address, signal))
         ])
 
         const allOrdinalApiCallsSucceeded = ordinalResults.every(r => r.status === 'fulfilled')
@@ -394,7 +369,7 @@ export function useSyncData({
         const allOrdinals: Ordinal[] = apiOrdinals.length > 0 ? apiOrdinals : dbOrdinals
 
         // Guard: if account switched during slow API calls, discard results
-        if (isCancelled?.()) return
+        if (checkCancelled()) return
 
         setOrdinalsWithRef(allOrdinals)
 
@@ -419,7 +394,7 @@ export function useSyncData({
           }
           if (historyChanged) {
             dbTxHistory.sort(compareTxByHeight)
-            if (!isCancelled?.()) setTxHistory([...dbTxHistory])
+            if (!checkCancelled()) setTxHistory([...dbTxHistory])
           }
         }
 
@@ -432,11 +407,11 @@ export function useSyncData({
 
       // Fetch UTXOs and notify about lock detection
       try {
-        if (isCancelled?.()) return
-        const utxoList = await getUTXOs(wallet.walletAddress)
-        if (isCancelled?.()) return
+        if (checkCancelled()) return
+        const utxoList = await getUTXOs(wallet.walletAddress, signal)
+        if (checkCancelled()) return
         setUtxos(utxoList)
-        if (isCancelled?.()) return
+        if (checkCancelled()) return
         // Notify caller about UTXOs for lock detection
         onLocksDetected({
           utxos: utxoList,

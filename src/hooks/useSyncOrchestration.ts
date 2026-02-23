@@ -7,52 +7,15 @@
 import { useCallback } from 'react'
 import type { WalletKeys } from '../services/wallet'
 import { getAllTransactions } from '../infrastructure/database'
-import { getCachedOrdinals } from '../services/ordinalCache'
 import {
   syncWallet,
   restoreFromBlockchain,
   getBalanceFromDatabase,
-  getOrdinalsFromDatabase
 } from '../services/sync'
 import { syncLogger } from '../services/logger'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 import type { TxHistoryItem, BasketBalances } from '../contexts/SyncContext'
-
-/** Sort transactions: unconfirmed first, then by block height descending, createdAt tiebreaker */
-function compareTxByHeight(a: TxHistoryItem, b: TxHistoryItem): number {
-  const aH = a.height || 0, bH = b.height || 0
-  if (aH === 0 && bH !== 0) return -1
-  if (bH === 0 && aH !== 0) return 1
-  if (aH === 0 && bH === 0) return (b.createdAt ?? 0) - (a.createdAt ?? 0)
-  return bH - aH
-}
-
-/**
- * Merge synthetic TxHistoryItems for ordinal receives whose txids are not in
- * the DB transactions table. Reads from local SQLite only -- no API calls.
- */
-async function mergeOrdinalTxEntries(
-  dbTxHistory: TxHistoryItem[],
-  accountId: number | null
-): Promise<void> {
-  const ordinalTxidHeights = new Map<string, number>()
-  try {
-    const cachedOrds = await getCachedOrdinals(accountId ?? undefined)
-    if (cachedOrds.length > 0) {
-      for (const c of cachedOrds) ordinalTxidHeights.set(c.txid, c.blockHeight ?? -1)
-    } else {
-      const dbOrds = await getOrdinalsFromDatabase(accountId ?? undefined)
-      for (const o of dbOrds) ordinalTxidHeights.set(o.txid, -1)
-    }
-  } catch (e) { console.warn('[SyncContext] mergeOrdinalTxEntries failed:', e) }
-
-  const dbTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
-  for (const [txid, height] of ordinalTxidHeights) {
-    if (!dbTxidSet.has(txid)) {
-      dbTxHistory.push({ tx_hash: txid, height, amount: 1, createdAt: 0 })
-    }
-  }
-}
+import { compareTxByHeight, mergeOrdinalTxEntries } from '../utils/syncHelpers'
 
 interface UseSyncOrchestrationOptions {
   setSyncing: (syncing: boolean) => void

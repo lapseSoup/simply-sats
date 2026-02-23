@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-02-23 (v8 / Review #11 — UI/UX polish & stability deep dive)
-**Full report:** `docs/reviews/2026-02-23-full-review-v8.md`
-**Rating:** 9.2 / 10 (up from 8.0 — 25 of 26 Review #11 issues resolved, only 2 medium + 3 deferred remain)
-**Review #11 remediation:** Complete — all critical/high/medium issues fixed, 4 low-priority accessibility issues fixed
+**Latest review:** 2026-02-23 (v9 / Review #12 — Deep dive on extracted sync hooks)
+**Full report:** `docs/reviews/2026-02-23-full-review-v9.md`
+**Rating:** 9.6 / 10 (up from 9.5 — all deferred UX items resolved, zero open findings)
+**Review #12 remediation:** Complete — all 10 findings fixed (7 code + 3 deferred UX), +27 new tests, AbortSignal threaded through sync pipeline
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -38,7 +38,7 @@
 | U-4 | ✅ Fixed (v7) | `SendModal.tsx:382-384` | Emoji in coin control buttons replaced with lucide-react `Crosshair`/`Settings` icons |
 | ST-3 | ✅ Fixed (v7) | `transactions.ts:432` | `consolidateUtxos` `executeBroadcast` not wrapped in try/catch — thrown error bypassed Result pattern. Now returns `err(AppError)` |
 | ST-5 | ✅ Fixed (v7) | `SendModal.tsx:107-116` | Double-send race window — `sendingRef` (useRef) guard added at top of `handleSubmitClick`, set synchronously before async work |
-| U-6 | 🟡 Deferred | `LockScreenModal.tsx:24-92` | Manual Eye/EyeOff toggle reimplements `PasswordInput`. Deferred: LockScreenModal needs `ref`, `aria-invalid`, `aria-describedby` which PasswordInput doesn't support. Would require extending PasswordInput. |
+| U-6 | ✅ Fixed (v9) | `LockScreenModal.tsx`, `PasswordInput.tsx` | Extended PasswordInput with `forwardRef`, `ariaInvalid`, `ariaDescribedby`, `wrapperClassName` props. LockScreenModal now uses shared PasswordInput component |
 | S-19 | ✅ Fixed (v6) | `ReceiveModal.tsx:73` / `derived_addresses` table | BRC-42 child private key (WIF) no longer stored in SQLite — re-derive on demand; migrations 019-021 strip existing WIF data |
 | S-1 | ✅ Mitigated | `storage.ts:121` | Unprotected mode warning shown at setup, restore, and Settings |
 | S-2 | ✅ Fixed (v5) | `storage.ts:43-48` | Read-back verify after `saveToSecureStorage()` now present |
@@ -71,8 +71,10 @@
 | S-22 | ✅ Fixed (v8) | `http_server.rs`, `lib.rs` | `isAuthenticated` now checks `SharedKeyStore.has_keys()` for actual wallet lock state |
 | A-13 | ✅ Fixed (v8) | `SyncContext.tsx` → `hooks/useSyncData.ts`, `useSyncOrchestration.ts`, `useOrdinalCache.ts` | 863→208 lines — extracted into 3 hooks |
 | A-14 | ✅ Fixed (v8) | `services/ordinalCache.ts` | Created services facade — SyncContext now imports ordinal cache functions through services layer |
-| ST-4 | 🟡 Open | `SyncContext.tsx` (fetchData) | No AbortController for inflight network requests on cancellation — cancelled requests waste bandwidth |
-| ST-6 | 🟡 Open | `SyncContext.tsx:150-238` | `performSync` has no cancellation mechanism — DB writes continue after account switch |
+| Q-17 | ✅ Fixed (v9) | `utils/syncHelpers.ts` | Extracted `compareTxByHeight` + `mergeOrdinalTxEntries` to shared module. Both hooks now import from `utils/syncHelpers.ts` |
+| A-15 | ✅ Fixed (v9) | `utils/syncHelpers.test.ts`, `hooks/useOrdinalCache.test.ts` | 27 new tests: 14 for syncHelpers (compareTxByHeight, mergeOrdinalTxEntries), 13 for cacheOrdinalsInBackground |
+| ST-4 | ✅ Fixed (v9) | `useSyncData.ts`, `httpClient.ts`, `wocClient.ts`, `balance.ts`, `ordinals.ts` | AbortController created in `fetchData`, signal threaded through API layer to `fetch()` calls. Cancelled requests now abort immediately |
+| ST-6 | ✅ Fixed (v9) | `sync.ts` | Added cancellation checks before tx history loop, before balance calculation, inside derived address loop. `cancellableDelay` replaces `setTimeout` between iterations |
 | U-5 | ✅ Fixed (v7) | `ReceiveModal.tsx` | 29 inline `style={{}}` props extracted to CSS classes in `App.css` under `.receive-*` namespace |
 | U-7 | ✅ Fixed (v7) | `FeeEstimation.tsx:60-65` | Dead code — all 4 branches returned same string. Collapsed to single `return 'Near-instant'` |
 | U-8 | ✅ Fixed (v7) | `App.tsx:268-273` | Unbranded loading screen — added `SimplySatsLogo` |
@@ -122,8 +124,11 @@
 | U-24 | ✅ Fixed (v8) | `TokensTab.tsx:197-202` | Added `aria-label="Search tokens"` to search input |
 | U-9 | ✅ Fixed (v7) | `EmptyState.tsx` | Empty state title casing standardized to Title Case |
 | ST-7 | ✅ Fixed (v7) | `App.css:550-554` | Dead `prefers-reduced-motion` rule targeting nonexistent `.tab-content` removed |
-| U-12 | ⚪ Deferred | `App.css` | Tab underline doesn't slide between tabs (existing fade transition is adequate) |
-| U-13 | ⚪ Deferred | `App.css` | Account dropdown has no exit animation (would require JS-delayed unmount) |
+| Q-18 | ✅ Fixed (v9) | `SendModal.tsx` | Extracted `executeWithSendGuard` shared helper — `executeSend` and `executeSendMulti` now delegate to it |
+| Q-19 | ✅ Fixed (v9) | `utils/syncHelpers.ts` | `console.warn` replaced with `syncLogger.warn` during extraction to shared module. Stale `[SyncContext]` prefix removed |
+| Q-20 | ✅ Fixed (v9) | `App.tsx:594` | Added `logger.error('get_mnemonic_once failed', { error: String(_err) })` before toast |
+| U-12 | ✅ Fixed (v9) | `AppTabs.tsx`, `App.css` | Replaced per-tab `::after` pseudo-elements with shared `<span className="tab-indicator">` that slides between tabs via CSS transitions on `left`/`width` |
+| U-13 | ✅ Fixed (v9) | `AccountSwitcher.tsx`, `App.css` | Added `modalOut` exit animation with delayed unmount pattern (`closing` state + `onAnimationEnd`) |
 | B-18 | ✅ Fixed (v6) | `transactions.ts:120-129` | `UTXO_STUCK_IN_PENDING` error code used correctly |
 | Q-12 | ✅ Fixed (v6) | `BRC100Modal.tsx:2` | `feeFromBytes` routed through adapter layer |
 | S-5 | ✅ Documented (v5+) | `autoLock.ts:13-21` | Security tradeoff documented |
@@ -149,24 +154,18 @@
 |----------|-------|-------------------|--------------------------|----------------|-------------|
 | Security | 22 | 21 (1 accepted) | 0 | 0 | 0 |
 | Bugs | 18 | 18 | 0 | 0 | 0 |
-| Architecture | 13 | 13 | 0 | 0 | 0 |
-| Quality | 16 | 15 | 0 | 0 | 0 |
-| UX/UI | 24 | 24 | 0 | 0 | 3 deferred |
-| Stability | 13 | 11 | 0 | 2 (ST-4, ST-6) | 0 |
-| **Total** | **106** | **102 (1 accepted)** | **0** | **2** | **3** |
+| Architecture | 15 | 15 | 0 | 0 | 0 |
+| Quality | 20 | 20 | 0 | 0 | 0 |
+| UX/UI | 24 | 24 | 0 | 0 | 0 |
+| Stability | 13 | 13 | 0 | 0 | 0 |
+| **Total** | **112** | **112 (1 accepted)** | **0** | **0** | **0** |
 
 ---
 
 ## Remaining Open Items
 
-### Medium (next sprint)
-- **ST-4** — AbortController for cancelled network requests. **Effort: 30 min**
-- **ST-6** — performSync cancellation mechanism. **Effort: 20 min**
-
 ### Low / Deferred
-- **U-6** — LockScreenModal → PasswordInput refactor
-- **U-12** — Tab underline slide animation
-- **U-13** — Account dropdown exit animation
+_None — all deferred items resolved._
 
 ### Accepted Risk
 - **S-17** — `SENSITIVE_KEYS` empty in secureStorage
@@ -238,3 +237,35 @@
 24. **U-22** ✅ — Token card keyboard interaction (low)
 25. **U-23** ✅ — PaymentAlert keyboard dismiss + ARIA role (low)
 26. **U-24** ✅ — Token search input aria-label (low)
+
+---
+
+## Review #12 — 2026-02-23
+
+5 new findings (2 medium, 3 low) + 2 carry-forward medium items (ST-4, ST-6). All 7 fixed in this session.
+
+| ID | File(s) | Change |
+|----|---------|--------|
+| Q-17 | `utils/syncHelpers.ts` | Extracted `compareTxByHeight` + `mergeOrdinalTxEntries` to shared module; both hooks now import |
+| Q-19 | `utils/syncHelpers.ts` | `console.warn` → `syncLogger.warn`, stale `[SyncContext]` prefix removed |
+| Q-20 | `App.tsx:594` | Added `logger.error` before toast in mnemonic catch block |
+| Q-18 | `SendModal.tsx` | Extracted `executeWithSendGuard` shared helper for send execution pattern |
+| A-15 | `utils/syncHelpers.test.ts`, `hooks/useOrdinalCache.test.ts` | 27 new tests (14 syncHelpers + 13 cacheOrdinalsInBackground) |
+| ST-4 | `useSyncData.ts`, `httpClient.ts`, `wocClient.ts`, `balance.ts`, `ordinals.ts` | AbortController + signal threaded through entire API pipeline |
+| ST-6 | `sync.ts` | Cancellation checks at key DB write boundaries, `cancellableDelay` replaces setTimeout |
+| U-6 | `PasswordInput.tsx`, `LockScreenModal.tsx` | Extended PasswordInput with `forwardRef`, `ariaInvalid`, `ariaDescribedby`, `wrapperClassName`; LockScreenModal uses shared component |
+| U-12 | `AppTabs.tsx`, `App.css` | Sliding tab indicator — replaced `::after` pseudo-elements with shared `<span>` + CSS `left`/`width` transitions |
+| U-13 | `AccountSwitcher.tsx`, `App.css` | Exit animation — `@keyframes modalOut` + `closing` state + `onAnimationEnd` delayed unmount |
+
+**Remediation — Review #12: Complete (10 of 10 issues fixed)**
+
+1. **Q-19** ✅ — `syncLogger.warn` in shared module (5 min)
+2. **Q-17** ✅ — Extracted to `src/utils/syncHelpers.ts` (15 min)
+3. **Q-20** ✅ — Added `logger.error` to App.tsx:594 (5 min)
+4. **Q-18** ✅ — `executeWithSendGuard` in SendModal (20 min)
+5. **A-15** ✅ — 27 new tests, 1670 total passing (90 min)
+6. **ST-4** ✅ — AbortSignal threaded through fetch → httpClient → wocClient → API (45 min)
+7. **ST-6** ✅ — Cancellation checks + `cancellableDelay` in syncWallet (20 min)
+8. **U-6** ✅ — Extended PasswordInput with forwardRef/aria props; LockScreenModal now uses shared component (15 min)
+9. **U-12** ✅ — Sliding tab indicator: replaced per-tab ::after with shared DOM element + CSS transitions (15 min)
+10. **U-13** ✅ — Account dropdown exit animation: `modalOut` keyframe + delayed unmount pattern (10 min)

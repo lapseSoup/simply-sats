@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { AlertCircle, Search } from 'lucide-react'
 import { ActivityTab, OrdinalsTab, LocksTab, TokensTab, SearchTab } from './components/tabs'
 import type { Ordinal, LockedUTXO } from './services/wallet'
@@ -69,10 +69,43 @@ interface AppTabsProps {
 
 /**
  * Tab navigation bar for the wallet sections.
+ * Uses a sliding indicator element that smoothly transitions between tabs.
  */
 export function AppTabNav({ activeTab, onTabChange, counts }: AppTabsProps) {
+  const navRef = useRef<HTMLElement>(null)
+  const indicatorRef = useRef<HTMLSpanElement>(null)
+
+  const positionIndicator = useCallback(() => {
+    const nav = navRef.current
+    const indicator = indicatorRef.current
+    if (!nav || !indicator) return
+
+    const activeButton = nav.querySelector(`#tab-${activeTab}`) as HTMLElement | null
+    if (!activeButton) return
+
+    const navRect = nav.getBoundingClientRect()
+    const buttonRect = activeButton.getBoundingClientRect()
+
+    // Position indicator under the active tab with 10% inset on each side
+    const inset = buttonRect.width * 0.1
+    indicator.style.left = `${buttonRect.left - navRect.left + inset}px`
+    indicator.style.width = `${buttonRect.width - inset * 2}px`
+    indicator.style.opacity = '1'
+  }, [activeTab])
+
+  // Use useLayoutEffect to position before paint, avoiding visual flash
+  useLayoutEffect(() => {
+    positionIndicator()
+  }, [positionIndicator])
+
+  // Reposition on window resize (e.g. if the app window is resized)
+  useEffect(() => {
+    window.addEventListener('resize', positionIndicator)
+    return () => window.removeEventListener('resize', positionIndicator)
+  }, [positionIndicator])
+
   return (
-    <nav className="nav-tabs" role="tablist" aria-label="Wallet sections">
+    <nav ref={navRef} className="nav-tabs" role="tablist" aria-label="Wallet sections">
       <TabButton
         id="activity"
         label="Activity"
@@ -115,6 +148,7 @@ export function AppTabNav({ activeTab, onTabChange, counts }: AppTabsProps) {
       >
         <Search size={18} strokeWidth={2} />
       </button>
+      <span className="tab-indicator" ref={indicatorRef} aria-hidden="true" />
     </nav>
   )
 }

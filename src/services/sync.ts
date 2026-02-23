@@ -1011,12 +1011,21 @@ export async function syncWallet(
     const allWalletAddresses = [walletAddress, ordAddress, identityAddress, ...derivedAddresses.map(d => d.address)]
     syncLogger.debug(`[SYNC] Syncing transaction history for ${txHistoryAddresses.length} addresses (account=${accountId ?? 1})`)
 
+    // Re-check cancellation before starting expensive tx history sync loop
+    if (token.isCancelled) {
+      syncLogger.debug('[SYNC] Cancelled before transaction history sync')
+      return undefined
+    }
+
     for (const addr of txHistoryAddresses) {
       if (token.isCancelled) break
       try {
         await syncTransactionHistory(addr, accountId, allWalletAddresses, walletPubKey)
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, RATE_LIMITS.addressSyncDelay))
+        // Cancellable delay to avoid rate limiting — aborts immediately on cancellation
+        // instead of waiting the full delay when the user switches accounts
+        try {
+          await cancellableDelay(RATE_LIMITS.addressSyncDelay, token)
+        } catch { break } // CancellationError — exit the loop
       } catch (e) {
         syncLogger.warn(`Failed to sync tx history for ${addr.slice(0,12)}...`, { error: String(e) })
       }
@@ -1087,8 +1096,17 @@ export async function syncWallet(
       }
     }
 
+    // Final cancellation check before computing results and updating timestamps.
+    // If cancelled, the DB writes above already stopped — skip the final bookkeeping
+    // to avoid writing stale sync timestamps for an account that's no longer active.
+    if (token.isCancelled) {
+      syncLogger.debug('[SYNC] Cancelled before final balance calculation')
+      return undefined
+    }
+
     // Update sync timestamps for derived addresses
     for (const derived of derivedAddresses) {
+      if (token.isCancelled) break
       const result = results.find(r => r.address === derived.address)
       if (result) {
         await updateDerivedAddressSyncTime(derived.address)

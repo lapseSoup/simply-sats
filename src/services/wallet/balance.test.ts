@@ -54,7 +54,7 @@ describe('getBalance', () => {
 
     const result = await getBalance('1TestAddr')
     expect(result).toBe(50000)
-    expect(mockGetBalance).toHaveBeenCalledWith('1TestAddr')
+    expect(mockGetBalance).toHaveBeenCalledWith('1TestAddr', undefined)
   })
 })
 
@@ -133,7 +133,7 @@ describe('getUTXOs', () => {
 
     const result = await getUTXOs('1Addr')
     expect(result).toEqual(utxos)
-    expect(mockGetUtxos).toHaveBeenCalledWith('1Addr')
+    expect(mockGetUtxos).toHaveBeenCalledWith('1Addr', undefined)
   })
 })
 

@@ -5,7 +5,6 @@ import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
 import { useAddressValidation } from '../../hooks/useAddressValidation'
 import { isValidBSVAddress } from '../../domain/wallet/validation'
-import { isOk } from '../../domain/types'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 import { CoinControlModal } from './CoinControlModal'
@@ -176,25 +175,27 @@ export function SendModal({ onClose }: SendModalProps) {
     }
   }
 
-  const executeSend = async () => {
+  const executeWithSendGuard = async (
+    handler: () => Promise<{ ok: true; value?: unknown } | { ok: false; error: string }>,
+    successToast: string
+  ) => {
     sendingRef.current = true
     setShowConfirmation(false)
     setSending(true)
     setSendError('')
 
     try {
-      // Pass selected UTXOs to handleSend if coin control was used
-      const result = await handleSend(sendAddress, sendSats, selectedUtxos ?? undefined)
+      const result = await handler()
 
-      if (isOk(result)) {
-        showToast(`Sent ${sendSats.toLocaleString()} sats!`)
+      if (result.ok) {
+        showToast(successToast)
         onClose()
         void performSync()
       } else {
         const errorMsg = result.error || 'Send failed'
         if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
           // TX is on-chain. Show clean success toast and silently sync to reconcile balance.
-          showToast(`Sent ${sendSats.toLocaleString()} sats!`)
+          showToast(successToast)
           onClose()
           void performSync()
         } else {
@@ -207,42 +208,27 @@ export function SendModal({ onClose }: SendModalProps) {
     }
   }
 
+  const executeSend = () =>
+    executeWithSendGuard(
+      () => handleSend(sendAddress, sendSats, selectedUtxos ?? undefined),
+      `Sent ${sendSats.toLocaleString()} sats!`
+    )
+
   const executeSendMulti = async () => {
     if (sendingRef.current) return
-    sendingRef.current = true
-    setShowConfirmation(false)
-    setSending(true)
-    setSendError('')
 
-    try {
-      const parsedRecipients: RecipientOutput[] = recipients.map(r => ({
-        address: r.address,
-        satoshis: displayInSats
-          ? Math.round(parseFloat(r.amount || '0'))
-          : btcToSatoshis(parseFloat(r.amount || '0'))
-      }))
+    const parsedRecipients: RecipientOutput[] = recipients.map(r => ({
+      address: r.address,
+      satoshis: displayInSats
+        ? Math.round(parseFloat(r.amount || '0'))
+        : btcToSatoshis(parseFloat(r.amount || '0'))
+    }))
+    const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
 
-      const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
-      const result = await handleSendMulti(parsedRecipients, selectedUtxos ?? undefined)
-
-      if (isOk(result)) {
-        showToast(`Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`)
-        onClose()
-        void performSync()
-      } else {
-        const errorMsg = result.error || 'Send failed'
-        if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
-          showToast(`Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`)
-          onClose()
-          void performSync()
-        } else {
-          setSendError(errorMsg)
-        }
-      }
-    } finally {
-      setSending(false)
-      sendingRef.current = false
-    }
+    await executeWithSendGuard(
+      () => handleSendMulti(parsedRecipients, selectedUtxos ?? undefined),
+      `Sent ${totalSat.toLocaleString()} sats to ${parsedRecipients.length} recipients!`
+    )
   }
 
   // Format amount for display in confirmation

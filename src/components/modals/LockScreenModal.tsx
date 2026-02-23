@@ -6,7 +6,8 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Lock, Eye, EyeOff } from 'lucide-react'
+import { Lock } from 'lucide-react'
+import { PasswordInput } from '../shared/PasswordInput'
 import {
   checkUnlockRateLimit,
   recordFailedUnlockAttempt,
@@ -28,7 +29,6 @@ export function LockScreenModal({
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
   const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null)
   const [lockoutMs, setLockoutMs] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -122,33 +122,19 @@ export function LockScreenModal({
 
         <form onSubmit={handleSubmit} className="lock-screen-form">
           <label htmlFor="lock-screen-password" className="sr-only">Password</label>
-          <div className="password-input-container">
-            <input
-              ref={inputRef}
-              id="lock-screen-password"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              className={`lock-screen-input ${error ? 'error' : ''}`}
-              disabled={loading || isLockedOut}
-              autoComplete="current-password"
-              aria-invalid={!!error || isLockedOut}
-              aria-describedby={error || isLockedOut ? 'password-error' : undefined}
-            />
-            <button
-              type="button"
-              className="toggle-password-button"
-              onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? (
-                <EyeOff size={20} strokeWidth={1.75} />
-              ) : (
-                <Eye size={20} strokeWidth={1.75} />
-              )}
-            </button>
-          </div>
+          <PasswordInput
+            ref={inputRef}
+            id="lock-screen-password"
+            value={password}
+            onChange={setPassword}
+            placeholder="Enter your password"
+            className={`lock-screen-input ${error ? 'error' : ''}`}
+            wrapperClassName="password-input-container"
+            disabled={loading || isLockedOut}
+            autoComplete="current-password"
+            ariaInvalid={!!error || isLockedOut}
+            ariaDescribedby={error || isLockedOut ? 'password-error' : undefined}
+          />
 
           {isLockedOut && (
             <p id="password-error" className="lock-screen-error" role="alert">

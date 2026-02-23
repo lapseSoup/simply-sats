@@ -51,6 +51,8 @@ export interface RequestOptions extends Omit<RequestInit, 'signal'> {
   maxRetries?: number
   /** Skip retry logic for this request */
   noRetry?: boolean
+  /** External AbortSignal to cancel the request (e.g. from sync cancellation) */
+  signal?: AbortSignal
 }
 
 /**
@@ -147,15 +149,28 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
   const cfg: HttpClientConfig = { ...DEFAULT_HTTP_CONFIG, ...config }
 
   /**
-   * Internal fetch with timeout
+   * Internal fetch with timeout and optional external abort signal
    */
   async function fetchWithTimeout(
     url: string,
     options: RequestInit,
-    timeout: number
+    timeout: number,
+    externalSignal?: AbortSignal
   ): Promise<Response> {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+    // If an external signal is provided, abort our controller when it fires
+    let onExternalAbort: (() => void) | undefined
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        clearTimeout(timeoutId)
+        controller.abort()
+      } else {
+        onExternalAbort = () => controller.abort()
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true })
+      }
+    }
 
     try {
       const response = await fetch(url, {
@@ -165,6 +180,9 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
       return response
     } finally {
       clearTimeout(timeoutId)
+      if (onExternalAbort && externalSignal) {
+        externalSignal.removeEventListener('abort', onExternalAbort)
+      }
     }
   }
 
@@ -204,19 +222,25 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
     options: RequestInit,
     requestTimeout: number,
     maxRetries: number,
-    noRetry: boolean
+    noRetry: boolean,
+    externalSignal?: AbortSignal
   ): Promise<Result<Response, HttpError>> {
     const fullUrl = cfg.baseUrl ? `${cfg.baseUrl}${url}` : url
     let lastError: HttpError | null = null
 
     const attempts = noRetry ? 1 : maxRetries
     for (let attempt = 0; attempt < attempts; attempt++) {
+      // If the external signal is already aborted, bail immediately
+      if (externalSignal?.aborted) {
+        return err(createHttpError('ABORTED', 'Request aborted', undefined, fullUrl))
+      }
+
       const startTime = Date.now()
 
       try {
         logRequest(method, fullUrl, options.body)
 
-        const response = await fetchWithTimeout(fullUrl, options, requestTimeout)
+        const response = await fetchWithTimeout(fullUrl, options, requestTimeout, externalSignal)
         const duration = Date.now() - startTime
 
         logResponse(method, fullUrl, response.status, duration)
@@ -270,7 +294,7 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
 
   return {
     async get<T>(path: string, options: RequestOptions = {}): Promise<Result<T, HttpError>> {
-      const { timeout = cfg.timeout, maxRetries = cfg.maxRetries, noRetry = false, ...fetchOptions } = options
+      const { timeout = cfg.timeout, maxRetries = cfg.maxRetries, noRetry = false, signal, ...fetchOptions } = options
 
       const result = await executeWithRetry(
         'GET',
@@ -281,7 +305,8 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
         },
         timeout,
         maxRetries,
-        noRetry
+        noRetry,
+        signal
       )
 
       if (!result.ok) {
@@ -314,7 +339,7 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
     },
 
     async post<T>(path: string, body?: unknown, options: RequestOptions = {}): Promise<Result<T, HttpError>> {
-      const { timeout = cfg.timeout, maxRetries = cfg.maxRetries, noRetry = false, ...fetchOptions } = options
+      const { timeout = cfg.timeout, maxRetries = cfg.maxRetries, noRetry = false, signal, ...fetchOptions } = options
 
       const result = await executeWithRetry(
         'POST',
@@ -330,7 +355,8 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
         },
         timeout,
         maxRetries,
-        noRetry
+        noRetry,
+        signal
       )
 
       if (!result.ok) {
@@ -374,7 +400,7 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
     },
 
     async fetch(path: string, options: RequestOptions = {}): Promise<Result<Response, HttpError>> {
-      const { timeout = cfg.timeout, maxRetries = cfg.maxRetries, noRetry = false, ...fetchOptions } = options
+      const { timeout = cfg.timeout, maxRetries = cfg.maxRetries, noRetry = false, signal, ...fetchOptions } = options
 
       return executeWithRetry(
         fetchOptions.method || 'GET',
@@ -382,7 +408,8 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
         fetchOptions,
         timeout,
         maxRetries,
-        noRetry
+        noRetry,
+        signal
       )
     }
   }

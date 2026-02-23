@@ -34,8 +34,9 @@ const ordLogger = walletLogger
 /**
  * Get 1Sat Ordinals from the ordinals address
  * Uses the GorillaPool 1Sat Ordinals API for reliable inscription detection
+ * @param signal - Optional AbortSignal to cancel in-flight requests
  */
-export async function getOrdinals(address: string): Promise<Ordinal[]> {
+export async function getOrdinals(address: string, signal?: AbortSignal): Promise<Ordinal[]> {
   try {
     // First, try the GorillaPool 1Sat Ordinals API for proper inscription data
     // Paginate to fetch ALL ordinals (API returns max 100 per request)
@@ -46,8 +47,9 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
 
     ordLogger.debug('Fetching ordinals from GorillaPool', { address })
     for (let page = 0; page < MAX_PAGES; page++) {
+      if (signal?.aborted) return []
       const offset = page * PAGE_SIZE
-      const gpResult = await gpOrdinalsApi.get<GpOrdinalItem[]>(`/api/txos/address/${address}/unspent?limit=${PAGE_SIZE}&offset=${offset}`)
+      const gpResult = await gpOrdinalsApi.get<GpOrdinalItem[]>(`/api/txos/address/${address}/unspent?limit=${PAGE_SIZE}&offset=${offset}`, { signal })
       ordLogger.debug('GorillaPool response', { ok: gpResult.ok, page, offset })
 
       if (!gpResult.ok) {
@@ -89,7 +91,7 @@ export async function getOrdinals(address: string): Promise<Ordinal[]> {
 
     // Fallback: Use WhatsOnChain to get 1-sat UTXOs, then verify each with GorillaPool
     ordLogger.debug('Using WhatsOnChain for ordinals detection')
-    const wocUtxos = await getWocClient().getUtxosSafe(address)
+    const wocUtxos = await getWocClient().getUtxosSafe(address, signal)
     if (!wocUtxos.ok) {
       ordLogger.warn('Failed to fetch ordinals from WhatsOnChain', { address, error: wocUtxos.error.message })
       return []

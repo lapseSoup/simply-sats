@@ -13,9 +13,10 @@ import { btcToSatoshis } from '../../utils/satoshiConversion'
 
 /**
  * Get balance from WhatsOnChain (uses wocClient infrastructure)
+ * @param signal - Optional AbortSignal to cancel in-flight requests
  */
-export async function getBalance(address: string): Promise<number> {
-  return getWocClient().getBalance(address)
+export async function getBalance(address: string, signal?: AbortSignal): Promise<number> {
+  return getWocClient().getBalance(address, signal)
 }
 
 /**
@@ -63,9 +64,10 @@ export async function getUTXOLockingScript(txid: string, vout: number): Promise<
 
 /**
  * Get UTXOs from WhatsOnChain with locking scripts (uses wocClient infrastructure)
+ * @param signal - Optional AbortSignal to cancel in-flight requests
  */
-export async function getUTXOs(address: string): Promise<UTXO[]> {
-  return getWocClient().getUtxos(address)
+export async function getUTXOs(address: string, signal?: AbortSignal): Promise<UTXO[]> {
+  return getWocClient().getUtxos(address, signal)
 }
 
 /**

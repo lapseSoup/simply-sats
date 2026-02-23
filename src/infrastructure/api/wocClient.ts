@@ -37,16 +37,16 @@ export const DEFAULT_WOC_CONFIG: WocConfig = {
 export interface WocClient {
   // Legacy methods that return defaults on error (for backwards compatibility)
   getBlockHeight(): Promise<number>
-  getBalance(address: string): Promise<number>
-  getUtxos(address: string): Promise<UTXO[]>
+  getBalance(address: string, signal?: AbortSignal): Promise<number>
+  getUtxos(address: string, signal?: AbortSignal): Promise<UTXO[]>
   getTransactionHistory(address: string): Promise<{ tx_hash: string; height: number }[]>
   getTransactionDetails(txid: string): Promise<WocTransaction | null>
   broadcastTransaction(txHex: string): Promise<string>
 
   // Safe methods that return Result types for explicit error handling
   getBlockHeightSafe(): Promise<Result<number, ApiError>>
-  getBalanceSafe(address: string): Promise<Result<number, ApiError>>
-  getUtxosSafe(address: string): Promise<Result<UTXO[], ApiError>>
+  getBalanceSafe(address: string, signal?: AbortSignal): Promise<Result<number, ApiError>>
+  getUtxosSafe(address: string, signal?: AbortSignal): Promise<Result<UTXO[], ApiError>>
   getTransactionHistorySafe(address: string): Promise<Result<{ tx_hash: string; height: number }[], ApiError>>
   getTransactionDetailsSafe(txid: string): Promise<Result<WocTransaction, ApiError>>
   broadcastTransactionSafe(txHex: string): Promise<Result<string, ApiError>>
@@ -76,10 +76,23 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
    * Fetch with timeout + exponential backoff retry.
    * Retries on network errors and 5xx server errors (transient failures).
    * Does NOT retry on 4xx client errors (bad requests are not transient).
+   * Accepts an optional external AbortSignal to cancel in-flight requests.
    */
-  const fetchWithTimeout = async (url: string, options: RequestInit = {}, attempt = 0): Promise<Response> => {
+  const fetchWithTimeout = async (url: string, options: RequestInit = {}, attempt = 0, externalSignal?: AbortSignal): Promise<Response> => {
+    // If the external signal is already aborted, bail immediately
+    if (externalSignal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError')
+    }
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), cfg.timeout)
+
+    // Forward external abort to internal controller
+    let onExternalAbort: (() => void) | undefined
+    if (externalSignal) {
+      onExternalAbort = () => controller.abort()
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true })
+    }
 
     try {
       const response = await fetch(url, {
@@ -96,20 +109,26 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
           ? Number(retryAfterSec) * 1000
           : (response.status === 429 ? 2000 : WOC_RETRY_BASE_DELAY_MS) * Math.pow(2, attempt)
         await new Promise(resolve => setTimeout(resolve, delay))
-        return fetchWithTimeout(url, options, attempt + 1)
+        return fetchWithTimeout(url, options, attempt + 1, externalSignal)
       }
 
       return response
     } catch (e) {
+      // Don't retry if externally aborted
+      if (externalSignal?.aborted) throw e
+
       // Retry on network/timeout errors if we have attempts remaining
       if (attempt < WOC_MAX_RETRIES - 1) {
         const delay = WOC_RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
         await new Promise(resolve => setTimeout(resolve, delay))
-        return fetchWithTimeout(url, options, attempt + 1)
+        return fetchWithTimeout(url, options, attempt + 1, externalSignal)
       }
       throw e
     } finally {
       clearTimeout(timeoutId)
+      if (onExternalAbort && externalSignal) {
+        externalSignal.removeEventListener('abort', onExternalAbort)
+      }
     }
   }
 
@@ -139,9 +158,9 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
       }
     },
 
-    async getBalanceSafe(address: string): Promise<Result<number, ApiError>> {
+    async getBalanceSafe(address: string, signal?: AbortSignal): Promise<Result<number, ApiError>> {
       try {
-        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${encodeURIComponent(address)}/balance`)
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${encodeURIComponent(address)}/balance`, {}, 0, signal)
         if (!response.ok) {
           return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
         }
@@ -156,9 +175,9 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
       }
     },
 
-    async getUtxosSafe(address: string): Promise<Result<UTXO[], ApiError>> {
+    async getUtxosSafe(address: string, signal?: AbortSignal): Promise<Result<UTXO[], ApiError>> {
       try {
-        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${encodeURIComponent(address)}/unspent`)
+        const response = await fetchWithTimeout(`${cfg.baseUrl}/address/${encodeURIComponent(address)}/unspent`, {}, 0, signal)
         if (!response.ok) {
           return err(createApiError('NETWORK_ERROR', `HTTP ${response.status}: ${response.statusText}`, response.status))
         }
@@ -295,13 +314,13 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
       return result.ok ? result.value : 0
     },
 
-    async getBalance(address: string): Promise<number> {
-      const result = await this.getBalanceSafe(address)
+    async getBalance(address: string, signal?: AbortSignal): Promise<number> {
+      const result = await this.getBalanceSafe(address, signal)
       return result.ok ? result.value : 0
     },
 
-    async getUtxos(address: string): Promise<UTXO[]> {
-      const result = await this.getUtxosSafe(address)
+    async getUtxos(address: string, signal?: AbortSignal): Promise<UTXO[]> {
+      const result = await this.getUtxosSafe(address, signal)
       return result.ok ? result.value : []
     },
 

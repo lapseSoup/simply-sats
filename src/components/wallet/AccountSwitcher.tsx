@@ -73,13 +73,22 @@ export function AccountSwitcher({
   accountBalances = {}
 }: AccountSwitcherProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
   const [switchingAccountId, setSwitchingAccountId] = useState<number | null>(null)
   const [focusedIndex, setFocusedIndex] = useState(-1)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const closeDropdown = useCallback(() => {
-    setIsOpen(false)
+    if (!isOpen) return
+    setClosing(true)
     setFocusedIndex(-1)
+  }, [isOpen])
+
+  const handleAnimationEnd = useCallback((e: React.AnimationEvent) => {
+    if (e.animationName === 'modalOut') {
+      setClosing(false)
+      setIsOpen(false)
+    }
   }, [])
 
   // Close dropdown when clicking outside
@@ -215,7 +224,7 @@ export function AccountSwitcher({
     <div className="account-switcher" ref={dropdownRef}>
       <button
         className="account-switcher-button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => { if (closing) return; setIsOpen(!isOpen) }}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={`Current account: ${activeAccount?.name || 'Account 1'}`}
@@ -227,8 +236,11 @@ export function AccountSwitcher({
         <ChevronDown className={`dropdown-arrow ${isOpen ? 'open' : ''}`} size={12} strokeWidth={2} />
       </button>
 
-      {isOpen && (
-        <div className="account-dropdown">
+      {(isOpen || closing) && (
+        <div
+          className={`account-dropdown${closing ? ' closing' : ''}`}
+          onAnimationEnd={handleAnimationEnd}
+        >
           <div className="account-list" role="listbox">
             {sortedAccounts.map(account => (
               <AccountItem

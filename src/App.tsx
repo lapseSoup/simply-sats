@@ -592,6 +592,7 @@ function WalletApp() {
                   showToast('Mnemonic not available — wallet may have been imported without one', 'warning')
                 }
               } catch (_err) {
+                logger.error('get_mnemonic_once failed', { error: String(_err) })
                 showToast('Failed to retrieve recovery phrase', 'error')
               }
               setShowBackupReminder(false)
