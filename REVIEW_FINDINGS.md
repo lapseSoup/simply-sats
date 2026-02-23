@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-02-23 (v9 / Review #12 — Deep dive on extracted sync hooks)
-**Full report:** `docs/reviews/2026-02-23-full-review-v9.md`
-**Rating:** 9.6 / 10 (up from 9.5 — all deferred UX items resolved, zero open findings)
-**Review #12 remediation:** Complete — all 10 findings fixed (7 code + 3 deferred UX), +27 new tests, AbortSignal threaded through sync pipeline
+**Latest review:** 2026-02-23 (v10 / Review #13 — Security hardening, test factories, lint hygiene)
+**Full report:** `docs/reviews/2026-02-23-full-review-v10.md`
+**Rating:** 9.7 / 10 (up from 9.6 — no critical/high open issues, all new findings fixed except A-16 backlog)
+**Review #13 remediation:** Complete — 7 of 8 findings fixed (A-16 tracked as backlog), test factories added, logger consistency enforced
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -72,6 +72,8 @@
 | A-13 | ✅ Fixed (v8) | `SyncContext.tsx` → `hooks/useSyncData.ts`, `useSyncOrchestration.ts`, `useOrdinalCache.ts` | 863→208 lines — extracted into 3 hooks |
 | A-14 | ✅ Fixed (v8) | `services/ordinalCache.ts` | Created services facade — SyncContext now imports ordinal cache functions through services layer |
 | Q-17 | ✅ Fixed (v9) | `utils/syncHelpers.ts` | Extracted `compareTxByHeight` + `mergeOrdinalTxEntries` to shared module. Both hooks now import from `utils/syncHelpers.ts` |
+| S-23 | ✅ Fixed (v10) | `http_server.rs:151-167` | Token rotation TOCTOU race — between `drop(session)` and re-lock, concurrent requests could desync tokens. Re-check `is_token_expired()` under second lock before rotating |
+| A-16 | 🟡 Backlog | 51 component files | 51 `no-restricted-imports` lint warnings — components importing directly from `services/` instead of context hooks. Tracked as backlog item |
 | A-15 | ✅ Fixed (v9) | `utils/syncHelpers.test.ts`, `hooks/useOrdinalCache.test.ts` | 27 new tests: 14 for syncHelpers (compareTxByHeight, mergeOrdinalTxEntries), 13 for cacheOrdinalsInBackground |
 | ST-4 | ✅ Fixed (v9) | `useSyncData.ts`, `httpClient.ts`, `wocClient.ts`, `balance.ts`, `ordinals.ts` | AbortController created in `fetchData`, signal threaded through API layer to `fetch()` calls. Cancelled requests now abort immediately |
 | ST-6 | ✅ Fixed (v9) | `sync.ts` | Added cancellation checks before tx history loop, before balance calculation, inside derived address loop. `cancellableDelay` replaces `setTimeout` between iterations |
@@ -144,6 +146,12 @@
 | Q-7a | ✅ Fixed (v5) | `useWalletLock.ts` | `HIDDEN_LOCK_DELAY_MS` moved to config |
 | Q-7b | ✅ Fixed (v5) | `SendModal.tsx` | Fallback fee `0.05` moved to config |
 | Q-8 | ✅ Fixed (v5+) | `autoLock.ts:98` | Poll interval reduced from 15s to 5s |
+| S-24 | ✅ Fixed (v10) | `locks.ts:472-496` | Lock unlock fallback assumed UTXO was spent by our tx without verification. Now computes expected txid via `tx.id('hex')` and compares with spending txid; logs warning on mismatch |
+| B-19 | ✅ Fixed (v10) | `certificates.ts:162` | `JSON.parse(row.fields)` in `.map()` with no try-catch. Created `safeParseFields()` helper that returns `{}` on failure, used across all 4 query functions |
+| B-20 | ✅ Fixed (v10) | `accounts.ts:572` | `JSON.parse(account.encryptedKeys)` in `encryptAllAccounts` without try-catch. Wrapped loop body in try-catch, corrupted accounts skipped with warning log |
+| Q-21 | ✅ Fixed (v10) | `SettingsSecurity.tsx:107,128,210` + `SettingsBackup.tsx:75,153` | 5 `console.error()` calls replaced with `logger.error()` |
+| Q-22 | ✅ Fixed (v10) | `sync.test.ts`, `src/test/factories.ts` | 20+ `as any` casts for UTXO mocks replaced with typed factory helpers: `createMockDBUtxo()`, `createMockUTXO()`, `createMockExtendedUTXO()` |
+| Q-23 | ✅ Fixed (v10) | `httpClient.ts:333-338` | JSON response parsed without checking `Content-Type` header. Added Content-Type validation before JSON parse, rejects unexpected content types |
 | Q-9 | ✅ Verified | `keyDerivation.ts:260-262` | Dev-only code guarded |
 
 ---
@@ -152,13 +160,13 @@
 
 | Category | Total | ✅ Fixed/Verified | 🔴/🟠 Critical/High Open | 🟡 Medium Open | ⚪ Low Open |
 |----------|-------|-------------------|--------------------------|----------------|-------------|
-| Security | 22 | 21 (1 accepted) | 0 | 0 | 0 |
-| Bugs | 18 | 18 | 0 | 0 | 0 |
-| Architecture | 15 | 15 | 0 | 0 | 0 |
-| Quality | 20 | 20 | 0 | 0 | 0 |
+| Security | 24 | 23 (1 accepted) | 0 | 0 | 0 |
+| Bugs | 20 | 20 | 0 | 0 | 0 |
+| Architecture | 16 | 15 | 0 | 1 (backlog) | 0 |
+| Quality | 23 | 23 | 0 | 0 | 0 |
 | UX/UI | 24 | 24 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 |
-| **Total** | **112** | **112 (1 accepted)** | **0** | **0** | **0** |
+| **Total** | **120** | **119 (1 accepted)** | **0** | **1 (backlog)** | **0** |
 
 ---
 
@@ -166,6 +174,9 @@
 
 ### Low / Deferred
 _None — all deferred items resolved._
+
+### Backlog
+- **A-16** — 51 `no-restricted-imports` lint warnings (components importing from `services/` directly)
 
 ### Accepted Risk
 - **S-17** — `SENSITIVE_KEYS` empty in secureStorage
@@ -269,3 +280,31 @@ _None — all deferred items resolved._
 8. **U-6** ✅ — Extended PasswordInput with forwardRef/aria props; LockScreenModal now uses shared component (15 min)
 9. **U-12** ✅ — Sliding tab indicator: replaced per-tab ::after with shared DOM element + CSS transitions (15 min)
 10. **U-13** ✅ — Account dropdown exit animation: `modalOut` keyframe + delayed unmount pattern (10 min)
+
+---
+
+## Review #13 — 2026-02-23
+
+8 new findings (2 medium, 6 low). 7 of 8 fixed in this session; A-16 tracked as backlog.
+
+| ID | File(s) | Change |
+|----|---------|--------|
+| S-23 | `http_server.rs:151-167` | Re-check `is_token_expired()` under second lock before rotating — closes TOCTOU race window |
+| S-24 | `locks.ts:472-496` | Compute expected txid via `tx.id('hex')` and compare with spending txid; log warning on mismatch |
+| B-19 | `certificates.ts:162` | Created `safeParseFields()` helper returning `{}` on failure, used across all 4 query functions |
+| B-20 | `accounts.ts:572` | Wrapped `encryptAllAccounts` loop body in try-catch; corrupted accounts skipped with warning log |
+| A-16 | 51 component files | 51 `no-restricted-imports` lint warnings — tracked as backlog item, not fixed in this session |
+| Q-21 | `SettingsSecurity.tsx`, `SettingsBackup.tsx` | 5 `console.error()` calls replaced with `logger.error()` |
+| Q-22 | `sync.test.ts`, `src/test/factories.ts` | Created `createMockDBUtxo()`, `createMockUTXO()`, `createMockExtendedUTXO()` factory helpers; replaced 20+ `as any` casts |
+| Q-23 | `httpClient.ts:333-338` | Added Content-Type validation before JSON parse; rejects unexpected content types |
+
+**Remediation — Review #13: 7 of 8 fixed (A-16 backlog)**
+
+1. **S-23** ✅ — Token rotation TOCTOU race closed with double-check under lock (medium)
+2. **S-24** ✅ — Lock unlock fallback now verifies spending txid matches expected (low)
+3. **B-19** ✅ — `safeParseFields()` helper prevents JSON.parse crashes in certificate queries (low)
+4. **B-20** ✅ — Corrupted account resilience in `encryptAllAccounts` (low)
+5. **A-16** 🟡 — 51 `no-restricted-imports` warnings tracked as backlog (medium)
+6. **Q-21** ✅ — Logger consistency: 5 `console.error` → `logger.error` in Settings components (low)
+7. **Q-22** ✅ — Test factory helpers eliminate 20+ `as any` casts in sync.test.ts (low)
+8. **Q-23** ✅ — Content-Type validation before JSON parse in httpClient (low)

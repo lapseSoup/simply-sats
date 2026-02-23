@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createMockDBUtxo, resetUtxoCounter } from '../test/factories'
 
 // Mock @bsv/sdk so P2PKH address validation doesn't reject test addresses
 vi.mock('@bsv/sdk', () => {
@@ -86,6 +87,7 @@ const mockWocClient = getWocClient() as unknown as {
 describe('Sync Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetUtxoCounter()
   })
 
   describe('BASKETS', () => {
@@ -137,9 +139,9 @@ describe('Sync Service', () => {
   describe('getBalanceFromDatabase', () => {
     it('should return total balance from all UTXOs', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'tx1', vout: 0, satoshis: 1000, basket: 'default', spendable: true } as any,
-        { txid: 'tx2', vout: 0, satoshis: 2000, basket: 'default', spendable: true } as any,
-        { txid: 'tx3', vout: 0, satoshis: 500, basket: 'ordinals', spendable: true } as any
+        createMockDBUtxo({ txid: 'tx1', satoshis: 1000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'tx2', satoshis: 2000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'tx3', satoshis: 500, basket: 'ordinals' })
       ] })
 
       const balance = await getBalanceFromDatabase()
@@ -149,9 +151,9 @@ describe('Sync Service', () => {
 
     it('should filter by basket when specified', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'tx1', vout: 0, satoshis: 1000, basket: 'default', spendable: true } as any,
-        { txid: 'tx2', vout: 0, satoshis: 2000, basket: 'default', spendable: true } as any,
-        { txid: 'tx3', vout: 0, satoshis: 500, basket: 'ordinals', spendable: true } as any
+        createMockDBUtxo({ txid: 'tx1', satoshis: 1000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'tx2', satoshis: 2000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'tx3', satoshis: 500, basket: 'ordinals' })
       ] })
 
       const balance = await getBalanceFromDatabase('default')
@@ -169,7 +171,7 @@ describe('Sync Service', () => {
 
     it('should return 0 for empty basket', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'tx1', vout: 0, satoshis: 1000, basket: 'default', spendable: true } as any
+        createMockDBUtxo({ txid: 'tx1', satoshis: 1000, basket: 'default' })
       ] })
 
       const balance = await getBalanceFromDatabase('ordinals')
@@ -181,9 +183,9 @@ describe('Sync Service', () => {
   describe('getSpendableUtxosFromDatabase', () => {
     it('should return UTXOs sorted by value (smallest first)', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'tx1', vout: 0, satoshis: 5000, basket: 'default', spendable: true } as any,
-        { txid: 'tx2', vout: 0, satoshis: 1000, basket: 'default', spendable: true } as any,
-        { txid: 'tx3', vout: 0, satoshis: 3000, basket: 'default', spendable: true } as any
+        createMockDBUtxo({ txid: 'tx1', satoshis: 5000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'tx2', satoshis: 1000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'tx3', satoshis: 3000, basket: 'default' })
       ] })
 
       const utxos = await getSpendableUtxosFromDatabase()
@@ -195,8 +197,8 @@ describe('Sync Service', () => {
 
     it('should filter by basket', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'tx1', vout: 0, satoshis: 1000, basket: 'default', spendable: true } as any,
-        { txid: 'tx2', vout: 0, satoshis: 2000, basket: 'ordinals', spendable: true } as any
+        createMockDBUtxo({ txid: 'tx1', satoshis: 1000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'tx2', satoshis: 2000, basket: 'ordinals' })
       ] })
 
       const utxos = await getSpendableUtxosFromDatabase('default')
@@ -207,8 +209,8 @@ describe('Sync Service', () => {
 
     it('should default to default basket', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'tx1', vout: 0, satoshis: 1000, basket: 'default', spendable: true } as any,
-        { txid: 'tx2', vout: 0, satoshis: 2000, basket: 'ordinals', spendable: true } as any
+        createMockDBUtxo({ txid: 'tx1', satoshis: 1000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'tx2', satoshis: 2000, basket: 'ordinals' })
       ] })
 
       const utxos = await getSpendableUtxosFromDatabase()
@@ -221,9 +223,9 @@ describe('Sync Service', () => {
   describe('getOrdinalsFromDatabase', () => {
     it('should return ordinals from ordinals basket', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'tx1', vout: 0, satoshis: 1, basket: 'ordinals', spendable: true } as any,
-        { txid: 'tx2', vout: 1, satoshis: 1, basket: 'ordinals', spendable: true } as any,
-        { txid: 'tx3', vout: 0, satoshis: 1000, basket: 'default', spendable: true } as any
+        createMockDBUtxo({ txid: 'tx1', vout: 0, satoshis: 1, basket: 'ordinals' }),
+        createMockDBUtxo({ txid: 'tx2', vout: 1, satoshis: 1, basket: 'ordinals' }),
+        createMockDBUtxo({ txid: 'tx3', vout: 0, satoshis: 1000, basket: 'default' })
       ] })
 
       const ordinals = await getOrdinalsFromDatabase()
@@ -235,7 +237,7 @@ describe('Sync Service', () => {
 
     it('should format origin correctly', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'abc123', vout: 5, satoshis: 1, basket: 'ordinals', spendable: true } as any
+        createMockDBUtxo({ txid: 'abc123', vout: 5, satoshis: 1, basket: 'ordinals' })
       ] })
 
       const ordinals = await getOrdinalsFromDatabase()
@@ -247,7 +249,7 @@ describe('Sync Service', () => {
 
     it('should return empty array when no ordinals', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
-        { txid: 'tx1', vout: 0, satoshis: 1000, basket: 'default', spendable: true } as any
+        createMockDBUtxo({ txid: 'tx1', satoshis: 1000, basket: 'default' })
       ] })
 
       const ordinals = await getOrdinalsFromDatabase()

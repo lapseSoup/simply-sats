@@ -330,6 +330,12 @@ export function createHttpClient(config: Partial<HttpClientConfig> = {}): HttpCl
         return err(createHttpError('RESPONSE_TOO_LARGE', `Response body too large: ${contentLength} bytes`, undefined, path))
       }
 
+      // Q-23: Validate Content-Type before parsing JSON
+      const contentType = response.headers?.get?.('content-type') ?? ''
+      if (contentType && !contentType.includes('application/json') && !contentType.includes('text/plain')) {
+        return err(createHttpError('PARSE_ERROR', `Unexpected Content-Type: ${contentType.slice(0, 80)}`, undefined, path))
+      }
+
       try {
         const data = await response.json() as T
         return ok(data)

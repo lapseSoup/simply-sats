@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
+import { logger } from '../../../services/logger'
 import { exportDatabase, exportDatabaseFull, importDatabase, type DatabaseBackup } from '../../../infrastructure/database'
 import { encrypt, decrypt, type EncryptedData } from '../../../services/crypto'
 import { NO_PASSWORD } from '../../../services/sessionPasswordStore'
@@ -72,7 +73,7 @@ export function SettingsBackup() {
         showToast(type === 'full' ? 'Full backup saved!' : 'Essential backup saved!')
       }
     } catch (err) {
-      console.error('Backup failed:', err)
+      logger.error('Backup failed', err)
       showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }, [wallet, showToast])
@@ -150,7 +151,7 @@ export function SettingsBackup() {
       setPendingImportBackup(backup.database as DatabaseBackup)
       setShowImportConfirm({ utxos: backup.database.utxos.length, transactions: backup.database.transactions.length })
     } catch (err) {
-      console.error('Import failed:', err)
+      logger.error('Import failed', err)
       showToast(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }, [sessionPassword, showToast])

@@ -158,11 +158,15 @@ async fn validate_session_token(
                     Ok(_) => {
                         let mut response = next.run(request).await;
                         // Auto-rotate expired tokens — include new token in response header
+                        // S-23: Re-check expiry under lock to prevent TOCTOU race
+                        // (another concurrent request may have already rotated)
                         if is_expired {
                             let mut session = state.session_state.lock().await;
-                            let new_token = session.rotate_token();
-                            if let Ok(hv) = HeaderValue::from_str(&new_token) {
-                                response.headers_mut().insert("X-Simply-Sats-New-Token", hv);
+                            if session.is_token_expired() {
+                                let new_token = session.rotate_token();
+                                if let Ok(hv) = HeaderValue::from_str(&new_token) {
+                                    response.headers_mut().insert("X-Simply-Sats-New-Token", hv);
+                                }
                             }
                         }
                         Ok(response)

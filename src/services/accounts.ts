@@ -569,7 +569,13 @@ export async function encryptAllAccounts(password: string): Promise<void> {
 
   // Phase 1: Encrypt all unprotected accounts (no DB writes yet)
   for (const account of accounts) {
-    const parsed = JSON.parse(account.encryptedKeys)
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(account.encryptedKeys)
+    } catch {
+      accountLogger.warn('Skipping account with corrupted encryptedKeys', { accountId: account.id })
+      continue
+    }
     if (isUnprotectedData(parsed)) {
       const keysJson = JSON.stringify(parsed.keys)
       const encryptedData = await encrypt(keysJson, password)

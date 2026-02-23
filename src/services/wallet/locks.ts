@@ -477,18 +477,31 @@ export async function unlockBSV(
     const spentResult = await woc.isOutputSpentSafe(lockedUtxo.txid, lockedUtxo.vout)
 
     if (spentResult.ok && spentResult.value !== null) {
-      // Lock UTXO IS spent — the unlock tx went through previously
+      // Lock UTXO IS spent — verify the spending tx is ours before marking
+      const expectedTxid = tx.id('hex')
+      const spendingTxid = spentResult.value
+      if (expectedTxid !== spendingTxid) {
+        // S-24: Spending txid doesn't match our unlock tx — someone else spent it
+        walletLogger.warn('Lock UTXO spent by unexpected transaction', {
+          lockTxid: lockedUtxo.txid,
+          vout: lockedUtxo.vout,
+          expectedTxid,
+          spendingTxid
+        })
+      }
+      // Mark as unlocked regardless — the UTXO is provably spent
       walletLogger.info('Lock UTXO already spent — marking as unlocked', {
         lockTxid: lockedUtxo.txid,
         vout: lockedUtxo.vout,
-        spendingTxid: spentResult.value
+        spendingTxid,
+        matchesOurTx: expectedTxid === spendingTxid
       })
       try {
         await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout, accountId)
       } catch (_markErr) {
         walletLogger.warn('Failed to mark lock as unlocked after spent-check', { error: String(_markErr) })
       }
-      return ok(spentResult.value) // Return the spending txid
+      return ok(spendingTxid) // Return the spending txid
     }
 
     // UTXO is genuinely unspent and broadcast failed — real failure

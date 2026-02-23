@@ -12,6 +12,7 @@ import {
 import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { encrypt } from '../../../services/crypto'
+import { logger } from '../../../services/logger'
 import { hasPassword } from '../../../services/wallet/storage'
 import { encryptAllAccounts } from '../../../services/accounts'
 import { NO_PASSWORD, setSessionPassword as setModuleSessionPassword } from '../../../services/sessionPasswordStore'
@@ -104,7 +105,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
         showToast('Encrypted keys saved to file!')
       }
     } catch (err) {
-      console.error('Key export failed:', err)
+      logger.error('Key export failed', err)
       showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
     setShowKeysWarning(false)
@@ -125,7 +126,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
         showToast('Mnemonic not available — wallet may have been imported without one', 'warning')
       }
     } catch (err) {
-      console.error('Failed to retrieve mnemonic:', err)
+      logger.error('Failed to retrieve mnemonic', err)
       showToast('Failed to retrieve recovery phrase', 'error')
     }
   }, [showToast])
@@ -207,7 +208,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
         showToast('Keys exported! Remember the password you used.')
       }
     } catch (err) {
-      console.error('Key export failed:', err)
+      logger.error('Key export failed', err)
       showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
     setShowExportPasswordPrompt(false)

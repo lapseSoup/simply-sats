@@ -16,6 +16,16 @@ import type { WalletKeys } from './wallet'
 import type { CertificateRow, SqlParams } from '../infrastructure/database/row-types'
 import { brc100Logger } from './logger'
 
+/** Safely parse JSON fields from a certificate row, returning empty object on failure */
+function safeParseFields(fields: string): Record<string, string> {
+  try {
+    return JSON.parse(fields)
+  } catch {
+    brc100Logger.warn('Failed to parse certificate fields JSON', { fields: fields.slice(0, 50) })
+    return {}
+  }
+}
+
 /**
  * Certificate types that can be issued
  */
@@ -159,7 +169,7 @@ export async function getCertificatesBySubject(subject: string): Promise<Certifi
     subject: row.subject,
     certifier: row.certifier,
     serialNumber: row.serial_number,
-    fields: JSON.parse(row.fields),
+    fields: safeParseFields(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at ?? undefined,
@@ -185,7 +195,7 @@ export async function getCertificatesByCertifier(certifier: string): Promise<Cer
     subject: row.subject,
     certifier: row.certifier,
     serialNumber: row.serial_number,
-    fields: JSON.parse(row.fields),
+    fields: safeParseFields(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at ?? undefined,
@@ -218,7 +228,7 @@ export async function getCertificatesByType(type: CertificateType, subject?: str
     subject: row.subject,
     certifier: row.certifier,
     serialNumber: row.serial_number,
-    fields: JSON.parse(row.fields),
+    fields: safeParseFields(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at ?? undefined,
@@ -247,7 +257,7 @@ export async function getCertificateBySerial(serialNumber: string): Promise<Cert
     subject: row.subject,
     certifier: row.certifier,
     serialNumber: row.serial_number,
-    fields: JSON.parse(row.fields),
+    fields: safeParseFields(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at ?? undefined,
