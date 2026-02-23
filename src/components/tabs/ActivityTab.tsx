@@ -30,9 +30,10 @@ function formatTxDate(height: number, currentHeight: number, createdAt?: number)
   if (days === 1) return 'Yesterday'
   if (days < 7) return `${days}d ago`
   if (days < 30) return `${Math.floor(days / 7)}w ago`
-  return new Date(effectiveTs).toLocaleDateString(undefined, {
+  const txDate = new Date(effectiveTs)
+  return txDate.toLocaleDateString(undefined, {
     month: 'short', day: 'numeric',
-    ...(days > 365 ? { year: 'numeric' } : {})
+    ...(txDate.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {})
   })
 }
 

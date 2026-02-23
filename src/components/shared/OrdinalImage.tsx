@@ -2,6 +2,14 @@ import { useState, useCallback, useEffect, memo } from 'react'
 import { Image, FileText, Braces, Diamond } from 'lucide-react'
 import { getOrdinalContentUrl, isImageOrdinal } from '../../utils/ordinals'
 
+/**
+ * Module-level blob URL cache: origin → blob URL.
+ * Survives React re-renders AND unmount/remount from react-window virtualized scrolling.
+ * Without this, every re-render cascade from setOrdinalContentCache(new Map(...)) causes
+ * blob URLs to be recreated → <img src> changes → visible thumbnail flicker.
+ */
+const blobUrlCache = new Map<string, string>()
+
 interface OrdinalImageProps {
   origin: string | undefined
   contentType: string | undefined
@@ -34,12 +42,20 @@ export const OrdinalImage = memo(function OrdinalImage({
   const handleLoad = useCallback(() => setStatus('loaded'), [])
   const handleError = useCallback(() => setStatus('error'), [])
 
-  // Generate blob URL for cached images with proper lifecycle management.
-  // useEffect + useState (not useMemo) so we can revoke the old URL on cleanup,
-  // preventing memory leaks from orphaned blob references.
-  const [cachedImageUrl, setCachedImageUrl] = useState<string | undefined>()
+  // Generate blob URL for cached images — uses module-level cache to prevent flicker.
+  // On remount (from react-window scroll), the lazy initializer reads the cached URL
+  // so the <img> renders with the correct src immediately (no loading flash).
+  const [cachedImageUrl, setCachedImageUrl] = useState<string | undefined>(
+    () => (origin ? blobUrlCache.get(origin) : undefined)
+  )
   useEffect(() => {
     if (isImage && cachedContent?.contentData && cachedContent.contentData.length > 0) {
+      // Cache hit — reuse existing blob URL (no new blob creation, no flicker)
+      if (origin && blobUrlCache.has(origin)) {
+        setCachedImageUrl(blobUrlCache.get(origin))
+        return // No cleanup — module cache owns the URL lifetime
+      }
+
       try {
         // Use a sliced copy of the buffer — the Uint8Array may be a view into a
         // larger shared ArrayBuffer (e.g. from SQLite), so .buffer alone can include
@@ -47,16 +63,27 @@ export const OrdinalImage = memo(function OrdinalImage({
         const data = cachedContent.contentData
         const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
         const blob = new Blob([buf], { type: contentType || 'image/png' })
-        const url = URL.createObjectURL(blob)
-        setCachedImageUrl(url)
-        return () => URL.revokeObjectURL(url)
+        const blobUrl = URL.createObjectURL(blob)
+        if (origin) {
+          // Evict oldest entry if cache exceeds 500 (memory safety)
+          if (blobUrlCache.size > 500) {
+            const firstKey = blobUrlCache.keys().next().value
+            if (firstKey) {
+              URL.revokeObjectURL(blobUrlCache.get(firstKey)!)
+              blobUrlCache.delete(firstKey)
+            }
+          }
+          blobUrlCache.set(origin, blobUrl)
+        }
+        setCachedImageUrl(blobUrl)
+        // No cleanup return — blob URL is owned by the module cache, not this effect
       } catch {
         setCachedImageUrl(undefined)
       }
     } else {
       setCachedImageUrl(undefined)
     }
-  }, [isImage, cachedContent?.contentData, contentType])
+  }, [isImage, cachedContent?.contentData, contentType, origin])
 
   // Render text/JSON previews if we have cached content
   if ((isText || isJson) && cachedContent?.contentText) {
