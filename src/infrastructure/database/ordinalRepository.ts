@@ -155,6 +155,48 @@ export async function getCachedOrdinalContent(origin: string): Promise<{ content
 }
 
 /**
+ * Batch-load content for multiple ordinal origins in a single query (chunked).
+ * Replaces the sequential per-origin loop that caused 620+ individual DB queries
+ * and visible flicker during account switching.
+ */
+export async function getBatchOrdinalContent(
+  origins: string[]
+): Promise<Map<string, { contentData?: Uint8Array; contentText?: string; contentType?: string }>> {
+  const result = new Map<string, { contentData?: Uint8Array; contentText?: string; contentType?: string }>()
+  if (origins.length === 0) return result
+
+  const database = getDatabase()
+
+  try {
+    // Process in chunks of 200 to stay within SQLite parameter limits (max 999)
+    const CHUNK_SIZE = 200
+    for (let i = 0; i < origins.length; i += CHUNK_SIZE) {
+      const chunk = origins.slice(i, i + CHUNK_SIZE)
+      const placeholders = chunk.map((_, idx) => `$${idx + 1}`).join(', ')
+      const rows = await database.select<Pick<OrdinalCacheRow, 'origin' | 'content_data' | 'content_text' | 'content_type'>[]>(
+        `SELECT origin, content_data, content_text, content_type FROM ordinal_cache WHERE origin IN (${placeholders})`,
+        chunk
+      )
+
+      for (const row of rows) {
+        const contentData = parseContentData(row.content_data)
+        if (contentData || row.content_text) {
+          result.set(row.origin, {
+            contentData,
+            contentText: row.content_text ?? undefined,
+            contentType: row.content_type ?? undefined
+          })
+        }
+      }
+    }
+  } catch (_e) {
+    // Table may not exist yet
+  }
+
+  return result
+}
+
+/**
  * Ensure a minimal ordinal_cache row exists for a transferred ordinal.
  * Inserts a placeholder row (transferred=1) if none exists yet, so that
  * fetched content can be stored for historical activity tab display.

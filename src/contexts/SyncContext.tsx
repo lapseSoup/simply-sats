@@ -16,6 +16,7 @@ import {
   markOrdinalTransferred,
   getAllCachedOrdinalOrigins,
   getCachedOrdinalContent,
+  getBatchOrdinalContent,
   upsertOrdinalContent,
   hasOrdinalContent,
   getCachedOrdinals,
@@ -287,17 +288,13 @@ export function SyncProvider({ children }: SyncProviderProps) {
         setOrdinalsWithRef(dbOrdinals)
       }
 
-      // Load content previews — include ALL cached origins (transferred + owned)
-      // so activity tab thumbnails work for ordinals no longer in the wallet.
+      // Load content previews in a single batch query — include ALL cached origins
+      // (transferred + owned) so activity tab thumbnails work for ordinals no longer
+      // in the wallet. Batch loading avoids 620+ sequential DB queries that caused
+      // visible flicker and isCancelled() aborts during account switching.
       const allOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
-      const newCache = new Map<string, OrdinalContentEntry>()
-      for (const origin of allOrigins) {
-        if (isCancelled?.()) return
-        const content = await getCachedOrdinalContent(origin)
-        if (content && (content.contentData || content.contentText)) {
-          newCache.set(origin, content)
-        }
-      }
+      if (isCancelled?.()) return
+      const newCache = await getBatchOrdinalContent(allOrigins)
       contentCacheRef.current = newCache
       setOrdinalContentCache(new Map(newCache))
     } catch (e) {
@@ -592,14 +589,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
         // Use getAllCachedOrdinalOrigins (includes transferred=1 rows) so that
         // activity tab thumbnails work even for ordinals no longer owned.
         const allCachedOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
-        const newCache = new Map<string, OrdinalContentEntry>()
-        for (const origin of allCachedOrigins) {
-          if (isCancelled?.()) return
-          const content = await getCachedOrdinalContent(origin)
-          if (content && (content.contentData || content.contentText)) {
-            newCache.set(origin, content)
-          }
-        }
+        if (isCancelled?.()) return
+        const newCache = await getBatchOrdinalContent(allCachedOrigins)
         if (newCache.size > 0) {
           contentCacheRef.current = newCache
           setOrdinalContentCache(new Map(newCache))
@@ -616,6 +607,13 @@ export function SyncProvider({ children }: SyncProviderProps) {
           getOrdinals(wallet.identityAddress),
           ...derivedAddrs.map(d => getOrdinals(d.address))
         ])
+
+        const allOrdinalApiCallsSucceeded = ordinalResults.every(r => r.status === 'fulfilled')
+        if (!allOrdinalApiCallsSucceeded) {
+          syncLogger.warn('Some ordinal API calls failed — transfer detection disabled for this cycle', {
+            results: ordinalResults.map((r, i) => ({ index: i, status: r.status }))
+          })
+        }
 
         const ordinalArrays = ordinalResults.map((result, i) => {
           if (result.status === 'fulfilled') return result.value
@@ -682,7 +680,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
         }
 
         // Cache ordinal metadata to DB and fetch missing content in background
-        cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache, isCancelled ?? (() => false))
+        cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache, isCancelled ?? (() => false), allOrdinalApiCallsSucceeded)
       } catch (e) {
         syncLogger.error('Failed to fetch ordinals', e)
         partialErrors.push('ordinals')
@@ -791,7 +789,8 @@ async function cacheOrdinalsInBackground(
   activeAccountId: number | null,
   contentCacheRef: React.MutableRefObject<Map<string, OrdinalContentEntry>>,
   setOrdinalContentCache: React.Dispatch<React.SetStateAction<Map<string, OrdinalContentEntry>>>,
-  isCancelled: () => boolean
+  isCancelled: () => boolean,
+  allApiCallsSucceeded: boolean
 ): Promise<void> {
   // Guard: don't cache ordinals without a valid account ID (prevents cross-account contamination)
   if (!activeAccountId) return
@@ -817,18 +816,24 @@ async function cacheOrdinalsInBackground(
     }
     syncLogger.debug('Cached ordinal metadata', { count: allOrdinals.length })
 
-    // 1b. Mark transferred ordinals — any owned (transferred=0) cache entry whose
-    // origin is no longer returned by the API is assumed to have been transferred out.
-    // We mark it transferred=1 (NOT delete) so it stays available for historical
-    // display in the activity tab thumbnails and tx detail modal.
-    if (isCancelled()) return
-    const currentOrigins = new Set(allOrdinals.map(o => o.origin))
-    const ownedCachedRows = await getCachedOrdinals(activeAccountId)
-    for (const row of ownedCachedRows) {
-      if (!currentOrigins.has(row.origin)) {
-        await markOrdinalTransferred(row.origin)
-        syncLogger.debug('Marked ordinal as transferred in cache', { origin: row.origin })
+    // 1b. Mark transferred ordinals — only when ALL API calls succeeded.
+    // If any call failed, allOrdinals is a PARTIAL list and marking missing origins
+    // as transferred would corrupt the cache (e.g. marking 619 of 620 as transferred
+    // because only one address's API call succeeded). The next full sync will handle it.
+    if (allApiCallsSucceeded) {
+      if (isCancelled()) return
+      const currentOrigins = new Set(allOrdinals.map(o => o.origin))
+      const ownedCachedRows = await getCachedOrdinals(activeAccountId)
+      for (const row of ownedCachedRows) {
+        if (!currentOrigins.has(row.origin)) {
+          await markOrdinalTransferred(row.origin)
+          syncLogger.debug('Marked ordinal as transferred in cache', { origin: row.origin })
+        }
       }
+    } else {
+      syncLogger.info('Skipping transfer marking — not all ordinal API calls succeeded', {
+        ordinalCount: allOrdinals.length
+      })
     }
 
     // 2. Fetch missing content (up to 10 per cycle)
