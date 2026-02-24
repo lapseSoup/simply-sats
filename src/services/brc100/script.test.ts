@@ -52,9 +52,9 @@ describe('encodeScriptNum', () => {
     expect(result2).toBe('0350f80c')
   })
 
-  it('should encode negative numbers', () => {
-    // -1 should have sign bit set
-    expect(encodeScriptNum(-1)).toBe('0181')
+  it('should reject negative numbers', () => {
+    // S-50: Negative numbers are out of valid range for CLTV lock times
+    expect(() => encodeScriptNum(-1)).toThrow('out of valid range')
   })
 })
 

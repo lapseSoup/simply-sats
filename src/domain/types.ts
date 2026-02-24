@@ -137,6 +137,14 @@ export interface ExtendedUTXO extends UTXO {
   address: string
 }
 
+/**
+ * Convert a database UTXO (with lockingScript) to a wallet UTXO (with script).
+ * This mapping is repeated across many service and component files.
+ */
+export function toWalletUtxo(dbUtxo: { txid: string; vout: number; satoshis: number; lockingScript: string; address?: string }): UTXO {
+  return { txid: dbUtxo.txid, vout: dbUtxo.vout, satoshis: dbUtxo.satoshis, script: dbUtxo.lockingScript }
+}
+
 export interface DBUtxo {
   id?: number
   txid: string

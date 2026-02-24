@@ -76,7 +76,7 @@ interface TokensTabProps {
   onRefresh?: () => Promise<void>
 }
 
-export function TokensTab({ onRefresh }: TokensTabProps) {
+export const TokensTab = memo(function TokensTab({ onRefresh }: TokensTabProps) {
   const { tokenBalances, tokensSyncing: loading } = useWalletState()
   const { refreshTokens, handleSendToken } = useWalletActions()
   const { showToast } = useUI()
@@ -315,4 +315,4 @@ export function TokensTab({ onRefresh }: TokensTabProps) {
 
     </div>
   )
-}
+})

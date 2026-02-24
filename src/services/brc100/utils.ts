@@ -19,7 +19,10 @@ export async function getBlockHeight(): Promise<number> {
  * Generate a unique request ID
  */
 export function generateRequestId(): string {
-  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  const bytes = new Uint8Array(12)
+  crypto.getRandomValues(bytes)
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+  return `req_${Date.now()}_${hex}`
 }
 
 /**

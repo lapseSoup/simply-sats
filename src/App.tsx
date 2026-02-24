@@ -170,7 +170,7 @@ function WalletApp() {
     const handleNewPayment = (payment: PaymentNotification) => {
       logger.info('New payment received', { txid: payment.txid, amount: payment.amount })
       setNewPaymentAlert(payment)
-      showToast(`Received ${payment.amount?.toLocaleString() || 'unknown'} sats!`)
+      showToastRef.current(`Received ${payment.amount?.toLocaleString() || 'unknown'} sats!`)
       fetchDataRef.current()
       setTimeout(() => setNewPaymentAlert(null), 5000)
     }
@@ -190,7 +190,7 @@ function WalletApp() {
     return () => {
       stopListener?.()
     }
-  }, [wallet, showToast])
+  }, [wallet])
 
   // Coerce wallet to boolean: true when loaded, false when null.
   // Using this in deps instead of `wallet` directly prevents the effect from firing
@@ -249,7 +249,6 @@ function WalletApp() {
           setSyncPhaseRef.current('loading')
           await fetchDataRef.current()
           showToastRef.current('Wallet ready ✓', 'success')
-          setSyncPhaseRef.current(null)
         } else if (needsSync && isPostSwitch) {
           // Account was just switched to but has never been synced (e.g. discovered
           // account). Do a background sync — DB data was already loaded by the switch.
@@ -292,6 +291,7 @@ function WalletApp() {
         }
       } catch (e) {
         logger.error('Auto-sync pipeline failed', e)
+        setSyncPhaseRef.current(null) // B-40: Clear sync phase on error
       } finally {
         // Clear sync phase for the initial-sync (blocking) path.
         // Background sync manages its own phase in its own finally block.
@@ -322,6 +322,7 @@ function WalletApp() {
         const sessionPwd = getSessionPassword()
         ;(async () => {
           for (const account of otherAccounts) {
+            if (cancelled) break  // B-41: Stop syncing inactive accounts if superseded
             try {
               const keys = await getAccountKeys(account, sessionPwd)
               if (!keys) continue
@@ -360,16 +361,14 @@ function WalletApp() {
       // We peek first, then clear only when we're about to run discovery.
       // This ensures a cancelled invocation doesn't destroy the params.
       if (discoveryParams) {
-        // Clear the ref now that we've committed to running discovery
-        clearPendingDiscoveryRef.current()
-        // Brief cooldown to let DB writes from restore sync settle.
-        // Discovery uses Tauri's Rust reqwest client (not WKWebView), so
-        // CDN caching and rate limiting are less of a concern.
+        // B-47: Check cancellation before clearing params to prevent data loss
         await new Promise(resolve => setTimeout(resolve, 1000))
         if (cancelled) {
           logger.info('checkSync cancelled during pre-discovery cooldown')
           return
         }
+        // Now safe to clear — we're committed to running discovery
+        clearPendingDiscoveryRef.current()
         logger.info('Account discovery starting', {
           excludeAccountId: discoveryParams.excludeAccountId
         })
@@ -393,7 +392,8 @@ function WalletApp() {
             const sessionPwd = getSessionPassword()
             const { getAllAccounts: fetchAllAccounts } = await import('./services/accounts')
             const allAccounts = await fetchAllAccounts()
-            const newAccounts = allAccounts.filter(a => a.id !== activeAccountId)
+            const capturedAccountId = activeAccountId // B-49: Capture before async loop
+            const newAccounts = allAccounts.filter(a => a.id !== capturedAccountId)
             ;(async () => {
               for (const account of newAccounts) {
                 try {
@@ -469,19 +469,28 @@ function WalletApp() {
     if (!unlockConfirm) return
 
     const locksToUnlock = unlockConfirm === 'all' ? getUnlockableLocks() : [unlockConfirm]
+    let succeeded = 0
+    let failed = 0
 
     for (const lock of locksToUnlock) {
       setUnlocking(lock.txid)
       const result = await handleUnlock(lock)
       if (isOk(result)) {
+        succeeded++
         showToast(`Unlocked ${lock.satoshis.toLocaleString()} sats!`)
       } else {
+        failed++
         showToast(result.error || 'Unlock failed', 'error')
+        // B-45: Short-circuit on first network error to avoid wasting time
+        if (locksToUnlock.length > 1) break
       }
     }
 
     setUnlocking(null)
-    cancelUnlock()
+    // B-45: Only close modal if at least one unlock succeeded
+    if (succeeded > 0 || failed === 0) {
+      cancelUnlock()
+    }
   }, [unlockConfirm, getUnlockableLocks, handleUnlock, showToast, setUnlocking, cancelUnlock])
 
   const handleBrc100Approve = useCallback(() => {

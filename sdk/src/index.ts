@@ -204,6 +204,9 @@ export class SimplySats {
 
       // Verify response HMAC signature to detect tampered responses
       const signature = response.headers.get('X-Simply-Sats-Signature')
+      if (this.strictVerification && this.sessionToken && !signature) {
+        throw new SimplySatsError('Response signature missing — possible MITM attack', -32011)
+      }
       if (signature && this.sessionToken && typeof globalThis.crypto?.subtle !== 'undefined') {
         try {
           const key = await globalThis.crypto.subtle.importKey(
@@ -364,8 +367,10 @@ export class SimplySats {
     tags?: string[]
     limit?: number
     offset?: number
+    nonce?: string
   } = {}): Promise<ListOutputsResult> {
-    return this.request<ListOutputsResult>('listOutputs', options)
+    const { nonce, ...params } = options
+    return this.request<ListOutputsResult>('listOutputs', params, nonce)
   }
 
   // ==================== Timelock Operations ====================

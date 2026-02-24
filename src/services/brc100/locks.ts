@@ -8,7 +8,7 @@
 import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import { broadcastTransaction as infraBroadcast } from '../../infrastructure/api/broadcastService'
 import { brc100Logger } from '../logger'
-import type { WalletKeys, UTXO } from '../wallet'
+import type { WalletKeys } from '../wallet'
 import { getUTXOs, calculateTxFee, getWifForOperation } from '../wallet'
 import {
   addUTXO,
@@ -27,6 +27,7 @@ import {
   createScriptFromHex
 } from './script'
 import { type Result, ok, err } from '../../domain/types'
+import { selectCoins } from '../../domain/transaction/coinSelection'
 
 // Lock management - now uses database
 export async function getLocks(): Promise<LockedOutput[]> {
@@ -89,23 +90,17 @@ export async function createLockTransaction(
     const unlockBlock = currentHeight + blocks
 
     // Create CLTV locking script
-    const lockingScript = createCLTVLockingScript(keys.identityPubKey, unlockBlock)
+    // S-51: Use walletPubKey for CLTV to match unlock path which uses wallet key
+    const lockingScript = createCLTVLockingScript(keys.walletPubKey, unlockBlock)
 
     const tx = new Transaction()
 
     // Collect inputs
-    const inputsToUse: UTXO[] = []
-    let totalInput = 0
     const sourceLockingScript = new P2PKH().lock(fromAddress)
 
-    for (const utxo of utxos) {
-      inputsToUse.push(utxo)
-      totalInput += utxo.satoshis
-
-      if (totalInput >= satoshis + 200) break
-    }
-
-    if (totalInput < satoshis) {
+    // Q-52: Use domain coin selection instead of manual greedy loop
+    const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
+    if (!sufficient) {
       return err('Insufficient funds')
     }
 

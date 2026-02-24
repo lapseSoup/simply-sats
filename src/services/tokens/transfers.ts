@@ -9,6 +9,7 @@ import { Transaction, PrivateKey, P2PKH, Script } from '@bsv/sdk'
 import { tokenLogger } from '../logger'
 import { ok, err, type Result } from '../../domain/types'
 import { broadcastTransaction, calculateTxFee, type UTXO } from '../wallet'
+import { recordSentTransaction, markUtxosSpent } from '../sync'
 import type { TokenUTXO } from './fetching'
 import { getTokenUtxosForSend } from './fetching'
 
@@ -259,6 +260,28 @@ export async function transferToken(
     await tx.sign()
     const txid = await broadcastTransaction(tx)
 
+    // B-42: Track spent UTXOs and record transaction locally
+    // Mark funding and token UTXOs as spent to prevent double-spend on rapid follow-up sends
+    try {
+      const spentFundingOutpoints = fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+      await markUtxosSpent(spentFundingOutpoints, txid)
+
+      const spentTokenOutpoints = tokenInputsUsed.map(u => ({ txid: u.txid, vout: u.vout }))
+      await markUtxosSpent(spentTokenOutpoints, txid)
+
+      // Record the transaction so it appears in Activity tab immediately
+      await recordSentTransaction(
+        txid,
+        tx.toHex(),
+        `Token transfer: ${amount} ${ticker}`,
+        ['token-transfer'],
+        bsvChange < 0 ? 0 : bsvChange
+      )
+    } catch (trackingError) {
+      // Non-critical: next sync will discover the transaction
+      tokenLogger.warn('Failed to track token transfer locally', { txid, error: String(trackingError) })
+    }
+
     tokenLogger.info('Token transfer completed', { amount, ticker, toAddress, txid })
 
     return ok({ txid })
@@ -327,6 +350,22 @@ export async function sendToken(
         fundingUtxos,
         fallbackChange
       )
+    }
+
+    // B-43: Check if selected address has sufficient tokens before attempting transfer
+    const selectedTotal = tokenUtxos.reduce((sum, u) => sum + BigInt(u.amt), 0n)
+    const amountNeeded = BigInt(amount)
+    if (selectedTotal < amountNeeded) {
+      // Check if combined addresses would have enough
+      const combinedTotal = walletTotal + ordTotal
+      if (combinedTotal >= amountNeeded) {
+        return err(
+          `Tokens are split across wallet and ordinal addresses. ` +
+          `${useOrdWallet ? 'Ordinal' : 'Wallet'} address has ${selectedTotal.toString()} but needs ${amount}. ` +
+          `Please consolidate your tokens to one address first.`
+        )
+      }
+      return err(`Insufficient token balance. Have ${combinedTotal.toString()}, need ${amount}`)
     }
 
     return transferToken(

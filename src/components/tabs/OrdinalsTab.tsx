@@ -38,9 +38,10 @@ function getContentCategory(contentType: string | undefined): ContentCategory {
   return 'other'
 }
 
-export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
+export const OrdinalsTab = memo(function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
   // Note: _onTransferOrdinal is available for future use
-  const { ordinals, ordinalContentCache, loading } = useWalletState()
+  // cacheVersion (part of state context) triggers re-render when content cache updates
+  const { ordinals, contentCacheSnapshot, loading } = useWalletState()
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
@@ -259,7 +260,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
               key={ord.origin}
               ordinal={ord}
               onSelect={onSelectOrdinal}
-              cachedContent={ordinalContentCache.get(ord.origin)}
+              cachedContent={contentCacheSnapshot.get(ord.origin)}
             />
           ))}
         </div>
@@ -275,7 +276,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
               key={ord.origin}
               ordinal={ord}
               onSelect={onSelectOrdinal}
-              cachedContent={ordinalContentCache.get(ord.origin)}
+              cachedContent={contentCacheSnapshot.get(ord.origin)}
             />
           ))}
         </div>
@@ -284,7 +285,7 @@ export function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrd
     {showInscribeModal && <InscribeModal onClose={() => setShowInscribeModal(false)} />}
   </>
   )
-}
+})
 
 interface VirtualizedOrdinalListProps {
   ordinals: Ordinal[]

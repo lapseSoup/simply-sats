@@ -31,7 +31,8 @@ export type {
   EncryptDecryptParams,
   GetTaggedKeysParams,
   LockedOutput,
-  DiscoveredOutput
+  DiscoveredOutput,
+  ListedOutput
 } from './types'
 
 export {
@@ -47,7 +48,7 @@ export { RequestManager, getRequestManager, resetRequestManager } from './Reques
 export { setWalletKeys, getWalletKeys, hasWalletKeys, assertKeysMatchAccount } from './state'
 
 // Re-export signing operations
-export { signMessage, signData, verifySignature } from './signing'
+export { signMessage, signData, verifySignature, verifyDataSignature } from './signing'
 
 // Re-export cryptography operations
 export { encryptECIES, decryptECIES } from './cryptography'
@@ -75,7 +76,8 @@ export {
   resolvePublicKey,
   resolveListOutputs,
   discoverByIdentityKey,
-  discoverByAttributes
+  discoverByAttributes,
+  formatLockedOutput
 } from './outputs'
 
 // Re-export lock management
@@ -102,3 +104,6 @@ export {
   approveRequest,
   rejectRequest
 } from './actions'
+
+// Re-export handler execution
+export { executeApprovedRequest } from './handlers'

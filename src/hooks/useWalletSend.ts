@@ -29,6 +29,101 @@ import { walletLogger } from '../services/logger'
 import { ok, err, type Result, type WalletResult } from '../domain/types'
 import type { RecipientOutput } from '../domain/transaction/builder'
 
+/**
+ * Build an array of ExtendedUTXOs with correct per-address WIFs for multi-key spending.
+ * Resolves derived address child keys via BRC-42 key derivation and optionally
+ * fetches live UTXOs for derived addresses (skipped in coin-control mode).
+ *
+ * Shared by handleSend and handleSendMulti to eliminate duplicated key resolution logic.
+ */
+async function buildExtendedUtxos(
+  wallet: WalletKeys,
+  activeAccountId: number | null,
+  operationLabel: string,
+  selectedUtxos?: DatabaseUTXO[]
+): Promise<{ extendedUtxos: ExtendedUTXO[]; walletWif: string; derivedMap: Map<string, string> }> {
+  const derivedMap = new Map<string, string>() // address -> WIF
+
+  const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
+
+  // Build a map of derived address -> WIF for correct per-UTXO signing
+  const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
+  const identityWif = await getWifForOperation('identity', operationLabel, wallet)
+  for (const d of derivedAddrs) {
+    if (d.senderPubkey && d.invoiceNumber) {
+      // Re-derive the child private key from (identityKey + senderPubkey + invoiceNumber)
+      // so we never need the WIF stored in the database
+      try {
+        const childKey = deriveChildPrivateKey(
+          PrivateKey.fromWif(identityWif),
+          PublicKey.fromString(d.senderPubkey),
+          d.invoiceNumber
+        )
+        derivedMap.set(d.address, childKey.toWif())
+      } catch (e) {
+        walletLogger.warn('Failed to re-derive child key for derived address', {
+          address: d.address,
+          error: e instanceof Error ? e.message : String(e)
+        })
+      }
+    } else if (d.privateKeyWif) {
+      // Legacy: support old records that still have WIF stored
+      derivedMap.set(d.address, d.privateKeyWif)
+    }
+  }
+
+  const walletWif = await getWifForOperation('wallet', operationLabel, wallet)
+
+  const extendedUtxos: ExtendedUTXO[] = spendableUtxos.map(u => {
+    // Look up the correct WIF: derived address WIF, or fall back to wallet WIF
+    const utxoAddress = u.address || wallet.walletAddress
+    const wif = derivedMap.get(utxoAddress) || walletWif
+    return {
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.lockingScript || '',
+      wif,
+      address: utxoAddress
+    }
+  })
+
+  // Include derived address UTXOs only when NOT in coin control mode
+  if (!selectedUtxos) {
+    for (const derived of derivedAddrs) {
+      const derivedWif = derivedMap.get(derived.address)
+      if (derivedWif) {
+        try {
+          const derivedUtxos = await getUTXOs(derived.address)
+          for (const u of derivedUtxos) {
+            extendedUtxos.push({
+              ...u,
+              wif: derivedWif,
+              address: derived.address
+            })
+          }
+        } catch (e) {
+          walletLogger.warn('Failed to fetch derived address UTXOs, skipping', {
+            address: derived.address,
+            error: e instanceof Error ? e.message : String(e)
+          })
+        }
+      }
+    }
+  }
+
+  // Deduplicate UTXOs by txid:vout to prevent double-spend attempts
+  const seen = new Set<string>()
+  const deduplicatedUtxos = extendedUtxos.filter(u => {
+    const key = `${u.txid}:${u.vout}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  return { extendedUtxos: deduplicatedUtxos, walletWif, derivedMap }
+}
+
 interface UseWalletSendOptions {
   wallet: WalletKeys | null
   activeAccountId: number | null
@@ -68,86 +163,12 @@ export function useWalletSend({
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
     if (!wallet) return err('No wallet loaded')
 
-    const derivedMap = new Map<string, string>() // address → WIF
+    let derivedMap: Map<string, string> | undefined
     try {
-      const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
+      const result = await buildExtendedUtxos(wallet, activeAccountId, 'sendBSV', selectedUtxos)
+      derivedMap = result.derivedMap
 
-      // Build a map of derived address → WIF for correct per-UTXO signing
-      const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
-      const identityWif = await getWifForOperation('identity', 'sendBSV-deriveChildKey', wallet)
-      for (const d of derivedAddrs) {
-        if (d.senderPubkey && d.invoiceNumber) {
-          // Re-derive the child private key from (identityKey + senderPubkey + invoiceNumber)
-          // so we never need the WIF stored in the database
-          try {
-            const childKey = deriveChildPrivateKey(
-              PrivateKey.fromWif(identityWif),
-              PublicKey.fromString(d.senderPubkey),
-              d.invoiceNumber
-            )
-            derivedMap.set(d.address, childKey.toWif())
-          } catch (e) {
-            walletLogger.warn('Failed to re-derive child key for derived address', {
-              address: d.address,
-              error: e instanceof Error ? e.message : String(e)
-            })
-          }
-        } else if (d.privateKeyWif) {
-          // Legacy: support old records that still have WIF stored
-          derivedMap.set(d.address, d.privateKeyWif)
-        }
-      }
-
-      const walletWif = await getWifForOperation('wallet', 'sendBSV', wallet)
-
-      const extendedUtxos: ExtendedUTXO[] = spendableUtxos.map(u => {
-        // Look up the correct WIF: derived address WIF, or fall back to wallet WIF
-        const utxoAddress = u.address || wallet.walletAddress
-        const wif = derivedMap.get(utxoAddress) || walletWif
-        return {
-          txid: u.txid,
-          vout: u.vout,
-          satoshis: u.satoshis,
-          script: u.lockingScript || '',
-          wif,
-          address: utxoAddress
-        }
-      })
-
-      // Include derived address UTXOs only when NOT in coin control mode
-      if (!selectedUtxos) {
-        for (const derived of derivedAddrs) {
-          const derivedWif = derivedMap.get(derived.address)
-          if (derivedWif) {
-            try {
-              const derivedUtxos = await getUTXOs(derived.address)
-              for (const u of derivedUtxos) {
-                extendedUtxos.push({
-                  ...u,
-                  wif: derivedWif,
-                  address: derived.address
-                })
-              }
-            } catch (e) {
-              walletLogger.warn('Failed to fetch derived address UTXOs, skipping', {
-                address: derived.address,
-                error: e instanceof Error ? e.message : String(e)
-              })
-            }
-          }
-        }
-      }
-
-      // Deduplicate UTXOs by txid:vout to prevent double-spend attempts
-      const seen = new Set<string>()
-      const deduplicatedUtxos = extendedUtxos.filter(u => {
-        const key = `${u.txid}:${u.vout}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-
-      const sendResult = await sendBSVMultiKey(walletWif, address, amountSats, deduplicatedUtxos, activeAccountId ?? undefined)
+      const sendResult = await sendBSVMultiKey(result.walletWif, address, amountSats, result.extendedUtxos, activeAccountId ?? undefined)
       if (!sendResult.ok) {
         return err(sendResult.error.message)
       }
@@ -159,7 +180,7 @@ export function useWalletSend({
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Send failed')
     } finally {
-      derivedMap.clear()
+      derivedMap?.clear()
     }
   }, [wallet, fetchData, activeAccountId, syncInactiveAccountsBackground])
 
@@ -167,76 +188,13 @@ export function useWalletSend({
   const handleSendMulti = useCallback(async (recipients: RecipientOutput[], selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
     if (!wallet) return err('No wallet loaded')
 
-    const derivedMap = new Map<string, string>() // address → WIF
+    let derivedMap: Map<string, string> | undefined
     try {
-      const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
-
-      const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
-      const identityWif = await getWifForOperation('identity', 'sendBSVMulti-deriveChildKey', wallet)
-      for (const d of derivedAddrs) {
-        if (d.senderPubkey && d.invoiceNumber) {
-          try {
-            const childKey = deriveChildPrivateKey(
-              PrivateKey.fromWif(identityWif),
-              PublicKey.fromString(d.senderPubkey),
-              d.invoiceNumber
-            )
-            derivedMap.set(d.address, childKey.toWif())
-          } catch (e) {
-            walletLogger.warn('Failed to re-derive child key for derived address', {
-              address: d.address,
-              error: e instanceof Error ? e.message : String(e)
-            })
-          }
-        } else if (d.privateKeyWif) {
-          derivedMap.set(d.address, d.privateKeyWif)
-        }
-      }
-
-      const walletWif = await getWifForOperation('wallet', 'sendBSVMulti', wallet)
-
-      const extendedUtxos = spendableUtxos.map(u => {
-        const utxoAddress = u.address || wallet.walletAddress
-        const wif = derivedMap.get(utxoAddress) || walletWif
-        return {
-          txid: u.txid,
-          vout: u.vout,
-          satoshis: u.satoshis,
-          script: u.lockingScript || '',
-          wif,
-          address: utxoAddress
-        }
-      })
-
-      if (!selectedUtxos) {
-        for (const derived of derivedAddrs) {
-          const derivedWif = derivedMap.get(derived.address)
-          if (derivedWif) {
-            try {
-              const derivedUtxos = await getUTXOs(derived.address)
-              for (const u of derivedUtxos) {
-                extendedUtxos.push({ ...u, wif: derivedWif, address: derived.address })
-              }
-            } catch (e) {
-              walletLogger.warn('Failed to fetch derived address UTXOs, skipping', {
-                address: derived.address,
-                error: e instanceof Error ? e.message : String(e)
-              })
-            }
-          }
-        }
-      }
-
-      const seen = new Set<string>()
-      const deduplicatedUtxos = extendedUtxos.filter(u => {
-        const key = `${u.txid}:${u.vout}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
+      const result = await buildExtendedUtxos(wallet, activeAccountId, 'sendBSVMulti', selectedUtxos)
+      derivedMap = result.derivedMap
 
       const totalSent = recipients.reduce((sum, r) => sum + r.satoshis, 0)
-      const sendResult = await sendBSVMultiOutput(walletWif, recipients, deduplicatedUtxos, activeAccountId ?? undefined)
+      const sendResult = await sendBSVMultiOutput(result.walletWif, recipients, result.extendedUtxos, activeAccountId ?? undefined)
       if (!sendResult.ok) {
         return err(sendResult.error.message)
       }
@@ -248,7 +206,7 @@ export function useWalletSend({
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Multi-recipient send failed')
     } finally {
-      derivedMap.clear()
+      derivedMap?.clear()
     }
   }, [wallet, fetchData, activeAccountId, syncInactiveAccountsBackground])
 

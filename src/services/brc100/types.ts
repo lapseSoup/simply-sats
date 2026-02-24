@@ -140,7 +140,9 @@ export interface DiscoveredOutput {
 }
 
 /**
- * Helper to safely get typed params from a request
+ * Extract typed params from a BRC-100 request.
+ * WARNING: This provides compile-time safety only. Callers MUST validate
+ * params at runtime before use — request.params comes from external input.
  */
 export function getParams<T>(request: BRC100Request): T {
   return (request.params || {}) as T

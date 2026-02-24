@@ -15,11 +15,7 @@ import type { WalletKeys } from '../domain/types'
 import { createWocClient } from '../infrastructure/api/wocClient'
 import { createAccount, switchAccount, getAccountByIdentity } from './accounts'
 import { accountLogger } from './logger'
-
-/** True when running inside the Tauri desktop shell. */
-function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-}
+import { isTauri } from '../utils/tauri'
 
 /**
  * Check address balance via the Rust backend (bypasses WKWebView fetch).

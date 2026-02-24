@@ -27,24 +27,7 @@
  */
 
 import { cryptoLogger } from './logger'
-
-// Use Rust backend for encryption when running in Tauri (keys stay in native memory).
-// Falls back to Web Crypto API for browser dev mode and tests.
-function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-}
-
-// Lazy-load Tauri invoke to avoid import errors in browser/test environments
-const TAURI_COMMAND_TIMEOUT_MS = 30_000
-
-async function tauriInvoke<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
-  const { invoke } = await import('@tauri-apps/api/core')
-  const result = invoke<T>(cmd, args)
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`Tauri command '${cmd}' timed out after ${TAURI_COMMAND_TIMEOUT_MS}ms`)), TAURI_COMMAND_TIMEOUT_MS)
-  )
-  return Promise.race([result, timeout])
-}
+import { isTauri, tauriInvoke } from '../utils/tauri'
 
 // Use Web Crypto API (available in both browser and Tauri)
 // Using a getter function allows tests to override globalThis.crypto
@@ -273,6 +256,8 @@ export function isEncryptedData(data: unknown): data is EncryptedData {
  * (the old insecure format using btoa)
  */
 export function isLegacyEncrypted(data: string): boolean {
+  // S-60: Reject suspiciously large inputs before parsing
+  if (data.length > 10000) return false
   try {
     // Try to decode as base64
     const decoded = atob(data)

@@ -5,6 +5,7 @@ import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { consolidateUtxos, calculateTxFee } from '../../services/wallet'
 import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
+import { toWalletUtxo } from '../../domain/types'
 import { uiLogger } from '../../services/logger'
 
 interface ConsolidateModalProps {
@@ -46,12 +47,7 @@ export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModal
     setError(null)
 
     // Prepare UTXOs for consolidation
-    const utxoIds = utxos.map(u => ({
-      txid: u.txid,
-      vout: u.vout,
-      satoshis: u.satoshis,
-      script: u.lockingScript
-    }))
+    const utxoIds = utxos.map(toWalletUtxo)
 
     // S-21: Transaction is built and signed entirely in Rust via the key store.
     // No WIF is retrieved or passed through the JS context.

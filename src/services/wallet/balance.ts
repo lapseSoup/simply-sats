@@ -10,6 +10,7 @@ import {
   BASKETS
 } from '../sync'
 import { btcToSatoshis } from '../../utils/satoshiConversion'
+import { toWalletUtxo } from '../../domain/types'
 
 /**
  * Get balance from WhatsOnChain (uses wocClient infrastructure)
@@ -38,12 +39,7 @@ export async function getUTXOsFromDB(basket = BASKETS.DEFAULT, accountId?: numbe
   // "DB error" (thrown exception). Swallowing errors causes the UI to show
   // "empty wallet" when the real problem is a database failure.
   const dbUtxos = await getSpendableUtxosFromDatabase(basket, accountId)
-  return dbUtxos.map(u => ({
-    txid: u.txid,
-    vout: u.vout,
-    satoshis: u.satoshis,
-    script: u.lockingScript
-  }))
+  return dbUtxos.map(toWalletUtxo)
 }
 
 /**

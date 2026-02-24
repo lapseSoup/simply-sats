@@ -6,7 +6,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode, type SetStateAction, type MutableRefObject } from 'react'
-import type { WalletKeys, LockedUTXO, UTXO } from '../services/wallet'
+import type { WalletKeys, LockedUTXO } from '../services/wallet'
 import { getUTXOsFromDB, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
 import { ok, err, type WalletResult } from '../domain/types'
 import { useNetwork } from './NetworkContext'
@@ -44,8 +44,7 @@ interface LocksContextType {
 
   // Detection helper (called from SyncContext)
   detectLocks: (
-    wallet: WalletKeys,
-    utxos?: UTXO[]
+    wallet: WalletKeys
   ) => Promise<LockedUTXO[]>
 }
 
@@ -92,12 +91,9 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
   // Detect locked UTXOs
   const detectLocks = useCallback(async (
-    wallet: WalletKeys,
-    _providedUtxos?: UTXO[]
+    wallet: WalletKeys
   ): Promise<LockedUTXO[]> => {
     try {
-      // Note: providedUtxos is passed but detectLockedUtxos fetches its own UTXOs
-      // Keeping the parameter for potential future optimization
       const detectedLocks = await detectLockedUtxos(
         wallet.walletAddress,
         wallet.walletPubKey,

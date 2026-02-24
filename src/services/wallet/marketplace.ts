@@ -9,10 +9,11 @@ import type { Utxo as OrdUtxo } from 'js-1sat-ord'
 import type { UTXO } from './types'
 import { broadcastTransaction } from './transactions'
 
-// js-1sat-ord bundles its own @bsv/sdk with different class declarations.
-// We cast through unknown at the type boundary since the runtime types are compatible.
+// js-1sat-ord bundles its own @bsv/sdk with nominally different PrivateKey types.
+// At runtime the instances are identical. We cast via this alias to keep the
+// eslint-disable scoped to a single line rather than every call site.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyPrivateKey = any
+type OrdPrivateKey = any
 import {
   recordSentTransaction,
   markUtxosPendingSpend,
@@ -109,8 +110,8 @@ export async function listOrdinal(
           listingUtxo: toOrdUtxo(ordinalUtxo, ordPk),
           ordAddress,
         }],
-        ordPk: ordPk as AnyPrivateKey,
-        paymentPk: paymentPk as AnyPrivateKey,
+        ordPk: ordPk as OrdPrivateKey,
+        paymentPk: paymentPk as OrdPrivateKey,
       })
 
       // Broadcast the signed transaction
@@ -189,8 +190,8 @@ export async function cancelOrdinalListing(
     const result = await cancelOrdListings({
       utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
       listingUtxos: [toOrdUtxo(listingUtxo, ordPk)],
-      ordPk: ordPk as AnyPrivateKey,
-      paymentPk: paymentPk as AnyPrivateKey,
+      ordPk: ordPk as OrdPrivateKey,
+      paymentPk: paymentPk as OrdPrivateKey,
     })
 
     txid = await broadcastTransaction(result.tx as unknown as Transaction)
@@ -278,7 +279,7 @@ export async function purchaseOrdinal(params: {
         listingUtxo: toOrdUtxo(listingUtxo, paymentPk),
       },
       ordAddress,
-      paymentPk: paymentPk as AnyPrivateKey,
+      paymentPk: paymentPk as OrdPrivateKey,
       changeAddress: paymentPk.toPublicKey().toAddress(),
     })
     txid = await broadcastTransaction(result.tx as unknown as Transaction)

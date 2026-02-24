@@ -120,7 +120,7 @@ function makeOptions() {
     setUtxos: vi.fn(),
     setOrdinalsWithRef: vi.fn(),
     setSyncError: vi.fn(),
-    setOrdinalContentCache: vi.fn(),
+    bumpCacheVersion: vi.fn(),
     contentCacheRef,
     ordinalsRef,
   }
@@ -171,7 +171,10 @@ describe('useSyncData', () => {
       expect(mockedGetBalanceFromDatabase).not.toHaveBeenCalled()
     })
 
-    it('returns early when activeAccountId is 0 (falsy)', async () => {
+    it('treats activeAccountId 0 as valid (not falsy)', async () => {
+      mockedGetBalanceFromDatabase
+        .mockResolvedValueOnce(5000)
+        .mockResolvedValueOnce(3000)
       const opts = makeOptions()
       const { result } = renderHook(() => useSyncData(opts))
 
@@ -179,7 +182,8 @@ describe('useSyncData', () => {
         await result.current.fetchDataFromDB(makeWalletKeys(), 0, vi.fn())
       })
 
-      expect(mockedGetBalanceFromDatabase).not.toHaveBeenCalled()
+      // B-46: Account ID 0 is valid (== null check, not !id)
+      expect(mockedGetBalanceFromDatabase).toHaveBeenCalled()
     })
 
     it('loads balance from DB and sets it', async () => {
@@ -378,7 +382,7 @@ describe('useSyncData', () => {
       })
 
       expect(opts.contentCacheRef.current).toBe(contentMap)
-      expect(opts.setOrdinalContentCache).toHaveBeenCalledTimes(1)
+      expect(opts.bumpCacheVersion).toHaveBeenCalledTimes(1)
     })
 
     it('does not set non-finite balance', async () => {

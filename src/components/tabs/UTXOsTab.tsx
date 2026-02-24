@@ -73,7 +73,7 @@ const UTXORow = memo(function UTXORow({
   )
 })
 
-export function UTXOsTab() {
+export const UTXOsTab = memo(function UTXOsTab() {
   const { activeAccountId } = useWalletState()
   const { fetchData } = useWalletActions()
   const { formatUSD } = useUI()
@@ -400,4 +400,4 @@ export function UTXOsTab() {
       )}
     </div>
   )
-}
+})

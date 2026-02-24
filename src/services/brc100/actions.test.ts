@@ -373,7 +373,7 @@ describe('BRC-100 Actions', () => {
         {
           id: 'req8',
           type: 'createSignature',
-          params: { data: 'hello world' },
+          params: { data: Array.from(Buffer.from('hello world')) },
         },
         mockKeys,
         true
@@ -392,7 +392,7 @@ describe('BRC-100 Actions', () => {
         {
           id: 'req8b',
           type: 'createSignature',
-          params: { data: 'hello world' },
+          params: { data: Array.from(Buffer.from('hello world')) },
         },
         mockKeys,
         true
@@ -400,6 +400,21 @@ describe('BRC-100 Actions', () => {
 
       expect(response.error).toBeDefined()
       expect(response.error!.message).toContain('Self-verification')
+    })
+
+    it('should reject non-byte-array data', async () => {
+      const response = await handleBRC100Request(
+        {
+          id: 'req8c',
+          type: 'createSignature',
+          params: { data: 'hello world' },
+        },
+        mockKeys,
+        true
+      )
+
+      expect(response.error).toBeDefined()
+      expect(response.error!.message).toContain('data must be an array of bytes')
     })
   })
 
@@ -414,7 +429,7 @@ describe('BRC-100 Actions', () => {
         {
           id: 'req9',
           type: 'createSignature',
-          params: { data: 'hello' },
+          params: { data: Array.from(Buffer.from('hello')) },
         },
         mockKeys,
         false // not auto-approved

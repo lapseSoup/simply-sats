@@ -33,6 +33,7 @@ import { getRequestManager } from './RequestManager'
 import { signData, verifyDataSignature } from './signing'
 import { encryptECIES, decryptECIES } from './cryptography'
 import { getBlockHeight } from './utils'
+import { toWalletUtxo } from '../../domain/types'
 import { resolvePublicKey } from './outputs'
 import { createLockTransaction } from './locks'
 import { buildAndBroadcastAction } from './formatting'
@@ -75,12 +76,22 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
   switch (request.type) {
     case 'getPublicKey': {
       const params = getParams<GetPublicKeyParams>(request)
+      // S-43: Runtime validation for getPublicKey params
+      if (params.identityKey !== undefined && typeof params.identityKey !== 'boolean') {
+        response.error = { code: -32602, message: 'identityKey must be a boolean' }
+        break
+      }
       response.result = { publicKey: resolvePublicKey(keys, params) }
       break
     }
 
     case 'createSignature': {
       const sigRequest = getParams<SignatureRequest>(request)
+      // S-43: Runtime validation for createSignature params
+      if (!Array.isArray(sigRequest.data) || !sigRequest.data.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 255)) {
+        response.error = { code: -32602, message: 'data must be an array of bytes (0-255)' }
+        break
+      }
       // signData uses _from_store in Tauri; keys only needed for JS fallback
       const signature = await signData(keys, sigRequest.data, 'identity')
 
@@ -189,16 +200,16 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         }
 
         // Convert database UTXOs to wallet UTXOs (lockingScript -> script)
-        const walletUtxos = dbUtxos.map(u => ({
-          txid: u.txid,
-          vout: u.vout,
-          satoshis: u.satoshis,
-          script: u.lockingScript
-        }))
+        const walletUtxos = dbUtxos.map(toWalletUtxo)
 
         // Determine basket based on app metadata or origin
         // Use wrootz_locks for wrootz app, otherwise default to 'locks'
-        const isWrootzApp = lockMetadata.app === 'wrootz' || request.origin?.includes('wrootz')
+        // S-45: Exact hostname match instead of permissive substring
+        const isWrootzApp = lockMetadata.app === 'wrootz' || (() => {
+          try {
+            return request.origin ? new URL(request.origin).hostname.endsWith('wrootz.com') : false
+          } catch { return false }
+        })()
         const lockBasket = isWrootzApp ? 'wrootz_locks' : 'locks'
 
         // Use the wallet's native lockBSV function (OP_PUSH_TX)
@@ -346,6 +357,11 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       // ECIES encryption using counterparty's public key
       // Delegates to cryptography.ts which uses Rust _from_store commands in Tauri
       const params = getParams<EncryptDecryptParams>(request)
+      // S-43: Validate plaintext is a byte array before processing
+      if (params.plaintext && (!Array.isArray(params.plaintext) || !params.plaintext.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 255))) {
+        response.error = { code: -32602, message: 'plaintext must be an array of bytes (0-255)' }
+        break
+      }
       const plaintext = params.plaintext ? new TextDecoder().decode(new Uint8Array(params.plaintext)) : undefined
       const recipientPubKey = params.counterparty
 
@@ -392,6 +408,12 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         break
       }
 
+      // S-42: Validate ciphertext is a byte array before ECIES decrypt
+      if (!Array.isArray(ciphertext) || !ciphertext.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 255)) {
+        response.error = { code: -32602, message: 'ciphertext must be an array of bytes (0-255)' }
+        break
+      }
+
       if (!senderPubKey) {
         response.error = { code: -32602, message: 'Missing counterparty/senderPublicKey parameter' }
         break
@@ -412,13 +434,13 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
     case 'getTaggedKeys': {
       // Derive tagged keys for app-specific use
       const params = getParams<GetTaggedKeysParams>(request)
-      const label = params.tag
-      const keyIds = ['default']
-
-      if (!label) {
-        response.error = { code: -32602, message: 'Missing label parameter' }
+      // S-43: Runtime validation for getTaggedKeys params
+      if (!params.tag || typeof params.tag !== 'string') {
+        response.error = { code: -32602, message: 'tag must be a non-empty string' }
         break
       }
+      const label = params.tag
+      const keyIds = ['default']
 
       try {
         const identityWif = await getWifForOperation('identity', 'getTaggedKeys', keys)

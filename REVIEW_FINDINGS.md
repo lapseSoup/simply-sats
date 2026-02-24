@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-02-23 (v16 / Review #16 — Architectural Refactoring Review)
-**Full report:** `docs/reviews/2026-02-23-full-review-v16.md`
-**Rating:** 8.2 / 10 (down from 9.7 — 55 new findings from major refactoring review; 6 prior issues fixed)
-**Review #16 summary:** Review of major architectural refactoring: monolith splitting (sync, tokens, BRC-100, locks), hook extraction, multi-account rewrite. 55 new findings (1 critical, 10 high, 27 medium, 17 low). BRC-100 handler account scoping (S-29), auto-approve bypass (S-30), non-atomic account creation (B-23), and locks.ts duplication (A-19) are the most urgent.
+**Latest review:** 2026-02-24 (v17 / Review #17 — Comprehensive Deep Review)
+**Full report:** `docs/reviews/2026-02-24-full-review-v17.md`
+**Rating:** 7.0 / 10 (down from 8.2 — 46 new findings from deep security + bug + quality review)
+**Review #17 summary:** Full four-phase review: security audit, bug detection, architecture, code quality. 46 new findings (0 critical, 4 high, 26 medium, 16 low). Key discoveries: BRC-100 `getParams` has zero runtime validation (S-43), `get_wif_for_operation` exposes raw WIFs to JS (S-47), token transfers have no local state tracking (B-42), CLTV lock key mismatch (S-51). All v16 fixes verified.
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -60,6 +60,10 @@
 | A-19 | ✅ Fixed (v16) | `wallet/locks.ts` (839→31 LOC) | locks.ts NOT cleaned up after split. **Fix:** Rewritten as 31-line barrel re-export from `lockCreation`, `lockUnlocking`, `lockQueries` |
 | A-20 | ✅ Fixed (v16) | `wallet/lockCreation.ts`, `brc100/script.ts` | `createWrootzOpReturn` duplicated across 3 files. **Fix:** Removed local copy from lockCreation.ts, now imports from `brc100/script` with type adapter |
 | Q-27 | ✅ Fixed (v16) | `lockUnlocking.ts` | `unlockBSV` and `generateUnlockTxHex` share ~80 lines of identical code. **Fix:** Extracted `buildUnlockTransaction()` shared helper, both functions delegate to it |
+| S-43 | 🟠 Open-High | `brc100/types.ts:145` | `getParams<T>()` provides zero runtime type safety — all BRC-100 params are unvalidated casts from external input |
+| S-47 | 🟠 Open-High | `src-tauri/key_store.rs:398` | `get_wif_for_operation` returns raw WIF private keys to JavaScript — XSS extracts all keys |
+| B-42 | 🟠 Open-High | `tokens/transfers.ts:108-270` | Token transfer never records transaction or marks UTXOs spent — double-spend risk on rapid follow-up sends |
+| B-43 | 🟠 Open-High | `tokens/transfers.ts:275-348` | Token send cannot combine UTXOs from both wallet and ord addresses — user sees balance but send fails |
 | S-17 | 🟠 Accepted | `secureStorage.ts:21-23` | `SENSITIVE_KEYS` empty — accepted risk: XSS in Tauri requires code exec |
 | A-4 | ✅ Fixed (v5) | `AppProviders.tsx` | All providers wrapped in ErrorBoundary |
 | A-5 | ✅ Fixed (v5) | `infrastructure/api/wocClient.ts` | Retry/backoff logic now in httpClient |
@@ -98,7 +102,32 @@
 | S-27 | 🟡 Open-Medium | `sdk/src/index.ts:358-364` | SDK `listOutputs()` doesn't send CSRF nonce, but server requires them — external SDK consumers get auth failures |
 | B-21 | ✅ Fixed (v16) | `useSyncData.ts:369-371` | Partial ordinal display on API failure — now uses `allOrdinalApiCallsSucceeded` flag to guard DB-to-API replacement |
 | A-17 | ✅ Fixed (v16) | `sync/`, `tokens/`, `brc100/`, `wallet/lock*` | All four monolithic files split into focused modules. `sync.ts` → 4 modules, `tokens.ts` → 4 modules, `actions.ts` → 3 modules, `locks.ts` → 3 modules |
-| Q-24 | 🟡 Open-Medium | `src/hooks/` | 11 of 16 hooks have zero test coverage (was 13/17). New tests: `useAccountSwitching`, `useSyncData`, `useOrdinalCache` added. Still untested: `useWalletSend`, `useWalletLock`, `useBRC100`, `useSyncOrchestration`, `useWalletInit`, + 6 others |
+| S-42 | 🟡 Open-Medium | `handlers.ts:401` | `ciphertext as number[]` type assertion — no runtime validation before ECIES decryption |
+| S-44 | 🟡 Open-Medium | `handlers.ts:437` | `request.origin` unsanitized in tagged key derivation — ambiguous tag string allows collision |
+| S-46 | 🟡 Open-Medium | `brc100/utils.ts:21` | `Math.random()` for request IDs — not cryptographically secure |
+| S-48 | 🟡 Open-Medium | `key_store.rs` | No rate limiting on Tauri IPC commands — unlimited signing in XSS scenario |
+| S-49 | 🟡 Open-Medium | `sdk/index.ts:207` | HMAC verification silently skipped when signature header stripped — MITM bypass |
+| S-50 | 🟡 Open-Medium | `brc100/script.ts:12` | `encodeScriptNum` integer overflow for lock times above 2^31 |
+| S-51 | 🟡 Open-Medium | `brc100/locks.ts:92` | CLTV lock uses `identityPubKey` but unlock path expects `walletPubKey` — key mismatch |
+| S-53 | 🟡 Open-Medium | `key_store.rs:103` | Raw mnemonic crosses IPC boundary into Rust — lives in JS heap |
+| S-57 | 🟡 Open-Medium | `keyDerivation.ts:471` | `getKnownTaggedKey` returns root private keys for well-known labels like "yours" |
+| S-58 | 🟡 Open-Medium | `handlers.ts:72` | No per-origin permission scoping — approved app gets full wallet access |
+| S-59 | 🟡 Open-Medium | `lib.rs:582` | Session token accessible to any JavaScript context via Tauri command |
+| B-39 | 🟡 Open-Medium | `App.tsx:165-193` | Payment listener not cleaned up on effect re-fire — orphaned listeners, duplicate alerts |
+| B-41 | 🟡 Open-Medium | `App.tsx:320-343` | Background sync for inactive accounts ignores `cancelled` flag after account switch |
+| B-45 | 🟡 Open-Medium | `App.tsx:468-485` | "Unlock All" doesn't short-circuit on network errors, always closes modal |
+| B-47 | 🟡 Open-Medium | `App.tsx:362-372` | Discovery params cleared BEFORE cancellation check — concurrent switches lose discovery |
+| B-53 | 🟡 Open-Medium | `utxoRepository.ts:703-759` | `reassignAccountData` steals data from legitimate account 1 |
+| A-30 | 🟡 Open-Medium | `AppProviders.tsx:58-65` | JSX indentation misalignment — visual nesting doesn't match logical nesting |
+| A-31 | 🟡 Open-Medium | `brc100/index.ts` | Barrel index missing 5+ exports (`verifyDataSignature`, `buildAndBroadcastAction`, etc.) |
+| A-32 | 🟡 Open-Medium | 8 files | `isTauri()` function copy-pasted across 8 files — DRY violation |
+| Q-42 | 🟡 Open-Medium | 10+ files | UTXO `lockingScript`→`script` mapping repeated 10+ times — extract `toWalletUtxo()` |
+| Q-43 | 🟡 Open-Medium | `useWalletSend.ts` | Derived address key resolution duplicated in handleSend/handleSendMulti (~70 lines each) |
+| Q-44 | 🟡 Open-Medium | All components | Zero components use `React.memo` — every state change re-renders all tabs |
+| Q-46 | 🟡 Open-Medium | `src/contexts/` | 6 of 9 context providers lack tests (WalletContext, SyncContext, AccountsContext, etc.) |
+| Q-49 | 🟡 Open-Medium | `SyncContext.tsx:130` | `ordinalContentCache` as `useState<Map>` causes re-render on every cache entry |
+| Q-52 | 🟡 Open-Medium | `brc100/locks.ts:97-106` | Manual greedy coin selection instead of domain `selectCoins()` — bug risk |
+| Q-24 | 🟡 Open-Medium | `src/hooks/` | 12 of 17 hooks have zero test coverage (was 11/16). Tested: useKeyboardNav, useWalletActions, useAccountSwitching, useOrdinalCache, useSyncData. Still untested: useWalletSend, useWalletLock, useBRC100, useSyncOrchestration, useWalletInit, + 7 others |
 | A-16 | 🟡 Backlog | 52 component files | 52 `no-restricted-imports` lint warnings (was 51) — components importing directly from `services/` instead of context hooks |
 | S-31 | ✅ Fixed (v16) | `brc100/handlers.ts:155-166` | `params.satoshis as number` and `params.blocks as number` — no runtime validation. **Fix:** Added typeof/isFinite/positive/integer checks with `-32602` error codes |
 | S-32 | ✅ Fixed (v16) | `storage.ts:150-151, 319-320` | `changePassword` only checks min length, not `validatePassword()` complexity. **Fix:** Replaced simple length check with `validatePassword()` in `saveWallet` and `changePassword` |
@@ -233,62 +262,96 @@
 | Q-39 | ⚪ Open-Low | `useSyncData.ts:185,439` | Large `useCallback` dependency arrays with 9 entries |
 | Q-40 | ⚪ Open-Low | `formatting.ts:34-264` | 230-line `buildAndBroadcastAction` wrapped in single try/catch |
 | Q-41 | ⚪ Open-Low | `brc100/handlers.ts` | Generic internal error messages passed to external BRC-100 callers — could leak implementation details |
+| S-45 | ⚪ Open-Low | `handlers.ts:201` | `includes('wrootz')` permissive substring check for basket routing |
+| S-52 | ⚪ Open-Low | `accounts.ts:249` | Non-atomic account switch creates brief dual-active window |
+| S-54 | ⚪ Open-Low | `http_server.rs:249` | 10MB response body limit in HMAC signing middleware |
+| S-55 | ⚪ Open-Low | `keyDerivation.ts:211` | Unbounded `KNOWN_SENDER_PUBKEYS` growth — no limit or validation |
+| S-56 | ⚪ Open-Low | `keyDerivation.ts:226` | `loadKnownSenders` doesn't validate parsed JSON array contents |
+| S-60 | ⚪ Open-Low | `crypto.ts:275` | `isLegacyEncrypted` parses untrusted data without size limits |
+| B-40 | ⚪ Open-Low | `App.tsx:244-301` | Double `setSyncPhaseRef.current(null)` — no error feedback on failed initial sync |
+| B-44 | ⚪ Open-Low | `LocksContext.tsx:94-111` | `detectLocks` ignores pre-fetched UTXOs, makes redundant API call |
+| B-46 | ⚪ Open-Low | `useSyncData.ts:78` | Falsy check on `activeAccountId` would fail if ID is ever 0 |
+| B-49 | ⚪ Open-Low | `App.tsx:396-416` | Post-discovery sync uses stale `activeAccountId` from closure |
+| B-50 | ⚪ Open-Low | `useBrc100Handler.ts:97` | BRC-100 listeners torn down on every render — incoming requests lost during gap |
+| A-33 | ⚪ Open-Low | `SyncContext.tsx:59-65` | Raw state setters exposed in context API — invites uncoordinated mutations |
+| A-34 | ⚪ Open-Low | `ConnectedAppsContext.tsx` | O(n) array lookups via `includes()` — should use `Set` |
+| Q-47 | ⚪ Open-Low | `src/services/brc100/` | 8+ BRC-100 sub-modules lack tests (formatting, handlers, locks, etc.) |
+| Q-48 | ⚪ Open-Low | `LocksContext.tsx:94` | Unused `_providedUtxos` parameter in `detectLocks` — misleads callers |
+| Q-50 | ⚪ Open-Low | `ModalContext.tsx:79-140` | Trivial `useCallback` wrappers around single `setState` calls |
+| Q-51 | ⚪ Open-Low | `migrations/010,011` | Legacy DML migrations lack clarifying comments about lesson learned |
 | Q-9 | ✅ Verified | `keyDerivation.ts:260-262` | Dev-only code guarded |
 
 ---
 
 ## Summary: Issue Status
 
-| Category | Total | ✅ Fixed/Verified | 🔴 Critical | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
-|----------|-------|-------------------|-------------|--------------|----------------|-------------|
-| Security | 40 | 26 (1 accepted) | 0 | 2 (S-29, S-30) | 6 (S-27,31-36) | 5 (S-37-41) |
-| Bugs | 38 | 21 | 1 (B-23) | 4 (B-24-27) | 8 (B-28-35) | 3 (B-36-38) |
-| Architecture | 29 | 18 | 0 | 2 (A-19,20) | 6 (A-16,21-25) | 4 (A-26-29) + A-18 |
-| Quality | 41 | 27 | 0 | 1 (Q-27) | 7 (Q-24,28-34) | 7 (Q-35-41) |
-| UX/UI | 40 | 40 | 0 | 0 | 0 | 0 |
-| Stability | 13 | 13 | 0 | 0 | 0 | 0 |
-| **Total** | **201** | **145 (1 accepted)** | **1** | **9** | **27 (1 backlog)** | **19** |
+| Category | Total | ✅ Fixed/Verified | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
+|----------|-------|-------------------|--------------|----------------|-------------|
+| Security | 59 | 26 (1 accepted) | 2 (S-43, S-47) | 17 (S-27,42,44,46,48-51,53,57-59 + prior) | 11 (S-45,52,54-56,60 + prior) |
+| Bugs | 50 | 21 | 2 (B-42, B-43) | 10 (B-39,41,45,47,53 + prior) | 8 (B-40,44,46,49,50 + prior) |
+| Architecture | 34 | 18 | 0 | 8 (A-16,30-32 + prior) | 7 (A-33,34 + prior) |
+| Quality | 52 | 27 | 0 | 12 (Q-24,42-44,46,49,52 + prior) | 11 (Q-47,48,50,51 + prior) |
+| UX/UI | 40 | 40 | 0 | 0 | 0 |
+| Stability | 13 | 13 | 0 | 0 | 0 |
+| **Total** | **248** | **145 (1 accepted)** | **4** | **47 (1 backlog)** | **37** |
 
 ---
 
-## Remaining Open Items
+## Remaining Open Items (as of Review #17)
 
-### Critical — Fix Immediately
-- **B-23** — Account creation not atomic — INSERT failure leaves all accounts deactivated
-
-### High Priority — Fix Before Merge
-- **S-29** — BRC-100 handlers missing accountId for lock/unlock (cross-account UTXO spending)
-- **S-30** — Auto-approve bypasses user confirmation for lockBSV/unlockBSV
-- **B-24** — `activeAccountId!` non-null assertion in useWalletSend
-- **B-25** — cancelOrdinalListing missing listing UTXO script
-- **B-26** — purchaseOrdinal missing listing UTXO script
-- **B-27** — useSyncData missing isCancelled check before final state setters
-- **A-19** — locks.ts not cleaned up after split — 870 LOC pure duplication (dead code)
-- **A-20** — createWrootzOpReturn duplicated across 3 files
-- **Q-27** — Duplicated unlock transaction builder (~80 lines)
+### High Priority — Fix Before Release
+- **S-43** — `getParams<T>()` zero runtime validation — all BRC-100 params unvalidated casts from external input
+- **S-47** — `get_wif_for_operation` returns raw WIF keys to JavaScript — XSS extracts all keys
+- **B-42** — Token transfer never records transaction or marks UTXOs spent — double-spend risk
+- **B-43** — Token send cannot combine UTXOs from both wallet and ord addresses
 
 ### Medium Priority — Next Sprint
-- **S-27** — SDK listOutputs missing CSRF nonce
-- **S-31** — BRC-100 lockBSV params unvalidated (`as number`)
-- **S-32** — changePassword bypasses validatePassword
-- **S-33** — BRC-100 locks saves to DB before broadcast
-- **S-34** — createLockTransaction no input validation
-- **S-35** — SDK HMAC re-serializes JSON for verification
-- **S-36** — Lock marked unlocked on wrong spending txid
-- **B-28 through B-35** — 8 medium bugs (restore, settings, accounts, sync)
-- **A-21 through A-25** — 5 architecture items (circular imports, dynamic imports, naming, barrel gaps, mutable state)
-- **Q-24** — 11/16 hooks untested (critical: useWalletSend, useWalletLock, useBRC100)
-- **Q-28 through Q-34** — 7 quality items (DRY, types, tests, perf, logging)
+**Security:**
+- **S-27** — SDK `listOutputs()` missing CSRF nonce
+- **S-42** — `ciphertext as number[]` no runtime validation before ECIES decryption
+- **S-44** — `request.origin` unsanitized in tagged key derivation
+- **S-46** — `Math.random()` for request IDs (not cryptographically secure)
+- **S-48** — No rate limiting on Tauri IPC commands
+- **S-49** — HMAC verification silently skipped when signature header stripped
+- **S-50** — `encodeScriptNum` integer overflow for lock times above 2^31
+- **S-51** — CLTV lock uses `identityPubKey` but unlock expects `walletPubKey`
+- **S-53** — Raw mnemonic crosses IPC boundary into Rust
+- **S-57** — `getKnownTaggedKey` returns root private keys for well-known labels
+- **S-58** — No per-origin permission scoping for approved BRC-100 apps
+- **S-59** — Session token accessible to any JavaScript context via Tauri command
+
+**Bugs:**
+- **B-39** — Payment listener not cleaned up on effect re-fire
+- **B-41** — Background sync for inactive accounts ignores cancelled flag
+- **B-45** — "Unlock All" doesn't short-circuit on network errors
+- **B-47** — Discovery params cleared before cancellation check
+- **B-53** — `reassignAccountData` steals data from legitimate account 1
+
+**Architecture:**
+- **A-16** — 52 `no-restricted-imports` lint warnings (backlog)
+- **A-30** — JSX indentation misalignment in AppProviders
+- **A-31** — Barrel index missing 5+ exports in brc100/index.ts
+- **A-32** — `isTauri()` copy-pasted across 8 files
+
+**Quality:**
+- **Q-24** — 12/17 hooks untested (critical: useWalletSend, useWalletLock, useBRC100)
+- **Q-29** — Promise-based approval queue pattern repeated 3x
+- **Q-30** — `type AnyPrivateKey = any` disables type checking
+- **Q-31** — `purchaseOrdinal` has only 1 test (error case)
+- **Q-32** — No concurrent-sync race condition tests
+- **Q-33** — Sequential tx history sync scales linearly
+- **Q-42** — UTXO `lockingScript`→`script` mapping repeated 10+ times
+- **Q-43** — Derived address key resolution duplicated ~70 lines each
+- **Q-44** — Zero components use `React.memo`
+- **Q-46** — 6 of 9 context providers lack tests
+- **Q-49** — `ordinalContentCache` as `useState<Map>` causes excessive re-renders
+- **Q-52** — Manual greedy coin selection instead of domain `selectCoins()`
 
 ### Low / Deferred
-- **S-37 through S-41** — 5 low security items
-- **B-36 through B-38** — 3 low bugs
-- **A-18, A-26 through A-29** — 5 low architecture items
-- **B-22** — localStorage quota (mitigated with logging)
-- **Q-35 through Q-41** — 7 low quality items
-
-### Backlog
-- **A-16** — 52 `no-restricted-imports` lint warnings
+**Security:** S-45, S-52, S-54, S-55, S-56, S-60
+**Bugs:** B-22 (mitigated), B-37, B-40, B-44, B-46, B-49, B-50
+**Architecture:** A-18, A-26, A-27, A-28, A-29, A-33, A-34
+**Quality:** Q-35, Q-36, Q-37, Q-38, Q-39, Q-40, Q-41, Q-47, Q-48, Q-50, Q-51
 
 ### Accepted Risk
 - **S-17** — `SENSITIVE_KEYS` empty in secureStorage
@@ -565,3 +628,131 @@
 23. **B-35** — Copy `dbTxHistory` before in-place mutation. **Effort: quick**
 24. **A-21** — Create `types.ts` in sync/ and tokens/ for shared types. **Effort: quick**
 25. **Q-24** — Add tests for useWalletSend, useWalletLock, useBRC100. **Effort: major**
+
+---
+
+## Review #17 — 2026-02-24 (Comprehensive Deep Review)
+
+46 new findings (0 critical, 4 high, 26 medium, 16 low). Full four-phase review: deep security audit, bug detection, architecture review, code quality analysis. All v16 fixes verified intact. 1748 tests passing, lint/typecheck clean.
+
+### New Findings by Phase
+
+**Phase 1 — Security (19 findings: 2 high, 11 medium, 6 low)**
+
+| ID | Sev | File | Finding |
+|----|-----|------|---------|
+| S-42 | MED | `handlers.ts:401` | `ciphertext as number[]` — no runtime type check before ECIES decrypt |
+| S-43 | HIGH | `brc100/types.ts:145` | `getParams<T>()` returns `params as T` — zero runtime validation on external input |
+| S-44 | MED | `handlers.ts:437` | Unsanitized `request.origin` in tagged key derivation tag string |
+| S-45 | LOW | `handlers.ts:201` | `includes('wrootz')` permissive substring match for basket routing |
+| S-46 | MED | `brc100/utils.ts:21` | `Math.random()` for BRC-100 request IDs |
+| S-47 | HIGH | `key_store.rs:398` | `get_wif_for_operation` returns raw WIF to JavaScript heap |
+| S-48 | MED | `key_store.rs` | No rate limiting on Tauri IPC signing commands |
+| S-49 | MED | `sdk/index.ts:207` | HMAC verification silently skipped when signature header missing |
+| S-50 | MED | `brc100/script.ts:12` | `encodeScriptNum` integer overflow for values > 2^31 |
+| S-51 | MED | `brc100/locks.ts:92` | CLTV lock uses `identityPubKey`; native unlock expects `walletPubKey` |
+| S-52 | LOW | `accounts.ts:249` | Non-atomic account switch — brief dual-active window |
+| S-53 | MED | `key_store.rs:103` | Raw mnemonic passes through JS heap before Rust store |
+| S-54 | LOW | `http_server.rs:249` | 10MB response body limit in HMAC signing middleware |
+| S-55 | LOW | `keyDerivation.ts:211` | Unbounded `KNOWN_SENDER_PUBKEYS` growth |
+| S-56 | LOW | `keyDerivation.ts:226` | `loadKnownSenders` no JSON validation |
+| S-57 | MED | `keyDerivation.ts:471` | `getKnownTaggedKey` returns root private keys for "yours" label |
+| S-58 | MED | `handlers.ts:72` | No per-origin permission scoping — approved app gets full wallet access |
+| S-59 | MED | `lib.rs:582` | Session token accessible from any JS context via Tauri command |
+| S-60 | LOW | `crypto.ts:275` | `isLegacyEncrypted` parses untrusted data without size limits |
+
+**Phase 2 — Bugs (15 findings: 2 high, 5 medium, 8 low)**
+
+| ID | Sev | File | Finding |
+|----|-----|------|---------|
+| B-39 | MED | `App.tsx:165-193` | Payment listener not torn down on effect re-fire — orphaned listeners |
+| B-40 | LOW | `App.tsx:244-301` | Double `setSyncPhaseRef.current(null)` — no error feedback on failed sync |
+| B-41 | MED | `App.tsx:320-343` | Background sync for inactive accounts ignores `cancelled` flag |
+| B-42 | HIGH | `tokens/transfers.ts:108-270` | Token transfer never calls `recordSentTransaction` or `markUtxosPendingSpend` |
+| B-43 | HIGH | `tokens/transfers.ts:275-348` | `sendToken` single WIF — can't combine wallet + ord address UTXOs |
+| B-44 | LOW | `LocksContext.tsx:94-111` | `detectLocks` ignores pre-fetched UTXOs, makes redundant API call |
+| B-45 | MED | `App.tsx:468-485` | "Unlock All" no error short-circuit, always closes modal |
+| B-46 | LOW | `useSyncData.ts:78` | Falsy check `activeAccountId` fails if ID is 0 |
+| B-47 | MED | `App.tsx:362-372` | Discovery params cleared before cancel check — concurrent switch loss |
+| B-49 | LOW | `App.tsx:396-416` | Post-discovery sync uses stale `activeAccountId` from closure |
+| B-50 | LOW | `useBrc100Handler.ts:97` | BRC-100 listeners torn down/rebuilt on every render |
+| B-53 | MED | `utxoRepository.ts:703-759` | `reassignAccountData` takes data from legitimate account 1 |
+
+**Phase 3 — Architecture (5 findings: 0 high, 3 medium, 2 low)**
+
+| ID | Sev | File | Finding |
+|----|-----|------|---------|
+| A-30 | MED | `AppProviders.tsx:58-65` | JSX indentation doesn't match logical provider nesting |
+| A-31 | MED | `brc100/index.ts` | Barrel missing 5+ exports (`verifyDataSignature`, etc.) |
+| A-32 | MED | 8 files | `isTauri()` copy-pasted — should be shared utility |
+| A-33 | LOW | `SyncContext.tsx:59-65` | Raw state setters exposed in context API |
+| A-34 | LOW | `ConnectedAppsContext.tsx` | O(n) array lookups via `includes()` — should use `Set` |
+
+**Phase 4 — Quality (11 findings: 0 high, 7 medium, 4 low)**
+
+| ID | Sev | File | Finding |
+|----|-----|------|---------|
+| Q-42 | MED | 10+ files | UTXO `lockingScript`→`script` mapping repeated 10+ times |
+| Q-43 | MED | `useWalletSend.ts` | Derived address key resolution duplicated ~70 lines |
+| Q-44 | MED | All components | Zero `React.memo` usage — every state change re-renders all tabs |
+| Q-46 | MED | `src/contexts/` | 6 of 9 context providers lack tests |
+| Q-47 | LOW | `src/services/brc100/` | 8+ BRC-100 sub-modules lack tests |
+| Q-48 | LOW | `LocksContext.tsx:94` | Unused `_providedUtxos` parameter |
+| Q-49 | MED | `SyncContext.tsx:130` | `ordinalContentCache` as `useState<Map>` triggers re-renders |
+| Q-50 | LOW | `ModalContext.tsx:79-140` | Trivial `useCallback` wrappers around single `setState` |
+| Q-51 | LOW | `migrations/010,011` | Legacy DML migrations lack clarifying comments |
+| Q-52 | MED | `brc100/locks.ts:97-106` | Manual greedy coin selection instead of domain `selectCoins()` |
+
+### Verification of Prior Fixes
+
+All 37 fixes from Review #16 (commit `906c81f`) verified against current code:
+- S-29 (accountId scoping) ✅ — `getActiveAccount()` calls at handlers.ts:173-174, 258-260
+- S-30 (lockBSV/unlockBSV approval) ✅ — Explicit case blocks at validation.ts:125-137
+- S-31 (param validation) ✅ — Runtime checks at handlers.ts:153-166
+- B-23 (atomic account creation) ✅ — `withTransaction()` wrapper confirmed
+- B-27 (isCancelled check) ✅ — Guard at useSyncData.ts:183
+- A-19 (locks.ts barrel) ✅ — 30-line clean re-export
+- A-25 (txDetailCache) ✅ — Getter/setter accessors at historySync.ts:32
+- All others ✅ — Spot-checked, no regressions
+
+**Prioritized Remediation — Review #17**
+
+### Immediate (before next release)
+1. **S-43** `brc100/types.ts:145` — Add runtime type validation to `getParams<T>()` using Zod schemas or manual checks. **Effort: medium**
+2. **S-47** `key_store.rs:398` — Refactor `get_wif_for_operation` to sign in Rust, never return WIF to JS. **Effort: major**
+3. **B-42** `tokens/transfers.ts` — Add `recordSentTransaction` + `markUtxosPendingSpend` to token transfer flow. **Effort: medium**
+4. **B-43** `tokens/transfers.ts` — Support multi-address UTXO combination for token sends. **Effort: medium**
+
+### High priority (next sprint)
+5. **S-51** `brc100/locks.ts:92` — Resolve CLTV identity vs wallet key mismatch. **Effort: medium**
+6. **S-48** `key_store.rs` — Add IPC command rate limiting (mirror HTTP rate limiter). **Effort: medium**
+7. **S-58** `handlers.ts:72` — Implement per-origin permission scoping. **Effort: major**
+8. **B-39** `App.tsx:165-193` — Return cleanup function from payment listener effect. **Effort: quick**
+9. **B-53** `utxoRepository.ts:703-759` — Fix `reassignAccountData` to skip account 1 data. **Effort: quick**
+10. **S-46** `brc100/utils.ts:21` — Replace `Math.random()` with `crypto.getRandomValues()`. **Effort: quick**
+11. **Q-44** All components — Add `React.memo` to tab components and expensive list renders. **Effort: medium**
+
+### Medium priority
+12. **S-42** — Validate ciphertext array before ECIES decrypt. **Effort: quick**
+13. **S-44** — Sanitize/hash origin in tagged key derivation. **Effort: quick**
+14. **S-49** — Fail HMAC verification when signature header missing. **Effort: quick**
+15. **S-50** — Add bounds check in `encodeScriptNum`. **Effort: quick**
+16. **S-53** — Minimize mnemonic exposure in JS heap. **Effort: medium**
+17. **S-57** — Don't return root keys for well-known labels. **Effort: quick**
+18. **S-59** — Scope session token to BRC-100 server context. **Effort: medium**
+19. **B-41** — Check cancelled flag in background sync loop. **Effort: quick**
+20. **B-45** — Short-circuit "Unlock All" on first network error. **Effort: quick**
+21. **B-47** — Move cancellation check before param clearing. **Effort: quick**
+22. **A-31** — Add missing exports to brc100/index.ts barrel. **Effort: quick**
+23. **A-32** — Extract shared `isTauri()` utility. **Effort: quick**
+24. **Q-42** — Extract `toWalletUtxo()` mapping helper. **Effort: quick**
+25. **Q-43** — Extract shared derived address key resolution. **Effort: medium**
+26. **Q-49** — Move ordinalContentCache to `useRef` or dedicated context. **Effort: medium**
+27. **Q-52** — Replace manual coin selection with domain `selectCoins()`. **Effort: quick**
+28. **Q-24** — Add hook tests (useWalletSend, useBRC100, useWalletLock). **Effort: major**
+29. **Q-46** — Add context provider tests. **Effort: major**
+
+### Deferred
+30. **S-27** — SDK CSRF nonce for read operations. **Effort: quick**
+31. **A-30** — Fix JSX indentation. **Effort: quick**
+32. Low-severity items (S-45,52,54-56,60, B-40,44,46,49,50, A-33,34, Q-35-41,47,48,50,51)

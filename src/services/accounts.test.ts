@@ -83,6 +83,17 @@ vi.mock('./database', () => {
           mockDb.db.accounts.push(newAccount)
           return { lastInsertId: newAccount.id }
         }
+        if (query.includes('UPDATE accounts SET is_active = CASE') && params) {
+          // Atomic CASE-based switch: params[0] = accountId, params[1] = timestamp
+          mockDb.db.accounts = mockDb.db.accounts.map((a: unknown) => {
+            const account = a as { id: number; is_active: number; last_accessed_at: number }
+            if (account.id === params[0]) {
+              return { ...account, is_active: 1, last_accessed_at: params[1] as number }
+            }
+            return { ...account, is_active: 0 }
+          })
+          return { rowsAffected: mockDb.db.accounts.length }
+        }
         if (query.includes('UPDATE accounts SET is_active = 0')) {
           mockDb.db.accounts = mockDb.db.accounts.map((a: unknown) => ({ ...(a as object), is_active: 0 }))
           return { rowsAffected: mockDb.db.accounts.length }

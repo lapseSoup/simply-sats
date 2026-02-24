@@ -208,7 +208,12 @@ export function findDerivedKeyForAddress(
 /**
  * Store discovered sender public keys for future scanning
  */
+const MAX_KNOWN_SENDERS = 100
+
 export function addKnownSender(pubKeyHex: string): void {
+  // S-55: Validate pubkey format and enforce size limit
+  if (!/^(02|03)[0-9a-fA-F]{64}$/.test(pubKeyHex)) return
+  if (KNOWN_SENDER_PUBKEYS.length >= MAX_KNOWN_SENDERS) return
   if (!KNOWN_SENDER_PUBKEYS.includes(pubKeyHex)) {
     KNOWN_SENDER_PUBKEYS.push(pubKeyHex)
     // Persist to localStorage
@@ -228,9 +233,13 @@ export function loadKnownSenders(): void {
     const saved = localStorage.getItem(STORAGE_KEYS.KNOWN_SENDERS)
     if (saved) {
       const senders = JSON.parse(saved)
+      // S-56: Validate parsed JSON is an array of valid pubkey hex strings
+      if (!Array.isArray(senders)) return
       for (const s of senders) {
-        if (!KNOWN_SENDER_PUBKEYS.includes(s)) {
-          KNOWN_SENDER_PUBKEYS.push(s)
+        if (typeof s === 'string' && /^(02|03)[0-9a-fA-F]{64}$/.test(s)) {
+          if (!KNOWN_SENDER_PUBKEYS.includes(s)) {
+            KNOWN_SENDER_PUBKEYS.push(s)
+          }
         }
       }
     }
@@ -442,7 +451,8 @@ export function deriveTaggedKey(
   // This matches the BRC-42/43 approach
 
   // Create a deterministic public key from the tag for ECDH
-  const tagString = `${tag.label}:${tag.id}:${tag.domain || ''}`
+  // S-44: Use length-prefixed serialization to prevent tag collisions
+  const tagString = `${tag.label.length}:${tag.label}|${tag.id.length}:${tag.id}|${(tag.domain || '').length}:${tag.domain || ''}`
 
   // Use the root private key's public key for self-derivation
   const rootPubKey = rootPrivateKey.toPublicKey()
@@ -463,6 +473,11 @@ export function deriveTaggedKey(
  * Get a tagged key for a well-known app
  *
  * Special handling for built-in labels that map to standard wallet keys.
+ *
+ * SECURITY NOTE (S-57): This returns ROOT wallet/identity/ordinals private keys
+ * for well-known labels ("yours", "panda"). This is intentional for BRC-42
+ * interop but means any BRC-100 app requesting these labels gets root keys.
+ * The caller (executeApprovedRequest) must gate this behind user approval.
  *
  * @param label - App label
  * @param id - Feature id

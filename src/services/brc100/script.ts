@@ -10,6 +10,14 @@ import { LockingScript } from '@bsv/sdk'
  * Encode a number for use in Bitcoin script
  */
 export function encodeScriptNum(num: number): string {
+  // S-50: Bounds check for safe integer operations
+  if (!Number.isSafeInteger(num)) {
+    throw new Error(`encodeScriptNum: ${num} is not a safe integer`)
+  }
+  if (num < 0 || num > 0x7FFFFFFF) {
+    throw new Error(`encodeScriptNum: ${num} out of valid range (0 to 2147483647)`)
+  }
+
   if (num === 0) return '00'
   if (num >= 1 && num <= 16) return (0x50 + num).toString(16)
 

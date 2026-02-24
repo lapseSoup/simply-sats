@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { Search, X, ArrowDownLeft, ArrowUpRight, Circle } from 'lucide-react'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
@@ -13,7 +13,7 @@ type SearchResult = {
   description?: string
 }
 
-export function SearchTab() {
+export const SearchTab = memo(function SearchTab() {
   const { activeAccountId } = useWalletState()
   const { formatUSD } = useUI()
   const [query, setQuery] = useState('')
@@ -300,4 +300,4 @@ export function SearchTab() {
       )}
     </>
   )
-}
+})

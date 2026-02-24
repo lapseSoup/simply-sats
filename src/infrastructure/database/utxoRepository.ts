@@ -706,6 +706,19 @@ export async function reassignAccountData(targetAccountId: number): Promise<Resu
   try {
     return await withTransaction(async () => {
       const database = getDatabase()
+
+      // B-53: Check if account 1 exists as a legitimate account.
+      // Historically, account 1's data was stored with account_id=1 (or NULL).
+      // If account 1 is a real account in the accounts table, those rows belong
+      // to it and must NOT be reassigned to a newly created account.
+      const account1Check = await database.select<{ count: number }[]>(
+        'SELECT COUNT(*) as count FROM accounts WHERE id = 1'
+      )
+      if ((account1Check[0]?.count ?? 0) > 0) {
+        dbLogger.debug(`[DB] Account 1 exists — skipping reassignment (data belongs to account 1)`)
+        return ok(0)
+      }
+
       let totalFixed = 0
 
       // Reassign UTXOs

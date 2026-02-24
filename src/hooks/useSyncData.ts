@@ -35,7 +35,7 @@ interface UseSyncDataOptions {
   setUtxos: (utxos: UTXO[]) => void
   setOrdinalsWithRef: (ordinals: Ordinal[]) => void
   setSyncError: (error: string | null) => void
-  setOrdinalContentCache: React.Dispatch<React.SetStateAction<Map<string, OrdinalContentEntry>>>
+  bumpCacheVersion: () => void
   contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>
   ordinalsRef: MutableRefObject<Ordinal[]>
 }
@@ -63,7 +63,7 @@ export function useSyncData({
   setUtxos,
   setOrdinalsWithRef,
   setSyncError,
-  setOrdinalContentCache,
+  bumpCacheVersion,
   contentCacheRef,
   ordinalsRef
 }: UseSyncDataOptions): UseSyncDataReturn {
@@ -75,7 +75,7 @@ export function useSyncData({
     onLocksLoaded: (locks: LockedUTXO[]) => void,
     isCancelled?: () => boolean
   ) => {
-    if (!activeAccountId) return
+    if (activeAccountId == null) return
 
     syncLogger.debug('fetchDataFromDB: loading cached data', { activeAccountId })
 
@@ -164,7 +164,7 @@ export function useSyncData({
       const newCache = await getBatchOrdinalContent(allOrigins)
       if (isCancelled?.()) return
       contentCacheRef.current = newCache
-      setOrdinalContentCache(new Map(newCache))
+      bumpCacheVersion()
     } catch (e) {
       syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(e) })
     }
@@ -186,7 +186,7 @@ export function useSyncData({
     // ord balance doesn't persist in the UI until the next API fetch.
     setOrdBalance(0)
     setSyncError(null)
-  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, setOrdinalContentCache, contentCacheRef])
+  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, bumpCacheVersion, contentCacheRef])
 
   // Fetch data from database and API
   const fetchData = useCallback(async (
@@ -197,7 +197,7 @@ export function useSyncData({
     isCancelled?: () => boolean
   ) => {
     // Guard: require a valid account ID to prevent cross-account data leaks
-    if (!activeAccountId) return
+    if (activeAccountId == null) return
 
     syncLogger.debug('Fetching data (database-first approach)...', {
       activeAccountId,
@@ -322,7 +322,7 @@ export function useSyncData({
         const newCache = await getBatchOrdinalContent(allCachedOrigins)
         if (newCache.size > 0) {
           contentCacheRef.current = newCache
-          setOrdinalContentCache(new Map(newCache))
+          bumpCacheVersion()
           syncLogger.debug('Loaded cached ordinal content', { count: newCache.size })
         }
 
@@ -409,7 +409,7 @@ export function useSyncData({
         }
 
         // Cache ordinal metadata to DB and fetch missing content in background
-        cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, setOrdinalContentCache, isCancelled ?? (() => false), allOrdinalApiCallsSucceeded)
+        cacheOrdinalsInBackground(allOrdinals, activeAccountId, contentCacheRef, bumpCacheVersion, isCancelled ?? (() => false), allOrdinalApiCallsSucceeded)
       } catch (e) {
         syncLogger.error('Failed to fetch ordinals', e)
         partialErrors.push('ordinals')
@@ -444,7 +444,7 @@ export function useSyncData({
       }
       syncLogger.error('Failed to fetch data', error)
     }
-  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, setOrdinalContentCache, contentCacheRef, ordinalsRef])
+  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, bumpCacheVersion, contentCacheRef, ordinalsRef])
 
   return { fetchDataFromDB, fetchData }
 }

@@ -68,7 +68,8 @@ export function WalletProvider({ children }: WalletProviderProps) {
     utxos,
     ordinals,
     setOrdinals,
-    ordinalContentCache,
+    contentCacheRef,
+    cacheVersion,
     txHistory,
     basketBalances,
     balance,
@@ -299,7 +300,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       wallet,
       currentAccountId,
       knownUnlockedLocksRef.current,
-      async ({ utxos: fetchedUtxos, preloadedLocks }) => {
+      async ({ utxos: _fetchedUtxos, preloadedLocks }) => {
         if (fetchVersionRef.current !== version) return
 
         // Set preloaded DB locks directly — these are authoritative for this account.
@@ -310,7 +311,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
         }
 
         try {
-          const detectedLocks = await detectLocks(wallet, fetchedUtxos)
+          const detectedLocks = await detectLocks(wallet)
           if (fetchVersionRef.current !== version) return
 
           if (detectedLocks.length > 0) {
@@ -429,6 +430,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [])
 
   // Split into state (read-only) and actions (write operations)
+  // Snapshot cache for render-safe access (ref reads are not allowed during render in React 19)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const contentCacheSnapshot = useMemo(() => new Map(contentCacheRef.current), [cacheVersion])
+
   const stateValue: WalletStateContextType = useMemo(() => ({
     wallet,
     balance,
@@ -436,7 +441,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     usdPrice,
     utxos,
     ordinals,
-    ordinalContentCache,
+    contentCacheSnapshot,
     locks,
     txHistory,
     basketBalances,
@@ -455,7 +460,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     feeRateKB,
     sessionPassword
   }), [
-    wallet, balance, ordBalance, usdPrice, utxos, ordinals, ordinalContentCache,
+    wallet, balance, ordBalance, usdPrice, utxos, ordinals, contentCacheSnapshot,
     locks, txHistory, basketBalances, contacts, accounts, activeAccount, activeAccountId,
     tokenBalances, tokensSyncing, isLocked, autoLockMinutes, networkInfo, syncing,
     syncError, loading, feeRateKB, sessionPassword

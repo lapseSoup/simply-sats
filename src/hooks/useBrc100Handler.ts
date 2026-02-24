@@ -36,12 +36,14 @@ export function useBrc100Handler({
   const [brc100Request, setBrc100Request] = useState<BRC100Request | null>(null)
   const { connectedApps, connectApp, isTrustedOrigin } = useConnectedApps()
 
-  // Keep a ref to the latest isTrustedOrigin so the main effect doesn't
-  // tear down listeners every time a new origin is trusted.
+  // Keep refs to the latest callbacks so the main effect doesn't
+  // tear down listeners every time a callback identity changes.
   const isTrustedOriginRef = useRef(isTrustedOrigin)
+  const onRequestReceivedRef = useRef(onRequestReceived)
   useEffect(() => {
     isTrustedOriginRef.current = isTrustedOrigin
-  }, [isTrustedOrigin])
+    onRequestReceivedRef.current = onRequestReceived
+  }, [isTrustedOrigin, onRequestReceived])
 
   // Set up BRC-100 request handler
   useEffect(() => {
@@ -56,7 +58,7 @@ export function useBrc100Handler({
       }
 
       setBrc100Request(request)
-      onRequestReceived?.(request)
+      onRequestReceivedRef.current?.(request)
     }
 
     setRequestHandler(handleIncomingRequest)
@@ -86,7 +88,7 @@ export function useBrc100Handler({
     if (pending.length > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Initialization on mount
       setBrc100Request(pending[0]!)
-      onRequestReceived?.(pending[0]!)
+      onRequestReceivedRef.current?.(pending[0]!)
     }
 
     return () => {
@@ -94,7 +96,7 @@ export function useBrc100Handler({
       if (unlistenDeepLink) unlistenDeepLink()
       if (unlistenHttp) unlistenHttp()
     }
-  }, [wallet, onRequestReceived])
+  }, [wallet])
 
   const handleApprove = useCallback(() => {
     if (!brc100Request || !wallet) return

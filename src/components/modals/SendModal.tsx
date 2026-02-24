@@ -9,6 +9,7 @@ import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
 import { CoinControlModal } from './CoinControlModal'
 import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
+import { toWalletUtxo } from '../../domain/types'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 import type { RecipientOutput } from '../../domain/transaction/builder'
 
@@ -80,7 +81,7 @@ export function SendModal({ onClose }: SendModalProps) {
   // Use coin-controlled UTXOs when selected, otherwise full UTXO set
   // Map DatabaseUTXO (lockingScript) to wallet UTXO (script) for fee calculation
   const effectiveUtxos = selectedUtxos
-    ? selectedUtxos.map(u => ({ txid: u.txid, vout: u.vout, satoshis: u.satoshis, script: u.lockingScript }))
+    ? selectedUtxos.map(toWalletUtxo)
     : utxos
 
   // Calculate number of inputs (fallback if no UTXOs available yet)

@@ -31,7 +31,7 @@ export async function cacheOrdinalsInBackground(
   allOrdinals: Ordinal[],
   activeAccountId: number | null,
   contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>,
-  setOrdinalContentCache: React.Dispatch<React.SetStateAction<Map<string, OrdinalContentEntry>>>,
+  bumpCacheVersion: () => void,
   isCancelled: () => boolean,
   allApiCallsSucceeded: boolean
 ): Promise<void> {
@@ -107,7 +107,7 @@ export async function cacheOrdinalsInBackground(
 
     // Trigger a single re-render with all new content
     if (contentAdded) {
-      setOrdinalContentCache(new Map(contentCacheRef.current))
+      bumpCacheVersion()
       syncLogger.debug('Ordinal content fetched and cached', { fetched: toFetch.length })
     }
   } catch (e) {
@@ -117,7 +117,7 @@ export async function cacheOrdinalsInBackground(
 
 interface UseOrdinalCacheOptions {
   contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>
-  setOrdinalContentCache: React.Dispatch<React.SetStateAction<Map<string, OrdinalContentEntry>>>
+  bumpCacheVersion: () => void
 }
 
 interface UseOrdinalCacheReturn {
@@ -131,7 +131,7 @@ interface UseOrdinalCacheReturn {
 
 export function useOrdinalCache({
   contentCacheRef,
-  setOrdinalContentCache
+  bumpCacheVersion
 }: UseOrdinalCacheOptions): UseOrdinalCacheReturn {
 
   // Lazily fetch ordinal content for transferred ordinals missing from the cache.
@@ -147,7 +147,7 @@ export function useOrdinalCache({
         const content = await getCachedOrdinalContent(origin)
         if (content && (content.contentData || content.contentText)) {
           contentCacheRef.current.set(origin, content)
-          setOrdinalContentCache(new Map(contentCacheRef.current))
+          bumpCacheVersion()
         }
         return
       }
@@ -160,13 +160,13 @@ export function useOrdinalCache({
         await ensureOrdinalCacheRowForTransferred(origin, accountId)
         await upsertOrdinalContent(origin, content.contentData, content.contentText, content.contentType)
         contentCacheRef.current.set(origin, content)
-        setOrdinalContentCache(new Map(contentCacheRef.current))
+        bumpCacheVersion()
         syncLogger.debug('Fetched transferred ordinal content', { origin })
       }
     } catch (e) {
       syncLogger.warn('fetchOrdinalContentIfMissing failed (non-critical)', { origin, error: String(e) })
     }
-  }, [contentCacheRef, setOrdinalContentCache])
+  }, [contentCacheRef, bumpCacheVersion])
 
   return { fetchOrdinalContentIfMissing }
 }

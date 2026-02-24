@@ -35,7 +35,7 @@ function formatTimeRemaining(seconds: number): string {
 }
 
 
-export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabProps) {
+export const LocksTab = memo(function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabProps) {
   const { locks, networkInfo } = useWalletState()
   const { formatUSD } = useUI()
   const [selectedLock, setSelectedLock] = useState<LockedUTXO | null>(null)
@@ -145,7 +145,7 @@ export function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabP
       )}
     </>
   )
-}
+})
 
 interface LockItemProps {
   lock: LockedUTXO

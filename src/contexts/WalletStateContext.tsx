@@ -10,7 +10,7 @@
 import { createContext, useContext } from 'react'
 import type { WalletKeys, LockedUTXO, Ordinal, UTXO } from '../services/wallet'
 import type { NetworkInfo } from './NetworkContext'
-import type { TxHistoryItem, BasketBalances } from './SyncContext'
+import type { TxHistoryItem, BasketBalances, OrdinalContentEntry } from './SyncContext'
 import type { Contact } from '../infrastructure/database'
 import type { Account } from '../services/accounts'
 import type { TokenBalance } from '../services/tokens'
@@ -23,7 +23,8 @@ export interface WalletStateContextType {
   usdPrice: number
   utxos: UTXO[]
   ordinals: Ordinal[]
-  ordinalContentCache: Map<string, { contentData?: Uint8Array; contentText?: string }>
+  /** Snapshot of ordinal content cache. Updates when cacheVersion bumps (once per batch). */
+  contentCacheSnapshot: Map<string, OrdinalContentEntry>
   locks: LockedUTXO[]
   txHistory: TxHistoryItem[]
   basketBalances: BasketBalances

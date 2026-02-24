@@ -26,6 +26,25 @@ import { resolvePublicKey, resolveListOutputs } from './outputs'
 import { getPendingRequests, executeApprovedRequest } from './handlers'
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Queue a request for user approval and return its settlement Promise. */
+function queueApprovalRequest(
+  request: BRC100Request,
+  pendingRequests: ReturnType<typeof getPendingRequests>,
+  requestManager: ReturnType<typeof getRequestManager>
+): Promise<BRC100Response> {
+  return new Promise<BRC100Response>((resolve, reject) => {
+    pendingRequests.set(request.id, { request, resolve, reject })
+    const handler = requestManager.getRequestHandler()
+    if (handler) {
+      handler(request)
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -103,13 +122,7 @@ export async function handleBRC100Request(
       // createSignature: auto-approve executes directly, otherwise queue
       case 'createSignature': {
         if (!autoApprove) {
-          return new Promise((resolve, reject) => {
-            pendingRequests.set(request.id, { request, resolve, reject })
-            const handler = requestManager.getRequestHandler()
-            if (handler) {
-              handler(request)
-            }
-          })
+          return queueApprovalRequest(request, pendingRequests, requestManager)
         }
         try {
           return await executeApprovedRequest(request, keys)
@@ -127,25 +140,13 @@ export async function handleBRC100Request(
       case 'createAction':
       case 'lockBSV':
       case 'unlockBSV': {
-        return new Promise((resolve, reject) => {
-          pendingRequests.set(request.id, { request, resolve, reject })
-          const handler = requestManager.getRequestHandler()
-          if (handler) {
-            handler(request)
-          }
-        })
+        return queueApprovalRequest(request, pendingRequests, requestManager)
       }
 
       // All other approval-required types: queue if not auto-approve, execute directly if auto-approve
       default: {
         if (!autoApprove) {
-          return new Promise((resolve, reject) => {
-            pendingRequests.set(request.id, { request, resolve, reject })
-            const handler = requestManager.getRequestHandler()
-            if (handler) {
-              handler(request)
-            }
-          })
+          return queueApprovalRequest(request, pendingRequests, requestManager)
         }
         try {
           return await executeApprovedRequest(request, keys)

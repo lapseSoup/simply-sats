@@ -58,10 +58,10 @@ export function AppProviders({ children }: AppProvidersProps) {
                                     <ErrorBoundary context="ModalProvider">
                                       <ModalProvider>
                                         <ErrorBoundary context="WalletProvider">
-                                      <WalletProvider>
-                                        {children}
-                                      </WalletProvider>
-                                    </ErrorBoundary>
+                                          <WalletProvider>
+                                            {children}
+                                          </WalletProvider>
+                                        </ErrorBoundary>
                                       </ModalProvider>
                                     </ErrorBoundary>
                                   </LocksProvider>

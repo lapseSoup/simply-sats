@@ -5,8 +5,8 @@ import { getOrdinalContentUrl, isImageOrdinal } from '../../utils/ordinals'
 /**
  * Module-level blob URL cache: origin → blob URL.
  * Survives React re-renders AND unmount/remount from react-window virtualized scrolling.
- * Without this, every re-render cascade from setOrdinalContentCache(new Map(...)) causes
- * blob URLs to be recreated → <img src> changes → visible thumbnail flicker.
+ * Without this, blob URLs would be recreated on every re-render
+ * → <img src> changes → visible thumbnail flicker.
  */
 const blobUrlCache = new Map<string, string>()
 

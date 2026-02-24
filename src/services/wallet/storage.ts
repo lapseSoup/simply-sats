@@ -13,6 +13,7 @@ import { walletLogger } from '../logger'
 import { STORAGE_KEYS } from '../../infrastructure/storage/localStorage'
 import { type Result, ok, err } from '../../domain/types'
 import { validatePassword } from '../../utils/passwordValidation'
+import { isTauri } from '../../utils/tauri'
 
 const STORAGE_KEY = STORAGE_KEYS.WALLET
 
@@ -23,13 +24,6 @@ const STORAGE_KEY = STORAGE_KEYS.WALLET
  */
 export function hasPassword(): boolean {
   return localStorage.getItem(STORAGE_KEYS.HAS_PASSWORD) !== 'false'
-}
-
-/**
- * Check if we're running in Tauri environment
- */
-function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
 
 /**

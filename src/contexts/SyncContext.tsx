@@ -10,7 +10,7 @@
  *   - useOrdinalCache: fetchOrdinalContentIfMissing
  */
 
-import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode, type MutableRefObject } from 'react'
 import type { WalletKeys, UTXO, Ordinal, LockedUTXO } from '../services/wallet'
 import { useNetwork } from './NetworkContext'
 
@@ -53,7 +53,10 @@ interface SyncContextType {
   balance: number
   ordBalance: number
   syncError: string | null
-  ordinalContentCache: Map<string, OrdinalContentEntry>
+  /** Ref-based ordinal content cache — read via .current. Does not trigger re-renders on mutation. */
+  contentCacheRef: Readonly<MutableRefObject<Map<string, OrdinalContentEntry>>>
+  /** Incremented when a batch of cache entries is added. Subscribe to this to re-render. */
+  cacheVersion: number
 
   // State setters (for WalletContext to update when needed)
   setUtxos: (utxos: UTXO[]) => void
@@ -127,14 +130,19 @@ export function SyncProvider({ children }: SyncProviderProps) {
   const [balance, setBalance] = useState<number>(0)
   const [ordBalance, setOrdBalance] = useState<number>(0)
   const [syncError, setSyncError] = useState<string | null>(null)
-  const [ordinalContentCache, setOrdinalContentCache] = useState<Map<string, OrdinalContentEntry>>(new Map())
   const contentCacheRef = useRef<Map<string, OrdinalContentEntry>>(new Map())
+  const [cacheVersion, setCacheVersion] = useState(0)
   // Ref so fetchData can read the current ordinals count without a stale closure
   const ordinalsRef = useRef<Ordinal[]>(ordinals)
   // Keep ref in sync with state
   const setOrdinalsWithRef = useCallback((next: Ordinal[]) => {
     ordinalsRef.current = next
     setOrdinals(next)
+  }, [])
+
+  /** Increment cacheVersion to notify consumers that contentCacheRef has new entries */
+  const bumpCacheVersion = useCallback(() => {
+    setCacheVersion(v => v + 1)
   }, [])
 
   const resetSync = useCallback((initialBalance = 0) => {
@@ -145,8 +153,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setBalance(initialBalance)
     setOrdBalance(0)
     setSyncError(null)
-    setOrdinalContentCache(new Map())
     contentCacheRef.current = new Map()
+    setCacheVersion(0)
   }, [setOrdinalsWithRef])
 
   // --- Extracted hooks ---
@@ -158,7 +166,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setUtxos,
     setOrdinalsWithRef,
     setSyncError,
-    setOrdinalContentCache,
+    bumpCacheVersion,
     contentCacheRef,
     ordinalsRef
   })
@@ -173,7 +181,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
   const { fetchOrdinalContentIfMissing } = useOrdinalCache({
     contentCacheRef,
-    setOrdinalContentCache
+    bumpCacheVersion
   })
 
   // --- Context value ---
@@ -186,7 +194,8 @@ export function SyncProvider({ children }: SyncProviderProps) {
     balance,
     ordBalance,
     syncError,
-    ordinalContentCache,
+    contentCacheRef,
+    cacheVersion,
     setUtxos,
     setOrdinals: setOrdinalsWithRef,
     setTxHistory,
@@ -198,7 +207,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     fetchDataFromDB,
     fetchData,
     fetchOrdinalContentIfMissing
-  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, ordinalContentCache, setUtxos, setOrdinalsWithRef, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData, fetchOrdinalContentIfMissing])
+  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, cacheVersion, setUtxos, setOrdinalsWithRef, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData, fetchOrdinalContentIfMissing])
 
   return (
     <SyncContext.Provider value={value}>
