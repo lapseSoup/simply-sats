@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-02-23 (v10 / Review #13 — Security hardening, test factories, lint hygiene)
-**Full report:** `docs/reviews/2026-02-23-full-review-v10.md`
-**Rating:** 9.7 / 10 (up from 9.6 — no critical/high open issues, all new findings fixed except A-16 backlog)
-**Review #13 remediation:** Complete — 7 of 8 findings fixed (A-16 tracked as backlog), test factories added, logger consistency enforced
+**Latest review:** 2026-02-23 (v11 / Review #14 — UI/UX Polish)
+**Full report:** `docs/reviews/2026-02-23-full-review-v11.md`
+**Rating:** 9.8 / 10 (up from 9.7 — all 16 new UI/UX findings fixed, codebase at highest polish level)
+**Review #14 remediation:** Complete — 16 of 16 findings fixed. Modal consistency, accessibility, design tokens, screen reader support all improved
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -15,6 +15,7 @@
 | ST-8 | ✅ Fixed (v8) | `SendModal.tsx:151-187` | `executeSendMulti` lacked `sendingRef` guard — double-click could broadcast duplicate transactions. Added `sendingRef` + try/finally pattern |
 | ST-9 | ✅ Fixed (v8) | `SendModal.tsx:122-140` | Multi-recipient send bypassed SpeedBumpModal confirmation for high-value transactions. Added `handleMultiSubmitClick` with threshold checks |
 | ST-10 | ✅ Fixed (v8) | `SendModal.tsx:289-345` | Multi-recipient addresses not validated — invalid addresses only failed at broadcast. Added per-row `isValidBSVAddress` validation with error display |
+| U-25 | ✅ Fixed (v11) | `ConsolidateModal.tsx`, `TestRecoveryModal.tsx`, `UnlockConfirmModal.tsx` | 3 modals bypassed shared Modal component — missing focus trap, ESC handling, scroll lock. Migrated all 3 to `<Modal>` |
 | U-1 | ✅ Fixed (v7) | `ReceiveModal.tsx:247-248` | Contact chips used undefined `--primary`/`--primary-bg` CSS tokens — replaced with `--accent`/`--accent-subtle` |
 | ST-1 | ✅ Fixed (v7) | `TokensContext.tsx:81-114` | Token send didn't acquire sync lock — wrapped with `acquireSyncLock()`/`releaseLock()` matching `transactions.ts` pattern |
 | B-1 | ✅ Fixed (v5) | `SyncContext.tsx:261` | Stale balance: `isCancelled` check now before `setBalance` |
@@ -33,6 +34,9 @@
 | U-14 | ✅ Fixed (v8) | `AccountSwitcher.tsx:109-114` | No loading indicator during account switch — dropdown closed instantly with no feedback. Added switching state |
 | U-15 | ✅ Fixed (v8) | `ReceiveModal.tsx:39-52` | Silent failure on BRC-100 key derivation — empty address shown with no error. Added `derivationError` state |
 | Q-13 | ✅ Fixed (v8) | `ordinalRepository.test.ts` | No tests for new `getBatchOrdinalContent` function. Added test suite covering chunking, filtering, error handling |
+| U-26 | ✅ Fixed (v11) | `SimplySatsLogo.tsx` | Logo hardcoded `#000` stroke/fill — invisible on dark backgrounds. Replaced with `currentColor` |
+| U-27 | ✅ Fixed (v11) | `Toast.tsx`, `App.css` | Toast dismiss button only rendered on hover — inaccessible to keyboard users. Now always in DOM, visibility via CSS opacity |
+| U-28 | ✅ Fixed (v11) | `Toast.tsx`, `App.css` | Toast dismiss button progressive disclosure via `:hover`/`:focus-within` CSS selectors |
 | U-2 | ✅ Fixed (v7) | `SendModal.tsx:407` | Send error displayed with `.warning` (amber) instead of `.warning.error` (red) — wrong semantic color for a failure |
 | U-3 | ✅ Fixed (v7) | `SpeedBumpModal.tsx` | 140-line embedded `<style>` tag removed; buttons now use shared `.btn` system; styles moved to `App.css` |
 | U-4 | ✅ Fixed (v7) | `SendModal.tsx:382-384` | Emoji in coin control buttons replaced with lucide-react `Crosshair`/`Settings` icons |
@@ -57,6 +61,13 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| U-29 | ✅ Fixed (v11) | `OrdinalListModal.tsx`, `BackupVerificationModal.tsx`, `AccountCreateForm.tsx` | Hardcoded hex colors (`#22c55e`) instead of `var(--success)` — replaced across 5 files |
+| U-30 | ✅ Fixed (v11) | `ConsolidateModal.tsx`, `TestRecoveryModal.tsx`, `UnlockConfirmModal.tsx` | 53 inline `style={{}}` extracted to CSS classes (`.result-icon-circle`, `.result-title`, `.modal-actions`, etc.) |
+| U-31 | ✅ Fixed (v11) | `MnemonicInput.tsx`, `AccountModal.tsx` | Embedded `<style>` blocks (~375 lines total) moved to App.css |
+| U-32 | ✅ Fixed (v11) | `App.css` | Settings rows lacked `:active` press feedback — added `transform: scale(0.995)` to existing rule |
+| U-33 | ✅ Fixed (v11) | `App.css` | Hardcoded font sizes (`18px`, `12px`) replaced with `var(--type-h3-size)`, `var(--type-caption-size)` tokens |
+| U-34 | ✅ Fixed (v11) | `App.css` | Duplicate `.empty-state` CSS rule merged into single consolidated rule |
+| U-35 | ✅ Fixed (v11) | `useModalKeyboard.ts` | `onItemSelect` double-fire — useEffect watching `selectedIndex` removed; selection only fires on Enter/click per ARIA listbox spec |
 | U-16 | ✅ Fixed (v8) | `BalanceDisplay.tsx` | No skeleton/loading state during initial sync — added skeleton bars when `totalBalance === 0 && syncing` |
 | U-17 | ✅ Fixed (v8) | `LockScreenModal.tsx` | No rate limiting feedback — integrated rateLimiter service, shows attempts remaining and lockout countdown |
 | U-18 | ✅ Fixed (v8) | `TokensTab.tsx:53` | Send button disabled with no tooltip — added `title` attribute explaining pending tokens not spendable |
@@ -120,6 +131,11 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| U-36 | ✅ Fixed (v11) | `PasswordInput.tsx` | Toggle button `tabIndex={-1}` — keyboard users couldn't toggle visibility. Changed to `tabIndex={0}` |
+| U-37 | ✅ Fixed (v11) | `SettingsConnectedApps.tsx` | Disconnect buttons lacked differentiated `aria-label` — added `aria-label={`Disconnect ${app}`}` |
+| U-38 | ✅ Fixed (v11) | `WalletContext.tsx` | `useAnnounce` hook implemented but never called — added announcements for wallet lock/unlock and account switch |
+| U-39 | ✅ Fixed (v11) | `autoLock.ts`, `WalletContext.tsx` | No auto-lock warning — added `onWarning` callback, fires toast 30s before wallet locks |
+| U-40 | ✅ Fixed (v11) | `SettingsNetwork.tsx`, `SettingsTransactions.tsx` | Inline styles on select/input elements — extracted to `.settings-inline-select`, `.settings-inline-input`, `.settings-hint-text` CSS classes |
 | U-21 | ✅ Fixed (v8) | `AccountSwitcher.tsx` | Added focus trap, ArrowUp/Down/Home/End keyboard navigation, auto-focus on open |
 | U-22 | ✅ Fixed (v8) | `TokensTab.tsx:27-59` | Token cards now have tabIndex, role="button", onKeyDown (Enter→send), aria-label |
 | U-23 | ✅ Fixed (v8) | `PaymentAlert.tsx` | Added role="alert", tabIndex, onKeyDown (Enter/Escape dismiss), aria-label |
@@ -164,9 +180,9 @@
 | Bugs | 20 | 20 | 0 | 0 | 0 |
 | Architecture | 16 | 15 | 0 | 1 (backlog) | 0 |
 | Quality | 23 | 23 | 0 | 0 | 0 |
-| UX/UI | 24 | 24 | 0 | 0 | 0 |
+| UX/UI | 40 | 40 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 |
-| **Total** | **120** | **119 (1 accepted)** | **0** | **1 (backlog)** | **0** |
+| **Total** | **136** | **135 (1 accepted)** | **0** | **1 (backlog)** | **0** |
 
 ---
 
@@ -308,3 +324,52 @@ _None — all deferred items resolved._
 6. **Q-21** ✅ — Logger consistency: 5 `console.error` → `logger.error` in Settings components (low)
 7. **Q-22** ✅ — Test factory helpers eliminate 20+ `as any` casts in sync.test.ts (low)
 8. **Q-23** ✅ — Content-Type validation before JSON parse in httpClient (low)
+
+---
+
+## Review #14 — 2026-02-23 (UI/UX Polish)
+
+16 new findings (4 high, 7 medium, 5 low). All 16 fixed in this session.
+
+| ID | File(s) | Change |
+|----|---------|--------|
+| U-25 | `ConsolidateModal.tsx`, `TestRecoveryModal.tsx`, `UnlockConfirmModal.tsx` | Migrated 3 modals to shared `<Modal>` component — gains focus trap, ESC, scroll lock, ARIA |
+| U-26 | `SimplySatsLogo.tsx` | Replaced 4 hardcoded `#000` with `currentColor` for dark background support |
+| U-27 | `Toast.tsx`, `App.css` | Dismiss button always in DOM for keyboard access; visibility via CSS opacity transitions |
+| U-28 | `Toast.tsx`, `App.css` | Progressive disclosure: dismiss button visible on `:hover`/`:focus-within`/`:focus-visible` |
+| U-29 | `OrdinalListModal.tsx`, `BackupVerificationModal.tsx`, `AccountCreateForm.tsx` | `#22c55e` → `var(--success)` across 5 locations |
+| U-30 | `ConsolidateModal.tsx`, `TestRecoveryModal.tsx`, `UnlockConfirmModal.tsx` | 53 inline styles extracted to CSS classes |
+| U-31 | `MnemonicInput.tsx`, `AccountModal.tsx` | ~375 lines of embedded `<style>` blocks moved to App.css |
+| U-32 | `App.css` | Settings rows `:active` press feedback: `transform: scale(0.995)` |
+| U-33 | `App.css` | `18px` → `var(--type-h3-size)`, `12px` → `var(--type-caption-size)` |
+| U-34 | `App.css` | Duplicate `.empty-state` rules merged |
+| U-35 | `useModalKeyboard.ts` | Removed useEffect watching `selectedIndex` — fixed double-fire of `onItemSelect` |
+| U-36 | `PasswordInput.tsx` | Toggle button `tabIndex={-1}` → `tabIndex={0}` for keyboard users |
+| U-37 | `SettingsConnectedApps.tsx` | Disconnect buttons: `aria-label={`Disconnect ${app}`}` |
+| U-38 | `WalletContext.tsx` | Connected `useAnnounce` for wallet lock/unlock and account switch |
+| U-39 | `autoLock.ts`, `WalletContext.tsx` | Auto-lock warning toast 30s before wallet locks |
+| U-40 | `SettingsNetwork.tsx`, `SettingsTransactions.tsx` | Inline styles → `.settings-inline-select`, `.settings-inline-input`, `.settings-hint-text` |
+
+**Remediation — Review #14: 16 of 16 fixed**
+
+### High (structural UX gaps)
+1. **U-25** ✅ — 3 modals migrated to shared Modal component (focus trap, ESC, scroll lock)
+2. **U-26** ✅ — SimplySatsLogo `currentColor` for dark background support
+3. **U-27** ✅ — Toast dismiss always in DOM for keyboard accessibility
+4. **U-28** ✅ — Progressive disclosure via CSS hover/focus-within
+
+### Medium (visual consistency)
+5. **U-29** ✅ — Hex colors replaced with `var(--success)` token
+6. **U-30** ✅ — 53 inline styles extracted to CSS classes
+7. **U-31** ✅ — 375 lines of embedded `<style>` moved to App.css
+8. **U-32** ✅ — Settings row `:active` press feedback
+9. **U-33** ✅ — Font sizes aligned to type scale tokens
+10. **U-34** ✅ — Duplicate CSS rule merged
+11. **U-35** ✅ — useModalKeyboard double-fire bug fixed
+
+### Low (polish)
+12. **U-36** ✅ — Password toggle keyboard accessible
+13. **U-37** ✅ — Connected apps disconnect button differentiated aria-labels
+14. **U-38** ✅ — Screen reader announcements for wallet state changes
+15. **U-39** ✅ — Auto-lock 30-second warning toast
+16. **U-40** ✅ — Settings inline styles extracted to CSS classes

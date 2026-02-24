@@ -105,7 +105,7 @@ export function OrdinalListModal({
       <Modal onClose={handleClose} title="Listing Complete">
         <div className="transfer-success">
           <div className="success-icon">
-            <CircleCheck size={64} strokeWidth={1.5} color="#22c55e" />
+            <CircleCheck size={64} strokeWidth={1.5} color="var(--success)" />
           </div>
           <h3>Ordinal Listed!</h3>
           <p className="success-message">

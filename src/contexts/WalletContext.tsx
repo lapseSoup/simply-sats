@@ -6,6 +6,8 @@ import {
 } from '../services/wallet'
 import { setWalletKeys } from '../services/brc100'
 import { useNetwork } from './NetworkContext'
+import { useUI } from './UIContext'
+import { useAnnounce } from '../components/shared/ScreenReaderAnnounce'
 import { useAccounts } from './AccountsContext'
 import { useSyncContext } from './SyncContext'
 import { useLocksContext } from './LocksContext'
@@ -125,6 +127,16 @@ export function WalletProvider({ children }: WalletProviderProps) {
     sendTokenAction
   } = useTokens()
 
+  // UI for auto-lock warning toast
+  const { showToast } = useUI()
+  const showToastRef = useRef(showToast)
+  useEffect(() => { showToastRef.current = showToast }, [showToast])
+
+  // Screen reader announcements for major state changes
+  const { announce } = useAnnounce()
+  const announceRef = useRef(announce)
+  useEffect(() => { announceRef.current = announce }, [announce])
+
   // Store keys in Rust key store (mnemonic + index only — no WIFs cross IPC)
   const storeKeysInRust = useCallback(async (mnemonic: string, accountIndex: number) => {
     try {
@@ -230,10 +242,32 @@ export function WalletProvider({ children }: WalletProviderProps) {
   useEffect(() => {
     if (wallet && autoLockMinutes > 0 && hasPassword()) {
       walletLogger.debug('AutoLock initializing', { timeoutMinutes: autoLockMinutes })
-      const cleanup = initAutoLock(lockWallet, minutesToMs(autoLockMinutes))
+      const cleanup = initAutoLock(
+        lockWallet,
+        minutesToMs(autoLockMinutes),
+        () => showToastRef.current('Wallet will lock in 30 seconds due to inactivity', 'warning')
+      )
       return cleanup
     }
   }, [wallet, autoLockMinutes, lockWallet])
+
+  // Screen reader: announce lock state changes
+  const prevIsLockedRef = useRef(isLocked)
+  useEffect(() => {
+    if (prevIsLockedRef.current !== isLocked) {
+      prevIsLockedRef.current = isLocked
+      announceRef.current(isLocked ? 'Wallet locked' : 'Wallet unlocked', 'assertive')
+    }
+  }, [isLocked])
+
+  // Screen reader: announce account switches
+  const prevAccountIdRef = useRef(activeAccountId)
+  useEffect(() => {
+    if (activeAccountId && prevAccountIdRef.current !== activeAccountId && activeAccount) {
+      announceRef.current(`Switched to account: ${activeAccount.name}`)
+    }
+    prevAccountIdRef.current = activeAccountId
+  }, [activeAccountId, activeAccount])
 
   // Refresh token balances - wraps TokensContext to pass wallet
   const refreshTokens = useCallback(async () => {

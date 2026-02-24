@@ -258,7 +258,7 @@ export function BackupVerificationModal({
             </div>
             <div className="modal-content compact">
               <div className="verification-success">
-                <div className="verification-success-icon"><CircleCheck size={48} strokeWidth={1.5} color="#22c55e" /></div>
+                <div className="verification-success-icon"><CircleCheck size={48} strokeWidth={1.5} color="var(--success)" /></div>
                 <div className="verification-success-title">
                   Your backup is confirmed
                 </div>

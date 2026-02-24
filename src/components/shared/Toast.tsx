@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo } from 'react'
 import { Check, X, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import type { ToastItem } from '../../contexts/UIContext'
 
@@ -18,8 +18,6 @@ function ToastIcon({ type }: { type: ToastItem['type'] }) {
 }
 
 export const Toast = memo(function Toast({ message, toasts, onDismiss }: ToastProps) {
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
-
   // Queue mode: render stacked toasts
   if (toasts && toasts.length > 0) {
     return (
@@ -28,11 +26,9 @@ export const Toast = memo(function Toast({ message, toasts, onDismiss }: ToastPr
           <div
             key={toast.id}
             className={`copy-toast toast-${toast.type}`}
-            onMouseEnter={() => setHoveredId(toast.id)}
-            onMouseLeave={() => setHoveredId(null)}
           >
             <ToastIcon type={toast.type} /> {toast.message}
-            {(hoveredId === toast.id || toast.type === 'error') && onDismiss && (
+            {onDismiss && (
               <button
                 className="toast-dismiss"
                 onClick={() => onDismiss(toast.id)}

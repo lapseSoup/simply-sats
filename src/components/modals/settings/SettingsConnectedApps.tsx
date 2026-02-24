@@ -18,7 +18,7 @@ export function SettingsConnectedApps() {
                 <div className="settings-row-label">{app}</div>
               </div>
             </div>
-            <button className="app-disconnect" onClick={() => disconnectApp(app)}>
+            <button className="app-disconnect" onClick={() => disconnectApp(app)} aria-label={`Disconnect ${app}`}>
               Disconnect
             </button>
           </div>

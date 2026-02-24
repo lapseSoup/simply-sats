@@ -24,22 +24,13 @@ export function SettingsTransactions() {
                   onClick={(e) => e.stopPropagation()}
                   autoComplete="off"
                   aria-label="Fee rate in sats per KB"
-                  style={{
-                    width: '60px',
-                    padding: '4px 8px',
-                    border: '1px solid var(--border)',
-                    borderRadius: '6px',
-                    background: 'var(--bg-primary)',
-                    color: 'var(--text-primary)',
-                    fontSize: '13px',
-                    textAlign: 'right'
-                  }}
+                  className="settings-inline-input"
                 /> sats/KB
               </div>
             </div>
           </div>
         </div>
-        <div style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--text-tertiary)' }}>
+        <div className="settings-hint-text">
           Default: 100 sats/KB. Most miners accept 50-100. Lower = cheaper, higher = faster confirmation.
         </div>
       </div>

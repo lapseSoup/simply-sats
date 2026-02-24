@@ -116,32 +116,20 @@ describe('Toast', () => {
       expect(onDismiss).toHaveBeenCalledWith('err-42')
     })
 
-    it('shows dismiss button on mouseenter and hides it on mouseleave for non-error toasts', () => {
+    it('always renders dismiss button in DOM for keyboard accessibility (visibility handled by CSS)', () => {
       const onDismiss = vi.fn()
       const toasts: ToastItem[] = [{ id: 'info-1', message: 'Info msg', type: 'info' }]
       render(<Toast message={null} toasts={toasts} onDismiss={onDismiss} />)
 
-      // Before hover — dismiss button should not be present
-      expect(screen.queryByRole('button', { name: 'Dismiss notification' })).toBeNull()
-
-      // Hover over the toast item
-      const item = document.querySelector('.toast-info')
-      expect(item).not.toBeNull()
-      fireEvent.mouseEnter(item!)
-      expect(screen.getByRole('button', { name: 'Dismiss notification' })).toBeInTheDocument()
-
-      // Mouse leave — dismiss button disappears
-      fireEvent.mouseLeave(item!)
-      expect(screen.queryByRole('button', { name: 'Dismiss notification' })).toBeNull()
+      // Dismiss button is always in DOM (visually hidden via CSS opacity until hover/focus)
+      const btn = screen.getByRole('button', { name: 'Dismiss notification' })
+      expect(btn).toBeInTheDocument()
     })
 
-    it('calls onDismiss with correct id when dismiss button clicked on non-error toast after hover', () => {
+    it('calls onDismiss with correct id when dismiss button clicked on non-error toast', () => {
       const onDismiss = vi.fn()
       const toasts: ToastItem[] = [{ id: 'hover-42', message: 'Info msg', type: 'info' }]
       render(<Toast message={null} toasts={toasts} onDismiss={onDismiss} />)
-      const item = document.querySelector('.toast-info')
-      expect(item).not.toBeNull()
-      fireEvent.mouseEnter(item!)
       const btn = screen.getByRole('button', { name: 'Dismiss notification' })
       fireEvent.click(btn)
       expect(onDismiss).toHaveBeenCalledTimes(1)

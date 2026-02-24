@@ -59,7 +59,7 @@ export const PasswordInput = memo(forwardRef<HTMLInputElement, PasswordInputProp
           className="password-toggle-btn"
           onClick={() => setShowPassword(!showPassword)}
           aria-label={showPassword ? 'Hide password' : 'Show password'}
-          tabIndex={-1}
+          tabIndex={0}
         >
           {showPassword ? (
             <EyeOff size={18} strokeWidth={1.75} />

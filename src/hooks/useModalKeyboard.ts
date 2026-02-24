@@ -182,13 +182,6 @@ export function useModalKeyboard(options: UseModalKeyboardOptions = {}): UseModa
     }
   }, [isOpen, onClose, onSubmit, selectedIndex, items.length, onItemSelect, navigateUp, navigateDown])
 
-  // Notify parent when selection changes
-  useEffect(() => {
-    if (selectedIndex >= 0 && selectedIndex < items.length) {
-      onItemSelect?.(selectedIndex)
-    }
-  }, [selectedIndex, items.length, onItemSelect])
-
   // Add keyboard listener
   useEffect(() => {
     if (!isOpen) return

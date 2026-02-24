@@ -42,14 +42,7 @@ export function SettingsNetwork() {
                   onChange={handleChange}
                   onClick={(e) => e.stopPropagation()}
                   aria-label="Select network"
-                  style={{
-                    padding: '4px 8px',
-                    border: '1px solid var(--border)',
-                    borderRadius: '6px',
-                    background: 'var(--bg-primary)',
-                    color: 'var(--text-primary)',
-                    fontSize: '13px',
-                  }}
+                  className="settings-inline-select"
                 >
                   <option value="mainnet">Mainnet</option>
                   <option value="testnet">Testnet</option>
@@ -59,7 +52,7 @@ export function SettingsNetwork() {
           </div>
         </div>
         {network === 'testnet' && (
-          <div style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--text-tertiary)' }}>
+          <div className="settings-hint-text">
             Warning: Testnet coins have no real value. Restart the app for all endpoints to update.
           </div>
         )}

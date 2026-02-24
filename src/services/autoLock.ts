@@ -23,6 +23,9 @@ const ACTIVITY_EVENTS = [
   'click'
 ] as const
 
+/** How far before lock to fire the warning callback (30 seconds) */
+const WARNING_BEFORE_LOCK_MS = 30_000
+
 /**
  * Auto-lock state
  */
@@ -32,6 +35,7 @@ interface AutoLockState {
   inactivityLimit: number
   checkInterval: ReturnType<typeof setInterval> | null
   eventCleanup: (() => void) | null
+  warningFired: boolean
 }
 
 // Singleton state
@@ -40,7 +44,8 @@ const state: AutoLockState = {
   isEnabled: false,
   inactivityLimit: DEFAULT_INACTIVITY_LIMIT,
   checkInterval: null,
-  eventCleanup: null
+  eventCleanup: null,
+  warningFired: false
 }
 
 /**
@@ -48,6 +53,7 @@ const state: AutoLockState = {
  */
 function updateActivity() {
   state.lastActiveTime = Date.now()
+  state.warningFired = false
 }
 
 /**
@@ -59,7 +65,8 @@ function updateActivity() {
  */
 export function initAutoLock(
   onLock: () => void | Promise<void>,
-  inactivityLimitMs: number = DEFAULT_INACTIVITY_LIMIT
+  inactivityLimitMs: number = DEFAULT_INACTIVITY_LIMIT,
+  onWarning?: () => void
 ): () => void {
   // Clean up any existing listeners
   stopAutoLock()
@@ -67,6 +74,7 @@ export function initAutoLock(
   state.isEnabled = true
   state.inactivityLimit = inactivityLimitMs
   state.lastActiveTime = Date.now()
+  state.warningFired = false
 
   // Add activity listeners
   ACTIVITY_EVENTS.forEach(event => {
@@ -97,6 +105,15 @@ export function initAutoLock(
       } catch (err) {
         walletLogger.error('[AutoLock] Lock callback threw synchronously', err)
       }
+    } else if (
+      onWarning &&
+      !state.warningFired &&
+      state.inactivityLimit > WARNING_BEFORE_LOCK_MS &&
+      timeSinceActive >= state.inactivityLimit - WARNING_BEFORE_LOCK_MS
+    ) {
+      state.warningFired = true
+      walletLogger.debug('[AutoLock] Warning: wallet will lock in ~30 seconds')
+      onWarning()
     }
   }, 5000) // Check every 5 seconds (Q-8: reduced from 15s for tighter lock response)
 
