@@ -160,8 +160,8 @@ vi.mock('./crypto', () => ({
 
 // Mock wallet/storage module (used by encryptAllAccounts)
 vi.mock('./wallet/storage', () => ({
-  saveWallet: vi.fn(async () => {}),
-  loadWallet: vi.fn(async () => null)
+  saveWallet: vi.fn(async () => ({ ok: true, value: undefined })),
+  loadWallet: vi.fn(async () => ({ ok: true, value: null }))
 }))
 
 
@@ -196,9 +196,11 @@ describe('Account Management Service', () => {
     it('should reject empty passwords', async () => {
       const keys = createMockWalletKeys()
       // Empty string fails validatePassword (too short)
-      await expect(createAccount('Test Account', keys, '')).rejects.toThrow(
-        'Password must be at least 14 characters'
-      )
+      const result = await createAccount('Test Account', keys, '')
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error.message).toContain('Password must be at least 14 characters')
+      }
     })
 
     it('should allow null password (creates unprotected account)', async () => {
@@ -219,13 +221,17 @@ describe('Account Management Service', () => {
     it('should require password to meet minimum requirements', async () => {
       const keys = createMockWalletKeys()
       // With default requirements, needs 14+ chars (NIST-aligned)
-      await expect(createAccount('Test Account', keys, 'short')).rejects.toThrow(
-        'Password must be at least 14 characters'
-      )
+      const result1 = await createAccount('Test Account', keys, 'short')
+      expect(result1.ok).toBe(false)
+      if (!result1.ok) {
+        expect(result1.error.message).toContain('Password must be at least 14 characters')
+      }
       // Legacy mode only requires 12 chars
-      await expect(createAccount('Test Account', keys, 'short', true)).rejects.toThrow(
-        'Password must be at least 12 characters'
-      )
+      const result2 = await createAccount('Test Account', keys, 'short', true)
+      expect(result2.ok).toBe(false)
+      if (!result2.ok) {
+        expect(result2.error.message).toContain('Password must be at least 12 characters')
+      }
     })
 
     it('should create a new account with encrypted keys', async () => {
@@ -631,14 +637,18 @@ describe('Account Management Service', () => {
       await createAccount('Account', keys, null)
 
       // Too short
-      await expect(encryptAllAccounts('short')).rejects.toThrow(
-        'Password must be at least 14 characters'
-      )
+      const result1 = await encryptAllAccounts('short')
+      expect(result1.ok).toBe(false)
+      if (!result1.ok) {
+        expect(result1.error.message).toContain('Password must be at least 14 characters')
+      }
 
       // Empty
-      await expect(encryptAllAccounts('')).rejects.toThrow(
-        'Password must be at least 14 characters'
-      )
+      const result2 = await encryptAllAccounts('')
+      expect(result2.ok).toBe(false)
+      if (!result2.ok) {
+        expect(result2.error.message).toContain('Password must be at least 14 characters')
+      }
     })
 
     it('should re-encrypt secure storage blob when wallet keys are loadable', async () => {
@@ -650,7 +660,7 @@ describe('Account Management Service', () => {
       await createAccount('Unprotected', keys, null)
 
       // Configure loadWallet to return keys (simulating unprotected wallet)
-      mockLoadWallet.mockResolvedValueOnce(keys)
+      mockLoadWallet.mockResolvedValueOnce({ ok: true, value: keys })
 
       await encryptAllAccounts('StrongPassword1!')
 

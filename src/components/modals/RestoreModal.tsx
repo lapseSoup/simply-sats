@@ -150,7 +150,11 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         }
         const keys = restoreResult.value
         if (pwd !== null) {
-          await saveWallet(keys, pwd)
+          const saveResult = await saveWallet(keys, pwd)
+          if (!saveResult.ok) {
+            showToast('Failed to save wallet: ' + saveResult.error, 'error')
+            return
+          }
         } else {
           await saveWalletUnprotected(keys)
         }
@@ -169,7 +173,11 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         }
         const keys = importResult.value
         if (pwd !== null) {
-          await saveWallet(keys, pwd)
+          const saveResult2 = await saveWallet(keys, pwd)
+          if (!saveResult2.ok) {
+            showToast('Failed to save wallet: ' + saveResult2.error, 'error')
+            return
+          }
         } else {
           await saveWalletUnprotected(keys)
         }

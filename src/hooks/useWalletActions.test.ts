@@ -186,7 +186,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockRefreshAccounts.mockResolvedValue(undefined)
   mockMigrateToMultiAccount.mockResolvedValue(undefined)
-  mockSaveWallet.mockResolvedValue(undefined)
+  mockSaveWallet.mockResolvedValue({ ok: true, value: undefined })
   mockSaveWalletUnprotected.mockResolvedValue(undefined)
   mockClearWallet.mockResolvedValue(undefined)
   mockClearDatabase.mockResolvedValue(undefined)

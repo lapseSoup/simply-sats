@@ -132,8 +132,14 @@ export function useWalletInit({
             // Passwordless wallet — load directly, no lock screen
             walletLogger.info('Found unprotected wallet, loading directly')
             try {
-              const keys = await loadWallet(null)
+              const loadResult = await loadWallet(null)
               if (!mounted) return
+              if (!loadResult.ok) {
+                walletLogger.error('Failed to load unprotected wallet', loadResult.error)
+                setIsLocked(true)
+                return
+              }
+              const keys = loadResult.value
               if (keys) {
                 // Populate Rust key store so operations like lockBSV/unlockBSV can get the WIF.
                 // This is required for no-password wallets — the unlock flow (useWalletLock)
@@ -205,8 +211,9 @@ export function useWalletInit({
         } else {
           // No accounts yet - try loading with empty password (legacy unencrypted support)
           try {
-            const keys = await loadWallet('')
+            const legacyResult = await loadWallet('')
             if (!mounted) return
+            const keys = legacyResult.ok ? legacyResult.value : null
             if (keys) {
               // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
               setWallet({ ...keys, mnemonic: '' })

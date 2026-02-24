@@ -94,7 +94,11 @@ export function useWalletActions({
       }
       const keys = result.value
       if (password !== null) {
-        await saveWallet(keys, password)
+        const saveResult = await saveWallet(keys, password)
+        if (!saveResult.ok) {
+          walletLogger.error('Failed to save wallet', saveResult.error)
+          return null
+        }
       } else {
         await saveWalletUnprotected(keys)
       }
@@ -133,7 +137,11 @@ export function useWalletActions({
       }
       const keys = result.value
       if (password !== null) {
-        await saveWallet(keys, password)
+        const saveResult = await saveWallet(keys, password)
+        if (!saveResult.ok) {
+          walletLogger.error('Failed to save wallet', saveResult.error)
+          return false
+        }
       } else {
         await saveWalletUnprotected(keys)
       }
@@ -184,7 +192,11 @@ export function useWalletActions({
       }
       const keys = result.value
       if (password !== null) {
-        await saveWallet(keys, password)
+        const saveResult = await saveWallet(keys, password)
+        if (!saveResult.ok) {
+          walletLogger.error('Failed to save wallet', saveResult.error)
+          return false
+        }
       } else {
         await saveWalletUnprotected(keys)
       }

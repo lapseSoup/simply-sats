@@ -26,6 +26,7 @@ import {
   createWrootzOpReturn,
   createScriptFromHex
 } from './script'
+import { type Result, ok, err } from '../../domain/types'
 
 // Lock management - now uses database
 export async function getLocks(): Promise<LockedOutput[]> {
@@ -63,132 +64,136 @@ export async function createLockTransaction(
   satoshis: number,
   blocks: number,
   ordinalOrigin?: string
-): Promise<{ txid: string; unlockBlock: number }> {
-  const walletWif = await getWifForOperation('wallet', 'createLockTransaction', keys)
-  const privateKey = PrivateKey.fromWif(walletWif)
-  const publicKey = privateKey.toPublicKey()
-  const fromAddress = publicKey.toAddress()
+): Promise<Result<{ txid: string; unlockBlock: number }, string>> {
+  try {
+    const walletWif = await getWifForOperation('wallet', 'createLockTransaction', keys)
+    const privateKey = PrivateKey.fromWif(walletWif)
+    const publicKey = privateKey.toPublicKey()
+    const fromAddress = publicKey.toAddress()
 
-  // Get UTXOs
-  const utxos = await getUTXOs(fromAddress)
-  if (utxos.length === 0) {
-    throw new Error('No UTXOs available')
-  }
+    // Get UTXOs
+    const utxos = await getUTXOs(fromAddress)
+    if (utxos.length === 0) {
+      return err('No UTXOs available')
+    }
 
-  // Get current block height
-  const currentHeight = await getBlockHeight()
-  const unlockBlock = currentHeight + blocks
+    // Get current block height
+    const currentHeight = await getBlockHeight()
+    const unlockBlock = currentHeight + blocks
 
-  // Create CLTV locking script
-  const lockingScript = createCLTVLockingScript(keys.identityPubKey, unlockBlock)
+    // Create CLTV locking script
+    const lockingScript = createCLTVLockingScript(keys.identityPubKey, unlockBlock)
 
-  const tx = new Transaction()
+    const tx = new Transaction()
 
-  // Collect inputs
-  const inputsToUse: UTXO[] = []
-  let totalInput = 0
-  const sourceLockingScript = new P2PKH().lock(fromAddress)
+    // Collect inputs
+    const inputsToUse: UTXO[] = []
+    let totalInput = 0
+    const sourceLockingScript = new P2PKH().lock(fromAddress)
 
-  for (const utxo of utxos) {
-    inputsToUse.push(utxo)
-    totalInput += utxo.satoshis
+    for (const utxo of utxos) {
+      inputsToUse.push(utxo)
+      totalInput += utxo.satoshis
 
-    if (totalInput >= satoshis + 200) break
-  }
+      if (totalInput >= satoshis + 200) break
+    }
 
-  if (totalInput < satoshis) {
-    throw new Error('Insufficient funds')
-  }
+    if (totalInput < satoshis) {
+      return err('Insufficient funds')
+    }
 
-  // Calculate outputs (lock output + optional OP_RETURN + change)
-  const numOutputs = ordinalOrigin ? 3 : 2 // lock + opreturn + change, or just lock + change
-  const fee = calculateTxFee(inputsToUse.length, numOutputs)
-  const change = totalInput - satoshis - fee
+    // Calculate outputs (lock output + optional OP_RETURN + change)
+    const numOutputs = ordinalOrigin ? 3 : 2 // lock + opreturn + change, or just lock + change
+    const fee = calculateTxFee(inputsToUse.length, numOutputs)
+    const change = totalInput - satoshis - fee
 
-  if (change < 0) {
-    throw new Error(`Insufficient funds (need ${fee} sats for fee)`)
-  }
+    if (change < 0) {
+      return err(`Insufficient funds (need ${fee} sats for fee)`)
+    }
 
-  // Add inputs
-  for (const utxo of inputsToUse) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        privateKey,
-        'all',
-        false,
-        utxo.satoshis,
-        sourceLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
+    // Add inputs
+    for (const utxo of inputsToUse) {
+      tx.addInput({
+        sourceTXID: utxo.txid,
+        sourceOutputIndex: utxo.vout,
+        unlockingScriptTemplate: new P2PKH().unlock(
+          privateKey,
+          'all',
+          false,
+          utxo.satoshis,
+          sourceLockingScript
+        ),
+        sequence: 0xffffffff
+      })
+    }
 
-  // Add lock output
-  tx.addOutput({
-    lockingScript: createScriptFromHex(lockingScript),
-    satoshis
-  })
-
-  // Add OP_RETURN for ordinal reference if provided
-  if (ordinalOrigin) {
-    const opReturnScript = createWrootzOpReturn('lock', ordinalOrigin)
+    // Add lock output
     tx.addOutput({
-      lockingScript: createScriptFromHex(opReturnScript),
-      satoshis: 0
+      lockingScript: createScriptFromHex(lockingScript),
+      satoshis
     })
-  }
 
-  // Add change output if there is any change
-  // Note: BSV has no dust limit - all change amounts are valid
-  if (change > 0) {
-    tx.addOutput({
-      lockingScript: new P2PKH().lock(fromAddress),
-      satoshis: change
+    // Add OP_RETURN for ordinal reference if provided
+    if (ordinalOrigin) {
+      const opReturnScript = createWrootzOpReturn('lock', ordinalOrigin)
+      tx.addOutput({
+        lockingScript: createScriptFromHex(opReturnScript),
+        satoshis: 0
+      })
+    }
+
+    // Add change output if there is any change
+    // Note: BSV has no dust limit - all change amounts are valid
+    if (change > 0) {
+      tx.addOutput({
+        lockingScript: new P2PKH().lock(fromAddress),
+        satoshis: change
+      })
+    }
+
+    await tx.sign()
+
+    // Derive txid before broadcast so we can save to DB first
+    const txid = tx.id('hex')
+
+    // Save UTXO and lock to database BEFORE broadcast so the record is never missing
+    const addLockResult = await addUTXO({
+      txid,
+      vout: 0,
+      satoshis,
+      lockingScript,
+      basket: BASKETS.LOCKS,
+      spendable: false,
+      createdAt: Date.now(),
+      tags: ['lock', 'wrootz']
     })
+    if (!addLockResult.ok) {
+      return err(`Failed to save lock UTXO to database: ${addLockResult.error.message}`)
+    }
+    const utxoId = addLockResult.value
+
+    await saveLockToDatabase(utxoId, unlockBlock, ordinalOrigin)
+
+    // Also record the transaction
+    const addTxResult = await addTransaction({
+      txid,
+      rawTx: tx.toHex(),
+      description: `Lock ${satoshis} sats until block ${unlockBlock}`,
+      createdAt: Date.now(),
+      status: 'pending',
+      labels: ['lock', 'wrootz']
+    })
+    if (!addTxResult.ok) {
+      brc100Logger.warn('Failed to record lock transaction in database', { txid, error: addTxResult.error.message })
+    }
+
+    brc100Logger.info('Lock saved to database', { txid, utxoId, unlockBlock })
+
+    // Broadcast via infrastructure service (cascade: WoC -> ARC -> mAPI)
+    await infraBroadcast(tx.toHex(), txid)
+
+    return ok({ txid, unlockBlock })
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e))
   }
-
-  await tx.sign()
-
-  // Derive txid before broadcast so we can save to DB first
-  const txid = tx.id('hex')
-
-  // Save UTXO and lock to database BEFORE broadcast so the record is never missing
-  const addLockResult = await addUTXO({
-    txid,
-    vout: 0,
-    satoshis,
-    lockingScript,
-    basket: BASKETS.LOCKS,
-    spendable: false,
-    createdAt: Date.now(),
-    tags: ['lock', 'wrootz']
-  })
-  if (!addLockResult.ok) {
-    throw new Error(`Failed to save lock UTXO to database: ${addLockResult.error.message}`)
-  }
-  const utxoId = addLockResult.value
-
-  await saveLockToDatabase(utxoId, unlockBlock, ordinalOrigin)
-
-  // Also record the transaction
-  const addTxResult = await addTransaction({
-    txid,
-    rawTx: tx.toHex(),
-    description: `Lock ${satoshis} sats until block ${unlockBlock}`,
-    createdAt: Date.now(),
-    status: 'pending',
-    labels: ['lock', 'wrootz']
-  })
-  if (!addTxResult.ok) {
-    brc100Logger.warn('Failed to record lock transaction in database', { txid, error: addTxResult.error.message })
-  }
-
-  brc100Logger.info('Lock saved to database', { txid, utxoId, unlockBlock })
-
-  // Broadcast via infrastructure service (cascade: WoC -> ARC -> mAPI)
-  await infraBroadcast(tx.toHex(), txid)
-
-  return { txid, unlockBlock }
 }

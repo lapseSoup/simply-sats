@@ -9,6 +9,7 @@
 
 export {
   upsertOrdinalCache,
+  batchUpsertOrdinalCache,
   markOrdinalTransferred,
   getAllCachedOrdinalOrigins,
   getCachedOrdinalContent,

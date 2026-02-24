@@ -20,6 +20,7 @@ import {
   rollbackPendingSpend
 } from '../sync'
 import { walletLogger } from '../logger'
+import { type Result, ok, err } from '../../domain/types'
 
 const mpLogger = walletLogger
 
@@ -80,74 +81,73 @@ export async function listOrdinal(
   payAddress: string,
   ordAddress: string,
   priceSats: number
-): Promise<string> {
-  const ordPk = PrivateKey.fromWif(ordWif)
-  const paymentPk = PrivateKey.fromWif(paymentWif)
-
-  // Select up to 2 funding UTXOs (usually enough for listing fee)
-  const fundingToUse = paymentUtxos.slice(0, 2)
-
-  // UTXOs we'll be spending
-  const utxosToSpend = [
-    { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
-    ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
-  ]
-
-  // Mark UTXOs as pending before building tx
+): Promise<Result<string, string>> {
   try {
+    const ordPk = PrivateKey.fromWif(ordWif)
+    const paymentPk = PrivateKey.fromWif(paymentWif)
+
+    // Select up to 2 funding UTXOs (usually enough for listing fee)
+    const fundingToUse = paymentUtxos.slice(0, 2)
+
+    // UTXOs we'll be spending
+    const utxosToSpend = [
+      { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
+      ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+    ]
+
+    // Mark UTXOs as pending before building tx
     const pendingResult1 = await markUtxosPendingSpend(utxosToSpend, 'listing-pending')
     if (!pendingResult1.ok) {
-      throw new Error(`Failed to mark UTXOs pending: ${pendingResult1.error.message}`)
+      return err(`Failed to mark UTXOs pending: ${pendingResult1.error.message}`)
     }
-  } catch (error) {
-    mpLogger.error('Failed to mark UTXOs as pending for listing', error)
-    throw new Error('Failed to prepare listing - UTXOs could not be locked')
-  }
 
-  let txid: string
-  try {
-    const result = await createOrdListings({
-      utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
-      listings: [{
-        payAddress,
-        price: priceSats,
-        listingUtxo: toOrdUtxo(ordinalUtxo, ordPk),
-        ordAddress,
-      }],
-      ordPk: ordPk as AnyPrivateKey,
-      paymentPk: paymentPk as AnyPrivateKey,
-    })
-
-    // Broadcast the signed transaction
-    txid = await broadcastTransaction(result.tx as unknown as Transaction)
-  } catch (err) {
-    // Rollback pending status on failure
+    let txid: string
     try {
-      await rollbackPendingSpend(utxosToSpend) // best-effort rollback; ignore errors (second)
-    } catch (rollbackErr) {
-      mpLogger.error('CRITICAL: Failed to rollback pending status after listing failure', rollbackErr)
-    }
-    throw err
-  }
+      const result = await createOrdListings({
+        utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
+        listings: [{
+          payAddress,
+          price: priceSats,
+          listingUtxo: toOrdUtxo(ordinalUtxo, ordPk),
+          ordAddress,
+        }],
+        ordPk: ordPk as AnyPrivateKey,
+        paymentPk: paymentPk as AnyPrivateKey,
+      })
 
-  // Record the transaction locally
-  try {
-    await recordSentTransaction(
-      txid,
-      '',
-      `Listed ordinal ${ordinalUtxo.txid.slice(0, 8)}... for ${priceSats} sats`,
-      ['ordinal', 'listing']
-    )
-    const confirmResult1 = await confirmUtxosSpent(utxosToSpend, txid)
-    if (!confirmResult1.ok) {
-      mpLogger.warn('Failed to confirm UTXOs spent for listing', { txid, error: confirmResult1.error.message })
+      // Broadcast the signed transaction
+      txid = await broadcastTransaction(result.tx as unknown as Transaction)
+    } catch (buildErr) {
+      // Rollback pending status on failure
+      try {
+        await rollbackPendingSpend(utxosToSpend)
+      } catch (rollbackErr) {
+        mpLogger.error('CRITICAL: Failed to rollback pending status after listing failure', rollbackErr)
+      }
+      return err(buildErr instanceof Error ? buildErr.message : 'Listing failed')
     }
-  } catch (error) {
-    mpLogger.warn('Failed to track listing locally', { error: String(error) })
-  }
 
-  mpLogger.info('Ordinal listed successfully', { txid, price: priceSats })
-  return txid
+    // Record the transaction locally
+    try {
+      await recordSentTransaction(
+        txid,
+        '',
+        `Listed ordinal ${ordinalUtxo.txid.slice(0, 8)}... for ${priceSats} sats`,
+        ['ordinal', 'listing']
+      )
+      const confirmResult1 = await confirmUtxosSpent(utxosToSpend, txid)
+      if (!confirmResult1.ok) {
+        mpLogger.warn('Failed to confirm UTXOs spent for listing', { txid, error: confirmResult1.error.message })
+      }
+    } catch (error) {
+      mpLogger.warn('Failed to track listing locally', { error: String(error) })
+    }
+
+    mpLogger.info('Ordinal listed successfully', { txid, price: priceSats })
+    return ok(txid)
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e))
+  }
 }
 
 /**

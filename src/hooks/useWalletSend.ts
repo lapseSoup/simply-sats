@@ -319,7 +319,7 @@ export function useWalletSend({
       const ordWif = await getWifForOperation('ordinals', 'listOrdinal', wallet)
       const paymentWif = await getWifForOperation('wallet', 'listOrdinal', wallet)
 
-      const txid = await listOrdinal(
+      const listResult = await listOrdinal(
         ordWif,
         ordinalUtxo,
         paymentWif,
@@ -329,8 +329,12 @@ export function useWalletSend({
         priceSats
       )
 
+      if (!listResult.ok) {
+        return err(listResult.error)
+      }
+
       await fetchData()
-      return ok({ txid })
+      return ok({ txid: listResult.value })
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Listing failed')
     }

@@ -147,7 +147,11 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
     }
     setSettingPassword(true)
     try {
-      await encryptAllAccounts(newPassword)
+      const result = await encryptAllAccounts(newPassword)
+      if (!result.ok) {
+        setSetPasswordErrorState(result.error.message)
+        return
+      }
       // encryptAllAccounts already re-encrypts secure storage and sets HAS_PASSWORD
       setModuleSessionPassword(newPassword)
       // Also update React state sessionPassword

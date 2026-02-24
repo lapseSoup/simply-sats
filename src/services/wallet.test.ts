@@ -581,27 +581,43 @@ describe('Wallet Service', () => {
 
     describe('saveWallet', () => {
       it('should reject passwords shorter than 14 characters', async () => {
-        await expect(saveWallet(mockWalletKeys, 'short')).rejects.toThrow('Password must be at least 14 characters')
-        await expect(saveWallet(mockWalletKeys, '1234567890123')).rejects.toThrow('Password must be at least 14 characters')
+        const r1 = await saveWallet(mockWalletKeys, 'short')
+        expect(r1.ok).toBe(false)
+        if (!r1.ok) expect(r1.error).toContain('Password must be at least 14 characters')
+
+        const r2 = await saveWallet(mockWalletKeys, '1234567890123')
+        expect(r2.ok).toBe(false)
+        if (!r2.ok) expect(r2.error).toContain('Password must be at least 14 characters')
       })
 
       it('should reject empty passwords', async () => {
-        await expect(saveWallet(mockWalletKeys, '')).rejects.toThrow('Password must be at least 14 characters')
+        const result = await saveWallet(mockWalletKeys, '')
+        expect(result.ok).toBe(false)
+        if (!result.ok) expect(result.error).toContain('Password must be at least 14 characters')
       })
     })
 
     describe('changePassword', () => {
       it('should reject new passwords shorter than 14 characters', async () => {
-        await expect(changePassword('oldpassword1234', 'short')).rejects.toThrow('Password must be at least 14 characters')
-        await expect(changePassword('oldpassword1234', '1234567890123')).rejects.toThrow('Password must be at least 14 characters')
+        const r1 = await changePassword('oldpassword1234', 'short')
+        expect(r1.ok).toBe(false)
+        if (!r1.ok) expect(r1.error).toContain('Password must be at least 14 characters')
+
+        const r2 = await changePassword('oldpassword1234', '1234567890123')
+        expect(r2.ok).toBe(false)
+        if (!r2.ok) expect(r2.error).toContain('Password must be at least 14 characters')
       })
 
       it('should reject empty new passwords', async () => {
-        await expect(changePassword('oldpassword1234', '')).rejects.toThrow('Password must be at least 14 characters')
+        const result = await changePassword('oldpassword1234', '')
+        expect(result.ok).toBe(false)
+        if (!result.ok) expect(result.error).toContain('Password must be at least 14 characters')
       })
 
       it('should fail gracefully when wallet not found', async () => {
-        await expect(changePassword('wrongpassword', 'newpassword123')).rejects.toThrow('Wrong password or wallet not found')
+        const result = await changePassword('wrongpassword', 'newpassword123')
+        expect(result.ok).toBe(false)
+        if (!result.ok) expect(result.error).toContain('Wrong password or wallet not found')
       })
     })
   })

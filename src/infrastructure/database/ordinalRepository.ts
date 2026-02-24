@@ -265,6 +265,66 @@ export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> 
 }
 
 /**
+ * Batch insert/update ordinal cache entries in chunks.
+ * Q-25: Replaces sequential upserts for 620+ ordinals — significantly faster
+ * by batching into multi-row INSERT statements.
+ *
+ * Chunk size = 111 ordinals (floor(999 SQLite params / 9 params per row)).
+ */
+export async function batchUpsertOrdinalCache(ordinals: CachedOrdinal[]): Promise<void> {
+  if (ordinals.length === 0) return
+  const database = getDatabase()
+
+  // 9 params per row, SQLite limit is 999 params
+  const CHUNK_SIZE = 111
+
+  for (let i = 0; i < ordinals.length; i += CHUNK_SIZE) {
+    const chunk = ordinals.slice(i, i + CHUNK_SIZE)
+    const valuePlaceholders: string[] = []
+    const params: unknown[] = []
+
+    for (let j = 0; j < chunk.length; j++) {
+      const ord = chunk[j]
+      if (!ord) continue
+      const offset = j * 9
+      valuePlaceholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9})`
+      )
+      params.push(
+        ord.origin,
+        ord.txid,
+        ord.vout,
+        ord.satoshis,
+        ord.contentType || null,
+        ord.contentHash || null,
+        ord.accountId || null,
+        ord.fetchedAt,
+        ord.blockHeight ?? null
+      )
+    }
+
+    try {
+      await database.execute(
+        `INSERT INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height)
+         VALUES ${valuePlaceholders.join(', ')}
+         ON CONFLICT(origin) DO UPDATE SET
+           txid = excluded.txid,
+           vout = excluded.vout,
+           satoshis = excluded.satoshis,
+           content_type = COALESCE(excluded.content_type, ordinal_cache.content_type),
+           content_hash = COALESCE(excluded.content_hash, ordinal_cache.content_hash),
+           account_id = COALESCE(excluded.account_id, ordinal_cache.account_id),
+           fetched_at = excluded.fetched_at,
+           block_height = COALESCE(excluded.block_height, ordinal_cache.block_height)`,
+        params
+      )
+    } catch (e) {
+      dbLogger.error('Failed to batch upsert ordinal cache:', e)
+    }
+  }
+}
+
+/**
  * Store fetched content for an ordinal (also updates content_type if provided)
  */
 export async function upsertOrdinalContent(

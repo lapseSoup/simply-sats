@@ -12,6 +12,7 @@ import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData
 import { walletLogger } from '../logger'
 import { SECURITY } from '../../config'
 import { STORAGE_KEYS } from '../../infrastructure/storage/localStorage'
+import { type Result, ok, err } from '../../domain/types'
 
 const STORAGE_KEY = STORAGE_KEYS.WALLET
 
@@ -145,27 +146,32 @@ export async function saveWalletUnprotected(keys: WalletKeys): Promise<void> {
  * @param keys - Wallet keys to save
  * @param password - Password for encryption
  */
-export async function saveWallet(keys: WalletKeys, password: string): Promise<void> {
+export async function saveWallet(keys: WalletKeys, password: string): Promise<Result<void, string>> {
   if (!password || password.length < SECURITY.MIN_PASSWORD_LENGTH) {
-    throw new Error(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
+    return err(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
   }
 
-  const encryptedData = await encrypt(keys, password)
+  try {
+    const encryptedData = await encrypt(keys, password)
 
-  // Try to save to secure storage first (Tauri desktop)
-  const savedSecurely = await saveToSecureStorage(encryptedData)
+    // Try to save to secure storage first (Tauri desktop)
+    const savedSecurely = await saveToSecureStorage(encryptedData)
 
-  if (savedSecurely) {
-    // Also remove from localStorage if it was there (migration complete)
-    localStorage.removeItem(STORAGE_KEY)
-    walletLogger.info('Wallet saved to secure storage')
-  } else {
-    // Fallback to localStorage (web build)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
-    walletLogger.info('Wallet saved to localStorage')
+    if (savedSecurely) {
+      // Also remove from localStorage if it was there (migration complete)
+      localStorage.removeItem(STORAGE_KEY)
+      walletLogger.info('Wallet saved to secure storage')
+    } else {
+      // Fallback to localStorage (web build)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
+      walletLogger.info('Wallet saved to localStorage')
+    }
+
+    localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, 'true')
+    return ok(undefined)
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e))
   }
-
-  localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, 'true')
 }
 
 /**
@@ -178,102 +184,106 @@ export async function saveWallet(keys: WalletKeys, password: string): Promise<vo
  * @returns WalletKeys or null if not found
  * @throws Error if password is wrong or data is corrupted
  */
-export async function loadWallet(password: string | null): Promise<WalletKeys | null> {
-  // Try secure storage first (Tauri desktop)
-  const secureData = await loadFromSecureStorage()
-  if (secureData) {
-    // Check for unprotected format (version 0)
-    if (isUnprotectedData(secureData)) {
-      return secureData.keys
-    }
-    // Encrypted format — need password
-    if (!password) {
-      throw new Error('Password required for encrypted wallet')
-    }
-    const decrypted = await decrypt(secureData, password)
-    return JSON.parse(decrypted)
-  }
-
-  // Fall back to localStorage
-  const stored = localStorage.getItem(STORAGE_KEY)
-  if (!stored) return null
-
+export async function loadWallet(password: string | null): Promise<Result<WalletKeys | null, string>> {
   try {
-    // Try to parse as JSON (new format)
-    const parsed = JSON.parse(stored)
-
-    // Check for unprotected format (version 0)
-    if (isUnprotectedData(parsed)) {
-      return parsed.keys
-    }
-
-    if (isEncryptedData(parsed)) {
+    // Try secure storage first (Tauri desktop)
+    const secureData = await loadFromSecureStorage()
+    if (secureData) {
+      // Check for unprotected format (version 0)
+      if (isUnprotectedData(secureData)) {
+        return ok(secureData.keys)
+      }
       // Encrypted format — need password
       if (!password) {
-        throw new Error('Password required for encrypted wallet')
+        return err('Password required for encrypted wallet')
       }
-      // New encrypted format - decrypt it
-      const decrypted = await decrypt(parsed, password)
-      const keys = JSON.parse(decrypted) as WalletKeys
-
-      // Migrate to secure storage if available
-      const migrated = await migrateToSecureStorage(stored)
-      if (migrated) {
-        localStorage.removeItem(STORAGE_KEY)
-        walletLogger.info('Wallet migrated from localStorage to secure storage')
-      }
-
-      return keys
+      const decrypted = await decrypt(secureData, password)
+      return ok(JSON.parse(decrypted))
     }
 
-    // If it's a plain object with wallet keys — this is a security violation
-    // (raw plaintext keys without the version 0 wrapper)
-    if (parsed.mnemonic && parsed.walletWif) {
-      walletLogger.error('SECURITY: Unencrypted wallet data found in localStorage. Removing.')
-      localStorage.removeItem(STORAGE_KEY)
-      throw new Error('Wallet data was stored without encryption. Please restore using your mnemonic.')
-    }
-  } catch (_e) {
-    // Not valid JSON - might be legacy format
-  }
+    // Fall back to localStorage
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (!stored) return ok(null)
 
-  // Try legacy base64 format
-  if (isLegacyEncrypted(stored)) {
-    walletLogger.info('Migrating legacy wallet format to secure encryption...')
     try {
-      // Decode the old format
-      const decoded = atob(stored)
-      const keys = JSON.parse(decoded) as WalletKeys
+      // Try to parse as JSON (new format)
+      const parsed = JSON.parse(stored)
 
-      // SECURITY: Remove plaintext base64 from localStorage immediately,
-      // before attempting re-encryption. Even if re-encryption fails,
-      // the plaintext must not remain on disk.
-      localStorage.removeItem(STORAGE_KEY)
-      walletLogger.warn('Removed legacy base64 wallet data from localStorage')
-
-      // Migrate to new encrypted format (legacy wallets always had passwords)
-      if (!password) {
-        throw new Error('Password required for legacy wallet migration')
-      }
-      const encryptedData = await migrateLegacyData(stored, password)
-
-      // Try to save to secure storage
-      const savedSecurely = await saveToSecureStorage(encryptedData)
-      if (savedSecurely) {
-        walletLogger.info('Wallet migrated to secure storage')
-      } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
-        walletLogger.info('Wallet migrated to new encrypted format')
+      // Check for unprotected format (version 0)
+      if (isUnprotectedData(parsed)) {
+        return ok(parsed.keys)
       }
 
-      return keys
-    } catch {
-      // Legacy decoding failed
-      throw new Error('Failed to load wallet - data may be corrupted')
+      if (isEncryptedData(parsed)) {
+        // Encrypted format — need password
+        if (!password) {
+          return err('Password required for encrypted wallet')
+        }
+        // New encrypted format - decrypt it
+        const decrypted = await decrypt(parsed, password)
+        const keys = JSON.parse(decrypted) as WalletKeys
+
+        // Migrate to secure storage if available
+        const migrated = await migrateToSecureStorage(stored)
+        if (migrated) {
+          localStorage.removeItem(STORAGE_KEY)
+          walletLogger.info('Wallet migrated from localStorage to secure storage')
+        }
+
+        return ok(keys)
+      }
+
+      // If it's a plain object with wallet keys — this is a security violation
+      // (raw plaintext keys without the version 0 wrapper)
+      if (parsed.mnemonic && parsed.walletWif) {
+        walletLogger.error('SECURITY: Unencrypted wallet data found in localStorage. Removing.')
+        localStorage.removeItem(STORAGE_KEY)
+        return err('Wallet data was stored without encryption. Please restore using your mnemonic.')
+      }
+    } catch (_e) {
+      // Not valid JSON - might be legacy format
     }
-  }
 
-  return null
+    // Try legacy base64 format
+    if (isLegacyEncrypted(stored)) {
+      walletLogger.info('Migrating legacy wallet format to secure encryption...')
+      try {
+        // Decode the old format
+        const decoded = atob(stored)
+        const keys = JSON.parse(decoded) as WalletKeys
+
+        // SECURITY: Remove plaintext base64 from localStorage immediately,
+        // before attempting re-encryption. Even if re-encryption fails,
+        // the plaintext must not remain on disk.
+        localStorage.removeItem(STORAGE_KEY)
+        walletLogger.warn('Removed legacy base64 wallet data from localStorage')
+
+        // Migrate to new encrypted format (legacy wallets always had passwords)
+        if (!password) {
+          return err('Password required for legacy wallet migration')
+        }
+        const encryptedData = await migrateLegacyData(stored, password)
+
+        // Try to save to secure storage
+        const savedSecurely = await saveToSecureStorage(encryptedData)
+        if (savedSecurely) {
+          walletLogger.info('Wallet migrated to secure storage')
+        } else {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
+          walletLogger.info('Wallet migrated to new encrypted format')
+        }
+
+        return ok(keys)
+      } catch {
+        // Legacy decoding failed
+        return err('Failed to load wallet - data may be corrupted')
+      }
+    }
+
+    return ok(null)
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e))
+  }
 }
 
 /**
@@ -305,17 +315,24 @@ export async function clearWallet(): Promise<void> {
  * @returns true if successful
  * @throws Error if old password is wrong
  */
-export async function changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
+export async function changePassword(oldPassword: string, newPassword: string): Promise<Result<boolean, string>> {
   if (!newPassword || newPassword.length < SECURITY.MIN_PASSWORD_LENGTH) {
-    throw new Error(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
+    return err(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
   }
 
-  const keys = await loadWallet(oldPassword)
+  const loadResult = await loadWallet(oldPassword)
+  if (!loadResult.ok) {
+    return err(loadResult.error)
+  }
+  const keys = loadResult.value
   if (!keys) {
-    throw new Error('Wrong password or wallet not found')
+    return err('Wrong password or wallet not found')
   }
 
-  await saveWallet(keys, newPassword)
+  const saveResult = await saveWallet(keys, newPassword)
+  if (!saveResult.ok) {
+    return err(saveResult.error)
+  }
 
   // S-12: Rotate the session key so that any cached BRC-100 session tokens
   // derived from the old password are invalidated.
@@ -325,5 +342,5 @@ export async function changePassword(oldPassword: string, newPassword: string): 
     walletLogger.warn('Failed to rotate session key after password change', { error: String(e) })
   }
 
-  return true
+  return ok(true)
 }

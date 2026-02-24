@@ -18,6 +18,12 @@ export interface SimplySatsConfig {
   sessionToken?: string
   /** API version prefix (default: 'v1'). Set to '' for legacy unversioned routes. */
   apiVersion?: string
+  /**
+   * Reject responses with invalid HMAC signatures (default: true).
+   * When true, a tampered response will throw a SimplySatsError instead of proceeding.
+   * Set to false only for debugging or when signature verification is not available.
+   */
+  strictVerification?: boolean
 }
 
 export interface LockedUTXO {
@@ -118,6 +124,7 @@ export class SimplySats {
   private origin: string
   private sessionToken: string | null
   private apiVersion: string
+  private strictVerification: boolean
 
   constructor(config: SimplySatsConfig = {}) {
     this.baseUrl = config.baseUrl || 'http://127.0.0.1:3322'
@@ -125,6 +132,7 @@ export class SimplySats {
     this.origin = config.origin || 'sdk'
     this.sessionToken = config.sessionToken || null
     this.apiVersion = config.apiVersion ?? 'v1'
+    this.strictVerification = config.strictVerification ?? true
   }
 
   /**
@@ -190,7 +198,7 @@ export class SimplySats {
         this.sessionToken = newToken
       }
 
-      // Verify response signature if present (non-breaking — only warns on mismatch)
+      // Verify response HMAC signature to detect tampered responses
       const signature = response.headers.get('X-Simply-Sats-Signature')
       if (signature && this.sessionToken && typeof globalThis.crypto?.subtle !== 'undefined') {
         try {
@@ -205,10 +213,14 @@ export class SimplySats {
           const sigBytes = new Uint8Array(signature.match(/.{2}/g)!.map(b => parseInt(b, 16)))
           const valid = await globalThis.crypto.subtle.verify('HMAC', key, sigBytes, bodyBytes)
           if (!valid) {
+            if (this.strictVerification) {
+              throw new SimplySatsError('Response signature verification failed — possible response tampering', -32010)
+            }
             console.warn('[SimplySats SDK] Response signature verification failed')
           }
-        } catch {
-          // Signature verification is optional — don't break on failures
+        } catch (verifyError) {
+          // Re-throw SimplySatsError (strict verification failure), swallow crypto errors
+          if (verifyError instanceof SimplySatsError) throw verifyError
         }
       }
 

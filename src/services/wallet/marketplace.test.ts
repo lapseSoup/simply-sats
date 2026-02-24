@@ -106,7 +106,7 @@ describe('Marketplace Service', () => {
       })
       mockBroadcast.mockResolvedValue('broadcasted_txid_123')
 
-      const txid = await listOrdinal(
+      const result = await listOrdinal(
         TEST_ORD_WIF,
         mockOrdinalUtxo,
         TEST_PAY_WIF,
@@ -116,6 +116,8 @@ describe('Marketplace Service', () => {
         50000
       )
 
+      expect(result.ok).toBe(true)
+      const txid = result.ok ? result.value : ''
       expect(txid).toBe('broadcasted_txid_123')
       expect(mockMarkPending).toHaveBeenCalledOnce()
       expect(mockCreateOrdListings).toHaveBeenCalledOnce()
@@ -139,36 +141,42 @@ describe('Marketplace Service', () => {
       })
       mockBroadcast.mockRejectedValue(new Error('Broadcast failed'))
 
-      await expect(
-        listOrdinal(
-          TEST_ORD_WIF,
-          mockOrdinalUtxo,
-          TEST_PAY_WIF,
-          mockPaymentUtxos,
-          '1PayAddress123',
-          '1OrdAddress456',
-          50000
-        )
-      ).rejects.toThrow('Broadcast failed')
+      const result = await listOrdinal(
+        TEST_ORD_WIF,
+        mockOrdinalUtxo,
+        TEST_PAY_WIF,
+        mockPaymentUtxos,
+        '1PayAddress123',
+        '1OrdAddress456',
+        50000
+      )
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error).toContain('Broadcast failed')
+      }
 
       expect(mockRollback).toHaveBeenCalledOnce()
       expect(mockConfirmSpent).not.toHaveBeenCalled()
     })
 
-    it('should throw if UTXOs cannot be marked pending', async () => {
+    it('should return error if UTXOs cannot be marked pending', async () => {
       mockMarkPending.mockResolvedValue({ ok: false, error: new DbError('DB error', 'QUERY_FAILED') })
 
-      await expect(
-        listOrdinal(
-          TEST_ORD_WIF,
-          mockOrdinalUtxo,
-          TEST_PAY_WIF,
-          mockPaymentUtxos,
-          '1PayAddress123',
-          '1OrdAddress456',
-          50000
-        )
-      ).rejects.toThrow('Failed to prepare listing')
+      const result = await listOrdinal(
+        TEST_ORD_WIF,
+        mockOrdinalUtxo,
+        TEST_PAY_WIF,
+        mockPaymentUtxos,
+        '1PayAddress123',
+        '1OrdAddress456',
+        50000
+      )
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error).toContain('Failed to mark UTXOs pending')
+      }
 
       expect(mockCreateOrdListings).not.toHaveBeenCalled()
       expect(mockBroadcast).not.toHaveBeenCalled()

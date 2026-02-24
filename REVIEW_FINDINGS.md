@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-02-23 (v11 / Review #14 — UI/UX Polish)
-**Full report:** `docs/reviews/2026-02-23-full-review-v11.md`
-**Rating:** 9.8 / 10 (up from 9.7 — all 16 new UI/UX findings fixed, codebase at highest polish level)
-**Review #14 remediation:** Complete — 16 of 16 findings fixed. Modal consistency, accessibility, design tokens, screen reader support all improved
+**Latest review:** 2026-02-23 (v12 / Review #15 — Deep Semantic Dive)
+**Full report:** `docs/reviews/2026-02-23-full-review-v12.md`
+**Rating:** 9.7 / 10 (down from 9.8 — 10 new findings from deep dive, 1 high-priority SDK security gap)
+**Review #15 summary:** Deep semantic correctness review. 10 new findings (1 high, 4 medium, 5 low). SDK response signature bypass (S-25) and broken listOutputs/listLocks (S-27) are the most actionable.
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -49,6 +49,7 @@
 | S-4 | ✅ Fixed (v5) | `crypto.ts:239` | PBKDF2 minimum enforced |
 | S-15 | ✅ Mitigated (v5+) | `brc100/state.ts:19` | All `setWalletKeys()` call sites audited |
 | S-16 | ✅ Fixed (v5+) | `http_server.rs:649` | Timeout reduced from 120s to 30s |
+| S-25 | 🟠 Open-High | `sdk/src/index.ts:207-208` | SDK HMAC response signature verification only `console.warn`s on mismatch — MITM on localhost can modify responses undetected. Should reject or throw |
 | S-17 | 🟠 Accepted | `secureStorage.ts:21-23` | `SENSITIVE_KEYS` empty — accepted risk: XSS in Tauri requires code exec |
 | A-4 | ✅ Fixed (v5) | `AppProviders.tsx` | All providers wrapped in ErrorBoundary |
 | A-5 | ✅ Fixed (v5) | `infrastructure/api/wocClient.ts` | Retry/backoff logic now in httpClient |
@@ -84,6 +85,10 @@
 | A-14 | ✅ Fixed (v8) | `services/ordinalCache.ts` | Created services facade — SyncContext now imports ordinal cache functions through services layer |
 | Q-17 | ✅ Fixed (v9) | `utils/syncHelpers.ts` | Extracted `compareTxByHeight` + `mergeOrdinalTxEntries` to shared module. Both hooks now import from `utils/syncHelpers.ts` |
 | S-23 | ✅ Fixed (v10) | `http_server.rs:151-167` | Token rotation TOCTOU race — between `drop(session)` and re-lock, concurrent requests could desync tokens. Re-check `is_token_expired()` under second lock before rotating |
+| S-27 | 🟡 Open-Medium | `sdk/src/index.ts:346-353`, `http_server.rs:565-575` | SDK `listOutputs()` and `listLocks()` don't send CSRF nonces, but server `validate_and_parse_request` requires them — these calls will fail for external SDK consumers |
+| B-21 | 🟡 Open-Medium | `useSyncData.ts:369` | Partial ordinal display on API failure — `apiOrdinals.length > 0 ? apiOrdinals : dbOrdinals` means if some ordinal API calls fail (return []) while others succeed, a partial set replaces the full DB set |
+| A-17 | 🟡 Open-Medium | `sync.ts`, `tokens.ts`, `brc100/actions.ts`, `locks.ts` | Four monolithic service files exceed 800 LOC (1351, 1057, 957, 838). Natural seam points exist for splitting |
+| Q-24 | 🟡 Open-Medium | `src/hooks/` | 13 of 17 hooks have zero test coverage — most complex logic (useAccountSwitching, useWalletSend, useSyncData) is untested |
 | A-16 | 🟡 Backlog | 51 component files | 51 `no-restricted-imports` lint warnings — components importing directly from `services/` instead of context hooks. Tracked as backlog item |
 | A-15 | ✅ Fixed (v9) | `utils/syncHelpers.test.ts`, `hooks/useOrdinalCache.test.ts` | 27 new tests: 14 for syncHelpers (compareTxByHeight, mergeOrdinalTxEntries), 13 for cacheOrdinalsInBackground |
 | ST-4 | ✅ Fixed (v9) | `useSyncData.ts`, `httpClient.ts`, `wocClient.ts`, `balance.ts`, `ordinals.ts` | AbortController created in `fetchData`, signal threaded through API layer to `fetch()` calls. Cancelled requests now abort immediately |
@@ -168,6 +173,11 @@
 | Q-21 | ✅ Fixed (v10) | `SettingsSecurity.tsx:107,128,210` + `SettingsBackup.tsx:75,153` | 5 `console.error()` calls replaced with `logger.error()` |
 | Q-22 | ✅ Fixed (v10) | `sync.test.ts`, `src/test/factories.ts` | 20+ `as any` casts for UTXO mocks replaced with typed factory helpers: `createMockDBUtxo()`, `createMockUTXO()`, `createMockExtendedUTXO()` |
 | Q-23 | ✅ Fixed (v10) | `httpClient.ts:333-338` | JSON response parsed without checking `Content-Type` header. Added Content-Type validation before JSON parse, rejects unexpected content types |
+| S-28 | ⚪ Open-Low | `tauri.conf.json:26` | CSP `img-src 'self' data: blob: https:` allows any HTTPS image URL — ordinal preview images could be used for IP tracking. Consider restricting to known ordinal CDN domains |
+| B-22 | ⚪ Open-Low | `useSyncData.ts:92,229,251` | `localStorage.setItem()` wrapped in silent `try/catch` — if quota exceeded, next cold start shows 0 balance flash until API sync completes |
+| A-18 | ⚪ Open-Low | Service layer | Error handling pattern fragmentation — mix of `Result<T,E>` returns, `{success, error}` objects, and raw `throw`. ~60% migrated to Result pattern |
+| Q-25 | ⚪ Open-Low | `useOrdinalCache.ts:45-59` | Sequential `await upsertOrdinalCache(cached)` for 620+ ordinals — batched INSERT would be significantly faster |
+| Q-26 | ⚪ Open-Low | `eslint.config.js` | ESLint scans `coverage/` directory — 3 spurious warnings from instrumented files. Add `coverage/` to ignores |
 | Q-9 | ✅ Verified | `keyDerivation.ts:260-262` | Dev-only code guarded |
 
 ---
@@ -176,20 +186,33 @@
 
 | Category | Total | ✅ Fixed/Verified | 🔴/🟠 Critical/High Open | 🟡 Medium Open | ⚪ Low Open |
 |----------|-------|-------------------|--------------------------|----------------|-------------|
-| Security | 24 | 23 (1 accepted) | 0 | 0 | 0 |
-| Bugs | 20 | 20 | 0 | 0 | 0 |
-| Architecture | 16 | 15 | 0 | 1 (backlog) | 0 |
-| Quality | 23 | 23 | 0 | 0 | 0 |
+| Security | 27 | 23 (1 accepted) | 1 (S-25) | 1 (S-27) | 1 (S-28) |
+| Bugs | 22 | 20 | 0 | 1 (B-21) | 1 (B-22) |
+| Architecture | 18 | 15 | 0 | 2 (A-17 + A-16 backlog) | 1 (A-18) |
+| Quality | 26 | 23 | 0 | 1 (Q-24) | 2 (Q-25, Q-26) |
 | UX/UI | 40 | 40 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 |
-| **Total** | **136** | **135 (1 accepted)** | **0** | **1 (backlog)** | **0** |
+| **Total** | **146** | **135 (1 accepted)** | **1** | **5 (1 backlog)** | **5** |
 
 ---
 
 ## Remaining Open Items
 
+### High Priority
+- **S-25** — SDK HMAC response signature verification non-blocking (`sdk/src/index.ts:207-208`)
+
+### Medium Priority
+- **S-27** — SDK/Server nonce mismatch for listOutputs/listLocks
+- **B-21** — Partial ordinal display on API failure (`useSyncData.ts:369`)
+- **A-17** — Four monolithic service files >800 LOC
+- **Q-24** — 13/17 hooks have zero test coverage
+
 ### Low / Deferred
-_None — all deferred items resolved._
+- **S-28** — CSP img-src wildcard enables IP tracking via ordinal images
+- **B-22** — localStorage quota silently swallowed
+- **A-18** — Error handling pattern fragmentation (~60% migrated to Result)
+- **Q-25** — Sequential ordinal DB writes (batched INSERT would be faster)
+- **Q-26** — ESLint should exclude `coverage/` directory
 
 ### Backlog
 - **A-16** — 51 `no-restricted-imports` lint warnings (components importing from `services/` directly)
@@ -373,3 +396,40 @@ _None — all deferred items resolved._
 14. **U-38** ✅ — Screen reader announcements for wallet state changes
 15. **U-39** ✅ — Auto-lock 30-second warning toast
 16. **U-40** ✅ — Settings inline styles extracted to CSS classes
+
+---
+
+## Review #15 — 2026-02-23 (Deep Semantic Dive)
+
+10 new findings (1 high, 4 medium, 5 low). Deep semantic correctness review targeting areas that heavy refactoring may have introduced subtle issues in, and security vectors previous reviews didn't explore in depth.
+
+| ID | Severity | File(s) | Finding |
+|----|----------|---------|---------|
+| S-25 | HIGH | `sdk/src/index.ts:207-208` | SDK HMAC response signature verification non-blocking — `console.warn` on mismatch instead of rejecting. MITM on localhost can silently modify responses |
+| S-27 | MEDIUM | `sdk/src/index.ts:346-353`, `http_server.rs:565-575` | SDK `listOutputs`/`listLocks` don't send CSRF nonces but server requires them via `validate_and_parse_request`. External SDK consumers will get auth failures |
+| B-21 | MEDIUM | `useSyncData.ts:369` | Partial ordinal display on API failure — ternary `apiOrdinals.length > 0 ? apiOrdinals : dbOrdinals` replaces full DB set with partial API set when some calls fail |
+| A-17 | MEDIUM | `sync.ts` (1351), `tokens.ts` (1057), `brc100/actions.ts` (957), `locks.ts` (838) | Four monolithic service files exceed 800 LOC with natural splitting seams |
+| Q-24 | MEDIUM | `src/hooks/` | 13 of 17 hooks have zero test coverage — most complex logic (useAccountSwitching, useWalletSend, useSyncData) is untested |
+| S-28 | LOW | `tauri.conf.json:26` | CSP `img-src https:` allows any HTTPS image — ordinal previews could enable IP tracking |
+| B-22 | LOW | `useSyncData.ts:92,229,251` | localStorage quota silently swallowed — cold start shows 0 balance flash |
+| A-18 | LOW | Service layer | Error handling pattern fragmentation — ~60% Result, ~40% ad-hoc `{success, error}` or throw |
+| Q-25 | LOW | `useOrdinalCache.ts:45-59` | Sequential ordinal DB writes (620+) — batched INSERT significantly faster |
+| Q-26 | LOW | `eslint.config.js` | ESLint scans `coverage/` directory — 3 spurious warnings from instrumented files |
+
+**Prioritized Remediation — Review #15**
+
+### Immediate (before next release)
+1. **S-25** `sdk/src/index.ts:207-208` — Make HMAC verification blocking: throw or return error on signature mismatch instead of `console.warn`. **Effort: quick** (change warn to throw, add `strictVerification` option defaulting to true)
+
+### Next Sprint
+2. **S-27** `sdk/src/index.ts` + `http_server.rs` — Either: (a) exempt read-only operations from nonce requirement in server, or (b) have SDK send nonces for all requests. Option (a) is simpler and more correct. **Effort: quick**
+3. **B-21** `useSyncData.ts:369` — Replace ternary with merge logic: only replace DB ordinals with API ordinals when ALL API calls succeed (check error flags). **Effort: quick**
+4. **Q-24** `src/hooks/` — Add test files for useAccountSwitching, useWalletSend, useSyncData. Focus on the complex branching paths (Rust vs password fallback, queued switches, abort handling). **Effort: major** (3-5 hours)
+
+### Later
+5. **A-17** Service files — Split along natural seams: `sync.ts` → sync orchestration + address sync + UTXO sync; `tokens.ts` → token fetching + token state + token transfer. **Effort: major**
+6. **S-28** `tauri.conf.json` — Restrict `img-src` to known ordinal CDN domains (`ordinals.gorillapool.io`). **Effort: quick**
+7. **B-22** `useSyncData.ts` — Add `try/catch` with `walletLogger.warn` and consider a `storageAvailable` guard. **Effort: quick**
+8. **A-18** Service layer — Continue Result<T,E> migration for remaining ~40% of service methods. **Effort: major** (multi-session)
+9. **Q-25** `useOrdinalCache.ts` — Replace sequential upserts with batched SQL INSERT. **Effort: medium**
+10. **Q-26** `eslint.config.js` — Add `coverage/` to ESLint ignores array. **Effort: quick** (1 line)

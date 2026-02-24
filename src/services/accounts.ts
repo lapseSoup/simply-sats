@@ -78,12 +78,12 @@ export async function createAccount(
       // Legacy migration path: accept existing passwords with old 12-char minimum.
       // The UI already validated these when they were originally created.
       if (password.length < 12) {
-        throw new Error('Password must be at least 12 characters')
+        return err(new DbError('Password must be at least 12 characters', 'CONSTRAINT'))
       }
     } else {
       const validation = validatePassword(password)
       if (!validation.isValid) {
-        throw new Error(validation.errors.join('. '))
+        return err(new DbError(validation.errors.join('. '), 'CONSTRAINT'))
       }
     }
   }
@@ -558,10 +558,10 @@ export async function isAccountSystemInitialized(): Promise<boolean> {
  * Called when user sets a password in Settings after initially skipping it.
  * Atomic — if any account fails, throws and makes no changes.
  */
-export async function encryptAllAccounts(password: string): Promise<void> {
+export async function encryptAllAccounts(password: string): Promise<Result<void, DbError>> {
   const validation = validatePassword(password)
   if (!validation.isValid) {
-    throw new Error(validation.errors.join('. '))
+    return err(new DbError(validation.errors.join('. '), 'CONSTRAINT'))
   }
 
   const accounts = await getAllAccounts()
@@ -588,7 +588,7 @@ export async function encryptAllAccounts(password: string): Promise<void> {
 
   if (updates.length === 0) {
     accountLogger.info('No unprotected accounts to encrypt')
-    return
+    return ok(undefined)
   }
 
   // Phase 2: Write all updates atomically
@@ -604,10 +604,15 @@ export async function encryptAllAccounts(password: string): Promise<void> {
 
   // Phase 3: Re-encrypt the secure storage blob (wallet's primary key store)
   try {
-    const currentKeys = await loadWallet(null)
+    const loadResult = await loadWallet(null)
+    const currentKeys = loadResult.ok ? loadResult.value : null
     if (currentKeys) {
-      await saveWallet(currentKeys, password)
-      // saveWallet already sets HAS_PASSWORD = 'true'
+      const saveResult = await saveWallet(currentKeys, password)
+      if (!saveResult.ok) {
+        accountLogger.warn('Failed to re-encrypt secure storage blob', { error: saveResult.error })
+        localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, 'true')
+      }
+      // saveWallet already sets HAS_PASSWORD = 'true' on success
     } else {
       accountLogger.warn('Could not load wallet keys for secure storage re-encryption')
       localStorage.setItem(STORAGE_KEYS.HAS_PASSWORD, 'true')
@@ -619,4 +624,5 @@ export async function encryptAllAccounts(password: string): Promise<void> {
   }
 
   accountLogger.info('Encrypted all accounts', { count: updates.length })
+  return ok(undefined)
 }

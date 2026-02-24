@@ -7,7 +7,7 @@
 import { useCallback, type MutableRefObject } from 'react'
 import type { Ordinal } from '../services/wallet'
 import {
-  upsertOrdinalCache,
+  batchUpsertOrdinalCache,
   markOrdinalTransferred,
   getCachedOrdinalContent,
   upsertOrdinalContent,
@@ -39,24 +39,21 @@ export async function cacheOrdinalsInBackground(
   if (!activeAccountId) return
 
   try {
-    // 1. Save metadata to DB
+    // 1. Save metadata to DB (Q-25: batched INSERT for performance)
     if (isCancelled()) return
     const now = Date.now()
-    for (const ord of allOrdinals) {
-      if (isCancelled()) return
-      const cached: CachedOrdinal = {
-        origin: ord.origin,
-        txid: ord.txid,
-        vout: ord.vout,
-        satoshis: ord.satoshis,
-        contentType: ord.contentType,
-        contentHash: ord.content,
-        accountId: activeAccountId,
-        fetchedAt: now,
-        blockHeight: ord.blockHeight
-      }
-      await upsertOrdinalCache(cached)
-    }
+    const cacheEntries: CachedOrdinal[] = allOrdinals.map(ord => ({
+      origin: ord.origin,
+      txid: ord.txid,
+      vout: ord.vout,
+      satoshis: ord.satoshis,
+      contentType: ord.contentType,
+      contentHash: ord.content,
+      accountId: activeAccountId,
+      fetchedAt: now,
+      blockHeight: ord.blockHeight
+    }))
+    await batchUpsertOrdinalCache(cacheEntries)
     syncLogger.debug('Cached ordinal metadata', { count: allOrdinals.length })
 
     // 1b. Mark transferred ordinals -- only when ALL API calls succeeded.

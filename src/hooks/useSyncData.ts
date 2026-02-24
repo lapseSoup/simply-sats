@@ -89,7 +89,7 @@ export function useSyncData({
       const totalBalance = defaultBal + derivedBal
       if (Number.isFinite(totalBalance)) {
         setBalance(totalBalance)
-        try { localStorage.setItem(`${STORAGE_KEYS.CACHED_BALANCE}_${activeAccountId}`, String(totalBalance)) } catch { /* quota exceeded */ }
+        try { localStorage.setItem(`${STORAGE_KEYS.CACHED_BALANCE}_${activeAccountId}`, String(totalBalance)) } catch (_e) { syncLogger.warn('localStorage quota exceeded for cached balance', { error: String(_e) }) }
       }
     } catch (e) {
       syncLogger.warn('fetchDataFromDB: balance read failed', { error: String(e) })
@@ -226,7 +226,7 @@ export function useSyncData({
       // Guard against NaN/Infinity from unexpected DB values -- don't corrupt displayed balance
       if (Number.isFinite(totalBalance)) {
         setBalance(totalBalance)
-        try { localStorage.setItem(`${STORAGE_KEYS.CACHED_BALANCE}_${activeAccountId}`, String(totalBalance)) } catch { /* quota exceeded */ }
+        try { localStorage.setItem(`${STORAGE_KEYS.CACHED_BALANCE}_${activeAccountId}`, String(totalBalance)) } catch (_e) { syncLogger.warn('localStorage quota exceeded for cached balance', { error: String(_e) }) }
       } else {
         syncLogger.warn('Skipping non-finite balance', { defaultBal, derivedBal })
       }
@@ -248,7 +248,7 @@ export function useSyncData({
         // Guard against NaN/Infinity from API values
         if (Number.isFinite(totalOrdBalance)) {
           setOrdBalance(totalOrdBalance)
-          try { localStorage.setItem(`${STORAGE_KEYS.CACHED_ORD_BALANCE}_${activeAccountId}`, String(totalOrdBalance)) } catch { /* quota exceeded */ }
+          try { localStorage.setItem(`${STORAGE_KEYS.CACHED_ORD_BALANCE}_${activeAccountId}`, String(totalOrdBalance)) } catch (_e) { syncLogger.warn('localStorage quota exceeded for cached ord balance', { error: String(_e) }) }
         } else {
           syncLogger.warn('Skipping non-finite ord balance', { ordBal, idBal })
         }
@@ -366,7 +366,9 @@ export function useSyncData({
           return true
         })
 
-        const allOrdinals: Ordinal[] = apiOrdinals.length > 0 ? apiOrdinals : dbOrdinals
+        // B-21: Only replace DB ordinals with API data when ALL API calls succeeded.
+        // If some calls failed, apiOrdinals is a partial set — keep the full DB set intact.
+        const allOrdinals: Ordinal[] = allOrdinalApiCallsSucceeded ? apiOrdinals : dbOrdinals
 
         // Guard: if account switched during slow API calls, discard results
         if (checkCancelled()) return

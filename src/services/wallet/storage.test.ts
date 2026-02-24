@@ -111,28 +111,32 @@ beforeEach(() => {
 
 describe('saveWallet', () => {
   it('should encrypt keys and store in localStorage (non-Tauri)', async () => {
-    await saveWallet(testKeys, testPassword)
+    const result = await saveWallet(testKeys, testPassword)
 
+    expect(result.ok).toBe(true)
     expect(mockEncrypt).toHaveBeenCalledWith(testKeys, testPassword)
     const stored = localStorage.getItem(STORAGE_KEY)
     expect(stored).toBe(JSON.stringify(mockEncryptedData))
   })
 
-  it('should throw for password shorter than minimum', async () => {
-    await expect(saveWallet(testKeys, 'short'))
-      .rejects.toThrow('Password must be at least 14 characters')
+  it('should return error for password shorter than minimum', async () => {
+    const result = await saveWallet(testKeys, 'short')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Password must be at least 14 characters')
   })
 
-  it('should throw for empty password', async () => {
-    await expect(saveWallet(testKeys, ''))
-      .rejects.toThrow('Password must be at least 14 characters')
+  it('should return error for empty password', async () => {
+    const result = await saveWallet(testKeys, '')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Password must be at least 14 characters')
   })
 
-  it('should propagate encryption errors', async () => {
+  it('should return error on encryption failure', async () => {
     mockEncrypt.mockRejectedValueOnce(new Error('Encryption failed'))
 
-    await expect(saveWallet(testKeys, testPassword))
-      .rejects.toThrow('Encryption failed')
+    const result = await saveWallet(testKeys, testPassword)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Encryption failed')
   })
 })
 
@@ -145,39 +149,42 @@ describe('loadWallet', () => {
     // Migrate to secure storage returns false (non-Tauri)
     mockInvoke.mockResolvedValue(false)
 
-    const keys = await loadWallet(testPassword)
+    const result = await loadWallet(testPassword)
 
-    expect(keys).toEqual(testKeys)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual(testKeys)
     expect(mockDecrypt).toHaveBeenCalledWith(mockEncryptedData, testPassword)
   })
 
   it('should return null when no wallet exists', async () => {
-    const keys = await loadWallet(testPassword)
-    expect(keys).toBeNull()
+    const result = await loadWallet(testPassword)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBeNull()
   })
 
-  it('should return null when decryption fails (wrong password) in localStorage path', async () => {
+  it('should return error when decryption fails (wrong password) in localStorage path', async () => {
     // NOTE: loadWallet has a broad try/catch around the localStorage JSON parse path.
-    // When decrypt throws, the error is caught and execution falls through to
-    // the legacy format check, which returns null if isLegacyEncrypted is false.
+    // When decrypt throws inside the inner try/catch, execution falls through to
+    // the legacy format check, which returns ok(null) if isLegacyEncrypted is false.
     localStorage.setItem(STORAGE_KEY, JSON.stringify(mockEncryptedData))
     mockIsEncryptedData.mockReturnValue(true)
     mockDecrypt.mockRejectedValueOnce(new Error('Decryption failed'))
 
     const result = await loadWallet('wrong-password')
-    expect(result).toBeNull()
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBeNull()
   })
 
   it('should remove unencrypted wallet data (security violation)', async () => {
-    // NOTE: The security violation throw is caught by the same broad try/catch,
-    // so the function returns null instead of throwing. But the unencrypted
-    // data IS removed from localStorage as a security measure.
+    // NOTE: The security violation is now returned as an error via Result.
+    // The unencrypted data IS removed from localStorage as a security measure.
     const plainKeys = { mnemonic: 'test words', walletWif: 'L123' }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(plainKeys))
     mockIsEncryptedData.mockReturnValue(false)
 
     const result = await loadWallet(testPassword)
-    expect(result).toBeNull()
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('stored without encryption')
 
     // Unencrypted data should have been removed
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
@@ -190,22 +197,24 @@ describe('loadWallet', () => {
     mockIsLegacyEncrypted.mockReturnValue(true)
     mockMigrateLegacyData.mockResolvedValue(mockEncryptedData)
 
-    const keys = await loadWallet(testPassword)
+    const result = await loadWallet(testPassword)
 
-    expect(keys).toEqual(testKeys)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual(testKeys)
     expect(mockMigrateLegacyData).toHaveBeenCalledWith(legacyData, testPassword)
     // After migration, the new encrypted format should be stored
     const stored = localStorage.getItem(STORAGE_KEY)
     expect(stored).toBe(JSON.stringify(mockEncryptedData))
   })
 
-  it('should throw when legacy data decoding fails', async () => {
+  it('should return error when legacy data decoding fails', async () => {
     localStorage.setItem(STORAGE_KEY, 'bad-legacy-data')
     mockIsEncryptedData.mockReturnValue(false)
     mockIsLegacyEncrypted.mockReturnValue(true)
 
-    await expect(loadWallet(testPassword))
-      .rejects.toThrow('data may be corrupted')
+    const result = await loadWallet(testPassword)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('data may be corrupted')
   })
 })
 
@@ -252,26 +261,30 @@ describe('changePassword', () => {
     const newPassword = 'new-very-long-password'
     const result = await changePassword(testPassword, newPassword)
 
-    expect(result).toBe(true)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBe(true)
     // Should have called decrypt (loadWallet) then encrypt (saveWallet)
     expect(mockDecrypt).toHaveBeenCalled()
     expect(mockEncrypt).toHaveBeenCalledWith(testKeys, newPassword)
   })
 
-  it('should throw for new password shorter than minimum', async () => {
-    await expect(changePassword(testPassword, 'short'))
-      .rejects.toThrow('Password must be at least 14 characters')
+  it('should return error for new password shorter than minimum', async () => {
+    const result = await changePassword(testPassword, 'short')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Password must be at least 14 characters')
   })
 
-  it('should throw for empty new password', async () => {
-    await expect(changePassword(testPassword, ''))
-      .rejects.toThrow('Password must be at least 14 characters')
+  it('should return error for empty new password', async () => {
+    const result = await changePassword(testPassword, '')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Password must be at least 14 characters')
   })
 
-  it('should throw when old password is wrong (no wallet found)', async () => {
-    // No wallet in storage => loadWallet returns null
-    await expect(changePassword(testPassword, 'new-long-password-14'))
-      .rejects.toThrow('Wrong password or wallet not found')
+  it('should return error when old password is wrong (no wallet found)', async () => {
+    // No wallet in storage => loadWallet returns ok(null) => changePassword returns err
+    const result = await changePassword(testPassword, 'new-long-password-14')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Wrong password or wallet not found')
   })
 })
 
@@ -321,10 +334,12 @@ describe('saveWalletUnprotected + loadWallet', () => {
 
   it('loadWallet(null) retrieves unprotected keys', async () => {
     await saveWalletUnprotected(testKeys)
-    const loaded = await loadWallet(null)
-    expect(loaded).not.toBeNull()
-    expect(loaded!.walletAddress).toBe(testKeys.walletAddress)
-    expect(loaded!.mnemonic).toBe(testKeys.mnemonic)
+    const result = await loadWallet(null)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).not.toBeNull()
+    expect(result.value!.walletAddress).toBe(testKeys.walletAddress)
+    expect(result.value!.mnemonic).toBe(testKeys.mnemonic)
   })
 
   it('hasWallet returns true for unprotected wallet', async () => {

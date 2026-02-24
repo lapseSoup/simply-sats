@@ -521,6 +521,23 @@ async fn validate_and_parse_request(
     validate_origin(&origin).map_err(|e| e)?;
     validate_nonce(state, nonce).await.map_err(|e| e)?;
 
+    parse_request_body(request).await.map(|args| (args, origin))
+}
+
+/// Read-only variant: validate origin but skip CSRF nonce (read-only ops don't mutate state).
+/// S-27: listOutputs and listLocks are read-only — nonce requirement was causing SDK failures.
+async fn validate_and_parse_request_readonly(
+    request: Request<Body>,
+) -> Result<(serde_json::Value, Option<String>), Response> {
+    let origin = extract_origin(&request);
+    validate_origin(&origin).map_err(|e| e)?;
+    parse_request_body(request).await.map(|args| (args, origin))
+}
+
+/// Parse JSON body from request (shared between full and readonly validation).
+async fn parse_request_body(
+    request: Request<Body>,
+) -> Result<serde_json::Value, Response> {
     let body_bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024).await
         .map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({
             "isError": true,
@@ -535,7 +552,7 @@ async fn validate_and_parse_request(
             "message": "Invalid JSON"
         }))).into_response())?;
 
-    Ok((args, origin))
+    Ok(args)
 }
 
 async fn handle_create_signature(
@@ -566,7 +583,8 @@ async fn handle_list_outputs(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let (args, origin) = match validate_and_parse_request(&state, request).await {
+    // S-27: Read-only operation — skip CSRF nonce validation (SDK doesn't send nonces for reads)
+    let (args, origin) = match validate_and_parse_request_readonly(request).await {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -602,7 +620,8 @@ async fn handle_list_locks(
     State(state): State<AppState>,
     request: Request<Body>,
 ) -> Response {
-    let (args, origin) = match validate_and_parse_request(&state, request).await {
+    // S-27: Read-only operation — skip CSRF nonce validation (SDK doesn't send nonces for reads)
+    let (args, origin) = match validate_and_parse_request_readonly(request).await {
         Ok(v) => v,
         Err(e) => return e,
     };
