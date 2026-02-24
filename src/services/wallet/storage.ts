@@ -10,9 +10,9 @@ import { invoke } from '@tauri-apps/api/core'
 import { isUnprotectedData, type UnprotectedWalletData, type WalletKeys } from './types'
 import { encrypt, decrypt, isEncryptedData, isLegacyEncrypted, migrateLegacyData, type EncryptedData } from '../crypto'
 import { walletLogger } from '../logger'
-import { SECURITY } from '../../config'
 import { STORAGE_KEYS } from '../../infrastructure/storage/localStorage'
 import { type Result, ok, err } from '../../domain/types'
+import { validatePassword } from '../../utils/passwordValidation'
 
 const STORAGE_KEY = STORAGE_KEYS.WALLET
 
@@ -132,7 +132,10 @@ export async function saveWalletUnprotected(keys: WalletKeys): Promise<void> {
     localStorage.removeItem(STORAGE_KEY)
     walletLogger.info('Wallet saved to secure storage (unprotected mode)')
   } else {
-    // Fallback to localStorage (web/dev build)
+    // S-39 SECURITY WARNING: In web/dev builds, wallet keys are stored as plaintext
+    // JSON in localStorage. This is intentional for development convenience but means
+    // keys are readable by any script on the same origin and persist unencrypted on
+    // disk. Desktop builds use Tauri secure storage (OS keychain) instead.
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
     walletLogger.info('Wallet saved to localStorage (unprotected mode)')
   }
@@ -147,8 +150,9 @@ export async function saveWalletUnprotected(keys: WalletKeys): Promise<void> {
  * @param password - Password for encryption
  */
 export async function saveWallet(keys: WalletKeys, password: string): Promise<Result<void, string>> {
-  if (!password || password.length < SECURITY.MIN_PASSWORD_LENGTH) {
-    return err(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
+  const validation = validatePassword(password)
+  if (!validation.isValid) {
+    return err(validation.errors.join('. '))
   }
 
   try {
@@ -162,7 +166,10 @@ export async function saveWallet(keys: WalletKeys, password: string): Promise<Re
       localStorage.removeItem(STORAGE_KEY)
       walletLogger.info('Wallet saved to secure storage')
     } else {
-      // Fallback to localStorage (web build)
+      // S-39 SECURITY WARNING: In web/dev builds, encrypted wallet data is stored in
+      // localStorage. While the keys themselves are AES-GCM encrypted, the ciphertext
+      // is accessible to any script on the same origin. Desktop builds use Tauri
+      // secure storage (OS keychain) instead.
       localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData))
       walletLogger.info('Wallet saved to localStorage')
     }
@@ -316,8 +323,9 @@ export async function clearWallet(): Promise<void> {
  * @throws Error if old password is wrong
  */
 export async function changePassword(oldPassword: string, newPassword: string): Promise<Result<boolean, string>> {
-  if (!newPassword || newPassword.length < SECURITY.MIN_PASSWORD_LENGTH) {
-    return err(`Password must be at least ${SECURITY.MIN_PASSWORD_LENGTH} characters`)
+  const validation = validatePassword(newPassword)
+  if (!validation.isValid) {
+    return err(validation.errors.join('. '))
   }
 
   const loadResult = await loadWallet(oldPassword)

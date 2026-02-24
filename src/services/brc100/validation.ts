@@ -122,8 +122,11 @@ export async function handleBRC100Request(
         }
       }
 
-      // createAction: always requires user approval (even with autoApprove flag)
-      case 'createAction': {
+      // S-30: createAction, lockBSV, unlockBSV always require user approval
+      // (even with autoApprove flag) because they move funds
+      case 'createAction':
+      case 'lockBSV':
+      case 'unlockBSV': {
         return new Promise((resolve, reject) => {
           pendingRequests.set(request.id, { request, resolve, reject })
           const handler = requestManager.getRequestHandler()

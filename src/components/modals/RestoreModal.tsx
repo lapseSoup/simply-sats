@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useWalletActions } from '../../contexts'
@@ -87,8 +88,15 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
           const decrypted = await decrypt(parsed.encrypted as EncryptedData, pwd)
           jsonToImport = decrypted
         }
-      } catch {
-        // Not valid JSON or decryption failed — let handleImportJSON handle the error
+      } catch (_decryptErr) {
+        // If it was explicitly marked as encrypted, decryption failure is a real error
+        try {
+          const check = JSON.parse(restoreJSON)
+          if (check.format === 'simply-sats-keys-encrypted') {
+            showToast('Failed to decrypt backup — wrong password?', 'error')
+            return
+          }
+        } catch { /* not JSON at all, let handleImportJSON deal with it */ }
       }
       const success = await handleImportJSON(jsonToImport, pwd)
       if (success) {
@@ -160,6 +168,10 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         }
         // Create account in database for persistence across app restarts
         await migrateToMultiAccount({ ...keys, mnemonic: backup.wallet.mnemonic }, pwd)
+        // Populate the Rust key store so WIF operations work immediately after restore
+        try {
+          await invoke('store_keys', { mnemonic: backup.wallet.mnemonic, accountIndex: 0 })
+        } catch (_e) { /* non-fatal — unlock will re-populate */ }
         // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
         setWallet({ ...keys, mnemonic: '' })
         setWalletKeys(keys)
@@ -183,6 +195,25 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
         }
         // Create account in database for persistence across app restarts
         await migrateToMultiAccount(keys, pwd)
+        // Populate the Rust key store so WIF operations work immediately after restore
+        try {
+          if (keys.mnemonic) {
+            await invoke('store_keys', { mnemonic: keys.mnemonic, accountIndex: keys.accountIndex ?? 0 })
+          } else {
+            await invoke('store_keys_direct', {
+              walletWif: keys.walletWif,
+              ordWif: keys.ordWif,
+              identityWif: keys.identityWif,
+              walletAddress: keys.walletAddress,
+              walletPubKey: keys.walletPubKey,
+              ordAddress: keys.ordAddress,
+              ordPubKey: keys.ordPubKey,
+              identityAddress: keys.identityAddress,
+              identityPubKey: keys.identityPubKey,
+              mnemonic: null
+            })
+          }
+        } catch (_e) { /* non-fatal — unlock will re-populate */ }
         setWallet(keys)
         setWalletKeys(keys)
         setSessionPassword(sessionPwd)

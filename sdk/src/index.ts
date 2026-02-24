@@ -190,7 +190,11 @@ export class SimplySats {
         signal: controller.signal
       })
 
-      const data = await response.json()
+      // S-35: Read raw response text first, then parse JSON.
+      // HMAC must be verified against the exact bytes the server signed (the raw body),
+      // not a re-serialized JSON.stringify(data) which may differ in key order/whitespace.
+      const responseText = await response.text()
+      const data = JSON.parse(responseText)
 
       // Handle session token rotation
       const newToken = response.headers.get('X-Simply-Sats-New-Token')
@@ -209,7 +213,7 @@ export class SimplySats {
             false,
             ['verify']
           )
-          const bodyBytes = new TextEncoder().encode(JSON.stringify(data))
+          const bodyBytes = new TextEncoder().encode(responseText)
           const sigBytes = new Uint8Array(signature.match(/.{2}/g)!.map(b => parseInt(b, 16)))
           const valid = await globalThis.crypto.subtle.verify('HMAC', key, sigBytes, bodyBytes)
           if (!valid) {

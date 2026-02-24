@@ -273,6 +273,9 @@ export function useWalletSend({
         script: lockingScript ?? ''
       }
 
+      // B-24: Guard against null activeAccountId during initialization
+      if (!activeAccountId) return err('No active account — cannot transfer ordinal')
+
       const ordWif = await getWifForOperation('ordinals', 'transferOrdinal', wallet)
       const fundingWif = await getWifForOperation('wallet', 'transferOrdinal', wallet)
 
@@ -282,7 +285,7 @@ export function useWalletSend({
         toAddress,
         fundingWif,
         fundingUtxos,
-        activeAccountId!
+        activeAccountId
       )
 
       // Optimistically remove the transferred ordinal from UI state immediately

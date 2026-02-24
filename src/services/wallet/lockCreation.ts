@@ -24,6 +24,10 @@ import { walletLogger } from '../logger'
 import { AppError, ErrorCodes, InsufficientFundsError } from '../errors'
 import type { Result } from '../../domain/types'
 import { ok, err } from '../../domain/types'
+import {
+  createWrootzOpReturn as createWrootzOpReturnHex,
+  convertToLockingScript
+} from '../brc100/script'
 
 // Re-export pure domain functions for backwards compatibility
 import {
@@ -41,35 +45,11 @@ export function parseTimelockScript(scriptHex: string): { unlockBlock: number; p
 }
 
 /**
- * Create a Wrootz protocol OP_RETURN script
- * Format: OP_RETURN OP_FALSE "wrootz" <action> <data>
+ * Create a Wrootz protocol OP_RETURN script as a LockingScript.
+ * Delegates to brc100/script for the hex encoding, then converts.
  */
 function createWrootzOpReturn(action: string, data: string): LockingScript {
-  // Helper to push data bytes
-  const pushData = (bytes: number[]): number[] => {
-    const len = bytes.length
-    if (len < 0x4c) {
-      return [len, ...bytes]
-    } else if (len <= 0xff) {
-      return [0x4c, len, ...bytes]
-    } else if (len <= 0xffff) {
-      return [0x4d, len & 0xff, (len >> 8) & 0xff, ...bytes]
-    } else {
-      return [0x4e, len & 0xff, (len >> 8) & 0xff, (len >> 16) & 0xff, (len >> 24) & 0xff, ...bytes]
-    }
-  }
-
-  const toBytes = (str: string): number[] => Array.from(new TextEncoder().encode(str))
-
-  const scriptBytes: number[] = [
-    0x00, // OP_FALSE
-    0x6a, // OP_RETURN
-    ...pushData(toBytes('wrootz')),
-    ...pushData(toBytes(action)),
-    ...pushData(toBytes(data))
-  ]
-
-  return LockingScript.fromBinary(scriptBytes)
+  return convertToLockingScript(createWrootzOpReturnHex(action, data))
 }
 
 /**
@@ -101,6 +81,15 @@ export async function lockBSV(
       ErrorCodes.INVALID_PARAMS,
       { unlockBlock }
     ))
+  }
+
+  // S-41: Soft dust-limit check — BSV has no protocol dust limit, but locking
+  // very small amounts (< 135 sats) is wasteful because the unlock transaction
+  // fee will likely exceed the locked amount.
+  let dustWarning: string | undefined
+  if (satoshis < 135) {
+    dustWarning = `Locking ${satoshis} sats may be uneconomical: the unlock fee (~135+ sats) will likely exceed the locked amount.`
+    walletLogger.warn(dustWarning, { satoshis })
   }
 
   const wif = await getWifForOperation('wallet', 'lockBSV')
@@ -297,8 +286,9 @@ export async function lockBSV(
     return ok({
       txid,
       lockedUtxo,
+      ...(dustWarning ? { warning: dustWarning } : {})
     })
   }
 
-  return ok({ txid, lockedUtxo })
+  return ok({ txid, lockedUtxo, ...(dustWarning ? { warning: dustWarning } : {}) })
 }

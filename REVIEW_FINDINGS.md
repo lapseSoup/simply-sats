@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-02-23 (v12 / Review #15 — Deep Semantic Dive)
-**Full report:** `docs/reviews/2026-02-23-full-review-v12.md`
-**Rating:** 9.7 / 10 (down from 9.8 — 10 new findings from deep dive, 1 high-priority SDK security gap)
-**Review #15 summary:** Deep semantic correctness review. 10 new findings (1 high, 4 medium, 5 low). SDK response signature bypass (S-25) and broken listOutputs/listLocks (S-27) are the most actionable.
+**Latest review:** 2026-02-23 (v16 / Review #16 — Architectural Refactoring Review)
+**Full report:** `docs/reviews/2026-02-23-full-review-v16.md`
+**Rating:** 8.2 / 10 (down from 9.7 — 55 new findings from major refactoring review; 6 prior issues fixed)
+**Review #16 summary:** Review of major architectural refactoring: monolith splitting (sync, tokens, BRC-100, locks), hook extraction, multi-account rewrite. 55 new findings (1 critical, 10 high, 27 medium, 17 low). BRC-100 handler account scoping (S-29), auto-approve bypass (S-30), non-atomic account creation (B-23), and locks.ts duplication (A-19) are the most urgent.
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -22,6 +22,13 @@
 | B-2 | ✅ Fixed (v5) | `useWalletLock.ts:127-130` | `lockWallet()` failure: `setIsLocked(true)` forced on error |
 | B-3 | ✅ Fixed (v5) | `transactions.ts:210-211` | `accountId ?? 1` replaced with hard throw |
 | B-4 | ✅ Fixed (v5) | `transactions.ts:174,365` | Duplicate UTXO error caught and logged |
+| B-23 | ✅ Fixed (v16) | `accounts.ts:116-124` | `createAccount` deactivates all accounts then inserts new one without `withTransaction()` — INSERT failure leaves all accounts deactivated (no active account). **Fix:** Wrapped deactivate+insert+settings in `withTransaction()` |
+| S-29 | ✅ Fixed (v16) | `brc100/handlers.ts:191-199, 287` | BRC-100 lock/unlock handlers don't pass `accountId` — cross-account UTXO spending possible. **Fix:** Added `getActiveAccount()` import, scoped all UTXO/lock queries to `activeAccountId` |
+| S-30 | ✅ Fixed (v16) | `brc100/validation.ts:136-156` | `lockBSV`/`unlockBSV` fall through to `default` case — auto-approved for trusted origins. **Fix:** Added explicit `case 'lockBSV':` and `case 'unlockBSV':` to always-approval-required block |
+| B-24 | ✅ Fixed (v16) | `useWalletSend.ts:285` | `activeAccountId!` non-null assertion — can be null during initialization. **Fix:** Replaced with null guard returning `err('No active account')` |
+| B-25 | ✅ Fixed (v16) | `marketplace.ts:193` | `cancelOrdinalListing` calls `toOrdUtxo(listingUtxo)` without private key. **Fix:** Now passes `ordPk` to `toOrdUtxo()` |
+| B-26 | ✅ Fixed (v16) | `marketplace.ts:280` | `purchaseOrdinal` same issue — `toOrdUtxo(listingUtxo)` without key. **Fix:** Now passes `paymentPk` to `toOrdUtxo()` |
+| B-27 | ✅ Fixed (v16) | `useSyncData.ts:183-184` | `setOrdBalance(0)` and `setSyncError(null)` fire without `isCancelled` check. **Fix:** Added `if (isCancelled?.()) return` before final state setters |
 
 ---
 
@@ -49,7 +56,10 @@
 | S-4 | ✅ Fixed (v5) | `crypto.ts:239` | PBKDF2 minimum enforced |
 | S-15 | ✅ Mitigated (v5+) | `brc100/state.ts:19` | All `setWalletKeys()` call sites audited |
 | S-16 | ✅ Fixed (v5+) | `http_server.rs:649` | Timeout reduced from 120s to 30s |
-| S-25 | 🟠 Open-High | `sdk/src/index.ts:207-208` | SDK HMAC response signature verification only `console.warn`s on mismatch — MITM on localhost can modify responses undetected. Should reject or throw |
+| S-25 | ✅ Fixed (v16) | `sdk/src/index.ts:215-218` | SDK HMAC response signature verification now throws `SimplySatsError` when `strictVerification: true` (default). Conditional warn remains for opt-out consumers |
+| A-19 | ✅ Fixed (v16) | `wallet/locks.ts` (839→31 LOC) | locks.ts NOT cleaned up after split. **Fix:** Rewritten as 31-line barrel re-export from `lockCreation`, `lockUnlocking`, `lockQueries` |
+| A-20 | ✅ Fixed (v16) | `wallet/lockCreation.ts`, `brc100/script.ts` | `createWrootzOpReturn` duplicated across 3 files. **Fix:** Removed local copy from lockCreation.ts, now imports from `brc100/script` with type adapter |
+| Q-27 | ✅ Fixed (v16) | `lockUnlocking.ts` | `unlockBSV` and `generateUnlockTxHex` share ~80 lines of identical code. **Fix:** Extracted `buildUnlockTransaction()` shared helper, both functions delegate to it |
 | S-17 | 🟠 Accepted | `secureStorage.ts:21-23` | `SENSITIVE_KEYS` empty — accepted risk: XSS in Tauri requires code exec |
 | A-4 | ✅ Fixed (v5) | `AppProviders.tsx` | All providers wrapped in ErrorBoundary |
 | A-5 | ✅ Fixed (v5) | `infrastructure/api/wocClient.ts` | Retry/backoff logic now in httpClient |
@@ -85,11 +95,37 @@
 | A-14 | ✅ Fixed (v8) | `services/ordinalCache.ts` | Created services facade — SyncContext now imports ordinal cache functions through services layer |
 | Q-17 | ✅ Fixed (v9) | `utils/syncHelpers.ts` | Extracted `compareTxByHeight` + `mergeOrdinalTxEntries` to shared module. Both hooks now import from `utils/syncHelpers.ts` |
 | S-23 | ✅ Fixed (v10) | `http_server.rs:151-167` | Token rotation TOCTOU race — between `drop(session)` and re-lock, concurrent requests could desync tokens. Re-check `is_token_expired()` under second lock before rotating |
-| S-27 | 🟡 Open-Medium | `sdk/src/index.ts:346-353`, `http_server.rs:565-575` | SDK `listOutputs()` and `listLocks()` don't send CSRF nonces, but server `validate_and_parse_request` requires them — these calls will fail for external SDK consumers |
-| B-21 | 🟡 Open-Medium | `useSyncData.ts:369` | Partial ordinal display on API failure — `apiOrdinals.length > 0 ? apiOrdinals : dbOrdinals` means if some ordinal API calls fail (return []) while others succeed, a partial set replaces the full DB set |
-| A-17 | 🟡 Open-Medium | `sync.ts`, `tokens.ts`, `brc100/actions.ts`, `locks.ts` | Four monolithic service files exceed 800 LOC (1351, 1057, 957, 838). Natural seam points exist for splitting |
-| Q-24 | 🟡 Open-Medium | `src/hooks/` | 13 of 17 hooks have zero test coverage — most complex logic (useAccountSwitching, useWalletSend, useSyncData) is untested |
-| A-16 | 🟡 Backlog | 51 component files | 51 `no-restricted-imports` lint warnings — components importing directly from `services/` instead of context hooks. Tracked as backlog item |
+| S-27 | 🟡 Open-Medium | `sdk/src/index.ts:358-364` | SDK `listOutputs()` doesn't send CSRF nonce, but server requires them — external SDK consumers get auth failures |
+| B-21 | ✅ Fixed (v16) | `useSyncData.ts:369-371` | Partial ordinal display on API failure — now uses `allOrdinalApiCallsSucceeded` flag to guard DB-to-API replacement |
+| A-17 | ✅ Fixed (v16) | `sync/`, `tokens/`, `brc100/`, `wallet/lock*` | All four monolithic files split into focused modules. `sync.ts` → 4 modules, `tokens.ts` → 4 modules, `actions.ts` → 3 modules, `locks.ts` → 3 modules |
+| Q-24 | 🟡 Open-Medium | `src/hooks/` | 11 of 16 hooks have zero test coverage (was 13/17). New tests: `useAccountSwitching`, `useSyncData`, `useOrdinalCache` added. Still untested: `useWalletSend`, `useWalletLock`, `useBRC100`, `useSyncOrchestration`, `useWalletInit`, + 6 others |
+| A-16 | 🟡 Backlog | 52 component files | 52 `no-restricted-imports` lint warnings (was 51) — components importing directly from `services/` instead of context hooks |
+| S-31 | ✅ Fixed (v16) | `brc100/handlers.ts:155-166` | `params.satoshis as number` and `params.blocks as number` — no runtime validation. **Fix:** Added typeof/isFinite/positive/integer checks with `-32602` error codes |
+| S-32 | ✅ Fixed (v16) | `storage.ts:150-151, 319-320` | `changePassword` only checks min length, not `validatePassword()` complexity. **Fix:** Replaced simple length check with `validatePassword()` in `saveWallet` and `changePassword` |
+| S-33 | ✅ Fixed (v16) | `brc100/locks.ts:159-193` | Saves UTXO and lock to DB BEFORE broadcast. **Fix:** Moved DB writes after broadcast success |
+| S-34 | ✅ Fixed (v16) | `brc100/locks.ts:62-67` | `createLockTransaction` has no input validation. **Fix:** Added satoshis/blocks validation matching `lockCreation.ts` pattern |
+| S-35 | ✅ Fixed (v16) | `sdk/src/index.ts:212` | HMAC verification re-serializes JSON. **Fix:** Changed to `response.text()` + `JSON.parse()` so HMAC verifies raw bytes |
+| S-36 | ✅ Mitigated (v16) | `lockUnlocking.ts:196-218` | Lock marked unlocked even when spending txid doesn't match expected. **Mitigation:** Added explicit warning log; UTXO is provably spent regardless |
+| B-28 | ✅ Fixed (v16) | `RestoreModal.tsx:144-193` | Full backup restore doesn't call `storeKeysInRust()`. **Fix:** Added `invoke('store_keys', ...)` calls for both mnemonic and keys restore paths |
+| B-29 | ✅ Fixed (v16) | `RestoreModal.tsx:80-92` | Encrypted backup decryption failure silently falls through. **Fix:** Catch block now detects encrypted format and shows explicit "wrong password" error toast |
+| B-30 | ✅ Fixed (v16) | `SettingsSecurity.tsx:149-172` | React `sessionPassword` state not updated after setting password. **Fix:** Added `setSessionPassword(newPassword)` call |
+| B-31 | ✅ Fixed (v16) | `accounts.ts:380-399` | `deleteAccount` switches account outside transaction. **Fix:** Wrapped post-delete `switchAccount` in try/catch |
+| B-32 | ✅ Fixed (v16) | `accounts.ts:596-603` | `encryptAllAccounts` Phase 2 transaction failure throws unhandled. **Fix:** Wrapped in try/catch returning `err()` |
+| B-33 | ✅ Fixed (v16) | `addressSync.ts:105-114` | Returns `totalBalance: 0` on API failure. **Fix:** Returns `totalBalance: -1` sentinel on failure |
+| B-34 | ✅ Fixed (v16) | `orchestration.ts:530-531` | Phantom lock cleanup without `account_id` scoping. **Fix:** Added `AND account_id = $2` to DELETE query |
+| B-35 | ✅ Fixed (v16) | `useSyncData.ts:384-401` | `dbTxHistory` array mutated in-place after React state set. **Fix:** Created copy with `[...dbTxHistory]` before mutation |
+| A-21 | ✅ Fixed (v16) | `sync/addressSync.ts:20` | Submodules import types from own barrel. **Fix:** Created `sync/types.ts` for shared types, updated import |
+| A-22 | ✅ Fixed (v16) | `addressSync.ts:223`, `orchestration.ts:607,620` | Dynamic `await import()` for DB calls. **Fix:** Converted to static imports |
+| A-23 | ✅ Fixed (v16) | `historySync.ts:52-110` | Two `calculateTxAmount` with same name. **Fix:** Added cross-referencing docs about intentional differences |
+| A-24 | ✅ Fixed (v16) | `brc100/actions.ts:1-15` | Barrel re-export missing `executeApprovedRequest`. **Fix:** Added to re-exports |
+| A-25 | ✅ Fixed (v16) | `historySync.ts:32` | Exports mutable `txDetailCache` directly. **Fix:** Made private, added getter/setter accessors |
+| Q-28 | ✅ Fixed (v16) | `accounts.ts:154,185,215,245` | `AccountRow` → `Account` mapping copy-pasted 4×. **Fix:** Extracted `mapRowToAccount()` helper |
+| Q-29 | 🟡 Open-Medium | `validation.ts:106,127,139` | Promise-based approval queue pattern repeated 3 times — should extract `queueForApproval()` helper |
+| Q-30 | 🟡 Open-Medium | `marketplace.ts:15` | `type AnyPrivateKey = any` disables type checking at SDK boundary |
+| Q-31 | 🟡 Open-Medium | `marketplace.test.ts` | `purchaseOrdinal` has only 1 test (error case). No happy path, rollback, or fee tests |
+| Q-32 | 🟡 Open-Medium | `useSyncData.test.ts` | No concurrent-sync race condition tests — doesn't verify two simultaneous `fetchData` calls with different accountIds |
+| Q-33 | 🟡 Open-Medium | `orchestration.ts:462-474` | Sequential tx history sync — scales linearly with address count. Should use `batchWithConcurrency` |
+| Q-34 | ✅ Fixed (v16) | `accounts.ts:195,225,255` | Silent `catch (_e) { return null }` with no logging. **Fix:** Added `accountLogger.warn()` in catch blocks |
 | A-15 | ✅ Fixed (v9) | `utils/syncHelpers.test.ts`, `hooks/useOrdinalCache.test.ts` | 27 new tests: 14 for syncHelpers (compareTxByHeight, mergeOrdinalTxEntries), 13 for cacheOrdinalsInBackground |
 | ST-4 | ✅ Fixed (v9) | `useSyncData.ts`, `httpClient.ts`, `wocClient.ts`, `balance.ts`, `ordinals.ts` | AbortController created in `fetchData`, signal threaded through API layer to `fetch()` calls. Cancelled requests now abort immediately |
 | ST-6 | ✅ Fixed (v9) | `sync.ts` | Added cancellation checks before tx history loop, before balance calculation, inside derived address loop. `cancellableDelay` replaces `setTimeout` between iterations |
@@ -173,49 +209,86 @@
 | Q-21 | ✅ Fixed (v10) | `SettingsSecurity.tsx:107,128,210` + `SettingsBackup.tsx:75,153` | 5 `console.error()` calls replaced with `logger.error()` |
 | Q-22 | ✅ Fixed (v10) | `sync.test.ts`, `src/test/factories.ts` | 20+ `as any` casts for UTXO mocks replaced with typed factory helpers: `createMockDBUtxo()`, `createMockUTXO()`, `createMockExtendedUTXO()` |
 | Q-23 | ✅ Fixed (v10) | `httpClient.ts:333-338` | JSON response parsed without checking `Content-Type` header. Added Content-Type validation before JSON parse, rejects unexpected content types |
-| S-28 | ⚪ Open-Low | `tauri.conf.json:26` | CSP `img-src 'self' data: blob: https:` allows any HTTPS image URL — ordinal preview images could be used for IP tracking. Consider restricting to known ordinal CDN domains |
-| B-22 | ⚪ Open-Low | `useSyncData.ts:92,229,251` | `localStorage.setItem()` wrapped in silent `try/catch` — if quota exceeded, next cold start shows 0 balance flash until API sync completes |
-| A-18 | ⚪ Open-Low | Service layer | Error handling pattern fragmentation — mix of `Result<T,E>` returns, `{success, error}` objects, and raw `throw`. ~60% migrated to Result pattern |
-| Q-25 | ⚪ Open-Low | `useOrdinalCache.ts:45-59` | Sequential `await upsertOrdinalCache(cached)` for 620+ ordinals — batched INSERT would be significantly faster |
-| Q-26 | ⚪ Open-Low | `eslint.config.js` | ESLint scans `coverage/` directory — 3 spurious warnings from instrumented files. Add `coverage/` to ignores |
+| S-28 | ✅ Fixed (v16) | `tauri.conf.json:26` | CSP `img-src` now restricted to `https://ordinals.gorillapool.io` instead of wildcard `https:` |
+| B-22 | ⚪ Mitigated (v16) | `useSyncData.ts:92` | localStorage quota now logs `syncLogger.warn` instead of silent catch. Underlying 0-balance flash remains |
+| A-18 | ⚪ Open-Low | Service layer | Error handling pattern fragmentation — new modules replicate existing inconsistency. ~60% Result pattern |
+| Q-25 | ✅ Fixed (v16) | `useOrdinalCache.ts:42-56` | `batchUpsertOrdinalCache(cacheEntries)` replaces sequential per-ordinal upserts |
+| Q-26 | ✅ Fixed (v16) | `eslint.config.js:9` | `coverage` added to `globalIgnores` array |
+| S-37 | ✅ Fixed (v16) | `accounts.ts:434,436` | `parseInt` without NaN guard. **Fix:** Added `Number.isFinite()` guard with fallback to defaults |
+| S-38 | ✅ Fixed (v16) | `accounts.ts:438` | `JSON.parse` for `trustedOrigins` without array validation. **Fix:** Added `Array.isArray()` check |
+| S-39 | ✅ Fixed (v16) | `storage.ts:134-137` | Unprotected mode stores plaintext keys in localStorage. **Fix:** Added security warning comments |
+| S-40 | ✅ Fixed (v16) | `accounts.ts:146-168` | `getAllAccounts()` returns `encryptedKeys` for all accounts. **Fix:** Added JSDoc warning about exposure |
+| S-41 | ✅ Fixed (v16) | `lockCreation.ts:90-96` | No dust limit validation for lock amount. **Fix:** Added soft dust limit warning for locks < 135 sats |
+| B-36 | ✅ Fixed (v16) | `accounts.ts:536-539` | `getNextAccountNumber` uses `accounts.length + 1`. **Fix:** Now scans existing names for max index |
+| B-37 | ⚪ Open-Low | `tokens/transfers.ts:108-163` | Single WIF for all token inputs — tokens spanning wallet + ordinals addresses can't be combined |
+| B-38 | ✅ Fixed (v16) | `ordinalRepository.ts:210-212` | Origin parsing `parseInt` can produce NaN. **Fix:** Added `Number.isFinite()` guard |
+| A-26 | ⚪ Open-Low | `useSyncData.ts:31-41` | Hook has 9 parameters — wide interface, hard to test |
+| A-27 | ⚪ Open-Low | `tokens/state.ts`, `tokens/fetching.ts` | Bidirectional dependency between state and fetching modules |
+| A-28 | ⚪ Open-Low | All new modules | Inconsistent error handling: Result in locks, ad-hoc in sync, inline objects in BRC-100 |
+| A-29 | ⚪ Open-Low | `historySync.ts:120-330` | `syncTransactionHistory` still 210+ lines with 8 responsibilities in one function |
+| Q-35 | ⚪ Open-Low | `marketplace.ts:37-41,46-50` | Hex-to-base64 conversion duplicated in `toOrdUtxo` |
+| Q-36 | ⚪ Open-Low | `ordinalRepository.ts` | Conditional accountId query pattern repeated throughout — extract `withOptionalAccountFilter` |
+| Q-37 | ⚪ Open-Low | `marketplace.ts:119,198,286` | `as unknown as Transaction` at SDK boundary — 3 occurrences |
+| Q-38 | ⚪ Open-Low | `lockUnlocking.ts:133-155,328-344` | `as number[]` casts on BSV SDK returns — 10 occurrences |
+| Q-39 | ⚪ Open-Low | `useSyncData.ts:185,439` | Large `useCallback` dependency arrays with 9 entries |
+| Q-40 | ⚪ Open-Low | `formatting.ts:34-264` | 230-line `buildAndBroadcastAction` wrapped in single try/catch |
+| Q-41 | ⚪ Open-Low | `brc100/handlers.ts` | Generic internal error messages passed to external BRC-100 callers — could leak implementation details |
 | Q-9 | ✅ Verified | `keyDerivation.ts:260-262` | Dev-only code guarded |
 
 ---
 
 ## Summary: Issue Status
 
-| Category | Total | ✅ Fixed/Verified | 🔴/🟠 Critical/High Open | 🟡 Medium Open | ⚪ Low Open |
-|----------|-------|-------------------|--------------------------|----------------|-------------|
-| Security | 27 | 23 (1 accepted) | 1 (S-25) | 1 (S-27) | 1 (S-28) |
-| Bugs | 22 | 20 | 0 | 1 (B-21) | 1 (B-22) |
-| Architecture | 18 | 15 | 0 | 2 (A-17 + A-16 backlog) | 1 (A-18) |
-| Quality | 26 | 23 | 0 | 1 (Q-24) | 2 (Q-25, Q-26) |
-| UX/UI | 40 | 40 | 0 | 0 | 0 |
-| Stability | 13 | 13 | 0 | 0 | 0 |
-| **Total** | **146** | **135 (1 accepted)** | **1** | **5 (1 backlog)** | **5** |
+| Category | Total | ✅ Fixed/Verified | 🔴 Critical | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
+|----------|-------|-------------------|-------------|--------------|----------------|-------------|
+| Security | 40 | 26 (1 accepted) | 0 | 2 (S-29, S-30) | 6 (S-27,31-36) | 5 (S-37-41) |
+| Bugs | 38 | 21 | 1 (B-23) | 4 (B-24-27) | 8 (B-28-35) | 3 (B-36-38) |
+| Architecture | 29 | 18 | 0 | 2 (A-19,20) | 6 (A-16,21-25) | 4 (A-26-29) + A-18 |
+| Quality | 41 | 27 | 0 | 1 (Q-27) | 7 (Q-24,28-34) | 7 (Q-35-41) |
+| UX/UI | 40 | 40 | 0 | 0 | 0 | 0 |
+| Stability | 13 | 13 | 0 | 0 | 0 | 0 |
+| **Total** | **201** | **145 (1 accepted)** | **1** | **9** | **27 (1 backlog)** | **19** |
 
 ---
 
 ## Remaining Open Items
 
-### High Priority
-- **S-25** — SDK HMAC response signature verification non-blocking (`sdk/src/index.ts:207-208`)
+### Critical — Fix Immediately
+- **B-23** — Account creation not atomic — INSERT failure leaves all accounts deactivated
 
-### Medium Priority
-- **S-27** — SDK/Server nonce mismatch for listOutputs/listLocks
-- **B-21** — Partial ordinal display on API failure (`useSyncData.ts:369`)
-- **A-17** — Four monolithic service files >800 LOC
-- **Q-24** — 13/17 hooks have zero test coverage
+### High Priority — Fix Before Merge
+- **S-29** — BRC-100 handlers missing accountId for lock/unlock (cross-account UTXO spending)
+- **S-30** — Auto-approve bypasses user confirmation for lockBSV/unlockBSV
+- **B-24** — `activeAccountId!` non-null assertion in useWalletSend
+- **B-25** — cancelOrdinalListing missing listing UTXO script
+- **B-26** — purchaseOrdinal missing listing UTXO script
+- **B-27** — useSyncData missing isCancelled check before final state setters
+- **A-19** — locks.ts not cleaned up after split — 870 LOC pure duplication (dead code)
+- **A-20** — createWrootzOpReturn duplicated across 3 files
+- **Q-27** — Duplicated unlock transaction builder (~80 lines)
+
+### Medium Priority — Next Sprint
+- **S-27** — SDK listOutputs missing CSRF nonce
+- **S-31** — BRC-100 lockBSV params unvalidated (`as number`)
+- **S-32** — changePassword bypasses validatePassword
+- **S-33** — BRC-100 locks saves to DB before broadcast
+- **S-34** — createLockTransaction no input validation
+- **S-35** — SDK HMAC re-serializes JSON for verification
+- **S-36** — Lock marked unlocked on wrong spending txid
+- **B-28 through B-35** — 8 medium bugs (restore, settings, accounts, sync)
+- **A-21 through A-25** — 5 architecture items (circular imports, dynamic imports, naming, barrel gaps, mutable state)
+- **Q-24** — 11/16 hooks untested (critical: useWalletSend, useWalletLock, useBRC100)
+- **Q-28 through Q-34** — 7 quality items (DRY, types, tests, perf, logging)
 
 ### Low / Deferred
-- **S-28** — CSP img-src wildcard enables IP tracking via ordinal images
-- **B-22** — localStorage quota silently swallowed
-- **A-18** — Error handling pattern fragmentation (~60% migrated to Result)
-- **Q-25** — Sequential ordinal DB writes (batched INSERT would be faster)
-- **Q-26** — ESLint should exclude `coverage/` directory
+- **S-37 through S-41** — 5 low security items
+- **B-36 through B-38** — 3 low bugs
+- **A-18, A-26 through A-29** — 5 low architecture items
+- **B-22** — localStorage quota (mitigated with logging)
+- **Q-35 through Q-41** — 7 low quality items
 
 ### Backlog
-- **A-16** — 51 `no-restricted-imports` lint warnings (components importing from `services/` directly)
+- **A-16** — 52 `no-restricted-imports` lint warnings
 
 ### Accepted Risk
 - **S-17** — `SENSITIVE_KEYS` empty in secureStorage
@@ -427,9 +500,68 @@
 4. **Q-24** `src/hooks/` — Add test files for useAccountSwitching, useWalletSend, useSyncData. Focus on the complex branching paths (Rust vs password fallback, queued switches, abort handling). **Effort: major** (3-5 hours)
 
 ### Later
-5. **A-17** Service files — Split along natural seams: `sync.ts` → sync orchestration + address sync + UTXO sync; `tokens.ts` → token fetching + token state + token transfer. **Effort: major**
-6. **S-28** `tauri.conf.json` — Restrict `img-src` to known ordinal CDN domains (`ordinals.gorillapool.io`). **Effort: quick**
-7. **B-22** `useSyncData.ts` — Add `try/catch` with `walletLogger.warn` and consider a `storageAvailable` guard. **Effort: quick**
+5. **A-17** ✅ Fixed (v16) — All four monoliths split into focused modules
+6. **S-28** ✅ Fixed (v16) — CSP `img-src` restricted to `ordinals.gorillapool.io`
+7. **B-22** ⚪ Mitigated (v16) — Now logs `syncLogger.warn` on quota error
 8. **A-18** Service layer — Continue Result<T,E> migration for remaining ~40% of service methods. **Effort: major** (multi-session)
-9. **Q-25** `useOrdinalCache.ts` — Replace sequential upserts with batched SQL INSERT. **Effort: medium**
-10. **Q-26** `eslint.config.js` — Add `coverage/` to ESLint ignores array. **Effort: quick** (1 line)
+9. **Q-25** ✅ Fixed (v16) — `batchUpsertOrdinalCache` replaces sequential upserts
+10. **Q-26** ✅ Fixed (v16) — `coverage` added to ESLint globalIgnores
+
+---
+
+## Review #16 — 2026-02-23 (Architectural Refactoring Review)
+
+55 new findings (1 critical, 10 high, 27 medium, 17 low). Major refactoring review covering monolith splitting, hook extraction, multi-account rewrite. 6 prior issues confirmed fixed.
+
+### Prior Issues Fixed in v16
+| ID | Fix |
+|----|-----|
+| S-25 | `strictVerification` defaults to `true`, throws `SimplySatsError` on HMAC mismatch |
+| B-21 | `allOrdinalApiCallsSucceeded` flag guards DB-to-API ordinal replacement |
+| A-17 | All 4 monoliths split: sync/ (4), tokens/ (4), brc100/ (3), wallet/lock* (3) |
+| S-28 | CSP `img-src` restricted to `https://ordinals.gorillapool.io` |
+| Q-25 | `batchUpsertOrdinalCache(cacheEntries)` for batched DB writes |
+| Q-26 | `coverage` added to `globalIgnores` in eslint.config.js |
+
+### New Findings Summary
+
+| Category | Critical | High | Medium | Low |
+|----------|----------|------|--------|-----|
+| Security (S-29—S-41) | 0 | 2 | 6 | 5 |
+| Bugs (B-23—B-38) | 1 | 4 | 8 | 3 |
+| Architecture (A-19—A-29) | 0 | 2 | 5 | 4 |
+| Quality (Q-27—Q-41) | 0 | 1 | 7 | 7 |
+| **Total** | **1** | **9** | **26** | **19** |
+
+**Prioritized Remediation — Review #16**
+
+### Immediate (before merge)
+1. **B-23** `accounts.ts:116-124` — Wrap `createAccount`'s deactivate + insert in `withTransaction()`. **Effort: quick**
+2. **S-29** `brc100/handlers.ts:191,287` — Pass `accountId` to `walletLockBSV`, `walletUnlockBSV`, and `getSpendableUTXOs`. **Effort: quick**
+3. **S-30** `brc100/validation.ts:136-156` — Move lockBSV/unlockBSV into explicit always-approval-required case blocks. **Effort: quick**
+4. **A-19** `wallet/locks.ts` — Complete the split: convert locks.ts to barrel re-export from lockCreation/lockQueries/lockUnlocking, update all imports. **Effort: medium**
+5. **B-27** `useSyncData.ts:183` — Add `if (isCancelled?.()) return` before `setOrdBalance(0)`. **Effort: quick**
+6. **B-24** `useWalletSend.ts:285` — Replace `activeAccountId!` with null guard. **Effort: quick**
+7. **B-25/B-26** `marketplace.ts:193,280` — Ensure listing UTXO scripts populated before `toOrdUtxo`. **Effort: medium**
+
+### High priority (before release)
+8. **A-20** Consolidate `createWrootzOpReturn` to single shared utility. **Effort: quick**
+9. **Q-27** Extract `buildUnlockTransaction()` shared by `unlockBSV` and `generateUnlockTxHex`. **Effort: medium**
+10. **S-31** `brc100/handlers.ts:155-156` — Add runtime validation for satoshis/blocks params. **Effort: quick**
+11. **S-34** `brc100/locks.ts:62-67` — Add input validation to `createLockTransaction`. **Effort: quick**
+12. **S-35** `sdk/src/index.ts:212` — Verify HMAC over raw response text, not re-serialized JSON. **Effort: quick**
+13. **S-36** `lockUnlocking.ts:196-218` — Return warning when spending txid doesn't match expected. **Effort: quick**
+14. **B-28** `RestoreModal.tsx:144-193` — Call `storeKeysInRust()` after full backup restore. **Effort: quick**
+
+### Next sprint
+15. **S-32** — Use `validatePassword()` in `changePassword`. **Effort: quick**
+16. **S-33** — BRC-100 lock: broadcast before DB write, or cleanup on failure. **Effort: medium**
+17. **B-29** — Differentiate encrypted backup decrypt failure from JSON parse error. **Effort: quick**
+18. **B-30** — Update React `sessionPassword` state after setting password in Settings. **Effort: quick**
+19. **B-31** — Include account activation inside deleteAccount transaction. **Effort: medium**
+20. **B-32** — Wrap `encryptAllAccounts` Phase 2 in try/catch returning `err()`. **Effort: quick**
+21. **B-33** — Return sentinel for API failure in syncAddress, not 0. **Effort: quick**
+22. **B-34** — Add `AND account_id` to phantom lock cleanup DELETE. **Effort: quick**
+23. **B-35** — Copy `dbTxHistory` before in-place mutation. **Effort: quick**
+24. **A-21** — Create `types.ts` in sync/ and tokens/ for shared types. **Effort: quick**
+25. **Q-24** — Add tests for useWalletSend, useWalletLock, useBRC100. **Effort: major**

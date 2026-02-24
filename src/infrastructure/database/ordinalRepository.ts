@@ -209,7 +209,8 @@ export async function ensureOrdinalCacheRowForTransferred(
   const database = getDatabase()
   const parts = origin.split('_')
   const txid = parts.slice(0, -1).join('_')
-  const vout = parseInt(parts[parts.length - 1] ?? '0', 10)
+  const parsedVout = parseInt(parts[parts.length - 1] ?? '0', 10)
+  const vout = Number.isFinite(parsedVout) ? parsedVout : 0
   try {
     await database.execute(
       `INSERT INTO ordinal_cache (origin, txid, vout, satoshis, transferred, account_id, fetched_at)

@@ -39,6 +39,20 @@ export interface AccountSettings {
   trustedOrigins: string[]
 }
 
+/** Map a database row to an Account object */
+function mapRowToAccount(row: AccountRow): Account {
+  return {
+    id: row.id,
+    name: row.name,
+    identityAddress: row.identity_address,
+    encryptedKeys: row.encrypted_keys,
+    isActive: row.is_active === 1,
+    createdAt: row.created_at,
+    lastAccessedAt: row.last_accessed_at ?? undefined,
+    derivationIndex: row.derivation_index ?? undefined
+  }
+}
+
 // Default settings for new accounts
 export const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
   displayInSats: true,
@@ -113,23 +127,28 @@ export async function createAccount(
       encryptedKeysStr = JSON.stringify({ version: 0, mode: 'unprotected', keys: keysObj })
     }
 
-    // Deactivate all existing accounts
-    await database.execute('UPDATE accounts SET is_active = 0')
+    // B-23: Wrap deactivate + insert + settings in a transaction so that
+    // a failed INSERT doesn't leave all accounts deactivated.
+    let accountId: number
+    await withTransaction(async () => {
+      // Deactivate all existing accounts
+      await database.execute('UPDATE accounts SET is_active = 0')
 
-    // Insert new account as active
-    const result = await database.execute(
-      `INSERT INTO accounts (name, identity_address, encrypted_keys, is_active, created_at, last_accessed_at, derivation_index)
-       VALUES ($1, $2, $3, 1, $4, $4, $5)`,
-      [name, keys.identityAddress, encryptedKeysStr, Date.now(), derivationIndex ?? null]
-    )
+      // Insert new account as active
+      const result = await database.execute(
+        `INSERT INTO accounts (name, identity_address, encrypted_keys, is_active, created_at, last_accessed_at, derivation_index)
+         VALUES ($1, $2, $3, 1, $4, $4, $5)`,
+        [name, keys.identityAddress, encryptedKeysStr, Date.now(), derivationIndex ?? null]
+      )
 
-    const accountId = result.lastInsertId as number
-    accountLogger.info('Created account', { name, accountId })
+      accountId = result.lastInsertId as number
 
-    // Set default settings for new account
-    await setAccountSettings(accountId, DEFAULT_ACCOUNT_SETTINGS)
+      // Set default settings for new account
+      await setAccountSettings(accountId, DEFAULT_ACCOUNT_SETTINGS)
+    })
+    accountLogger.info('Created account', { name, accountId: accountId! })
 
-    return ok(accountId)
+    return ok(accountId!)
   } catch (e) {
     accountLogger.error('Failed to create account', e, { name })
     return err(new DbError(
@@ -142,6 +161,9 @@ export async function createAccount(
 
 /**
  * Get all accounts
+ *
+ * S-40: Note: Returns encryptedKeys for all accounts. Callers that only need
+ * account metadata should use a dedicated summary query to minimize exposure.
  */
 export async function getAllAccounts(): Promise<Account[]> {
   const database = getDatabase()
@@ -151,16 +173,7 @@ export async function getAllAccounts(): Promise<Account[]> {
       'SELECT * FROM accounts ORDER BY last_accessed_at DESC'
     )
 
-    return rows.map(row => ({
-      id: row.id,
-      name: row.name,
-      identityAddress: row.identity_address,
-      encryptedKeys: row.encrypted_keys,
-      isActive: row.is_active === 1,
-      createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at ?? undefined,
-      derivationIndex: row.derivation_index ?? undefined
-    }))
+    return rows.map(mapRowToAccount)
   } catch (e) {
     // Table may not exist yet, or database query failed
     accountLogger.error('Failed to load accounts', e)
@@ -181,18 +194,9 @@ export async function getActiveAccount(): Promise<Account | null> {
 
     if (rows.length === 0) return null
 
-    const row = rows[0]!
-    return {
-      id: row.id,
-      name: row.name,
-      identityAddress: row.identity_address,
-      encryptedKeys: row.encrypted_keys,
-      isActive: true,
-      createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at ?? undefined,
-      derivationIndex: row.derivation_index ?? undefined
-    }
-  } catch (_e) {
+    return mapRowToAccount(rows[0]!)
+  } catch (e) {
+    accountLogger.warn('Failed to get active account', { error: String(e) })
     return null
   }
 }
@@ -211,18 +215,9 @@ export async function getAccountById(accountId: number): Promise<Account | null>
 
     if (rows.length === 0) return null
 
-    const row = rows[0]!
-    return {
-      id: row.id,
-      name: row.name,
-      identityAddress: row.identity_address,
-      encryptedKeys: row.encrypted_keys,
-      isActive: row.is_active === 1,
-      createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at ?? undefined,
-      derivationIndex: row.derivation_index ?? undefined
-    }
-  } catch (_e) {
+    return mapRowToAccount(rows[0]!)
+  } catch (e) {
+    accountLogger.warn('Failed to get account by ID', { error: String(e) })
     return null
   }
 }
@@ -241,18 +236,9 @@ export async function getAccountByIdentity(identityAddress: string): Promise<Acc
 
     if (rows.length === 0) return null
 
-    const row = rows[0]!
-    return {
-      id: row.id,
-      name: row.name,
-      identityAddress: row.identity_address,
-      encryptedKeys: row.encrypted_keys,
-      isActive: row.is_active === 1,
-      createdAt: row.created_at,
-      lastAccessedAt: row.last_accessed_at ?? undefined,
-      derivationIndex: row.derivation_index ?? undefined
-    }
-  } catch (_e) {
+    return mapRowToAccount(rows[0]!)
+  } catch (e) {
+    accountLogger.warn('Failed to get account by identity', { error: String(e) })
     return null
   }
 }
@@ -392,9 +378,13 @@ export async function deleteAccount(accountId: number): Promise<Result<boolean, 
 
     // If deleted account was active, activate another one
     if (wasActive) {
-      const remaining = await getAllAccounts()
-      if (remaining.length > 0) {
-        await switchAccount(remaining[0]!.id!)
+      try {
+        const remaining = await getAllAccounts()
+        if (remaining.length > 0) {
+          await switchAccount(remaining[0]!.id!)
+        }
+      } catch (switchErr) {
+        accountLogger.warn('Failed to switch account after deletion — app restart may be needed', { error: String(switchErr) })
       }
     }
 
@@ -431,11 +421,20 @@ export async function getAccountSettings(accountId: number): Promise<AccountSett
       if (key === 'displayInSats') {
         settings.displayInSats = value === 'true'
       } else if (key === 'feeRateKB') {
-        settings.feeRateKB = parseInt(value, 10)
+        const parsed = parseInt(value, 10)
+        if (Number.isFinite(parsed) && parsed > 0) settings.feeRateKB = parsed
       } else if (key === 'autoLockMinutes') {
-        settings.autoLockMinutes = parseInt(value, 10)
+        const parsed = parseInt(value, 10)
+        if (Number.isFinite(parsed) && parsed >= 0) settings.autoLockMinutes = parsed
       } else if (key === 'trustedOrigins') {
-        settings.trustedOrigins = JSON.parse(value || '[]')
+        try {
+          const parsed = JSON.parse(value || '[]')
+          if (Array.isArray(parsed) && parsed.every(v => typeof v === 'string')) {
+            settings.trustedOrigins = parsed
+          }
+        } catch {
+          // Invalid JSON — keep default
+        }
       }
     }
 
@@ -535,7 +534,16 @@ export async function migrateToMultiAccount(
  */
 export async function getNextAccountNumber(): Promise<number> {
   const accounts = await getAllAccounts()
-  return accounts.length + 1
+  // Extract the highest number from existing "Account N" names to avoid duplicates
+  let maxNum = 0
+  for (const a of accounts) {
+    const match = a.name.match(/^Account\s+(\d+)$/i)
+    if (match) {
+      const n = parseInt(match[1]!, 10)
+      if (n > maxNum) maxNum = n
+    }
+  }
+  return Math.max(maxNum + 1, accounts.length + 1)
 }
 
 /**
@@ -593,14 +601,23 @@ export async function encryptAllAccounts(password: string): Promise<Result<void,
 
   // Phase 2: Write all updates atomically
   const database = getDatabase()
-  await withTransaction(async () => {
-    for (const { accountId, encryptedKeysStr } of updates) {
-      await database.execute(
-        'UPDATE accounts SET encrypted_keys = $1 WHERE id = $2',
-        [encryptedKeysStr, accountId]
-      )
-    }
-  })
+  try {
+    await withTransaction(async () => {
+      for (const { accountId, encryptedKeysStr } of updates) {
+        await database.execute(
+          'UPDATE accounts SET encrypted_keys = $1 WHERE id = $2',
+          [encryptedKeysStr, accountId]
+        )
+      }
+    })
+  } catch (e) {
+    accountLogger.error('Failed to write encrypted accounts atomically', e)
+    return err(new DbError(
+      `encryptAllAccounts failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
+  }
 
   // Phase 3: Re-encrypt the secure storage blob (wallet's primary key store)
   try {

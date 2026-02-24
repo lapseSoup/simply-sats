@@ -24,6 +24,15 @@ import { type Result, ok, err } from '../../domain/types'
 
 const mpLogger = walletLogger
 
+/** Convert a hex string to a base64 string */
+function hexToBase64(hex: string): string {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+  }
+  return btoa(String.fromCharCode(...bytes))
+}
+
 /**
  * Convert a Simply Sats UTXO to js-1sat-ord Utxo format.
  * js-1sat-ord expects base64-encoded locking scripts.
@@ -33,21 +42,10 @@ function toOrdUtxo(utxo: UTXO, pk?: PrivateKey): OrdUtxo {
   let scriptBase64: string
 
   if (utxo.script) {
-    // Convert hex script to base64
-    const bytes = new Uint8Array(utxo.script.length / 2)
-    for (let i = 0; i < utxo.script.length; i += 2) {
-      bytes[i / 2] = parseInt(utxo.script.substring(i, i + 2), 16)
-    }
-    scriptBase64 = btoa(String.fromCharCode(...bytes))
+    scriptBase64 = hexToBase64(utxo.script)
   } else if (pk) {
-    // Derive P2PKH locking script from the private key
     const lockingScript = new P2PKH().lock(pk.toPublicKey().toAddress())
-    const hexScript = lockingScript.toHex()
-    const bytes = new Uint8Array(hexScript.length / 2)
-    for (let i = 0; i < hexScript.length; i += 2) {
-      bytes[i / 2] = parseInt(hexScript.substring(i, i + 2), 16)
-    }
-    scriptBase64 = btoa(String.fromCharCode(...bytes))
+    scriptBase64 = hexToBase64(lockingScript.toHex())
   } else {
     throw new Error('UTXO has no script and no private key to derive one')
   }
@@ -190,7 +188,7 @@ export async function cancelOrdinalListing(
   try {
     const result = await cancelOrdListings({
       utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
-      listingUtxos: [toOrdUtxo(listingUtxo)],
+      listingUtxos: [toOrdUtxo(listingUtxo, ordPk)],
       ordPk: ordPk as AnyPrivateKey,
       paymentPk: paymentPk as AnyPrivateKey,
     })
@@ -277,7 +275,7 @@ export async function purchaseOrdinal(params: {
       utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
       listing: {
         payout,
-        listingUtxo: toOrdUtxo(listingUtxo),
+        listingUtxo: toOrdUtxo(listingUtxo, paymentPk),
       },
       ordAddress,
       paymentPk: paymentPk as AnyPrivateKey,

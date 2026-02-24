@@ -28,6 +28,7 @@ import {
   type EncryptDecryptParams,
   type GetTaggedKeysParams
 } from './types'
+import { getActiveAccount } from '../accounts'
 import { getRequestManager } from './RequestManager'
 import { signData, verifyDataSignature } from './signing'
 import { encryptECIES, decryptECIES } from './cryptography'
@@ -152,16 +153,31 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
     case 'lockBSV': {
       // Native lock using OP_PUSH_TX timelock
       const params = getParams<LockBSVParams>(request)
-      const satoshis = params.satoshis as number
-      const blocks = params.blocks as number
+      // S-31: Runtime validation for BRC-100 lock params
+      const rawSatoshis = params.satoshis
+      const rawBlocks = params.blocks
+      if (typeof rawSatoshis !== 'number' || !Number.isFinite(rawSatoshis) || rawSatoshis <= 0 || !Number.isInteger(rawSatoshis)) {
+        response.error = { code: -32602, message: `Invalid satoshis parameter: ${rawSatoshis}` }
+        break
+      }
+      if (typeof rawBlocks !== 'number' || !Number.isFinite(rawBlocks) || rawBlocks <= 0 || !Number.isInteger(rawBlocks)) {
+        response.error = { code: -32602, message: `Invalid blocks parameter: ${rawBlocks}` }
+        break
+      }
+      const satoshis = rawSatoshis
+      const blocks = rawBlocks
       const lockMetadata = { ordinalOrigin: params.ordinalOrigin, app: params.app }
 
       try {
+        // S-29: Scope to active account to prevent cross-account fund leaks
+        const activeAccount = await getActiveAccount()
+        const activeAccountId = activeAccount?.id ?? undefined
+
         const currentHeight = await getCurrentBlockHeight()
         const unlockBlock = currentHeight + blocks
 
         // Get spendable UTXOs from database and convert to wallet UTXO format
-        const dbUtxosResult = await getSpendableUTXOs()
+        const dbUtxosResult = await getSpendableUTXOs(activeAccountId)
         if (!dbUtxosResult.ok) {
           response.error = { code: -32000, message: `Database error: ${dbUtxosResult.error.message}` }
           break
@@ -194,7 +210,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
           walletUtxos,
           lockMetadata.ordinalOrigin || undefined,
           undefined,  // lockBlock
-          undefined,  // accountId
+          activeAccountId,
           lockBasket
         )
 
@@ -239,8 +255,12 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       }
 
       const unlockOperation = (async () => {
+        // S-29: Scope to active account to prevent cross-account fund leaks
+        const activeAccount = await getActiveAccount()
+        const activeAccountId = activeAccount?.id ?? undefined
+
         const currentHeight = await getCurrentBlockHeight()
-        const locks = await getLocksFromDB(currentHeight)
+        const locks = await getLocksFromDB(currentHeight, activeAccountId)
 
         // Find the lock by outpoint
         const [txid, voutStr] = outpoint.split('.')
@@ -284,7 +304,8 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         // unlockBSV retrieves the WIF internally from the Rust key store
         const unlockResult = await walletUnlockBSV(
           lockedUtxo,
-          currentHeight
+          currentHeight,
+          activeAccountId
         )
 
         if (!unlockResult.ok) {

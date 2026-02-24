@@ -178,6 +178,10 @@ export function useSyncData({
       syncLogger.warn('fetchDataFromDB: UTXOs read failed', { error: String(e) })
     }
 
+    // B-27: Check isCancelled before final state setters to prevent overwriting
+    // data from a newer account switch that completed while we were still loading.
+    if (isCancelled?.()) return
+
     // Ord balance is API-only -- no DB cache. Reset to 0 so the old account's
     // ord balance doesn't persist in the UI until the next API fetch.
     setOrdBalance(0)
@@ -381,22 +385,26 @@ export function useSyncData({
         // reads from DB cache -- if that cache is empty, it adds 0 synthetic entries
         // and setTxHistory is called with only the 51 DB txs. Now that we have the real
         // ordinals from the API, fill in any missing synthetic entries.
+        //
+        // B-35: Copy dbTxHistory before mutating — the original array was already passed
+        // to setTxHistory above, so pushing onto it would mutate React state in-place.
         {
-          const liveTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
+          const mergedHistory = [...dbTxHistory]
+          const liveTxidSet = new Set(mergedHistory.map(tx => tx.tx_hash))
           let historyChanged = false
           for (const ord of allOrdinals) {
             if (!liveTxidSet.has(ord.txid)) {
               // blockHeight may not exist if allOrdinals came from DB fallback (getOrdinalsFromDatabase)
               // rather than from API. Use -1 sentinel as fallback.
               const blockHeight = ord.blockHeight ?? -1
-              dbTxHistory.push({ tx_hash: ord.txid, height: blockHeight, amount: 1, createdAt: 0 })
+              mergedHistory.push({ tx_hash: ord.txid, height: blockHeight, amount: 1, createdAt: 0 })
               liveTxidSet.add(ord.txid)
               historyChanged = true
             }
           }
           if (historyChanged) {
-            dbTxHistory.sort(compareTxByHeight)
-            if (!checkCancelled()) setTxHistory([...dbTxHistory])
+            mergedHistory.sort(compareTxByHeight)
+            if (!checkCancelled()) setTxHistory(mergedHistory)
           }
         }
 

@@ -29,7 +29,22 @@ import { getLockingScript, isOurOutput, isOurOutputMulti } from './addressSync'
 // tx across multiple addresses within a single sync cycle.
 // Cleared at the end of every syncWallet() call.
 // ---------------------------------------------------------------------------
-export const txDetailCache = new Map<string, WocTransaction>()
+const txDetailCache = new Map<string, WocTransaction>()
+
+/** Get a cached transaction detail by txid. */
+export function getTxDetailCacheEntry(txid: string): WocTransaction | undefined {
+  return txDetailCache.get(txid)
+}
+
+/** Check if a txid exists in the tx detail cache. */
+export function hasTxDetailCacheEntry(txid: string): boolean {
+  return txDetailCache.has(txid)
+}
+
+/** Store a transaction detail in the per-sync cache. */
+export function setTxDetailCacheEntry(txid: string, detail: WocTransaction): void {
+  txDetailCache.set(txid, detail)
+}
 
 /** Clear the per-sync tx detail cache (call after each sync cycle). */
 export function clearTxDetailCache(): void {
@@ -39,6 +54,12 @@ export function clearTxDetailCache(): void {
 /**
  * Calculate the net amount change for an address from a transaction
  * Positive = received, Negative = sent (including fee)
+ *
+ * A-23: This is the SYNC version used during wallet sync. It is more sophisticated
+ * than the simple version in wallet/balance.ts: it uses locking script matching
+ * (not just address matching), tries local DB lookups before API calls, and leverages
+ * the per-sync txDetailCache to avoid redundant fetches. Both versions exist
+ * intentionally — do not consolidate without verifying all callers.
  *
  * Strategy: First try local UTXO DB (cheap), then fetch parent tx from API (reliable).
  * Spent UTXOs may not exist in the local DB after a fresh sync (only current UTXOs

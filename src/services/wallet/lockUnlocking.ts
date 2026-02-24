@@ -30,39 +30,25 @@ import type { Result } from '../../domain/types'
 import { ok, err } from '../../domain/types'
 
 /**
- * Unlock a locked UTXO using OP_PUSH_TX technique
+ * Build a signed unlock transaction for a locked UTXO using OP_PUSH_TX.
  *
- * The solution script is: <signature> <publicKey> <preimage>
- * The preimage is the BIP-143 sighash preimage that the script validates on-chain
+ * Shared helper that validates the locking script, calculates fees,
+ * derives keys, constructs the custom unlock template, and signs.
+ * Both `unlockBSV` and `generateUnlockTxHex` delegate here.
  */
-export async function unlockBSV(
-  lockedUtxo: LockedUTXO,
-  currentBlockHeight: number,
-  accountId?: number
-): Promise<Result<string, AppError>> {
-  // Check block height for user feedback
-  if (currentBlockHeight < lockedUtxo.unlockBlock) {
+async function buildUnlockTransaction(
+  lockedUtxo: LockedUTXO
+): Promise<Result<{ tx: Transaction; outputSats: number; privateKey: PrivateKey }, AppError>> {
+  // Validate lockingScript is valid hex before using it for fee calculation
+  if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
     return err(new AppError(
-      `Cannot unlock yet. Current block: ${currentBlockHeight}, Unlock block: ${lockedUtxo.unlockBlock}`,
-      ErrorCodes.LOCK_NOT_SPENDABLE,
-      { currentBlockHeight, unlockBlock: lockedUtxo.unlockBlock, blocksRemaining: lockedUtxo.unlockBlock - currentBlockHeight }
+      'Invalid locking script: not valid hex',
+      ErrorCodes.INVALID_PARAMS,
+      { scriptLength: lockedUtxo.lockingScript?.length }
     ))
   }
 
-  // Check if this UTXO is already being spent in another transaction
-  const db = getDatabase()
-  const utxoCheck = await db.select<{ spending_status: string | null }[]>(
-    'SELECT spending_status FROM utxos WHERE txid = $1 AND vout = $2',
-    [lockedUtxo.txid, lockedUtxo.vout]
-  )
-  if (utxoCheck.length > 0 && utxoCheck[0]!.spending_status === 'pending') {
-    return err(new AppError(
-      'This lock is already being processed in another transaction',
-      ErrorCodes.LOCK_NOT_SPENDABLE,
-      { txid: lockedUtxo.txid, vout: lockedUtxo.vout }
-    ))
-  }
-
+  // Get WIF and derive keys
   let wif: string
   try {
     wif = await getWifForOperation('wallet', 'unlockBSV')
@@ -77,15 +63,6 @@ export async function unlockBSV(
   const privateKey = PrivateKey.fromWif(wif)
   const publicKey = privateKey.toPublicKey()
   const toAddress = publicKey.toAddress()
-
-  // Validate lockingScript is valid hex before using it for fee calculation
-  if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
-    return err(new AppError(
-      'Invalid locking script: not valid hex',
-      ErrorCodes.INVALID_PARAMS,
-      { scriptLength: lockedUtxo.lockingScript?.length }
-    ))
-  }
 
   // Calculate fee for unlock transaction
   const lockingScriptSize = lockedUtxo.lockingScript.length / 2 // hex to bytes
@@ -177,6 +154,50 @@ export async function unlockBSV(
   // Sign the transaction (calls our custom template)
   await tx.sign()
 
+  return ok({ tx, outputSats, privateKey })
+}
+
+/**
+ * Unlock a locked UTXO using OP_PUSH_TX technique
+ *
+ * The solution script is: <signature> <publicKey> <preimage>
+ * The preimage is the BIP-143 sighash preimage that the script validates on-chain
+ */
+export async function unlockBSV(
+  lockedUtxo: LockedUTXO,
+  currentBlockHeight: number,
+  accountId?: number
+): Promise<Result<string, AppError>> {
+  // Check block height for user feedback
+  if (currentBlockHeight < lockedUtxo.unlockBlock) {
+    return err(new AppError(
+      `Cannot unlock yet. Current block: ${currentBlockHeight}, Unlock block: ${lockedUtxo.unlockBlock}`,
+      ErrorCodes.LOCK_NOT_SPENDABLE,
+      { currentBlockHeight, unlockBlock: lockedUtxo.unlockBlock, blocksRemaining: lockedUtxo.unlockBlock - currentBlockHeight }
+    ))
+  }
+
+  // Check if this UTXO is already being spent in another transaction
+  const db = getDatabase()
+  const utxoCheck = await db.select<{ spending_status: string | null }[]>(
+    'SELECT spending_status FROM utxos WHERE txid = $1 AND vout = $2',
+    [lockedUtxo.txid, lockedUtxo.vout]
+  )
+  if (utxoCheck.length > 0 && utxoCheck[0]!.spending_status === 'pending') {
+    return err(new AppError(
+      'This lock is already being processed in another transaction',
+      ErrorCodes.LOCK_NOT_SPENDABLE,
+      { txid: lockedUtxo.txid, vout: lockedUtxo.vout }
+    ))
+  }
+
+  // Build the signed unlock transaction
+  const buildResult = await buildUnlockTransaction(lockedUtxo)
+  if (!buildResult.ok) {
+    return err(buildResult.error)
+  }
+  const { tx, outputSats } = buildResult.value
+
   walletLogger.debug('Unlock transaction ready', { nLockTime: tx.lockTime })
   walletLogger.debug('Attempting to broadcast unlock transaction')
 
@@ -266,100 +287,11 @@ export async function getCurrentBlockHeight(): Promise<number> {
 export async function generateUnlockTxHex(
   lockedUtxo: LockedUTXO
 ): Promise<Result<{ txHex: string; txid: string; outputSats: number }, AppError>> {
-  const wif = await getWifForOperation('wallet', 'generateUnlockTxHex')
-  const privateKey = PrivateKey.fromWif(wif)
-  const publicKey = privateKey.toPublicKey()
-  const toAddress = publicKey.toAddress()
-
-  // Validate lockingScript is valid hex
-  if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
-    return err(new AppError(
-      'Invalid locking script: not valid hex',
-      ErrorCodes.INVALID_PARAMS,
-      { scriptLength: lockedUtxo.lockingScript?.length }
-    ))
+  const buildResult = await buildUnlockTransaction(lockedUtxo)
+  if (!buildResult.ok) {
+    return err(buildResult.error)
   }
-
-  // Calculate fee for unlock transaction
-  const lockingScriptSize = lockedUtxo.lockingScript.length / 2
-  const unlockScriptSize = 73 + 34 + 180 + lockingScriptSize
-  const txSize = 4 + 1 + 36 + 3 + unlockScriptSize + 4 + 1 + 34 + 4
-  const fee = feeFromBytes(txSize)
-  const outputSats = lockedUtxo.satoshis - fee
-
-  if (outputSats <= 0) {
-    return err(new AppError(
-      `Insufficient funds to cover unlock fee (need ${fee} sats)`,
-      ErrorCodes.INSUFFICIENT_FUNDS,
-      { fee, available: lockedUtxo.satoshis }
-    ))
-  }
-
-  // Parse the locking script
-  const lockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
-
-  // SIGHASH_ALL | SIGHASH_FORKID for BSV
-  const sigHashType = TransactionSignature.SIGHASH_ALL | TransactionSignature.SIGHASH_FORKID
-  const inputSequence = 0xfffffffe
-
-  // Build transaction
-  const tx = new Transaction()
-  tx.version = 1
-  tx.lockTime = lockedUtxo.unlockBlock
-
-  // Create unlock template with preimage
-  const customUnlockTemplate = {
-    sign: async (tx: Transaction, inputIndex: number): Promise<UnlockingScript> => {
-      // Build the BIP-143 preimage
-      const preimage = TransactionSignature.format({
-        sourceTXID: lockedUtxo.txid,
-        sourceOutputIndex: lockedUtxo.vout,
-        sourceSatoshis: lockedUtxo.satoshis,
-        transactionVersion: tx.version,
-        otherInputs: [],
-        inputIndex: inputIndex,
-        outputs: tx.outputs,
-        inputSequence: inputSequence,
-        subscript: lockingScript,
-        lockTime: tx.lockTime,
-        scope: sigHashType
-      })
-
-      const preimageBytes = preimage as number[]
-
-      // Sign the preimage hash
-      const singleHash = Hash.sha256(preimage) as number[]
-      const signature = privateKey.sign(singleHash)
-
-      const sigDER = signature.toDER() as number[]
-      const sigWithHashType: number[] = [...sigDER, sigHashType]
-      const pubKeyBytes = publicKey.encode(true) as number[]
-
-      // Build unlocking script: <signature> <publicKey> <preimage>
-      const unlockScript = new Script()
-      unlockScript.writeBin(sigWithHashType)
-      unlockScript.writeBin(pubKeyBytes)
-      unlockScript.writeBin(preimageBytes)
-
-      const scriptBytes = unlockScript.toBinary() as number[]
-      return UnlockingScript.fromBinary(scriptBytes)
-    },
-    estimateLength: async (): Promise<number> => 300
-  }
-
-  tx.addInput({
-    sourceTXID: lockedUtxo.txid,
-    sourceOutputIndex: lockedUtxo.vout,
-    sequence: inputSequence,
-    unlockingScriptTemplate: customUnlockTemplate
-  })
-
-  tx.addOutput({
-    lockingScript: new P2PKH().lock(toAddress),
-    satoshis: outputSats
-  })
-
-  await tx.sign()
+  const { tx, outputSats } = buildResult.value
 
   return ok({
     txHex: tx.toHex(),

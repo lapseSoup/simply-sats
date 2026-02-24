@@ -65,6 +65,13 @@ export async function createLockTransaction(
   blocks: number,
   ordinalOrigin?: string
 ): Promise<Result<{ txid: string; unlockBlock: number }, string>> {
+  if (!Number.isFinite(satoshis) || satoshis <= 0 || !Number.isInteger(satoshis)) {
+    return err(`Invalid lock amount: ${satoshis} (must be a positive integer)`)
+  }
+  if (!Number.isFinite(blocks) || blocks <= 0 || !Number.isInteger(blocks)) {
+    return err(`Invalid lock duration: ${blocks} (must be a positive integer)`)
+  }
+
   try {
     const walletWif = await getWifForOperation('wallet', 'createLockTransaction', keys)
     const privateKey = PrivateKey.fromWif(walletWif)
@@ -153,10 +160,13 @@ export async function createLockTransaction(
 
     await tx.sign()
 
-    // Derive txid before broadcast so we can save to DB first
     const txid = tx.id('hex')
 
-    // Save UTXO and lock to database BEFORE broadcast so the record is never missing
+    // Broadcast via infrastructure service (cascade: WoC -> ARC -> mAPI)
+    // Broadcast FIRST — only save to DB on success to avoid phantom records
+    await infraBroadcast(tx.toHex(), txid)
+
+    // Broadcast succeeded — now persist to database
     const addLockResult = await addUTXO({
       txid,
       vout: 0,
@@ -168,7 +178,9 @@ export async function createLockTransaction(
       tags: ['lock', 'wrootz']
     })
     if (!addLockResult.ok) {
-      return err(`Failed to save lock UTXO to database: ${addLockResult.error.message}`)
+      brc100Logger.error('Broadcast succeeded but failed to save lock UTXO to database', { txid, error: addLockResult.error.message })
+      // Return ok since broadcast succeeded — background sync will reconcile
+      return ok({ txid, unlockBlock })
     }
     const utxoId = addLockResult.value
 
@@ -188,9 +200,6 @@ export async function createLockTransaction(
     }
 
     brc100Logger.info('Lock saved to database', { txid, utxoId, unlockBlock })
-
-    // Broadcast via infrastructure service (cascade: WoC -> ARC -> mAPI)
-    await infraBroadcast(tx.toHex(), txid)
 
     return ok({ txid, unlockBlock })
   } catch (e) {

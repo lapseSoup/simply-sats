@@ -8,6 +8,7 @@
 import { BASKETS } from '../../domain/types'
 import type { DerivedAddress } from '../database'
 import {
+  getDatabase,
   getSpendableUTXOs,
   getDerivedAddresses as getDerivedAddressesFromDB,
   updateDerivedAddressSyncTime,
@@ -18,7 +19,9 @@ import {
   updateTransactionStatus,
   getAllTransactions,
   updateTransactionAmount,
-  getLocks
+  getLocks,
+  getAllSyncStates,
+  clearSyncTimesForAccount as clearSyncTimesFn
 } from '../database'
 import { RATE_LIMITS } from '../config'
 import { getWocClient } from '../../infrastructure/api/wocClient'
@@ -32,11 +35,10 @@ import {
   isSyncInProgress
 } from '../cancellation'
 import { syncLogger } from '../logger'
-import { getDatabase } from '../../infrastructure/database/connection'
 import { syncAddress } from './addressSync'
-import { syncTransactionHistory, calculateTxAmount, txDetailCache, clearTxDetailCache } from './historySync'
+import { syncTransactionHistory, calculateTxAmount, hasTxDetailCacheEntry, getTxDetailCacheEntry, setTxDetailCacheEntry, clearTxDetailCache } from './historySync'
 
-import type { AddressInfo, SyncResult } from './index'
+import type { AddressInfo, SyncResult } from './types'
 
 // Re-export cancellation functions for external use
 export { cancelSync, startNewSync, isSyncInProgress }
@@ -68,7 +70,6 @@ export async function diagnoseSyncHealth(accountId?: number): Promise<SyncHealth
   // Test 1: Database connectivity
   const dbStart = Date.now()
   try {
-    const { getDatabase } = await import('../database')
     const db = getDatabase()
     await db.select('SELECT 1 as test')
     dbConnected = true
@@ -254,7 +255,7 @@ async function backfillNullAmounts(
     // Filter out txids that are already in the cache
     const txidsToFetch = nullAmountTxs
       .map(tx => tx.txid)
-      .filter(txid => !txDetailCache.has(txid))
+      .filter(txid => !hasTxDetailCacheEntry(txid))
 
     if (txidsToFetch.length > 0) {
       syncLogger.debug(`[BACKFILL] Batch-fetching ${txidsToFetch.length} tx details (concurrency=${RATE_LIMITS.maxConcurrentRequests})`)
@@ -264,7 +265,7 @@ async function backfillNullAmounts(
       )
       // Merge into the module-level cache
       for (const [txid, detail] of batchMap) {
-        txDetailCache.set(txid, detail)
+        setTxDetailCacheEntry(txid, detail)
       }
     }
 
@@ -273,7 +274,7 @@ async function backfillNullAmounts(
     const calcResults = await batchWithConcurrency(
       nullAmountTxs,
       async (tx) => {
-        const txDetails = txDetailCache.get(tx.txid) ?? null
+        const txDetails = getTxDetailCacheEntry(tx.txid) ?? null
         if (!txDetails) {
           syncLogger.debug(`[BACKFILL] Could not fetch tx ${tx.txid.slice(0, 8)}... — skipping`)
           return null
@@ -523,12 +524,12 @@ export async function syncWallet(
               txid: txid.slice(0, 12), vout, utxoId
             })
 
-            // Direct DELETE by primary key — bypasses account_id subquery entirely
+            // Direct DELETE scoped by account_id to avoid deleting data from other accounts
             const db = getDatabase()
-            await db.execute('DELETE FROM locks WHERE utxo_id = $1', [utxoId])
-            await db.execute('DELETE FROM utxos WHERE id = $1', [utxoId])
-            await db.execute('DELETE FROM transaction_labels WHERE txid = $1', [txid])
-            await db.execute('DELETE FROM transactions WHERE txid = $1', [txid])
+            await db.execute('DELETE FROM locks WHERE utxo_id = $1 AND account_id = $2', [utxoId, accountId ?? 1])
+            await db.execute('DELETE FROM utxos WHERE id = $1 AND account_id = $2', [utxoId, accountId ?? 1])
+            await db.execute('DELETE FROM transaction_labels WHERE txid = $1 AND account_id = $2', [txid, accountId ?? 1])
+            await db.execute('DELETE FROM transactions WHERE txid = $1 AND account_id = $2', [txid, accountId ?? 1])
 
             syncLogger.warn('[SYNC] Phantom lock fully purged from all tables', { txid: txid.slice(0, 12) })
           }
@@ -555,7 +556,8 @@ export async function syncWallet(
       }
     }
 
-    const total = results.reduce((sum, r) => sum + r.totalBalance, 0)
+    // Skip results with totalBalance === -1 (API failure sentinel — balance unknown)
+    const total = results.reduce((sum, r) => sum + (r.totalBalance >= 0 ? r.totalBalance : 0), 0)
 
     return { total, results }
   } catch (error) {
@@ -604,7 +606,6 @@ export async function needsInitialSync(addresses: string[], accountId?: number):
  * Returns 0 if never synced. Used to determine if background sync is needed.
  */
 export async function getLastSyncTimeForAccount(accountId: number): Promise<number> {
-  const { getAllSyncStates } = await import('../../infrastructure/database/syncRepository')
   const result = await getAllSyncStates(accountId)
   if (!result.ok || result.value.length === 0) return 0
   return Math.max(...result.value.map(s => s.syncedAt))
@@ -617,8 +618,7 @@ export async function getLastSyncTimeForAccount(accountId: number): Promise<numb
  * fresh API fetch when the user actually switches to that account.
  */
 export async function clearSyncTimesForAccount(accountId: number): Promise<void> {
-  const { clearSyncTimesForAccount: clearFn } = await import('../../infrastructure/database/syncRepository')
-  await clearFn(accountId)
+  await clearSyncTimesFn(accountId)
 }
 
 /**

@@ -28,7 +28,7 @@ interface SettingsSecurityProps {
 
 export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
   const { wallet, sessionPassword, autoLockMinutes } = useWalletState()
-  const { setAutoLockMinutes, lockWallet } = useWalletActions()
+  const { setAutoLockMinutes, lockWallet, setSessionPassword } = useWalletActions()
   const { showToast } = useUI()
 
   const [showKeysWarning, setShowKeysWarning] = useState(false)
@@ -154,10 +154,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       }
       // encryptAllAccounts already re-encrypts secure storage and sets HAS_PASSWORD
       setModuleSessionPassword(newPassword)
-      // Also update React state sessionPassword
-      // Note: We can't call setSessionPassword from useWallet here since it's
-      // a React state setter, but setModuleSessionPassword updates the module store.
-      // The user will need to refresh or the next unlock will pick it up.
+      setSessionPassword(newPassword)
       setAutoLockMinutes(10) // Enable auto-lock at default
 
       showToast('Password set! Lock screen and auto-lock are now enabled.')
@@ -169,7 +166,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
     } finally {
       setSettingPassword(false)
     }
-  }, [newPassword, confirmNewPassword, showToast, setAutoLockMinutes])
+  }, [newPassword, confirmNewPassword, showToast, setAutoLockMinutes, setSessionPassword])
 
   const handleExportWithOneTimePassword = useCallback(async () => {
     if (exportPassword.length < SECURITY.MIN_PASSWORD_LENGTH) {

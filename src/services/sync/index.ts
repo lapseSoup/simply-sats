@@ -8,24 +8,8 @@
 // Re-export BASKETS from domain/types (single source of truth)
 export { BASKETS } from '../../domain/types'
 
-// --- Types ---
-
-// Address info for syncing
-export interface AddressInfo {
-  address: string
-  basket: string
-  wif?: string // Optional - for signing
-  accountId?: number // Account ID for scoping data
-}
-
-// Sync result
-export interface SyncResult {
-  address: string
-  basket: string
-  newUtxos: number
-  spentUtxos: number
-  totalBalance: number
-}
+// --- Types (extracted to ./types to avoid circular imports) ---
+export type { AddressInfo, SyncResult } from './types'
 
 // --- Address Sync ---
 export { syncAddress, getCurrentBlockHeight } from './addressSync'

@@ -90,6 +90,12 @@ export async function getTransactionDetails(txid: string): Promise<WocTransactio
  * Calculate amount for a transaction relative to an address or array of addresses
  * (positive = received, negative = sent)
  * This is async because we may need to fetch previous tx details to get input amounts
+ *
+ * A-23: This is the SIMPLE version used for on-demand display calculations.
+ * It matches by address only and fetches parent txs from the API without caching.
+ * The SYNC version in historySync.ts is more sophisticated: it uses locking script
+ * matching, local DB lookups, and a per-sync txDetailCache for efficiency.
+ * Both exist intentionally — do not consolidate without verifying all callers.
  */
 export async function calculateTxAmount(
   txDetails: WocTransaction | null,

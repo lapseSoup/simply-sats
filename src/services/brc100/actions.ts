@@ -10,5 +10,5 @@
  * from './actions' continue to work unchanged.
  */
 
-export { getPendingRequests } from './handlers'
+export { getPendingRequests, executeApprovedRequest } from './handlers'
 export { handleBRC100Request, approveRequest, rejectRequest } from './validation'

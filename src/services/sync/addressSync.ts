@@ -12,12 +12,13 @@ import {
   markUTXOSpent,
   getSpendableUTXOs,
   getPendingTransactionTxids,
+  updateSyncState,
   type UTXO as DBUtxo
 } from '../database'
 import { getWocClient } from '../../infrastructure/api/wocClient'
 import { syncLogger } from '../logger'
 
-import type { AddressInfo, SyncResult } from './index'
+import type { AddressInfo, SyncResult } from './types'
 
 // Simple counter for debugging sync order
 let syncCounter = 0
@@ -101,7 +102,8 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
   // Fetch current UTXOs from WhatsOnChain
   const wocUtxos = await fetchUtxosFromWoc(address)
 
-  // If API call failed, skip this address entirely to avoid marking UTXOs as spent
+  // If API call failed, skip this address entirely to avoid marking UTXOs as spent.
+  // Return totalBalance: -1 as a sentinel so callers know to exclude this from balance sums.
   if (wocUtxos === null) {
     syncLogger.warn(`[SYNC #${syncId}] SKIPPED: ${address.slice(0,12)}... (API error — preserving existing UTXOs)`)
     return {
@@ -109,7 +111,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
       basket,
       newUtxos: 0,
       spentUtxos: 0,
-      totalBalance: 0
+      totalBalance: -1
     }
   }
 
@@ -150,7 +152,7 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
       syncLogger.warn(
         `[SYNC #${syncId}] WoC returned 0 UTXOs but ${existingMap.size} exist locally for ${address.slice(0, 12)}... — skipping spend-marking (no tx history to confirm sweep)`
       )
-      return { address, basket, newUtxos: 0, spentUtxos: 0, totalBalance: 0 }
+      return { address, basket, newUtxos: 0, spentUtxos: 0, totalBalance: -1 }
     }
 
     // History returned successfully with entries — the address was genuinely swept
@@ -220,7 +222,6 @@ export async function syncAddress(addressInfo: AddressInfo): Promise<SyncResult>
 
   // Update sync state (scoped to account so stale records from other installs don't block re-sync)
   const currentHeight = await getCurrentBlockHeight()
-  const { updateSyncState } = await import('../database')
   const syncStateResult = await updateSyncState(address, currentHeight, accountId)
   if (!syncStateResult.ok) {
     syncLogger.warn(`[SYNC #${syncId}] Failed to update sync state`, { error: syncStateResult.error })
