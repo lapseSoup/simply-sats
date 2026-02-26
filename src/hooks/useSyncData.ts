@@ -163,7 +163,7 @@ export function useSyncData({
       if (isCancelled?.()) return
       const newCache = await getBatchOrdinalContent(allOrigins)
       if (isCancelled?.()) return
-      contentCacheRef.current = newCache
+      for (const [k, v] of newCache) { contentCacheRef.current.set(k, v) }
       bumpCacheVersion()
     } catch (e) {
       syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(e) })
@@ -321,7 +321,7 @@ export function useSyncData({
         if (checkCancelled()) return
         const newCache = await getBatchOrdinalContent(allCachedOrigins)
         if (newCache.size > 0) {
-          contentCacheRef.current = newCache
+          for (const [k, v] of newCache) { contentCacheRef.current.set(k, v) }
           bumpCacheVersion()
           syncLogger.debug('Loaded cached ordinal content', { count: newCache.size })
         }

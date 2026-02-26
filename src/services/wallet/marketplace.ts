@@ -22,6 +22,7 @@ import {
 } from '../sync'
 import { walletLogger } from '../logger'
 import { type Result, ok, err } from '../../domain/types'
+import { isValidBSVAddress } from '../../domain/wallet/validation'
 
 const mpLogger = walletLogger
 
@@ -81,6 +82,18 @@ export async function listOrdinal(
   ordAddress: string,
   priceSats: number
 ): Promise<Result<string, string>> {
+  // S-64: Validate addresses — invalid payAddress means sale proceeds are permanently lost
+  if (!isValidBSVAddress(payAddress)) {
+    return err(`Invalid pay address: ${payAddress}`)
+  }
+  if (!isValidBSVAddress(ordAddress)) {
+    return err(`Invalid ordinal return address: ${ordAddress}`)
+  }
+  // S-70: Validate price — 0, NaN, or excessive prices allowed through would cause issues
+  if (!Number.isFinite(priceSats) || priceSats <= 0 || !Number.isInteger(priceSats)) {
+    return err(`Invalid price: ${priceSats} (must be a positive integer)`)
+  }
+
   try {
     const ordPk = PrivateKey.fromWif(ordWif)
     const paymentPk = PrivateKey.fromWif(paymentWif)
@@ -164,63 +177,64 @@ export async function cancelOrdinalListing(
   listingUtxo: UTXO,
   paymentWif: string,
   paymentUtxos: UTXO[]
-): Promise<string> {
-  const ordPk = PrivateKey.fromWif(ordWif)
-  const paymentPk = PrivateKey.fromWif(paymentWif)
-
-  const fundingToUse = paymentUtxos.slice(0, 2)
-
-  const utxosToSpend = [
-    { txid: listingUtxo.txid, vout: listingUtxo.vout },
-    ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
-  ]
-
+): Promise<Result<string, string>> {
   try {
+    const ordPk = PrivateKey.fromWif(ordWif)
+    const paymentPk = PrivateKey.fromWif(paymentWif)
+
+    const fundingToUse = paymentUtxos.slice(0, 2)
+
+    const utxosToSpend = [
+      { txid: listingUtxo.txid, vout: listingUtxo.vout },
+      ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+    ]
+
     const pendingResult2 = await markUtxosPendingSpend(utxosToSpend, 'cancel-listing-pending')
     if (!pendingResult2.ok) {
-      throw new Error(`Failed to mark UTXOs pending for cancel: ${pendingResult2.error.message}`)
+      return err(`Failed to mark UTXOs pending for cancel: ${pendingResult2.error.message}`)
     }
-  } catch (error) {
-    mpLogger.error('Failed to mark UTXOs as pending for cancellation', error)
-    throw new Error('Failed to prepare cancellation - UTXOs could not be locked')
-  }
 
-  let txid: string
-  try {
-    const result = await cancelOrdListings({
-      utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
-      listingUtxos: [toOrdUtxo(listingUtxo, ordPk)],
-      ordPk: ordPk as OrdPrivateKey,
-      paymentPk: paymentPk as OrdPrivateKey,
-    })
-
-    txid = await broadcastTransaction(result.tx as unknown as Transaction)
-  } catch (err) {
+    let txid: string
     try {
-      await rollbackPendingSpend(utxosToSpend)
-    } catch (rollbackErr) {
-      mpLogger.error('CRITICAL: Failed to rollback pending status after cancel failure', rollbackErr)
-    }
-    throw err
-  }
+      const result = await cancelOrdListings({
+        utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
+        listingUtxos: [toOrdUtxo(listingUtxo, ordPk)],
+        ordPk: ordPk as OrdPrivateKey,
+        paymentPk: paymentPk as OrdPrivateKey,
+      })
 
-  try {
-    await recordSentTransaction(
-      txid,
-      '',
-      `Cancelled listing for ordinal ${listingUtxo.txid.slice(0, 8)}...`,
-      ['ordinal', 'cancel-listing']
-    )
-    const confirmResult2 = await confirmUtxosSpent(utxosToSpend, txid)
-    if (!confirmResult2.ok) {
-      mpLogger.warn('Failed to confirm UTXOs spent for cancel listing', { txid, error: confirmResult2.error.message })
+      txid = await broadcastTransaction(result.tx as unknown as Transaction)
+    } catch (buildErr) {
+      // B-56: Log rollback failures explicitly
+      try {
+        await rollbackPendingSpend(utxosToSpend)
+      } catch (rollbackErr) {
+        mpLogger.error('CRITICAL: Failed to rollback pending status after cancel failure', rollbackErr)
+      }
+      return err(buildErr instanceof Error ? buildErr.message : 'Cancel listing failed')
     }
-  } catch (error) {
-    mpLogger.warn('Failed to track cancellation locally', { error: String(error) })
-  }
 
-  mpLogger.info('Ordinal listing cancelled', { txid })
-  return txid
+    // B-58: Log post-broadcast DB errors instead of silently swallowing
+    try {
+      await recordSentTransaction(
+        txid,
+        '',
+        `Cancelled listing for ordinal ${listingUtxo.txid.slice(0, 8)}...`,
+        ['ordinal', 'cancel-listing']
+      )
+      const confirmResult2 = await confirmUtxosSpent(utxosToSpend, txid)
+      if (!confirmResult2.ok) {
+        mpLogger.warn('Failed to confirm UTXOs spent for cancel listing', { txid, error: confirmResult2.error.message })
+      }
+    } catch (error) {
+      mpLogger.error('Post-broadcast DB error in cancelOrdinalListing — tx is on-chain but not tracked locally', { txid, error: String(error) })
+    }
+
+    mpLogger.info('Ordinal listing cancelled', { txid })
+    return ok(txid)
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e))
+  }
 }
 
 /**
@@ -244,65 +258,84 @@ export async function purchaseOrdinal(params: {
   listingUtxo: UTXO
   payout: string
   priceSats: number
-}): Promise<string> {
+}): Promise<Result<string, string>> {
   const { paymentWif, paymentUtxos, ordAddress, listingUtxo, payout, priceSats } = params
 
+  // S-64: Validate ordinal receive address
+  if (!isValidBSVAddress(ordAddress)) {
+    return err(`Invalid ordinal receive address: ${ordAddress}`)
+  }
+  // S-70: Validate price
+  if (!Number.isFinite(priceSats) || priceSats <= 0 || !Number.isInteger(priceSats)) {
+    return err(`Invalid price: ${priceSats} (must be a positive integer)`)
+  }
+
   if (paymentUtxos.length === 0) {
-    throw new Error('No payment UTXOs available to purchase ordinal')
-  }
-
-  const { purchaseOrdListing } = await import('js-1sat-ord')
-  const paymentPk = PrivateKey.fromWif(paymentWif)
-
-  const fundingToUse = paymentUtxos.slice(0, 3)
-  const totalFunding = fundingToUse.reduce((s, u) => s + u.satoshis, 0)
-  if (totalFunding < priceSats) {
-    throw new Error(`Insufficient funds: need at least ${priceSats} sats, have ${totalFunding}`)
-  }
-
-  const utxosToSpend = [
-    { txid: listingUtxo.txid, vout: listingUtxo.vout },
-    ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout })),
-  ]
-
-  const pendingResult = await markUtxosPendingSpend(utxosToSpend, 'purchase-pending')
-  if (!pendingResult.ok) {
-    throw new Error(`Failed to mark UTXOs pending: ${pendingResult.error.message}`)
-  }
-
-  let txid: string
-  try {
-    const result = await purchaseOrdListing({
-      utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
-      listing: {
-        payout,
-        listingUtxo: toOrdUtxo(listingUtxo, paymentPk),
-      },
-      ordAddress,
-      paymentPk: paymentPk as OrdPrivateKey,
-      changeAddress: paymentPk.toPublicKey().toAddress(),
-    })
-    txid = await broadcastTransaction(result.tx as unknown as Transaction)
-  } catch (err) {
-    try { await rollbackPendingSpend(utxosToSpend) } catch { /* best-effort */ }
-    throw err
+    return err('No payment UTXOs available to purchase ordinal')
   }
 
   try {
-    await recordSentTransaction(
-      txid,
-      '',
-      `Purchased ordinal ${listingUtxo.txid.slice(0, 8)}... for ${priceSats} sats`,
-      ['ordinal', 'purchase']
-    )
-    const confirmResult = await confirmUtxosSpent(utxosToSpend, txid)
-    if (!confirmResult.ok) {
-      mpLogger.warn('Failed to confirm UTXOs spent after purchase', { txid, error: confirmResult.error.message })
+    const { purchaseOrdListing } = await import('js-1sat-ord')
+    const paymentPk = PrivateKey.fromWif(paymentWif)
+
+    const fundingToUse = paymentUtxos.slice(0, 3)
+    const totalFunding = fundingToUse.reduce((s, u) => s + u.satoshis, 0)
+    if (totalFunding < priceSats) {
+      return err(`Insufficient funds: need at least ${priceSats} sats, have ${totalFunding}`)
     }
-  } catch (err) {
-    mpLogger.warn('Failed to record purchase locally', { error: String(err) })
-  }
 
-  mpLogger.info('Ordinal purchased successfully', { txid, price: priceSats })
-  return txid
+    const utxosToSpend = [
+      { txid: listingUtxo.txid, vout: listingUtxo.vout },
+      ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout })),
+    ]
+
+    const pendingResult = await markUtxosPendingSpend(utxosToSpend, 'purchase-pending')
+    if (!pendingResult.ok) {
+      return err(`Failed to mark UTXOs pending: ${pendingResult.error.message}`)
+    }
+
+    let txid: string
+    try {
+      const result = await purchaseOrdListing({
+        utxos: fundingToUse.map(u => toOrdUtxo(u, paymentPk)),
+        listing: {
+          payout,
+          listingUtxo: toOrdUtxo(listingUtxo, paymentPk),
+        },
+        ordAddress,
+        paymentPk: paymentPk as OrdPrivateKey,
+        changeAddress: paymentPk.toPublicKey().toAddress(),
+      })
+      txid = await broadcastTransaction(result.tx as unknown as Transaction)
+    } catch (buildErr) {
+      // B-56: Log rollback failures explicitly instead of silent catch
+      try {
+        await rollbackPendingSpend(utxosToSpend)
+      } catch (rollbackErr) {
+        mpLogger.error('CRITICAL: Failed to rollback pending status after purchase failure', rollbackErr)
+      }
+      return err(buildErr instanceof Error ? buildErr.message : 'Purchase failed')
+    }
+
+    // B-58: Log post-broadcast DB errors instead of silently swallowing
+    try {
+      await recordSentTransaction(
+        txid,
+        '',
+        `Purchased ordinal ${listingUtxo.txid.slice(0, 8)}... for ${priceSats} sats`,
+        ['ordinal', 'purchase']
+      )
+      const confirmResult = await confirmUtxosSpent(utxosToSpend, txid)
+      if (!confirmResult.ok) {
+        mpLogger.warn('Failed to confirm UTXOs spent after purchase', { txid, error: confirmResult.error.message })
+      }
+    } catch (dbErr) {
+      mpLogger.error('Post-broadcast DB error in purchaseOrdinal — tx is on-chain but not tracked locally', { txid, error: String(dbErr) })
+    }
+
+    mpLogger.info('Ordinal purchased successfully', { txid, price: priceSats })
+    return ok(txid)
+  } catch (e) {
+    return err(e instanceof Error ? e.message : String(e))
+  }
 }

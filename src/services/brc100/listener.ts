@@ -90,7 +90,16 @@ export async function setupHttpServerListener(): Promise<() => void> {
         }
 
         if (request.type === 'getPublicKey' && keys) {
-          const publicKey = resolvePublicKey(keys, request.params || {})
+          // S-61: Validate params before auto-response (mirrors handler validation)
+          const params = request.params || {}
+          if (params.identityKey !== undefined && typeof params.identityKey !== 'string') {
+            await invoke('respond_to_brc100', {
+              requestId: request.id,
+              response: { error: { code: -32602, message: 'identityKey must be a string' } }
+            })
+            return
+          }
+          const publicKey = resolvePublicKey(keys, params)
           try {
             await invoke('respond_to_brc100', {
               requestId: request.id,

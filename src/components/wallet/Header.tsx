@@ -16,7 +16,7 @@ interface HeaderProps {
 }
 
 export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }: HeaderProps) {
-  const { wallet, networkInfo, syncing, accounts, activeAccountId, balance } = useWalletState()
+  const { wallet, networkInfo, syncing, accounts, activeAccountId } = useWalletState()
   const { performSync, fetchData, switchAccount } = useWalletActions()
   const { formatBSVShort, showToast } = useUI()
   const { syncPhase } = useNetwork()
@@ -51,7 +51,9 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
     if (accounts.length > 0) {
       fetchAccountBalances()
     }
-  }, [accounts, balance]) // Re-fetch when accounts change or when balance updates (after sync)
+  // B-63: Use activeAccountId instead of balance to avoid re-fetching on every
+  // balance change. Re-fetch only when accounts list changes or active account switches.
+  }, [accounts, activeAccountId])
 
   const handleSync = useCallback(async () => {
     setManualSyncing(true)

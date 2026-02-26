@@ -37,6 +37,7 @@ export type {
 
 export {
   BRC100_REQUEST_TYPES,
+  BRC100_ERRORS,
   isValidBRC100RequestType,
   getParams
 } from './types'
@@ -98,12 +99,15 @@ export {
   proveCertificate
 } from './certificates'
 
-// Re-export actions
+// Re-export actions — routing layer: receives BRC-100 requests, manages approval
+// flow (approve/reject), and dispatches to handlers for execution.
 export {
   handleBRC100Request,
   approveRequest,
   rejectRequest
 } from './actions'
 
-// Re-export handler execution
+// Re-export handler execution — execution layer: runs approved requests by
+// performing wallet operations (signing, encryption, action creation, etc.)
+// and building the JSON-RPC response object.
 export { executeApprovedRequest } from './handlers'

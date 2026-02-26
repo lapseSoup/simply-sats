@@ -29,6 +29,12 @@ vi.mock('../logger', () => ({
   },
 }))
 
+// S-64: Address validation runs before business logic — mock it to always pass
+// so tests exercise the downstream paths (coin selection, broadcast, etc.)
+vi.mock('../../domain/wallet/validation', () => ({
+  isValidBSVAddress: vi.fn(() => true),
+}))
+
 // Mock @bsv/sdk
 vi.mock('@bsv/sdk', () => {
   const mockAddress = 'mockAddress123'
@@ -227,14 +233,15 @@ describe('Marketplace Service', () => {
         script: 'lockscript123',
       }
 
-      const txid = await cancelOrdinalListing(
+      const result = await cancelOrdinalListing(
         TEST_ORD_WIF,
         listingUtxo,
         TEST_PAY_WIF,
         mockPaymentUtxos
       )
 
-      expect(txid).toBe('cancel_broadcasted_txid')
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.value).toBe('cancel_broadcasted_txid')
       expect(mockMarkPending).toHaveBeenCalledOnce()
       expect(mockCancelOrdListings).toHaveBeenCalledOnce()
       expect(mockBroadcast).toHaveBeenCalledWith(mockTx)
@@ -253,15 +260,15 @@ describe('Marketplace Service', () => {
         script: 'lockscript123',
       }
 
-      await expect(
-        cancelOrdinalListing(
-          TEST_ORD_WIF,
-          listingUtxo,
-          TEST_PAY_WIF,
-          mockPaymentUtxos
-        )
-      ).rejects.toThrow('Cancel script error')
+      const result = await cancelOrdinalListing(
+        TEST_ORD_WIF,
+        listingUtxo,
+        TEST_PAY_WIF,
+        mockPaymentUtxos
+      )
 
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toContain('Cancel script error')
       expect(mockRollback).toHaveBeenCalledOnce()
       expect(mockConfirmSpent).not.toHaveBeenCalled()
     })
@@ -269,16 +276,20 @@ describe('Marketplace Service', () => {
 })
 
 describe('purchaseOrdinal', () => {
-  it('throws if no payment UTXOs', async () => {
+  it('returns error if no payment UTXOs', async () => {
     // Dynamic import to pick up the updated module after vi.mock
     const { purchaseOrdinal } = await import('./marketplace')
-    await expect(purchaseOrdinal({
+    const result = await purchaseOrdinal({
       paymentWif: 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy7Y',
       paymentUtxos: [],
       ordAddress: '1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf',
       listingUtxo: { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' },
       payout: 'dW5sb2Nrc2NyaXB0',
       priceSats: 10000,
-    })).rejects.toThrow('No payment UTXOs')
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('No payment UTXOs')
+    }
   })
 })

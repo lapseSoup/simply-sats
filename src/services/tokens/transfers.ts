@@ -9,6 +9,7 @@ import { Transaction, PrivateKey, P2PKH, Script } from '@bsv/sdk'
 import { tokenLogger } from '../logger'
 import { ok, err, type Result } from '../../domain/types'
 import { broadcastTransaction, calculateTxFee, type UTXO } from '../wallet'
+import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { recordSentTransaction, markUtxosSpent } from '../sync'
 import type { TokenUTXO } from './fetching'
 import { getTokenUtxosForSend } from './fetching'
@@ -117,6 +118,19 @@ export async function transferToken(
   fundingUtxos: UTXO[],
   changeAddress: string
 ): Promise<Result<{ txid: string }, string>> {
+  // S-62: Validate recipient address before anything else — invalid address = permanent token loss
+  if (!isValidBSVAddress(toAddress)) {
+    return err(`Invalid recipient address: ${toAddress}`)
+  }
+  // S-62: Validate change address
+  if (!isValidBSVAddress(changeAddress)) {
+    return err(`Invalid change address: ${changeAddress}`)
+  }
+  // Q-54: Validate amount string before BigInt conversion — BigInt('abc') throws SyntaxError
+  if (!/^\d+$/.test(amount) || amount === '0') {
+    return err(`Invalid amount: must be a positive whole number, got "${amount}"`)
+  }
+
   try {
     const tokenPrivateKey = PrivateKey.fromWif(tokenWif)
     const tokenPublicKey = tokenPrivateKey.toPublicKey()
@@ -166,18 +180,21 @@ export async function transferToken(
       tokenInputsUsed.push(utxo)
     }
 
-    // Calculate fee
-    const numOutputs = (tokensAdded > amountToSend) ? 3 : 2 // recipient + (token change?) + BSV change
-    const numFundingInputs = Math.min(fundingUtxos.length, 2)
-    const estimatedFee = calculateTxFee(tokenInputsUsed.length + numFundingInputs, numOutputs)
-
-    // Select funding UTXOs
+    // B-54/S-65: Select funding UTXOs first, then calculate fee with actual counts
+    const hasTokenChange = tokensAdded > amountToSend
     const fundingToUse: UTXO[] = []
     let totalFunding = 0
+
+    // Start with a rough estimate using 1 funding input
+    let estimatedFee = calculateTxFee(tokenInputsUsed.length + 1, hasTokenChange ? 3 : 2)
 
     for (const utxo of fundingUtxos) {
       fundingToUse.push(utxo)
       totalFunding += utxo.satoshis
+
+      // Recalculate fee with ACTUAL funding input count + actual output count
+      const actualOutputs = (hasTokenChange ? 2 : 1) + (totalFunding > estimatedFee ? 1 : 0) // + BSV change
+      estimatedFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, actualOutputs)
 
       if (totalFunding >= estimatedFee + 100) break
     }
@@ -246,7 +263,9 @@ export async function transferToken(
     }
 
     const outputSats = 1 + (tokenChange > 0n ? 1 : 0) // recipient + optional token change
-    const actualFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, numOutputs)
+    // S-65: Calculate fee with actual input and output counts
+    const actualOutputCount = outputSats + 1 // + BSV change output
+    const actualFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, actualOutputCount)
     const bsvChange = totalInput - outputSats - actualFee
 
     // Add BSV change output

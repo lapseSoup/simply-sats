@@ -455,7 +455,7 @@ export async function consolidateUtxos(
     // Record — consolidation uses vout 0 (single output), not last output
     try {
       await withTransaction(async () => {
-        await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'])
+        await recordSentTransaction(txid, rawTx, `Consolidated ${utxoIds.length} UTXOs (${totalInput} sats → ${outputSats} sats)`, ['consolidate'], undefined, accountId)
         const consolidateConfirmResult = await confirmUtxosSpent(spentOutpoints, txid)
         if (!consolidateConfirmResult.ok) {
           throw new AppError(
@@ -465,7 +465,7 @@ export async function consolidateUtxos(
           )
         }
         // Track consolidated UTXO atomically — use final txid from broadcaster
-        const addConsolidateResult = await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now() })
+        const addConsolidateResult = await addUTXO({ txid, vout: 0, satoshis: outputSats, lockingScript: p2pkhLockingScriptHex(address), address, basket: 'default', spendable: true, createdAt: Date.now(), accountId })
         if (!addConsolidateResult.ok) {
           const msg = addConsolidateResult.error.message
           if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
@@ -513,6 +513,11 @@ export async function sendBSVMultiOutput(
 ): Promise<Result<{ txid: string }, AppError>> {
   if (outputs.length === 0) {
     return err(new AppError('Must specify at least one recipient output', ErrorCodes.INVALID_STATE, { outputs }))
+  }
+
+  // S-72: Guard against excessive output count — prevents memory/fee issues
+  if (outputs.length > 100) {
+    return err(new AppError(`Too many outputs: ${outputs.length} (max 100)`, ErrorCodes.INVALID_PARAMS, { count: outputs.length }))
   }
 
   for (const output of outputs) {

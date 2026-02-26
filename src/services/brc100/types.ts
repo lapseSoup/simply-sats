@@ -158,3 +158,17 @@ export interface ListedOutput {
   /** Present only for lock outputs — JSON-encoded unlock metadata */
   customInstructions?: string
 }
+
+/** Q-55: Centralized BRC-100 JSON-RPC error codes */
+export const BRC100_ERRORS = {
+  /** Standard JSON-RPC: method not found */
+  METHOD_NOT_FOUND: -32601,
+  /** Standard JSON-RPC: invalid params */
+  INVALID_PARAMS: -32602,
+  /** Application: general server error */
+  SERVER_ERROR: -32000,
+  /** Application: wallet not loaded */
+  WALLET_NOT_LOADED: -32002,
+  /** Application: request rejected by user */
+  USER_REJECTED: -32003,
+} as const

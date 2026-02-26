@@ -6,7 +6,7 @@
  * encrypt, decrypt, getTaggedKeys.
  */
 
-import { PrivateKey } from '@bsv/sdk'
+import { PrivateKey, PublicKey } from '@bsv/sdk'
 import { brc100Logger as _brc100Logger } from '../logger'
 import type { WalletKeys, LockedUTXO } from '../wallet'
 import { lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV, getWifForOperation } from '../wallet'
@@ -41,6 +41,23 @@ import { deriveTaggedKey, type DerivationTag } from '../keyDerivation'
 
 // A3: In-flight unlock operations — prevents double-spend from concurrent calls
 const inflightUnlocks = new Map<string, Promise<void>>()
+
+// S-63: Maximum payload sizes for BRC-100 byte array parameters
+const MAX_SIGNATURE_DATA_SIZE = 10 * 1024       // 10KB for signature data
+const MAX_ENCRYPT_PAYLOAD_SIZE = 1024 * 1024     // 1MB for encryption plaintext
+const MAX_DECRYPT_PAYLOAD_SIZE = 1024 * 1024     // 1MB for decryption ciphertext
+const MAX_OUTPUTS_ARRAY_SIZE = 100               // S-67: Max outputs in createAction
+const MAX_TAG_LENGTH = 256                        // S-69: Max tag string length
+
+/** A-35: Helpers to reduce response mutation boilerplate across switch cases */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- A-35: available for incremental adoption in remaining switch cases
+function setResult(response: Record<string, unknown>, result: Record<string, unknown>): void {
+  response.result = result
+}
+
+function setError(response: Record<string, unknown>, code: number, message: string): void {
+  response.error = { code, message }
+}
 
 // ---------------------------------------------------------------------------
 // RequestManager adapter
@@ -92,6 +109,11 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         response.error = { code: -32602, message: 'data must be an array of bytes (0-255)' }
         break
       }
+      // S-63: Prevent memory exhaustion from oversized payloads
+      if (sigRequest.data.length > MAX_SIGNATURE_DATA_SIZE) {
+        setError(response, -32602, `data exceeds maximum size (${MAX_SIGNATURE_DATA_SIZE} bytes)`)
+        break
+      }
       // signData uses _from_store in Tauri; keys only needed for JS fallback
       const signature = await signData(keys, sigRequest.data, 'identity')
 
@@ -106,6 +128,12 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
 
     case 'createAction': {
       const actionRequest = getParams<CreateActionRequest>(request)
+
+      // S-67: Limit outputs array size to prevent DoS
+      if (actionRequest.outputs && actionRequest.outputs.length > MAX_OUTPUTS_ARRAY_SIZE) {
+        setError(response, -32602, `outputs array exceeds maximum size (${MAX_OUTPUTS_ARRAY_SIZE})`)
+        break
+      }
 
       // Check if this is a lock transaction (has wrootz_locks basket)
       const hasLockOutput = actionRequest.outputs?.some(o => o.basket === 'wrootz_locks')
@@ -167,8 +195,10 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       // S-31: Runtime validation for BRC-100 lock params
       const rawSatoshis = params.satoshis
       const rawBlocks = params.blocks
-      if (typeof rawSatoshis !== 'number' || !Number.isFinite(rawSatoshis) || rawSatoshis <= 0 || !Number.isInteger(rawSatoshis)) {
-        response.error = { code: -32602, message: `Invalid satoshis parameter: ${rawSatoshis}` }
+      // S-71: BSV max supply is 21M BTC = 2.1e15 satoshis
+      const MAX_BSV_SATOSHIS = 21_000_000_00_000_000
+      if (typeof rawSatoshis !== 'number' || !Number.isFinite(rawSatoshis) || rawSatoshis <= 0 || !Number.isInteger(rawSatoshis) || rawSatoshis > MAX_BSV_SATOSHIS) {
+        setError(response, -32602, `Invalid satoshis parameter: ${rawSatoshis}`)
         break
       }
       if (typeof rawBlocks !== 'number' || !Number.isFinite(rawBlocks) || rawBlocks <= 0 || !Number.isInteger(rawBlocks)) {
@@ -273,18 +303,18 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         const currentHeight = await getCurrentBlockHeight()
         const locks = await getLocksFromDB(currentHeight, activeAccountId)
 
-        // Find the lock by outpoint
-        const [txid, voutStr] = outpoint.split('.')
-        if (!txid || voutStr === undefined) {
-          response.error = { code: -32602, message: 'Invalid outpoint format, expected txid.vout' }
+        // Q-53: Strict outpoint format validation — must be exactly txid(64 hex chars).vout(digits)
+        const outpointMatch = outpoint.match(/^([a-f0-9]{64})\.(\d+)$/)
+        if (!outpointMatch) {
+          setError(response, -32602, 'Invalid outpoint format, expected 64-char-hex-txid.vout')
           return
         }
-        const voutParsed = parseInt(voutStr, 10)
-        if (isNaN(voutParsed) || voutParsed < 0 || voutParsed > 0xFFFFFFFF) {
-          response.error = { code: -32602, message: 'Invalid outpoint vout index' }
+        const txid = outpointMatch[1]
+        const vout = parseInt(outpointMatch[2], 10)
+        if (vout > 0xFFFFFFFF) {
+          setError(response, -32602, 'Invalid outpoint vout index (exceeds uint32 max)')
           return
         }
-        const vout = voutParsed
         const lock = locks.find(l => l.utxo.txid === txid && l.utxo.vout === vout)
 
         if (!lock) {
@@ -362,6 +392,11 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         response.error = { code: -32602, message: 'plaintext must be an array of bytes (0-255)' }
         break
       }
+      // S-63: Prevent memory exhaustion from oversized payloads
+      if (params.plaintext && params.plaintext.length > MAX_ENCRYPT_PAYLOAD_SIZE) {
+        setError(response, -32602, `plaintext exceeds maximum size (${MAX_ENCRYPT_PAYLOAD_SIZE} bytes)`)
+        break
+      }
       const plaintext = params.plaintext ? new TextDecoder().decode(new Uint8Array(params.plaintext)) : undefined
       const recipientPubKey = params.counterparty
 
@@ -378,6 +413,13 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       // Validate public key format (compressed: 66 hex chars starting with 02/03, uncompressed: 130 hex chars starting with 04)
       if (!/^(02|03)[0-9a-fA-F]{64}$/.test(recipientPubKey) && !/^04[0-9a-fA-F]{128}$/.test(recipientPubKey)) {
         response.error = { code: -32602, message: 'Invalid public key format' }
+        break
+      }
+      // S-66: Validate public key is actually on the secp256k1 curve
+      try {
+        PublicKey.fromString(recipientPubKey)
+      } catch {
+        setError(response, -32602, 'Invalid public key: not on secp256k1 curve')
         break
       }
 
@@ -413,6 +455,16 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         response.error = { code: -32602, message: 'ciphertext must be an array of bytes (0-255)' }
         break
       }
+      // S-63: Prevent memory exhaustion from oversized payloads
+      if (ciphertext.length > MAX_DECRYPT_PAYLOAD_SIZE) {
+        setError(response, -32602, `ciphertext exceeds maximum size (${MAX_DECRYPT_PAYLOAD_SIZE} bytes)`)
+        break
+      }
+      // S-68: Minimum ciphertext size — must have at least salt(16) + IV(12) = 28 bytes
+      if (ciphertext.length < 28) {
+        setError(response, -32602, 'ciphertext too short (minimum 28 bytes for salt + IV)')
+        break
+      }
 
       if (!senderPubKey) {
         response.error = { code: -32602, message: 'Missing counterparty/senderPublicKey parameter' }
@@ -437,6 +489,11 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       // S-43: Runtime validation for getTaggedKeys params
       if (!params.tag || typeof params.tag !== 'string') {
         response.error = { code: -32602, message: 'tag must be a non-empty string' }
+        break
+      }
+      // S-69: Prevent DoS from excessively long tag strings in key derivation
+      if (params.tag.length > MAX_TAG_LENGTH) {
+        setError(response, -32602, `tag exceeds maximum length (${MAX_TAG_LENGTH} chars)`)
         break
       }
       const label = params.tag

@@ -83,7 +83,9 @@ export const OrdinalImage = memo(function OrdinalImage({
     } else {
       setCachedImageUrl(undefined)
     }
-  }, [isImage, cachedContent?.contentData, contentType, origin])
+  // B-62: Include cachedContent?.contentType so effect re-runs when the resolved
+  // MIME type changes (e.g. from undefined to 'image/png' after DB fetch).
+  }, [isImage, cachedContent?.contentData, cachedContent?.contentType, contentType, origin])
 
   // Render text/JSON previews if we have cached content
   if ((isText || isJson) && cachedContent?.contentText) {

@@ -381,7 +381,12 @@ describe('useSyncData', () => {
         await result.current.fetchDataFromDB(makeWalletKeys(), 1, vi.fn())
       })
 
-      expect(opts.contentCacheRef.current).toBe(contentMap)
+      // B-60: Cache entries are merged into the existing Map (not replaced wholesale)
+      // so the ref identity stays the same but entries are present
+      expect(opts.contentCacheRef.current.size).toBe(contentMap.size)
+      for (const [key, value] of contentMap) {
+        expect(opts.contentCacheRef.current.get(key)).toEqual(value)
+      }
       expect(opts.bumpCacheVersion).toHaveBeenCalledTimes(1)
     })
 

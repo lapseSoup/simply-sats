@@ -293,7 +293,7 @@ describe('locks service', () => {
     it('should lock satoshis successfully and return txid + lockedUtxo', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      const result = await lockBSV(10_000, 900_000, utxos)
+      const result = await lockBSV(10_000, 900_000, utxos, undefined, undefined, 1)
 
       expect(result.ok).toBe(true)
       if (!result.ok) return
@@ -314,7 +314,7 @@ describe('locks service', () => {
     it('should return err "Insufficient funds" when total input < satoshis', async () => {
       const utxos = [createTestUTXO({ satoshis: 500 })]
 
-      const errResult = await lockBSV(10_000, 900_000, utxos)
+      const errResult = await lockBSV(10_000, 900_000, utxos, undefined, undefined, 1)
       expect(errResult.ok).toBe(false)
       if (errResult.ok) return
       expect(errResult.error.message).toContain('Insufficient funds')
@@ -325,7 +325,7 @@ describe('locks service', () => {
       // Provide exactly 10_000 — not enough for fee
       const utxos = [createTestUTXO({ satoshis: 10_000 })]
 
-      const errResult = await lockBSV(10_000, 900_000, utxos)
+      const errResult = await lockBSV(10_000, 900_000, utxos, undefined, undefined, 1)
       expect(errResult.ok).toBe(false)
       if (errResult.ok) return
       expect(errResult.error.message).toContain('Insufficient funds')
@@ -340,7 +340,7 @@ describe('locks service', () => {
 
       // Lock 5_000 sats, fee = 300 => need 5_500 (threshold is satoshis + 500)
       // First two UTXOs = 7_000 >= 5_500, so it should stop there
-      const result = await lockBSV(5_000, 900_000, utxos)
+      const result = await lockBSV(5_000, 900_000, utxos, undefined, undefined, 1)
       expect(result.ok).toBe(true)
       if (!result.ok) return
       expect(result.value.txid).toBe('exec-broadcast-txid-001')
@@ -351,7 +351,7 @@ describe('locks service', () => {
 
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      const result = await lockBSV(10_000, 900_000, utxos)
+      const result = await lockBSV(10_000, 900_000, utxos, undefined, undefined, 1)
       expect(result.ok).toBe(false)
       if (!result.ok) {
         expect(result.error.message).toContain('Broadcast failed')
@@ -361,7 +361,7 @@ describe('locks service', () => {
     it('should add change UTXO to database when change > 0', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await lockBSV(10_000, 900_000, utxos)
+      await lockBSV(10_000, 900_000, utxos, undefined, undefined, 1)
 
       // addUTXO should be called twice: once for lock output, once for change
       // (Lock change UTXO + lock UTXO itself)
@@ -371,14 +371,14 @@ describe('locks service', () => {
     it('should add lock record to database', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await lockBSV(10_000, 900_000, utxos)
+      await lockBSV(10_000, 900_000, utxos, undefined, undefined, 1)
 
       expect(addLock).toHaveBeenCalledOnce()
       expect(addLock).toHaveBeenCalledWith(
         expect.objectContaining({
           unlockBlock: 900_000
         }),
-        undefined // accountId
+        1 // accountId
       )
     })
 
@@ -412,7 +412,7 @@ describe('locks service', () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
       // Broadcast succeeded so we return ok — modal closes cleanly, background sync reconciles
-      const result = await lockBSV(10_000, 900_000, utxos)
+      const result = await lockBSV(10_000, 900_000, utxos, undefined, undefined, 1)
       expect(result.ok).toBe(true)
       if (!result.ok) return
       expect(result.value.warning).toBeUndefined()
@@ -421,7 +421,7 @@ describe('locks service', () => {
     it('should use the correct fee calculation', async () => {
       const utxos = [createTestUTXO({ satoshis: 100_000 })]
 
-      await lockBSV(10_000, 900_000, utxos)
+      await lockBSV(10_000, 900_000, utxos, undefined, undefined, 1)
 
       expect(calculateLockFee).toHaveBeenCalledWith(
         1, // numInputs

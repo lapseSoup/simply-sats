@@ -102,6 +102,9 @@ export function useSyncOrchestration({
       // with this (now-inactive) account's values -- causing wrong balance display.
       if (isCancelled?.()) {
         syncLogger.info('performSync: account changed during sync, skipping state update', { syncedAccountId: accountId })
+        // B-61: Still clear sync error — a stale error from the old account should
+        // not persist in the UI after switching accounts.
+        setSyncError(null)
         return
       }
 

@@ -83,6 +83,15 @@ export async function lockBSV(
     ))
   }
 
+  // B-59: accountId is required for DB recording (same guard as sendBSV)
+  if (accountId === undefined) {
+    return err(new AppError(
+      'accountId is required to lock BSV',
+      ErrorCodes.INVALID_STATE,
+      {}
+    ))
+  }
+
   // S-41: Soft dust-limit check — BSV has no protocol dust limit, but locking
   // very small amounts (< 135 sats) is wasteful because the unlock transaction
   // fee will likely exceed the locked amount.
