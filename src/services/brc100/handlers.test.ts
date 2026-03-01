@@ -115,6 +115,7 @@ const mockKeys: WalletKeys = {
   walletType: 'yours',
   walletWif: 'test-wif',
   ordWif: 'test-ord-wif',
+  identityWif: 'test-identity-wif',
   walletAddress: '1TestWalletAddress',
   ordAddress: '1TestOrdAddress',
   identityAddress: '1TestIdentityAddress',

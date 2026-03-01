@@ -3,7 +3,7 @@
 //! Provides ECDSA signing/verification and ECIES encryption/decryption
 //! as Tauri commands so that private keys never enter the webview.
 //!
-//! - Signing: SHA256(message) → ECDSA sign/verify (matches @bsv/sdk)
+//! - Signing: SHA256(message) → ECDSA sign/verify (via bsv-sdk adapter)
 //! - ECIES: ECDH shared secret → SHA256 → AES-256-GCM encrypt/decrypt
 //!   Wire format: |IV (32 bytes)|ciphertext|authTag (16 bytes)|
 
@@ -12,49 +12,15 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::Aes256Gcm;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
+
+use crate::bsv_sdk_adapter::{
+    sdk_ecdh_shared_key, sdk_sha256, sdk_sign_hash, sdk_verify_signature,
+};
 
 /// Maximum input size (1 MB) to prevent DoS via large payloads
 const MAX_INPUT_SIZE: usize = 1_048_576;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Decode WIF (compressed mainnet) → 32-byte private key.
-fn wif_to_privkey(wif: &str) -> Result<[u8; 32], String> {
-    let decoded = bs58::decode(wif.trim())
-        .with_check(None)
-        .into_vec()
-        .map_err(|e| format!("Invalid WIF: {}", e))?;
-
-    if decoded.is_empty() || decoded[0] != 0x80 {
-        return Err("Invalid WIF prefix".into());
-    }
-
-    let privkey_bytes: [u8; 32] = if decoded.len() == 34 && decoded[33] == 0x01 {
-        decoded[1..33]
-            .try_into()
-            .map_err(|_| "Invalid private key length")?
-    } else if decoded.len() == 33 {
-        decoded[1..33]
-            .try_into()
-            .map_err(|_| "Invalid private key length")?
-    } else {
-        return Err(format!("Invalid WIF length: {}", decoded.len()));
-    };
-
-    Ok(privkey_bytes)
-}
-
-/// Parse a compressed public key from hex (66 hex chars = 33 bytes).
-fn parse_pubkey(hex_str: &str) -> Result<PublicKey, String> {
-    let bytes = hex::decode(hex_str).map_err(|e| format!("Invalid pubkey hex: {}", e))?;
-    PublicKey::from_slice(&bytes).map_err(|e| format!("Invalid public key: {}", e))
-}
 
 // ---------------------------------------------------------------------------
 // ECDSA Signing / Verification
@@ -63,26 +29,14 @@ fn parse_pubkey(hex_str: &str) -> Result<PublicKey, String> {
 /// Sign a UTF-8 message with a WIF key.
 ///
 /// Matches @bsv/sdk PrivateKey.sign(): SHA256(msg_bytes) → ECDSA sign → DER hex.
-/// Low-S normalization is applied (standard for BSV).
 #[tauri::command]
 pub fn sign_message(wif: String, message: String) -> Result<String, String> {
     if message.len() > MAX_INPUT_SIZE {
         return Err("Message too large".into());
     }
-    let secp = Secp256k1::new();
-    let mut privkey_bytes = wif_to_privkey(&wif)?;
-    let sk =
-        SecretKey::from_slice(&privkey_bytes).map_err(|e| format!("Invalid private key: {}", e))?;
-    privkey_bytes.zeroize();
-
-    let msg_bytes = message.as_bytes();
-    let hash = Sha256::digest(msg_bytes);
-    let msg = Message::from_digest(hash.into());
-
-    let mut sig = secp.sign_ecdsa(&msg, &sk);
-    sig.normalize_s();
-
-    Ok(hex::encode(sig.serialize_der()))
+    let hash = sdk_sha256(message.as_bytes());
+    let sig_der = sdk_sign_hash(&wif, &hash)?;
+    Ok(hex::encode(sig_der))
 }
 
 /// Sign arbitrary byte data with a WIF key.
@@ -93,19 +47,9 @@ pub fn sign_data(wif: String, data: Vec<u8>) -> Result<String, String> {
     if data.len() > MAX_INPUT_SIZE {
         return Err("Data too large".into());
     }
-    let secp = Secp256k1::new();
-    let mut privkey_bytes = wif_to_privkey(&wif)?;
-    let sk =
-        SecretKey::from_slice(&privkey_bytes).map_err(|e| format!("Invalid private key: {}", e))?;
-    privkey_bytes.zeroize();
-
-    let hash = Sha256::digest(&data);
-    let msg = Message::from_digest(hash.into());
-
-    let mut sig = secp.sign_ecdsa(&msg, &sk);
-    sig.normalize_s();
-
-    Ok(hex::encode(sig.serialize_der()))
+    let hash = sdk_sha256(&data);
+    let sig_der = sdk_sign_hash(&wif, &hash)?;
+    Ok(hex::encode(sig_der))
 }
 
 /// Verify a DER-encoded signature over a UTF-8 message.
@@ -118,19 +62,10 @@ pub fn verify_signature(
     if signature_hex.is_empty() {
         return Ok(false);
     }
-
-    let pk = parse_pubkey(&public_key_hex)?;
     let sig_bytes =
         hex::decode(&signature_hex).map_err(|e| format!("Invalid signature hex: {}", e))?;
-    let sig =
-        Signature::from_der(&sig_bytes).map_err(|e| format!("Invalid DER signature: {}", e))?;
-
-    let msg_bytes = message.as_bytes();
-    let hash = Sha256::digest(msg_bytes);
-    let msg = Message::from_digest(hash.into());
-
-    let secp = Secp256k1::new();
-    Ok(secp.verify_ecdsa(&msg, &sig, &pk).is_ok())
+    let hash = sdk_sha256(message.as_bytes());
+    sdk_verify_signature(&public_key_hex, &hash, &sig_bytes)
 }
 
 /// Verify a DER-encoded signature over raw byte data.
@@ -143,60 +78,15 @@ pub fn verify_data_signature(
     if signature_hex.is_empty() {
         return Ok(false);
     }
-
-    let pk = parse_pubkey(&public_key_hex)?;
     let sig_bytes =
         hex::decode(&signature_hex).map_err(|e| format!("Invalid signature hex: {}", e))?;
-    let sig =
-        Signature::from_der(&sig_bytes).map_err(|e| format!("Invalid DER signature: {}", e))?;
-
-    let hash = Sha256::digest(&data);
-    let msg = Message::from_digest(hash.into());
-
-    let secp = Secp256k1::new();
-    Ok(secp.verify_ecdsa(&msg, &sig, &pk).is_ok())
+    let hash = sdk_sha256(&data);
+    sdk_verify_signature(&public_key_hex, &hash, &sig_bytes)
 }
 
 // ---------------------------------------------------------------------------
 // ECIES Encryption / Decryption
 // ---------------------------------------------------------------------------
-
-/// Derive ECDH shared secret: privkey * pubkey → compressed point → SHA256.
-///
-/// Matches @bsv/sdk: deriveSharedSecret(pubkey).encode(true) → Hash.sha256()
-fn ecdh_shared_key(
-    secp: &Secp256k1<secp256k1::All>,
-    sk: &SecretKey,
-    remote_pk: &PublicKey,
-) -> Result<[u8; 32], String> {
-    // EC point multiplication: shared_point = remote_pk * sk
-    let mut shared_point = *remote_pk;
-    shared_point = shared_point
-        .mul_tweak(secp, &secp256k1::Scalar::from(sk.clone()))
-        .map_err(|e| format!("ECDH point multiplication failed: {}", e))?;
-
-    // Compressed encoding of the shared point (33 bytes)
-    let compressed = shared_point.serialize();
-
-    // SHA256 of compressed point → 32-byte symmetric key
-    let hash = Sha256::digest(compressed);
-    Ok(hash.into())
-}
-
-/// AES-256-GCM encrypt with 12-byte nonce (standard).
-///
-/// NOTE: The BSV SDK uses a 32-byte IV with a custom AES-GCM implementation.
-/// Standard AES-GCM uses 12-byte nonce. To maintain compatibility with the
-/// BSV SDK wire format (|32-byte IV|ciphertext|16-byte tag|), we use the
-/// standard 12-byte nonce AES-GCM and pack/unpack the wire format to match.
-///
-/// For interop with the BSV SDK, we store: |12-byte nonce|20 zero bytes|ciphertext|16-byte tag|
-/// This is compatible because the BSV SDK's custom AES-GCM processes the full
-/// 32 bytes as IV via GHASH, but for our Rust-to-Rust path this is fine.
-///
-/// IMPORTANT: If full BSV SDK interop is needed, we'd need to implement
-/// the custom 32-byte IV GCM mode. For now, this is Rust↔Rust only since
-/// ECIES encryption/decryption both happen on the same side.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -207,7 +97,7 @@ pub struct EncryptResult {
 
 /// Encrypt plaintext using ECIES: ECDH → SHA256 → AES-256-GCM.
 ///
-/// Wire format: |nonce (12 bytes)|ciphertext|authTag (16 bytes)|
+/// Wire format: |nonce (12 bytes)|pad (20 bytes)|ciphertext|authTag (16 bytes)|
 /// Returns ciphertext as hex and the sender's public key.
 #[tauri::command]
 pub fn encrypt_ecies(
@@ -219,15 +109,9 @@ pub fn encrypt_ecies(
     if plaintext.len() > MAX_INPUT_SIZE {
         return Err("Plaintext too large".into());
     }
-    let secp = Secp256k1::new();
-    let mut privkey_bytes = wif_to_privkey(&wif)?;
-    let sk =
-        SecretKey::from_slice(&privkey_bytes).map_err(|e| format!("Invalid private key: {}", e))?;
-    privkey_bytes.zeroize();
-    let remote_pk = parse_pubkey(&recipient_pub_key)?;
 
     // Derive shared symmetric key via ECDH + SHA256
-    let mut shared_key = ecdh_shared_key(&secp, &sk, &remote_pk)?;
+    let mut shared_key = sdk_ecdh_shared_key(&wif, &recipient_pub_key)?;
 
     // AES-256-GCM encrypt
     let cipher = Aes256Gcm::new(GenericArray::from_slice(&shared_key));
@@ -242,9 +126,7 @@ pub fn encrypt_ecies(
         .encrypt(nonce, plaintext.as_bytes())
         .map_err(|e| format!("Encryption failed: {}", e))?;
 
-    // Pack into BSV SDK compatible format: |32-byte IV|ciphertext...|
-    // We use |12-byte nonce|20 zero pad|encrypted_data_with_tag|
-    // The encrypted_data from aes-gcm already includes the auth tag appended
+    // Pack into wire format: |12-byte nonce|20 zero pad|ciphertext_with_tag|
     let mut wire = Vec::with_capacity(32 + ciphertext.len());
     wire.extend_from_slice(&nonce_bytes);
     wire.extend_from_slice(&[0u8; 20]); // pad to 32 bytes total IV
@@ -268,15 +150,9 @@ pub fn decrypt_ecies(
     if ciphertext_bytes.len() > MAX_INPUT_SIZE {
         return Err("Ciphertext too large".into());
     }
-    let secp = Secp256k1::new();
-    let mut privkey_bytes = wif_to_privkey(&wif)?;
-    let sk =
-        SecretKey::from_slice(&privkey_bytes).map_err(|e| format!("Invalid private key: {}", e))?;
-    privkey_bytes.zeroize();
-    let remote_pk = parse_pubkey(&sender_pub_key)?;
 
     // Derive shared symmetric key via ECDH + SHA256
-    let mut shared_key = ecdh_shared_key(&secp, &sk, &remote_pk)?;
+    let mut shared_key = sdk_ecdh_shared_key(&wif, &sender_pub_key)?;
 
     // Unpack wire format: first 12 bytes = nonce, next 20 = padding, rest = ciphertext+tag
     if ciphertext_bytes.len() < 32 + 16 {

@@ -18,17 +18,17 @@ describe('isTauri', () => {
   afterEach(() => {
     // Clean up __TAURI_INTERNALS__ after each test
     if (typeof window !== 'undefined') {
-      delete (window as Record<string, unknown>).__TAURI_INTERNALS__
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
     }
   })
 
   it('returns true when __TAURI_INTERNALS__ is present on window', () => {
-    ;(window as Record<string, unknown>).__TAURI_INTERNALS__ = {}
+    ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
     expect(isTauri()).toBe(true)
   })
 
   it('returns false when __TAURI_INTERNALS__ is not present on window', () => {
-    delete (window as Record<string, unknown>).__TAURI_INTERNALS__
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
     expect(isTauri()).toBe(false)
   })
 

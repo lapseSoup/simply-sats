@@ -11,10 +11,10 @@
  */
 
 import { getDatabase } from './database'
-import { PrivateKey, Hash, PublicKey, Signature } from '@bsv/sdk'
 import type { WalletKeys } from './wallet'
 import type { CertificateRow, SqlParams } from '../infrastructure/database/row-types'
 import { brc100Logger } from './logger'
+import { tauriInvoke } from '../utils/tauri'
 
 /** Safely parse JSON fields from a certificate row, returning empty object on failure */
 function safeParseFields(fields: string): Record<string, string> {
@@ -320,35 +320,25 @@ function createCertificateSigningData(cert: Omit<Certificate, 'id' | 'signature'
 /**
  * Sign a certificate as a certifier
  */
-export function signCertificate(
+export async function signCertificate(
   cert: Omit<Certificate, 'id' | 'signature'>,
   certifierWif: string
-): string {
-  const privateKey = PrivateKey.fromWif(certifierWif)
+): Promise<string> {
   const data = createCertificateSigningData(cert)
-  const hash = Hash.sha256(Array.from(new TextEncoder().encode(data))) as number[]
-  const signature = privateKey.sign(hash)
-  const sigBytes = signature.toDER() as number[]
-  return Buffer.from(sigBytes).toString('hex')
+  return tauriInvoke<string>('sign_message', { wif: certifierWif, message: data })
 }
 
 /**
  * Verify a certificate signature
  */
-export function verifyCertificateSignature(cert: Certificate): boolean {
+export async function verifyCertificateSignature(cert: Certificate): Promise<boolean> {
   try {
     const data = createCertificateSigningData(cert)
-    const hash = Hash.sha256(Array.from(new TextEncoder().encode(data))) as number[]
-
-    // Import certifier public key
-    const publicKey = PublicKey.fromString(cert.certifier)
-
-    // Import signature
-    const sigBytes = Buffer.from(cert.signature, 'hex')
-    const signature = Signature.fromDER(Array.from(sigBytes))
-
-    // Verify
-    return publicKey.verify(hash, signature)
+    return await tauriInvoke<boolean>('verify_signature', {
+      publicKeyHex: cert.certifier,
+      message: data,
+      signatureHex: cert.signature,
+    })
   } catch (error) {
     brc100Logger.error('Certificate verification failed', error)
     return false
@@ -403,7 +393,7 @@ export async function acquireCertificate(
   // Sign with identity key (self-signed)
   const { getWifForOperation } = await import('./wallet')
   const identityWif = await getWifForOperation('identity', 'acquireCertificate', keys)
-  const signature = signCertificate(certData, identityWif)
+  const signature = await signCertificate(certData, identityWif)
 
   const cert: Certificate = {
     ...certData,

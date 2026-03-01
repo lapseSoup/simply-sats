@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { PrivateKey, PublicKey } from '@bsv/sdk'
 import { Copy } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
@@ -43,10 +42,8 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
     try {
       const { getWifForOperation } = await import('../../services/wallet')
       const identityWif = await getWifForOperation('identity', 'deriveReceiveAddress', wallet)
-      const receiverPriv = PrivateKey.fromWif(identityWif)
-      const senderPub = PublicKey.fromString(senderPubKey)
       const invoiceNumber = `${BRC100.INVOICE_PREFIX} ${invoiceIndex}`
-      return deriveSenderAddress(receiverPriv, senderPub, invoiceNumber)
+      return deriveSenderAddress(identityWif, senderPubKey, invoiceNumber)
     } catch (e) {
       uiLogger.error('Failed to derive address:', e)
       setDerivationError('Failed to derive address. Check the sender public key.')

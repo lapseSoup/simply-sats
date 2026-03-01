@@ -381,6 +381,73 @@ pub async fn build_consolidation_tx_from_store(
     transaction::build_consolidation_tx((*wif).clone(), utxos, fee_rate)
 }
 
+// ==================== BRC-42/43 Key Derivation Commands (from store) ====================
+
+/// Derive a BRC-42 child key using a key from the store
+#[tauri::command]
+pub async fn derive_child_key_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    key_type: String,
+    sender_pub_key: String,
+    invoice_number: String,
+) -> Result<crate::brc42_derivation::DerivedKeyResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    drop(store);
+    crate::brc42_derivation::derive_child_key((*wif).clone(), sender_pub_key, invoice_number)
+}
+
+/// Batch-derive addresses using a key from the store
+#[tauri::command]
+pub async fn get_derived_addresses_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    key_type: String,
+    sender_pub_keys: Vec<String>,
+    invoice_numbers: Vec<String>,
+) -> Result<Vec<crate::brc42_derivation::DerivedAddressResult>, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    drop(store);
+    crate::brc42_derivation::get_derived_addresses((*wif).clone(), sender_pub_keys, invoice_numbers)
+}
+
+/// Find a derived key for a target address using a key from the store
+#[tauri::command]
+pub async fn find_derived_key_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    key_type: String,
+    target_address: String,
+    sender_pub_key: String,
+    invoice_numbers: Vec<String>,
+    max_numeric: Option<u32>,
+) -> Result<Option<crate::brc42_derivation::DerivedKeyResult>, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    drop(store);
+    crate::brc42_derivation::find_derived_key_for_address(
+        (*wif).clone(), target_address, sender_pub_key, invoice_numbers, max_numeric,
+    )
+}
+
+/// Derive a BRC-43 tagged key using a key from the store
+#[tauri::command]
+pub async fn derive_tagged_key_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    key_type: String,
+    label: String,
+    id: String,
+    domain: Option<String>,
+) -> Result<crate::brc42_derivation::TaggedKeyResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    drop(store);
+    crate::brc42_derivation::derive_tagged_key((*wif).clone(), label, id, domain)
+}
+
 // ==================== Bridge Command for Complex JS Operations ====================
 
 /// Retrieve a WIF from the store for operations that cannot yet be performed

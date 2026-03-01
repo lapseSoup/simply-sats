@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   int2Hex,
   hex2Int,
@@ -11,6 +11,28 @@ import {
   LOCKUP_PREFIX,
   LOCKUP_SUFFIX
 } from './timelockScript'
+
+// Mock tauriInvoke for pubkey_to_hash160 command
+// Uses known hash160 values for standard test vector public keys
+const KNOWN_HASHES: Record<string, string> = {
+  // secp256k1 generator point (1*G)
+  '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798': '751e76e8199196d454941c45d1b3a323f1433bd6',
+  // 2*G
+  '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5': '06afd46bcdfd22ef94ac122aa11f241244a37ecc',
+}
+
+vi.mock('../../utils/tauri', () => ({
+  isTauri: () => false,
+  tauriInvoke: async (cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === 'pubkey_to_hash160') {
+      const pubKeyHex = args?.pubKeyHex as string
+      const hash = KNOWN_HASHES[pubKeyHex]
+      if (hash) return hash
+      throw new Error(`Unknown test pubkey: ${pubKeyHex}`)
+    }
+    throw new Error(`Unmocked Tauri command: ${cmd}`)
+  },
+}))
 
 describe('Timelock Script', () => {
   // ==============================
@@ -138,8 +160,6 @@ describe('Timelock Script', () => {
   // ==============================
 
   describe('parseTimelockScript', () => {
-    const validPubKeyHex = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
-
     it('should return null for non-timelock scripts', () => {
       expect(parseTimelockScript('')).toBeNull()
       expect(parseTimelockScript('76a914')).toBeNull()
@@ -151,8 +171,9 @@ describe('Timelock Script', () => {
       expect(parseTimelockScript(TIMELOCK_SCRIPT_SIGNATURE)).toBeNull()
     })
 
-    it('should correctly roundtrip: create then parse', () => {
-      const pkh = publicKeyToHash(validPubKeyHex)
+    it('should correctly roundtrip: create then parse', async () => {
+      const validPubKeyHex = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+      const pkh = await publicKeyToHash(validPubKeyHex)
       const blockHeight = 850000
       const script = createTimelockScript(pkh, blockHeight)
       const scriptHex = script.toHex()
@@ -163,8 +184,9 @@ describe('Timelock Script', () => {
       expect(parsed!.publicKeyHash).toBe(pkh)
     })
 
-    it('should correctly roundtrip with various block heights', () => {
-      const pkh = publicKeyToHash(validPubKeyHex)
+    it('should correctly roundtrip with various block heights', async () => {
+      const validPubKeyHex = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+      const pkh = await publicKeyToHash(validPubKeyHex)
       const heights = [100, 1000, 500000, 850000, 1000000, 16777215]
 
       for (const height of heights) {
@@ -201,22 +223,22 @@ describe('Timelock Script', () => {
   describe('publicKeyToHash', () => {
     const validPubKeyHex = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
 
-    it('should return a 40-character hex string (20 bytes)', () => {
-      const hash = publicKeyToHash(validPubKeyHex)
+    it('should return a 40-character hex string (20 bytes)', async () => {
+      const hash = await publicKeyToHash(validPubKeyHex)
       expect(hash).toHaveLength(40)
       expect(/^[0-9a-f]+$/.test(hash)).toBe(true)
     })
 
-    it('should return consistent results for the same input', () => {
-      const hash1 = publicKeyToHash(validPubKeyHex)
-      const hash2 = publicKeyToHash(validPubKeyHex)
+    it('should return consistent results for the same input', async () => {
+      const hash1 = await publicKeyToHash(validPubKeyHex)
+      const hash2 = await publicKeyToHash(validPubKeyHex)
       expect(hash1).toBe(hash2)
     })
 
-    it('should return different hashes for different public keys', () => {
+    it('should return different hashes for different public keys', async () => {
       const pubKey2 = '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5'
-      const hash1 = publicKeyToHash(validPubKeyHex)
-      const hash2 = publicKeyToHash(pubKey2)
+      const hash1 = await publicKeyToHash(validPubKeyHex)
+      const hash2 = await publicKeyToHash(pubKey2)
       expect(hash1).not.toBe(hash2)
     })
   })

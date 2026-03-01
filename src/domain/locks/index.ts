@@ -24,4 +24,4 @@ export {
   publicKeyToHash
 } from './timelockScript'
 
-export type { ParsedTimelockScript } from './timelockScript'
+export type { ParsedTimelockScript, CompiledScript } from './timelockScript'

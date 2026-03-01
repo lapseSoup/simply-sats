@@ -16,8 +16,9 @@ import { getWocClient } from '../infrastructure/api/wocClient'
 import { calculateMaxSend, DEFAULT_FEE_RATE } from '../domain/transaction/fees'
 import { broadcastTransaction } from './wallet/transactions'
 import type { WalletKeys, UTXO } from './wallet/types'
-import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import { walletLogger } from './logger'
+import { p2pkhLockingScriptHex } from '../domain/transaction/builder'
+import { isTauri, tauriInvoke } from '../utils/tauri'
 
 // ============================================
 // Types
@@ -180,10 +181,18 @@ export async function decryptBackupAccount(
 
   // Validate WIF is a real private key — a wrong password can produce garbage
   // that passes the string existence check above but would silently corrupt the wallet.
-  try {
-    PrivateKey.fromWif(keys.walletWif)
-  } catch {
-    throw new Error('Decrypted keys contain an invalid WIF private key — wrong password or corrupted backup')
+  // Use Tauri backend for WIF validation when available; fall back to format check otherwise.
+  if (isTauri()) {
+    try {
+      await tauriInvoke('keys_from_wif', { wif: keys.walletWif })
+    } catch {
+      throw new Error('Decrypted keys contain an invalid WIF private key — wrong password or corrupted backup')
+    }
+  } else {
+    // Basic WIF format validation: Base58Check, starts with K/L/5, correct length
+    if (!/^[KL5][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(keys.walletWif)) {
+      throw new Error('Decrypted keys contain an invalid WIF private key — wrong password or corrupted backup')
+    }
   }
 
   // Validate mnemonic is a proper BIP-39 phrase
@@ -386,6 +395,10 @@ export async function executeSweep(
   utxos: UTXO[],
   feeRate: number = DEFAULT_FEE_RATE
 ): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('Sweep transaction building requires Tauri runtime')
+  }
+
   walletLogger.info('Executing sweep transaction', {
     from: recoveredKeys.walletAddress,
     to: destinationAddress,
@@ -398,90 +411,47 @@ export async function executeSweep(
     throw new Error('Balance too small to sweep (would be consumed by fees)')
   }
 
-  // Build sweep transaction manually to handle all UTXOs from the recovered wallet
-  const tx = new Transaction()
+  // Compute locking script hex for each address to group UTXOs
+  const walletScriptHex = p2pkhLockingScriptHex(recoveredKeys.walletAddress)
+  const ordScriptHex = p2pkhLockingScriptHex(recoveredKeys.ordAddress)
+  const identityScriptHex = p2pkhLockingScriptHex(recoveredKeys.identityAddress)
 
-  // Group UTXOs by their source address to use correct key for signing
-  const walletUtxos = utxos.filter(u => {
-    // Check if UTXO belongs to wallet address
-    const walletScript = new P2PKH().lock(recoveredKeys.walletAddress).toHex()
-    return u.script === walletScript
+  // Build extended UTXOs with per-UTXO WIF for multi-key signing
+  const extendedUtxos = utxos.map(u => {
+    let wif: string
+    if (u.script === walletScriptHex) {
+      wif = recoveredKeys.walletWif
+    } else if (u.script === ordScriptHex) {
+      wif = recoveredKeys.ordWif
+    } else if (u.script === identityScriptHex) {
+      wif = recoveredKeys.identityWif
+    } else {
+      // Unknown script — default to wallet key (best effort)
+      wif = recoveredKeys.walletWif
+    }
+    return {
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.script ?? walletScriptHex,
+      wif
+    }
   })
 
-  const ordUtxos = utxos.filter(u => {
-    const ordScript = new P2PKH().lock(recoveredKeys.ordAddress).toHex()
-    return u.script === ordScript
+  const totalInput = utxos.reduce((sum, u) => sum + u.satoshis, 0)
+
+  // Build and sign multi-key sweep transaction via Tauri
+  const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_multi_key_p2pkh_tx', {
+    changeWif: recoveredKeys.walletWif,
+    toAddress: destinationAddress,
+    satoshis: estimate.netSats,
+    selectedUtxos: extendedUtxos,
+    totalInput,
+    feeRate
   })
 
-  const identityUtxos = utxos.filter(u => {
-    const identityScript = new P2PKH().lock(recoveredKeys.identityAddress).toHex()
-    return u.script === identityScript
-  })
-
-  // Add wallet address inputs
-  const walletPrivKey = PrivateKey.fromWif(recoveredKeys.walletWif)
-  const walletLockingScript = new P2PKH().lock(recoveredKeys.walletAddress)
-  for (const utxo of walletUtxos) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        walletPrivKey,
-        'all',
-        false,
-        utxo.satoshis,
-        walletLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
-
-  // Add ordinals address inputs
-  const ordPrivKey = PrivateKey.fromWif(recoveredKeys.ordWif)
-  const ordLockingScript = new P2PKH().lock(recoveredKeys.ordAddress)
-  for (const utxo of ordUtxos) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        ordPrivKey,
-        'all',
-        false,
-        utxo.satoshis,
-        ordLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
-
-  // Add identity address inputs
-  const identityPrivKey = PrivateKey.fromWif(recoveredKeys.identityWif)
-  const identityLockingScript = new P2PKH().lock(recoveredKeys.identityAddress)
-  for (const utxo of identityUtxos) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        identityPrivKey,
-        'all',
-        false,
-        utxo.satoshis,
-        identityLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
-
-  // Add single output to destination (max send, no change)
-  tx.addOutput({
-    lockingScript: new P2PKH().lock(destinationAddress),
-    satoshis: estimate.netSats
-  })
-
-  // Sign and broadcast
-  await tx.sign()
-
-  const txid = await broadcastTransaction(tx)
+  // Broadcast the signed raw transaction
+  const txid = await broadcastTransaction(txResult.rawTx)
 
   walletLogger.info('Sweep transaction broadcast', {
     txid,

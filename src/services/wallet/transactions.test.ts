@@ -66,41 +66,8 @@ const {
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('@bsv/sdk', () => {
-  class MockTransaction {
-    _hex: string
-    _id: string
-    constructor() {
-      this._hex = 'deadbeef'
-      this._id = 'mock-tx-id-from-obj'
-    }
-    toHex() { return this._hex }
-    id(_encoding: string) { return this._id }
-  }
-  class MockPrivateKey {
-    _wif: string
-    constructor(wif?: string) { this._wif = wif ?? 'default-wif' }
-    static fromWif(wif: string) { return new MockPrivateKey(wif) }
-    toPublicKey() {
-      return {
-        toAddress: () => `addr_${this._wif}`
-      }
-    }
-  }
-  class MockPublicKey {
-    _hex: string
-    constructor(hex?: string) { this._hex = hex ?? 'mock-pubkey' }
-    static fromString(hex: string) { return new MockPublicKey(hex) }
-  }
-  return {
-    PrivateKey: MockPrivateKey,
-    PublicKey: MockPublicKey,
-    Transaction: MockTransaction,
-  }
-})
-
 vi.mock('../keyDerivation', () => ({
-  deriveChildPrivateKey: (...args: unknown[]) => mockDeriveChildPrivateKey(...args),
+  deriveChildKey: (...args: unknown[]) => mockDeriveChildPrivateKey(...args),
 }))
 
 vi.mock('../../infrastructure/api/broadcastService', () => ({
@@ -171,7 +138,6 @@ import {
   consolidateUtxos,
   getAllSpendableUTXOs,
 } from './transactions'
-import { Transaction } from '@bsv/sdk'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -263,13 +229,16 @@ describe('Transaction Service', () => {
       expect(txid).toBe(MOCK_TXID)
     })
 
-    it('should broadcast a Transaction object using toHex and id', async () => {
+    it('should broadcast a TransactionLike object using toHex and id', async () => {
       mockInfraBroadcast.mockResolvedValue(MOCK_TXID)
-      const tx = new Transaction()
+      const tx = {
+        toHex: () => 'deadbeef',
+        id: (_encoding: string) => 'mock-tx-id-from-obj',
+      }
 
       const txid = await broadcastTransaction(tx)
 
-      // Transaction.toHex() returns 'deadbeef', id('hex') returns 'mock-tx-id-from-obj'
+      // TransactionLike.toHex() returns 'deadbeef', id('hex') returns 'mock-tx-id-from-obj'
       expect(mockInfraBroadcast).toHaveBeenCalledWith('deadbeef', 'mock-tx-id-from-obj')
       expect(txid).toBe(MOCK_TXID)
     })
@@ -653,6 +622,7 @@ describe('Transaction Service', () => {
           basket: 'default',
           spendable: true,
         }),
+        1, // accountId passed as second parameter
       )
     })
 
@@ -841,15 +811,17 @@ describe('Transaction Service', () => {
           privateKeyWif: undefined,
         },
       ])
-      // Mock deriveChildPrivateKey to return a fake PrivateKey-like object
-      mockDeriveChildPrivateKey.mockReturnValue({
-        toWif: () => 'L1aChildWif...',
+      // Mock deriveChildKey to return a DerivedKeyResult
+      mockDeriveChildPrivateKey.mockResolvedValue({
+        wif: 'L1aChildWif...',
+        address: '1DerivedAddr',
+        pubKey: '02childpubkey',
       })
 
       const identityWif = 'L1identityWif'
       const result = await getAllSpendableUTXOs(walletWif, undefined, identityWif)
 
-      // deriveChildPrivateKey must have been called (re-derivation path exercised)
+      // deriveChildKey must have been called (re-derivation path exercised)
       expect(mockDeriveChildPrivateKey).toHaveBeenCalledTimes(1)
       expect(result).toHaveLength(1)
       expect(result[0]!.wif).toBe('L1aChildWif...')
@@ -883,7 +855,7 @@ describe('Transaction Service', () => {
 
       // UTXO must be skipped — no WIF available
       expect(result).toHaveLength(0)
-      // deriveChildPrivateKey must NOT have been called
+      // deriveChildKey must NOT have been called
       expect(mockDeriveChildPrivateKey).not.toHaveBeenCalled()
     })
 

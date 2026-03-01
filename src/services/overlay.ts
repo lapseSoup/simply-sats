@@ -11,7 +11,7 @@
  * (like tokens, NFTs, smart contracts).
  */
 
-import { P2PKH } from '@bsv/sdk'
+import { p2pkhLockingScriptHex } from '../domain/transaction/builder'
 import { overlayLogger } from './logger'
 import { broadcastTransaction } from '../infrastructure/api/broadcastService'
 import { getWocClient } from '../infrastructure/api/wocClient'
@@ -295,7 +295,7 @@ export async function lookupByAddress(
   address: string,
   topic?: string
 ): Promise<LookupResult | null> {
-  const lockingScript = new P2PKH().lock(address).toHex()
+  const lockingScript = p2pkhLockingScriptHex(address)
 
   const nodes = topic
     ? await findNodesForTopic(topic)

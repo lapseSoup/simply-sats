@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest'
-import { PrivateKey, P2PKH } from '@bsv/sdk'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// vi.hoisted ensures the mock fn is available when vi.mock factory runs (hoisted)
+const { mockTauriInvoke } = vi.hoisted(() => ({
+  mockTauriInvoke: vi.fn(),
+}))
+
+vi.mock('../../utils/tauri', () => ({
+  tauriInvoke: mockTauriInvoke,
+  isTauri: () => true,
+}))
+
 import {
   buildP2PKHTx,
   buildMultiKeyP2PKHTx,
@@ -11,27 +21,60 @@ import {
 import type { UTXO, ExtendedUTXO } from '../types'
 import { DEFAULT_FEE_RATE } from './fees'
 
-// Deterministic test keys
-const TEST_WIF = 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D'
-const TEST_WIF_2 = 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn'
+// Known test addresses (Base58Check-encoded, mainnet P2PKH)
+// These are well-known addresses used in Bitcoin protocol documentation.
+const TEST_ADDRESS_1 = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa' // Satoshi's genesis address
+const TEST_ADDRESS_2 = '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2'
 
-const testPrivKey = PrivateKey.fromWif(TEST_WIF)
-const testAddress = testPrivKey.toPublicKey().toAddress()
+// Deterministic mock results for Tauri invocations
+function mockBuiltTxResult(overrides: Partial<{
+  rawTx: string
+  txid: string
+  fee: number
+  change: number
+  changeAddress: string
+  spentOutpoints: Array<{ txid: string; vout: number }>
+}> = {}) {
+  return {
+    rawTx: 'deadbeef'.repeat(32),
+    txid: 'a'.repeat(64),
+    fee: 23,
+    change: 4977,
+    changeAddress: TEST_ADDRESS_1,
+    spentOutpoints: [{ txid: 'a'.repeat(64), vout: 0 }],
+    ...overrides,
+  }
+}
 
-const testPrivKey2 = PrivateKey.fromWif(TEST_WIF_2)
-const testAddress2 = testPrivKey2.toPublicKey().toAddress()
-
-// Recipient address (different key)
-const RECIPIENT_ADDRESS = testAddress2
+function mockConsolidationResult(overrides: Partial<{
+  rawTx: string
+  txid: string
+  fee: number
+  outputSats: number
+  address: string
+  spentOutpoints: Array<{ txid: string; vout: number }>
+}> = {}) {
+  return {
+    rawTx: 'cafebabe'.repeat(32),
+    txid: 'b'.repeat(64),
+    fee: 17,
+    outputSats: 783,
+    address: TEST_ADDRESS_1,
+    spentOutpoints: [
+      { txid: 'c'.repeat(64), vout: 0 },
+      { txid: 'd'.repeat(64), vout: 0 },
+    ],
+    ...overrides,
+  }
+}
 
 function makeUtxo(satoshis: number, index: number = 0): UTXO {
-  // Use a plausible-looking txid (64 hex chars)
   const txid = 'a'.repeat(63) + index.toString(16)
   return {
     txid,
     vout: 0,
     satoshis,
-    script: new P2PKH().lock(testAddress).toHex()
+    script: '76a914' + '00'.repeat(20) + '88ac'
   }
 }
 
@@ -46,11 +89,15 @@ function makeExtendedUtxo(
     txid,
     vout: 0,
     satoshis,
-    script: new P2PKH().lock(address).toHex(),
+    script: '76a914' + '00'.repeat(20) + '88ac',
     wif,
     address
   }
 }
+
+beforeEach(() => {
+  mockTauriInvoke.mockReset()
+})
 
 describe('Transaction Builder', () => {
   describe('calculateChangeAndFee', () => {
@@ -81,90 +128,131 @@ describe('Transaction Builder', () => {
 
   describe('p2pkhLockingScriptHex', () => {
     it('should return a hex string for a valid address', () => {
-      const hex = p2pkhLockingScriptHex(testAddress)
+      const hex = p2pkhLockingScriptHex(TEST_ADDRESS_1)
       expect(hex).toBeTruthy()
       expect(typeof hex).toBe('string')
       // P2PKH script should be 50 hex chars (25 bytes)
       expect(hex.length).toBe(50)
     })
 
-    it('should match P2PKH().lock().toHex()', () => {
-      const expected = new P2PKH().lock(testAddress).toHex()
-      const actual = p2pkhLockingScriptHex(testAddress)
-      expect(actual).toBe(expected)
+    it('should start with OP_DUP OP_HASH160 OP_PUSH20 and end with OP_EQUALVERIFY OP_CHECKSIG', () => {
+      const hex = p2pkhLockingScriptHex(TEST_ADDRESS_1)
+      expect(hex.startsWith('76a914')).toBe(true)
+      expect(hex.endsWith('88ac')).toBe(true)
     })
 
     it('should produce different scripts for different addresses', () => {
-      const hex1 = p2pkhLockingScriptHex(testAddress)
-      const hex2 = p2pkhLockingScriptHex(testAddress2)
+      const hex1 = p2pkhLockingScriptHex(TEST_ADDRESS_1)
+      const hex2 = p2pkhLockingScriptHex(TEST_ADDRESS_2)
       expect(hex1).not.toBe(hex2)
+    })
+
+    it('should produce the known script for Satoshi genesis address', () => {
+      // 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa decodes to pubkey hash:
+      // 62e907b15cbf27d5425399ebf6f0fb50ebb88f18
+      const hex = p2pkhLockingScriptHex(TEST_ADDRESS_1)
+      expect(hex).toBe('76a91462e907b15cbf27d5425399ebf6f0fb50ebb88f1888ac')
+    })
+
+    it('should be deterministic', () => {
+      const hex1 = p2pkhLockingScriptHex(TEST_ADDRESS_1)
+      const hex2 = p2pkhLockingScriptHex(TEST_ADDRESS_1)
+      expect(hex1).toBe(hex2)
     })
   })
 
   describe('buildP2PKHTx', () => {
-    it('should build a valid signed transaction', async () => {
+    it('should build a valid signed transaction via Tauri', async () => {
       const utxos = [makeUtxo(10000)]
+      const mockResult = mockBuiltTxResult({
+        fee: 23,
+        change: 4977,
+        changeAddress: TEST_ADDRESS_1,
+        spentOutpoints: [{ txid: utxos[0]!.txid, vout: 0 }],
+      })
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
+
       const result = await buildP2PKHTx({
-        wif: TEST_WIF,
-        toAddress: RECIPIENT_ADDRESS,
+        wif: 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D',
+        toAddress: TEST_ADDRESS_2,
         satoshis: 5000,
         selectedUtxos: utxos,
         totalInput: 10000,
         feeRate: DEFAULT_FEE_RATE
       })
 
-      expect(result.tx).toBeDefined()
-      expect(result.rawTx).toBeTruthy()
-      expect(result.txid).toMatch(/^[0-9a-f]{64}$/)
-      expect(result.fee).toBeGreaterThan(0)
-      expect(result.change).toBe(10000 - 5000 - result.fee)
-      expect(result.changeAddress).toBe(testAddress)
+      expect(result.tx).toBeNull()
+      expect(result.rawTx).toBe(mockResult.rawTx)
+      expect(result.txid).toBe(mockResult.txid)
+      expect(result.fee).toBe(23)
+      expect(result.change).toBe(4977)
+      expect(result.changeAddress).toBe(TEST_ADDRESS_1)
       expect(result.spentOutpoints).toHaveLength(1)
       expect(result.spentOutpoints[0]!.txid).toBe(utxos[0]!.txid)
     })
 
-    it('should produce a transaction with correct number of outputs', async () => {
-      // With change
+    it('should invoke build_p2pkh_tx_from_store with correct args', async () => {
+      const utxos = [makeUtxo(10000)]
+      mockTauriInvoke.mockResolvedValueOnce(mockBuiltTxResult())
+
+      await buildP2PKHTx({
+        wif: 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D',
+        toAddress: TEST_ADDRESS_2,
+        satoshis: 5000,
+        selectedUtxos: utxos,
+        totalInput: 10000,
+        feeRate: DEFAULT_FEE_RATE
+      })
+
+      expect(mockTauriInvoke).toHaveBeenCalledWith(
+        'build_p2pkh_tx_from_store',
+        expect.objectContaining({
+          toAddress: TEST_ADDRESS_2,
+          satoshis: 5000,
+          totalInput: 10000,
+          feeRate: DEFAULT_FEE_RATE,
+        })
+      )
+    })
+
+    it('should report numOutputs=2 when change > 0', async () => {
+      mockTauriInvoke.mockResolvedValueOnce(mockBuiltTxResult({ change: 4977 }))
+
       const result = await buildP2PKHTx({
-        wif: TEST_WIF,
-        toAddress: RECIPIENT_ADDRESS,
+        wif: 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D',
+        toAddress: TEST_ADDRESS_2,
         satoshis: 5000,
         selectedUtxos: [makeUtxo(10000)],
         totalInput: 10000,
         feeRate: DEFAULT_FEE_RATE
       })
 
-      // Should have 2 outputs: recipient + change
       expect(result.numOutputs).toBe(2)
       expect(result.change).toBeGreaterThan(0)
     })
 
-    it('should handle no-change scenario when sending near-max amount', async () => {
-      // For no change output: totalInput - satoshis must be <= 100 (heuristic),
-      // AND totalInput - satoshis - fee_for_1_output must be <= 0
-      // Fee for 1 input, 1 output at 0.1 sat/byte = ceil((10+148+34)*0.1) = 20
-      const { fee } = calculateChangeAndFee(10000, 9980, 1, DEFAULT_FEE_RATE)
-      // satoshis = totalInput - fee => change = 0
-      const exactSatoshis = 10000 - fee
+    it('should report numOutputs=1 when change is 0', async () => {
+      mockTauriInvoke.mockResolvedValueOnce(mockBuiltTxResult({ change: 0 }))
 
       const result = await buildP2PKHTx({
-        wif: TEST_WIF,
-        toAddress: RECIPIENT_ADDRESS,
-        satoshis: exactSatoshis,
+        wif: 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D',
+        toAddress: TEST_ADDRESS_2,
+        satoshis: 9980,
         selectedUtxos: [makeUtxo(10000)],
         totalInput: 10000,
         feeRate: DEFAULT_FEE_RATE
       })
 
-      // With exact max-send amount, change is 0 and only 1 output
-      expect(result.change).toBe(0)
       expect(result.numOutputs).toBe(1)
+      expect(result.change).toBe(0)
     })
 
-    it('should throw on insufficient funds for fee', async () => {
+    it('should propagate errors from Tauri', async () => {
+      mockTauriInvoke.mockRejectedValueOnce(new Error('Insufficient funds: need 10023 + 23 fee, have 10000'))
+
       await expect(buildP2PKHTx({
-        wif: TEST_WIF,
-        toAddress: RECIPIENT_ADDRESS,
+        wif: 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D',
+        toAddress: TEST_ADDRESS_2,
         satoshis: 10000,
         selectedUtxos: [makeUtxo(10000)],
         totalInput: 10000,
@@ -174,142 +262,148 @@ describe('Transaction Builder', () => {
 
     it('should handle multiple inputs', async () => {
       const utxos = [makeUtxo(3000, 0), makeUtxo(4000, 1), makeUtxo(5000, 2)]
-      const totalInput = 12000
+      const mockResult = mockBuiltTxResult({
+        fee: 35,
+        change: 3965,
+        spentOutpoints: utxos.map(u => ({ txid: u.txid, vout: 0 })),
+      })
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
 
       const result = await buildP2PKHTx({
-        wif: TEST_WIF,
-        toAddress: RECIPIENT_ADDRESS,
+        wif: 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D',
+        toAddress: TEST_ADDRESS_2,
         satoshis: 8000,
         selectedUtxos: utxos,
-        totalInput,
+        totalInput: 12000,
         feeRate: DEFAULT_FEE_RATE
       })
 
-      expect(result.tx!.inputs.length).toBe(3)
       expect(result.spentOutpoints).toHaveLength(3)
-      expect(result.fee).toBeGreaterThan(0)
-      expect(result.change).toBe(totalInput - 8000 - result.fee)
-    })
-
-    it('should produce a deterministic txid', async () => {
-      const utxos = [makeUtxo(10000)]
-      const params = {
-        wif: TEST_WIF,
-        toAddress: RECIPIENT_ADDRESS,
-        satoshis: 5000,
-        selectedUtxos: utxos,
-        totalInput: 10000,
-        feeRate: DEFAULT_FEE_RATE
-      }
-
-      const result1 = await buildP2PKHTx(params)
-      const result2 = await buildP2PKHTx(params)
-
-      expect(result1.txid).toBe(result2.txid)
+      expect(result.fee).toBe(35)
     })
   })
 
   describe('buildMultiKeyP2PKHTx', () => {
-    it('should build a valid multi-key transaction', async () => {
+    it('should build a valid multi-key transaction via Tauri', async () => {
       const utxos: ExtendedUTXO[] = [
-        makeExtendedUtxo(5000, TEST_WIF, testAddress, 0),
-        makeExtendedUtxo(6000, TEST_WIF_2, testAddress2, 1)
+        makeExtendedUtxo(5000, 'L1WIF', TEST_ADDRESS_1, 0),
+        makeExtendedUtxo(6000, 'L2WIF', TEST_ADDRESS_2, 1)
       ]
+      const mockResult = mockBuiltTxResult({
+        fee: 30,
+        change: 2970,
+        changeAddress: TEST_ADDRESS_1,
+        spentOutpoints: utxos.map(u => ({ txid: u.txid, vout: 0 })),
+      })
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
 
       const result = await buildMultiKeyP2PKHTx({
-        changeWif: TEST_WIF,
-        toAddress: RECIPIENT_ADDRESS,
+        changeWif: 'L1WIF',
+        toAddress: TEST_ADDRESS_2,
         satoshis: 8000,
         selectedUtxos: utxos,
         totalInput: 11000,
         feeRate: DEFAULT_FEE_RATE
       })
 
-      expect(result.tx).toBeDefined()
+      expect(result.tx).toBeNull()
       expect(result.rawTx).toBeTruthy()
       expect(result.txid).toMatch(/^[0-9a-f]{64}$/)
-      expect(result.tx!.inputs.length).toBe(2)
-      expect(result.changeAddress).toBe(testAddress)
+      expect(result.changeAddress).toBe(TEST_ADDRESS_1)
       expect(result.spentOutpoints).toHaveLength(2)
     })
 
-    it('should throw on insufficient funds for fee', async () => {
+    it('should invoke build_multi_key_p2pkh_tx_from_store', async () => {
       const utxos: ExtendedUTXO[] = [
-        makeExtendedUtxo(5000, TEST_WIF, testAddress, 0)
+        makeExtendedUtxo(10000, 'L2WIF', TEST_ADDRESS_2, 0)
       ]
+      mockTauriInvoke.mockResolvedValueOnce(mockBuiltTxResult())
 
-      await expect(buildMultiKeyP2PKHTx({
-        changeWif: TEST_WIF,
-        toAddress: RECIPIENT_ADDRESS,
-        satoshis: 5000,
-        selectedUtxos: utxos,
-        totalInput: 5000,
-        feeRate: DEFAULT_FEE_RATE
-      })).rejects.toThrow('Insufficient funds')
-    })
-
-    it('should use change WIF address for change output', async () => {
-      const utxos: ExtendedUTXO[] = [
-        makeExtendedUtxo(10000, TEST_WIF_2, testAddress2, 0)
-      ]
-
-      const result = await buildMultiKeyP2PKHTx({
-        changeWif: TEST_WIF,  // Change goes to TEST_WIF's address
-        toAddress: RECIPIENT_ADDRESS,
+      await buildMultiKeyP2PKHTx({
+        changeWif: 'L1WIF',
+        toAddress: TEST_ADDRESS_2,
         satoshis: 5000,
         selectedUtxos: utxos,
         totalInput: 10000,
         feeRate: DEFAULT_FEE_RATE
       })
 
-      // Change address should be derived from changeWif, not from the input's WIF
-      expect(result.changeAddress).toBe(testAddress)
+      expect(mockTauriInvoke).toHaveBeenCalledWith(
+        'build_multi_key_p2pkh_tx_from_store',
+        expect.objectContaining({
+          toAddress: TEST_ADDRESS_2,
+          satoshis: 5000,
+          totalInput: 10000,
+        })
+      )
+    })
+
+    it('should propagate errors from Tauri', async () => {
+      const utxos: ExtendedUTXO[] = [
+        makeExtendedUtxo(5000, 'L1WIF', TEST_ADDRESS_1, 0)
+      ]
+      mockTauriInvoke.mockRejectedValueOnce(new Error('Insufficient funds'))
+
+      await expect(buildMultiKeyP2PKHTx({
+        changeWif: 'L1WIF',
+        toAddress: TEST_ADDRESS_2,
+        satoshis: 5000,
+        selectedUtxos: utxos,
+        totalInput: 5000,
+        feeRate: DEFAULT_FEE_RATE
+      })).rejects.toThrow('Insufficient funds')
     })
   })
 
   describe('buildConsolidationTx', () => {
-    it('should build a valid consolidation transaction', async () => {
+    it('should build a valid consolidation transaction via Tauri', async () => {
       const utxos = [
         { txid: 'a'.repeat(64), vout: 0, satoshis: 500, script: '' },
         { txid: 'b'.repeat(64), vout: 0, satoshis: 300, script: '' }
       ]
+      const mockResult = mockConsolidationResult({
+        fee: 17,
+        outputSats: 783,
+        address: TEST_ADDRESS_1,
+        spentOutpoints: utxos.map(u => ({ txid: u.txid, vout: u.vout })),
+      })
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
 
       const result = await buildConsolidationTx({
-        wif: TEST_WIF,
+        wif: 'L1WIF',
         utxos,
         feeRate: DEFAULT_FEE_RATE
       })
 
-      expect(result.tx).toBeDefined()
+      expect(result.tx).toBeNull()
       expect(result.rawTx).toBeTruthy()
       expect(result.txid).toMatch(/^[0-9a-f]{64}$/)
-      expect(result.tx!.inputs.length).toBe(2)
-      expect(result.tx!.outputs.length).toBe(1)
-      expect(result.fee).toBeGreaterThan(0)
-      expect(result.outputSats).toBe(800 - result.fee)
-      expect(result.address).toBe(testAddress)
+      expect(result.fee).toBe(17)
+      expect(result.outputSats).toBe(783)
+      expect(result.address).toBe(TEST_ADDRESS_1)
       expect(result.spentOutpoints).toHaveLength(2)
     })
 
     it('should throw when fewer than 2 UTXOs', async () => {
       await expect(buildConsolidationTx({
-        wif: TEST_WIF,
+        wif: 'L1WIF',
         utxos: [{ txid: 'a'.repeat(64), vout: 0, satoshis: 500, script: '' }],
         feeRate: DEFAULT_FEE_RATE
       })).rejects.toThrow('Need at least 2 UTXOs to consolidate')
     })
 
-    it('should throw when fee exceeds total input', async () => {
-      // Very small UTXOs that can't cover the fee
+    it('should propagate errors from Tauri', async () => {
+      mockTauriInvoke.mockRejectedValueOnce(new Error('Cannot consolidate: total 2 sats minus 17 fee leaves no output'))
+
       const utxos = [
         { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' },
         { txid: 'b'.repeat(64), vout: 0, satoshis: 1, script: '' }
       ]
 
       await expect(buildConsolidationTx({
-        wif: TEST_WIF,
+        wif: 'L1WIF',
         utxos,
-        feeRate: 1.0  // High fee rate to ensure fee exceeds input
+        feeRate: 1.0
       })).rejects.toThrow('Cannot consolidate')
     })
 
@@ -320,16 +414,20 @@ describe('Transaction Builder', () => {
         satoshis: 1000,
         script: ''
       }))
+      const mockResult = mockConsolidationResult({
+        fee: 75,
+        outputSats: 9925,
+        spentOutpoints: utxos.map(u => ({ txid: u.txid, vout: u.vout })),
+      })
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
 
       const result = await buildConsolidationTx({
-        wif: TEST_WIF,
+        wif: 'L1WIF',
         utxos,
         feeRate: DEFAULT_FEE_RATE
       })
 
-      expect(result.tx!.inputs.length).toBe(10)
-      expect(result.tx!.outputs.length).toBe(1)
-      expect(result.outputSats).toBe(10000 - result.fee)
+      expect(result.outputSats).toBe(9925)
       expect(result.spentOutpoints).toHaveLength(10)
     })
   })
@@ -337,18 +435,27 @@ describe('Transaction Builder', () => {
   describe('buildMultiOutputP2PKHTx', () => {
     it('builds a tx with two recipient outputs and change', async () => {
       const mockUtxo = { txid: 'a'.repeat(64), vout: 0, satoshis: 10000, script: '' }
+      const mockResult = mockBuiltTxResult({
+        fee: 15,
+        change: 3985,
+        changeAddress: TEST_ADDRESS_1,
+        spentOutpoints: [{ txid: mockUtxo.txid, vout: 0 }],
+      })
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
+
       const result = await buildMultiOutputP2PKHTx({
-        wif: TEST_WIF,
+        wif: 'L1WIF',
         outputs: [
-          { address: RECIPIENT_ADDRESS, satoshis: 3000 },
-          { address: RECIPIENT_ADDRESS, satoshis: 3000 },
+          { address: TEST_ADDRESS_2, satoshis: 3000 },
+          { address: TEST_ADDRESS_2, satoshis: 3000 },
         ],
         selectedUtxos: [mockUtxo],
         totalInput: 10000,
         feeRate: 0.05,
       })
+
       expect(result.txid).toHaveLength(64)
-      expect(result.numOutputs).toBe(3) // 2 recipients + change
+      expect(result.numOutputs).toBe(3) // 2 recipients + change (change > 0)
       expect(result.fee).toBeGreaterThan(0)
       expect(result.totalSent).toBe(6000)
     })
@@ -356,7 +463,7 @@ describe('Transaction Builder', () => {
     it('throws if outputs array is empty', async () => {
       const mockUtxo = { txid: 'c'.repeat(64), vout: 0, satoshis: 5000, script: '' }
       await expect(buildMultiOutputP2PKHTx({
-        wif: TEST_WIF,
+        wif: 'L1WIF',
         outputs: [],
         selectedUtxos: [mockUtxo],
         totalInput: 5000,
@@ -367,8 +474,8 @@ describe('Transaction Builder', () => {
     it('throws if insufficient funds', async () => {
       const mockUtxo = { txid: 'd'.repeat(64), vout: 0, satoshis: 100, script: '' }
       await expect(buildMultiOutputP2PKHTx({
-        wif: TEST_WIF,
-        outputs: [{ address: RECIPIENT_ADDRESS, satoshis: 5000 }],
+        wif: 'L1WIF',
+        outputs: [{ address: TEST_ADDRESS_2, satoshis: 5000 }],
         selectedUtxos: [mockUtxo],
         totalInput: 100,
         feeRate: 0.05,

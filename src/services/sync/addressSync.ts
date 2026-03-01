@@ -5,7 +5,7 @@
  * reconciling with the local database, and marking spent UTXOs.
  */
 
-import { P2PKH } from '@bsv/sdk'
+import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
 import { BASKETS } from '../../domain/types'
 import {
   addUTXO,
@@ -46,7 +46,7 @@ async function fetchUtxosFromWoc(address: string): Promise<{ txid: string; vout:
  * Generate P2PKH locking script for an address
  */
 export function getLockingScript(address: string): string {
-  return new P2PKH().lock(address).toHex()
+  return p2pkhLockingScriptHex(address)
 }
 
 /**

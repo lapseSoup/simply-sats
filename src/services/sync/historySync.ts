@@ -193,7 +193,7 @@ export async function syncTransactionHistory(address: string, accountId?: number
       // Persist detected lock to database (idempotent — safe for re-runs)
       if (txLabel === 'lock' && walletPubKey) {
         try {
-          const expectedPkh = publicKeyToHash(walletPubKey)
+          const expectedPkh = await publicKeyToHash(walletPubKey)
           for (let i = 0; i < txDetails.vout.length; i++) {
             const lockVout = txDetails.vout[i]!
             const parsed = parseTimelockScript(lockVout.scriptPubKey.hex)

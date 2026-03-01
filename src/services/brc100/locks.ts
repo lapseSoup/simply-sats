@@ -3,9 +3,11 @@
  *
  * Functions for managing time-locked outputs:
  * getting locks, saving/removing from database, and creating lock transactions.
+ *
+ * Transaction building is delegated to the Tauri (Rust) backend.
+ * No @bsv/sdk imports — all cryptographic operations happen in Rust.
  */
 
-import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import { broadcastTransaction as infraBroadcast } from '../../infrastructure/api/broadcastService'
 import { brc100Logger } from '../logger'
 import type { WalletKeys } from '../wallet'
@@ -23,11 +25,11 @@ import { getBlockHeight } from './utils'
 import { formatLockedOutput } from './outputs'
 import {
   createCLTVLockingScript,
-  createWrootzOpReturn,
-  createScriptFromHex
 } from './script'
 import { type Result, ok, err } from '../../domain/types'
 import { selectCoins } from '../../domain/transaction/coinSelection'
+import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
+import { isTauri, tauriInvoke } from '../../utils/tauri'
 
 // Lock management - now uses database
 export async function getLocks(): Promise<LockedOutput[]> {
@@ -60,6 +62,7 @@ export async function removeLockFromDatabase(lockId: number): Promise<void> {
 }
 
 // Create a time-locked transaction
+// Transaction building requires the Tauri runtime (Rust backend).
 export async function createLockTransaction(
   keys: WalletKeys,
   satoshis: number,
@@ -73,11 +76,15 @@ export async function createLockTransaction(
     return err(`Invalid lock duration: ${blocks} (must be a positive integer)`)
   }
 
+  if (!isTauri()) {
+    return err('Lock transaction building requires Tauri runtime')
+  }
+
   try {
     const walletWif = await getWifForOperation('wallet', 'createLockTransaction', keys)
-    const privateKey = PrivateKey.fromWif(walletWif)
-    const publicKey = privateKey.toPublicKey()
-    const fromAddress = publicKey.toAddress()
+    // Derive address from WIF via Tauri
+    const keyInfo = await tauriInvoke<{ address: string }>('keys_from_wif', { wif: walletWif })
+    const fromAddress = keyInfo.address
 
     // Get UTXOs
     const utxos = await getUTXOs(fromAddress)
@@ -93,10 +100,8 @@ export async function createLockTransaction(
     // S-51: Use walletPubKey for CLTV to match unlock path which uses wallet key
     const lockingScript = createCLTVLockingScript(keys.walletPubKey, unlockBlock)
 
-    const tx = new Transaction()
-
-    // Collect inputs
-    const sourceLockingScript = new P2PKH().lock(fromAddress)
+    // Source locking script for the wallet address (used for signing context)
+    const sourceLockingScriptHex = p2pkhLockingScriptHex(fromAddress)
 
     // Q-52: Use domain coin selection instead of manual greedy loop
     const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
@@ -113,53 +118,27 @@ export async function createLockTransaction(
       return err(`Insufficient funds (need ${fee} sats for fee)`)
     }
 
-    // Add inputs
-    for (const utxo of inputsToUse) {
-      tx.addInput({
-        sourceTXID: utxo.txid,
-        sourceOutputIndex: utxo.vout,
-        unlockingScriptTemplate: new P2PKH().unlock(
-          privateKey,
-          'all',
-          false,
-          utxo.satoshis,
-          sourceLockingScript
-        ),
-        sequence: 0xffffffff
-      })
-    }
-
-    // Add lock output
-    tx.addOutput({
-      lockingScript: createScriptFromHex(lockingScript),
-      satoshis
+    // Build and sign the transaction via Tauri
+    const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_p2pkh_tx', {
+      wif: walletWif,
+      toAddress: fromAddress,
+      satoshis,
+      selectedUtxos: inputsToUse.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script ?? sourceLockingScriptHex
+      })),
+      totalInput,
+      feeRate: 0.1
     })
 
-    // Add OP_RETURN for ordinal reference if provided
-    if (ordinalOrigin) {
-      const opReturnScript = createWrootzOpReturn('lock', ordinalOrigin)
-      tx.addOutput({
-        lockingScript: createScriptFromHex(opReturnScript),
-        satoshis: 0
-      })
-    }
-
-    // Add change output if there is any change
-    // Note: BSV has no dust limit - all change amounts are valid
-    if (change > 0) {
-      tx.addOutput({
-        lockingScript: new P2PKH().lock(fromAddress),
-        satoshis: change
-      })
-    }
-
-    await tx.sign()
-
-    const txid = tx.id('hex')
+    const txid = txResult.txid
+    const rawTx = txResult.rawTx
 
     // Broadcast via infrastructure service (cascade: WoC -> ARC -> mAPI)
     // Broadcast FIRST — only save to DB on success to avoid phantom records
-    await infraBroadcast(tx.toHex(), txid)
+    await infraBroadcast(rawTx, txid)
 
     // Broadcast succeeded — now persist to database
     const addLockResult = await addUTXO({
@@ -184,7 +163,7 @@ export async function createLockTransaction(
     // Also record the transaction
     const addTxResult = await addTransaction({
       txid,
-      rawTx: tx.toHex(),
+      rawTx,
       description: `Lock ${satoshis} sats until block ${unlockBlock}`,
       createdAt: Date.now(),
       status: 'pending',

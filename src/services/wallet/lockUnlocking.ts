@@ -3,18 +3,11 @@
  *
  * Handles unlocking time-locked UTXOs using the OP_PUSH_TX technique,
  * generating unlock transaction hex, and block height queries.
+ *
+ * Transaction building is delegated to the Rust backend via Tauri commands.
+ * Private keys never enter the JavaScript heap.
  */
 
-import {
-  PrivateKey,
-  P2PKH,
-  Transaction,
-  Script,
-  LockingScript,
-  UnlockingScript,
-  TransactionSignature,
-  Hash
-} from '@bsv/sdk'
 import type { LockedUTXO } from './types'
 import { getWifForOperation } from './types'
 import { feeFromBytes } from './fees'
@@ -28,17 +21,19 @@ import { walletLogger } from '../logger'
 import { AppError, ErrorCodes, InsufficientFundsError } from '../errors'
 import type { Result } from '../../domain/types'
 import { ok, err } from '../../domain/types'
+import { isTauri, tauriInvoke } from '../../utils/tauri'
 
 /**
  * Build a signed unlock transaction for a locked UTXO using OP_PUSH_TX.
  *
- * Shared helper that validates the locking script, calculates fees,
- * derives keys, constructs the custom unlock template, and signs.
- * Both `unlockBSV` and `generateUnlockTxHex` delegate here.
+ * Validates the locking script, calculates fees, derives keys via Tauri,
+ * and delegates the entire transaction construction and signing to Rust.
+ *
+ * Returns the raw transaction hex, txid, and output satoshis.
  */
 async function buildUnlockTransaction(
   lockedUtxo: LockedUTXO
-): Promise<Result<{ tx: Transaction; outputSats: number; privateKey: PrivateKey }, AppError>> {
+): Promise<Result<{ rawTx: string; txid: string; outputSats: number }, AppError>> {
   // Validate lockingScript is valid hex before using it for fee calculation
   if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
     return err(new AppError(
@@ -48,7 +43,7 @@ async function buildUnlockTransaction(
     ))
   }
 
-  // Get WIF and derive keys
+  // Get WIF and derive keys via Tauri
   let wif: string
   try {
     wif = await getWifForOperation('wallet', 'unlockBSV')
@@ -60,9 +55,14 @@ async function buildUnlockTransaction(
       ErrorCodes.INVALID_PARAMS
     ))
   }
-  const privateKey = PrivateKey.fromWif(wif)
-  const publicKey = privateKey.toPublicKey()
-  const toAddress = publicKey.toAddress()
+
+  if (!isTauri()) {
+    throw new Error('Unlock transaction building requires Tauri runtime')
+  }
+
+  // Derive destination address from WIF via Rust
+  const keyInfo = await tauriInvoke<{ wif: string; address: string; pubKey: string }>('keys_from_wif', { wif })
+  const toAddress = keyInfo.address
 
   // Calculate fee for unlock transaction
   const lockingScriptSize = lockedUtxo.lockingScript.length / 2 // hex to bytes
@@ -75,86 +75,23 @@ async function buildUnlockTransaction(
     return err(new InsufficientFundsError(fee, lockedUtxo.satoshis))
   }
 
-  // Parse the locking script
-  const lockingScript = LockingScript.fromHex(lockedUtxo.lockingScript)
-
-  // SIGHASH_ALL | SIGHASH_FORKID for BSV
-  const sigHashType = TransactionSignature.SIGHASH_ALL | TransactionSignature.SIGHASH_FORKID
-  const inputSequence = 0xfffffffe // < 0xffffffff to enable nLockTime
-
-  // Build transaction
-  const tx = new Transaction()
-  tx.version = 1
-  tx.lockTime = lockedUtxo.unlockBlock
-
-  // Create custom unlock template that builds the preimage solution
-  const customUnlockTemplate = {
-    sign: async (tx: Transaction, inputIndex: number): Promise<UnlockingScript> => {
-      walletLogger.debug('Building OP_PUSH_TX unlock', { inputIndex, nLockTime: tx.lockTime })
-
-      // Build the BIP-143 preimage - this is what the sCrypt script validates
-      const preimage = TransactionSignature.format({
-        sourceTXID: lockedUtxo.txid,
-        sourceOutputIndex: lockedUtxo.vout,
-        sourceSatoshis: lockedUtxo.satoshis,
-        transactionVersion: tx.version,
-        otherInputs: [],
-        inputIndex: inputIndex,
-        outputs: tx.outputs,
-        inputSequence: inputSequence,
-        subscript: lockingScript,
-        lockTime: tx.lockTime,
-        scope: sigHashType
-      })
-
-      const preimageBytes = preimage as number[]
-      walletLogger.debug('Preimage generated', { length: preimageBytes.length })
-
-      // Sign the preimage hash
-      const singleHash = Hash.sha256(preimage) as number[]
-      const signature = privateKey.sign(singleHash)
-
-      // Get DER-encoded signature with sighash type
-      const sigDER = signature.toDER() as number[]
-      const sigWithHashType: number[] = [...sigDER, sigHashType]
-
-      // Get compressed public key
-      const pubKeyBytes = publicKey.encode(true) as number[]
-
-      walletLogger.debug('Unlock script components', { sigLen: sigWithHashType.length, pubKeyLen: pubKeyBytes.length })
-
-      // Build unlocking script: <signature> <publicKey> <preimage>
-      const unlockScript = new Script()
-      unlockScript.writeBin(sigWithHashType)
-      unlockScript.writeBin(pubKeyBytes)
-      unlockScript.writeBin(preimageBytes)
-
-      const scriptBytes = unlockScript.toBinary() as number[]
-      walletLogger.debug('Unlocking script built', { length: scriptBytes.length })
-
-      return UnlockingScript.fromBinary(scriptBytes)
-    },
-    estimateLength: async (): Promise<number> => 300
-  }
-
-  // Add input with our custom unlock template
-  tx.addInput({
-    sourceTXID: lockedUtxo.txid,
-    sourceOutputIndex: lockedUtxo.vout,
-    sequence: inputSequence,
-    unlockingScriptTemplate: customUnlockTemplate
+  // Build and sign the unlock transaction entirely in Rust.
+  // The Rust command handles: OP_PUSH_TX preimage computation, custom
+  // unlocking script (<sig> <pubkey> <preimage>), signing, and serialization.
+  const buildResult = await tauriInvoke<{
+    rawTx: string
+    txid: string
+  }>('build_unlock_tx_from_store', {
+    lockedTxid: lockedUtxo.txid,
+    lockedVout: lockedUtxo.vout,
+    lockedSatoshis: lockedUtxo.satoshis,
+    lockingScriptHex: lockedUtxo.lockingScript,
+    unlockBlock: lockedUtxo.unlockBlock,
+    toAddress,
+    outputSatoshis: outputSats
   })
 
-  // Add output back to our address
-  tx.addOutput({
-    lockingScript: new P2PKH().lock(toAddress),
-    satoshis: outputSats
-  })
-
-  // Sign the transaction (calls our custom template)
-  await tx.sign()
-
-  return ok({ tx, outputSats, privateKey })
+  return ok({ rawTx: buildResult.rawTx, txid: buildResult.txid, outputSats })
 }
 
 /**
@@ -191,19 +128,19 @@ export async function unlockBSV(
     ))
   }
 
-  // Build the signed unlock transaction
+  // Build the signed unlock transaction (delegated to Rust)
   const buildResult = await buildUnlockTransaction(lockedUtxo)
   if (!buildResult.ok) {
     return err(buildResult.error)
   }
-  const { tx, outputSats } = buildResult.value
+  const { rawTx, txid: pendingTxid, outputSats } = buildResult.value
 
-  walletLogger.debug('Unlock transaction ready', { nLockTime: tx.lockTime })
+  walletLogger.debug('Unlock transaction ready', { nLockTime: lockedUtxo.unlockBlock })
   walletLogger.debug('Attempting to broadcast unlock transaction')
 
   let txid: string
   try {
-    txid = await broadcastTransaction(tx)
+    txid = await broadcastTransaction(rawTx)
   } catch (broadcastError) {
     // Broadcast failed — but the tx may already be in the mempool or confirmed.
     // Check if the lock UTXO is already spent (handles "txn-already-known" residual, retries, race conditions)
@@ -213,14 +150,13 @@ export async function unlockBSV(
 
     if (spentResult.ok && spentResult.value !== null) {
       // Lock UTXO IS spent — verify the spending tx is ours before marking
-      const expectedTxid = tx.id('hex')
       const spendingTxid = spentResult.value
-      if (expectedTxid !== spendingTxid) {
+      if (pendingTxid !== spendingTxid) {
         // S-24: Spending txid doesn't match our unlock tx — someone else spent it
         walletLogger.warn('Lock UTXO spent by unexpected transaction', {
           lockTxid: lockedUtxo.txid,
           vout: lockedUtxo.vout,
-          expectedTxid,
+          expectedTxid: pendingTxid,
           spendingTxid
         })
       }
@@ -229,7 +165,7 @@ export async function unlockBSV(
         lockTxid: lockedUtxo.txid,
         vout: lockedUtxo.vout,
         spendingTxid,
-        matchesOurTx: expectedTxid === spendingTxid
+        matchesOurTx: pendingTxid === spendingTxid
       })
       try {
         await markLockUnlockedByTxid(lockedUtxo.txid, lockedUtxo.vout, accountId)
@@ -249,7 +185,7 @@ export async function unlockBSV(
     await withTransaction(async () => {
       await recordSentTransaction(
         txid,
-        tx.toHex(),
+        rawTx,
         `Unlocked ${lockedUtxo.satoshis} sats`,
         ['unlock'],
         outputSats,
@@ -283,6 +219,7 @@ export async function getCurrentBlockHeight(): Promise<number> {
 /**
  * Generate the raw unlock transaction hex without broadcasting.
  * Uses OP_PUSH_TX technique with preimage in the solution.
+ * Transaction building is delegated to Rust via Tauri commands.
  */
 export async function generateUnlockTxHex(
   lockedUtxo: LockedUTXO
@@ -291,11 +228,11 @@ export async function generateUnlockTxHex(
   if (!buildResult.ok) {
     return err(buildResult.error)
   }
-  const { tx, outputSats } = buildResult.value
+  const { rawTx, txid, outputSats } = buildResult.value
 
   return ok({
-    txHex: tx.toHex(),
-    txid: tx.id('hex'),
+    txHex: rawTx,
+    txid,
     outputSats
   })
 }

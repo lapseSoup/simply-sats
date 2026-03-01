@@ -1,8 +1,8 @@
 import { useState, useCallback } from 'react'
-import { PrivateKey, Hash, Signature } from '@bsv/sdk'
 import { Modal } from '../shared/Modal'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
+import { tauriInvoke } from '../../utils/tauri'
 
 interface SignMessageModalProps {
   onClose: () => void
@@ -18,30 +18,29 @@ export function SignMessageModal({ onClose }: SignMessageModalProps) {
   const [verifyResult, setVerifyResult] = useState<boolean | null>(null)
   const [tab, setTab] = useState<'sign' | 'verify'>('sign')
 
-  const handleSign = useCallback(() => {
+  const handleSign = useCallback(async () => {
     if (!wallet) return
     try {
-      const privKey = PrivateKey.fromWif(wallet.walletWif)
-      const msgBytes = new TextEncoder().encode(message)
-      const hash = Hash.sha256(Array.from(msgBytes))
-      const sig = privKey.sign(hash)
-      setSignature(sig.toDER('hex') as string)
+      const sig = await tauriInvoke<string>('sign_message', {
+        wif: wallet.walletWif,
+        message,
+      })
+      setSignature(sig)
       showToast('Message signed')
     } catch (err) {
       showToast('Signing failed: ' + (err instanceof Error ? err.message : 'unknown error'), 'error')
     }
   }, [wallet, message, showToast])
 
-  const handleVerify = useCallback(() => {
+  const handleVerify = useCallback(async () => {
     if (!wallet) return
     try {
-      const privKey = PrivateKey.fromWif(wallet.walletWif)
-      const pubKey = privKey.toPublicKey()
-      const msgBytes = new TextEncoder().encode(verifyMessage)
-      const hash = Hash.sha256(Array.from(msgBytes))
-      const sigBytes = Buffer.from(verifySignature, 'hex')
-      const sig = Signature.fromDER(Array.from(sigBytes))
-      setVerifyResult(pubKey.verify(hash, sig))
+      const valid = await tauriInvoke<boolean>('verify_signature', {
+        publicKeyHex: wallet.walletPubKey,
+        message: verifyMessage,
+        signatureHex: verifySignature,
+      })
+      setVerifyResult(valid)
     } catch {
       setVerifyResult(false)
     }

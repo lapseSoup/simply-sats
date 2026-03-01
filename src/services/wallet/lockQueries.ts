@@ -5,7 +5,6 @@
  * checking UTXO spend status, and lock database queries.
  */
 
-import { PublicKey } from '@bsv/sdk'
 import type { LockedUTXO } from './types'
 import { getTransactionHistory } from './balance'
 import { getWocClient } from '../../infrastructure/api/wocClient'
@@ -13,6 +12,7 @@ import { btcToSatoshis } from '../../utils/satoshiConversion'
 import { getDatabase } from '../database'
 import { walletLogger } from '../logger'
 import { parseTimelockScript } from './lockCreation'
+import { tauriInvoke } from '../../utils/tauri'
 
 /**
  * Check if a UTXO is still unspent
@@ -121,9 +121,7 @@ export async function detectLockedUtxos(
     walletLogger.debug('Checking transactions for locks', { count: history.length })
 
     // Calculate expected public key hash from the provided public key
-    const publicKey = PublicKey.fromString(publicKeyHex)
-    const expectedPkhBytes = publicKey.toHash() as number[]
-    const expectedPkh = expectedPkhBytes.map(b => b.toString(16).padStart(2, '0')).join('')
+    const expectedPkh = await tauriInvoke<string>('pubkey_to_hash160', { pubKeyHex: publicKeyHex })
 
     // Batch-fetch all transaction details to avoid N+1 sequential API calls
     const txids = [...new Set(history.map(h => h.tx_hash))]

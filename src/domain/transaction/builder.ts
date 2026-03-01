@@ -2,16 +2,13 @@
  * Pure Transaction Builder
  *
  * This module provides pure functions for constructing and signing
- * P2PKH Bitcoin SV transactions. All functions are deterministic
- * with no side effects — no API calls, no database access, no logging.
- *
- * The builder functions take all required data as parameters and return
- * a signed Transaction object ready for broadcasting.
+ * P2PKH Bitcoin SV transactions. Transaction building and signing are
+ * delegated to the Rust backend via Tauri commands — private keys never
+ * enter the JavaScript heap.
  *
  * @module domain/transaction/builder
  */
 
-import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import type { UTXO, ExtendedUTXO } from '../types'
 import { calculateTxFee } from './fees'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
@@ -71,12 +68,12 @@ export interface BuildConsolidationTxParams {
 /**
  * Result of building a transaction.
  *
- * When built via Rust (Tauri), `tx` is null and `rawTx` contains the signed hex.
- * When built via JS fallback, `tx` is the Transaction object and `rawTx` is also set.
+ * Transaction building is always delegated to Rust (Tauri), so `tx` is always null.
+ * The signed transaction is available as `rawTx` (hex-encoded).
  */
 export interface BuiltTransaction {
-  /** The signed Transaction object (null when built in Rust) */
-  tx: Transaction | null
+  /** Always null — transaction is built in Rust, not JS */
+  tx: null
   /** Hex-encoded raw signed transaction */
   rawTx: string
   /** Transaction ID (hex) */
@@ -96,11 +93,11 @@ export interface BuiltTransaction {
 /**
  * Result of building a consolidation transaction.
  *
- * When built via Rust (Tauri), `tx` is null and `rawTx` contains the signed hex.
+ * Transaction building is always delegated to Rust (Tauri), so `tx` is always null.
  */
 export interface BuiltConsolidationTransaction {
-  /** The signed Transaction object (null when built in Rust) */
-  tx: Transaction | null
+  /** Always null — transaction is built in Rust, not JS */
+  tx: null
   /** Hex-encoded raw signed transaction */
   rawTx: string
   /** Transaction ID (hex) */
@@ -175,111 +172,46 @@ export function calculateChangeAndFee(
  *   totalInput: 10000,
  *   feeRate: 0.05
  * })
- * // result.tx is ready for broadcasting
+ * // result.rawTx is ready for broadcasting
  * // result.txid, result.fee, result.change are available
  * ```
  */
 export async function buildP2PKHTx(params: BuildP2PKHTxParams): Promise<BuiltTransaction> {
-  const { wif, toAddress, satoshis, selectedUtxos, totalInput, feeRate } = params
+  const { toAddress, satoshis, selectedUtxos, totalInput, feeRate } = params
 
-  // Delegate to Rust when running inside Tauri — use key store (WIF never leaves Rust)
-  if (isTauri()) {
-    const result = await tauriInvoke<{
-      rawTx: string
-      txid: string
-      fee: number
-      change: number
-      changeAddress: string
-      spentOutpoints: Array<{ txid: string; vout: number }>
-    }>('build_p2pkh_tx_from_store', {
-      toAddress,
-      satoshis,
-      selectedUtxos: selectedUtxos.map(u => ({
-        txid: u.txid,
-        vout: u.vout,
-        satoshis: u.satoshis,
-        script: u.script ?? ''
-      })),
-      totalInput,
-      feeRate
-    })
-
-    return {
-      tx: null,
-      rawTx: result.rawTx,
-      txid: result.txid,
-      fee: result.fee,
-      change: result.change,
-      changeAddress: result.changeAddress,
-      numOutputs: result.change > 0 ? 2 : 1,
-      spentOutpoints: result.spentOutpoints
-    }
+  if (!isTauri()) {
+    throw new Error('Transaction building requires Tauri runtime')
   }
 
-  // JS fallback (browser dev mode)
-  const privateKey = PrivateKey.fromWif(wif)
-  const publicKey = privateKey.toPublicKey()
-  const fromAddress = publicKey.toAddress()
-  const sourceLockingScript = new P2PKH().lock(fromAddress)
-
-  const { fee, change } = calculateChangeAndFee(
-    totalInput, satoshis, selectedUtxos.length, feeRate
-  )
-
-  if (change < 0) {
-    throw new Error(`Insufficient funds (need ${fee} sats for fee)`)
-  }
-
-  // S-10: Validate output sum matches input sum before building transaction
-  const outputSum = satoshis + change + fee
-  if (outputSum !== totalInput) {
-    throw new Error(`Output sum validation failed: inputs=${totalInput}, outputs=${satoshis}+${change}+${fee}=${outputSum}`)
-  }
-
-  const tx = new Transaction()
-
-  // Add inputs with unlocking scripts
-  for (const utxo of selectedUtxos) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        privateKey,
-        'all',
-        false,
-        utxo.satoshis,
-        sourceLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
-
-  // Add recipient output
-  tx.addOutput({
-    lockingScript: new P2PKH().lock(toAddress),
-    satoshis
+  const result = await tauriInvoke<{
+    rawTx: string
+    txid: string
+    fee: number
+    change: number
+    changeAddress: string
+    spentOutpoints: Array<{ txid: string; vout: number }>
+  }>('build_p2pkh_tx_from_store', {
+    toAddress,
+    satoshis,
+    selectedUtxos: selectedUtxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.script ?? ''
+    })),
+    totalInput,
+    feeRate
   })
 
-  // Add change output if there is any change
-  // Note: BSV has no dust limit — all change amounts are valid
-  if (change > 0) {
-    tx.addOutput({
-      lockingScript: new P2PKH().lock(fromAddress),
-      satoshis: change
-    })
-  }
-
-  await tx.sign()
-
   return {
-    tx,
-    rawTx: tx.toHex(),
-    txid: tx.id('hex'),
-    fee,
-    change,
-    changeAddress: fromAddress,
-    numOutputs: tx.outputs.length,
-    spentOutpoints: selectedUtxos.map(u => ({ txid: u.txid, vout: u.vout }))
+    tx: null,
+    rawTx: result.rawTx,
+    txid: result.txid,
+    fee: result.fee,
+    change: result.change,
+    changeAddress: result.changeAddress,
+    numOutputs: result.change > 0 ? 2 : 1,
+    spentOutpoints: result.spentOutpoints
   }
 }
 
@@ -309,111 +241,46 @@ export async function buildP2PKHTx(params: BuildP2PKHTxParams): Promise<BuiltTra
  * ```
  */
 export async function buildMultiKeyP2PKHTx(params: BuildMultiKeyP2PKHTxParams): Promise<BuiltTransaction> {
-  const { changeWif, toAddress, satoshis, selectedUtxos, totalInput, feeRate } = params
+  const { toAddress, satoshis, selectedUtxos, totalInput, feeRate } = params
 
-  // Delegate to Rust when running inside Tauri
+  if (!isTauri()) {
+    throw new Error('Transaction building requires Tauri runtime')
+  }
+
   // Uses _from_store for the change WIF (wallet key); per-UTXO WIFs for derived
   // addresses are still passed because they come from BRC-42 derivation, not the
   // main wallet key. Future: move derived key resolution to Rust.
-  if (isTauri()) {
-    const result = await tauriInvoke<{
-      rawTx: string
-      txid: string
-      fee: number
-      change: number
-      changeAddress: string
-      spentOutpoints: Array<{ txid: string; vout: number }>
-    }>('build_multi_key_p2pkh_tx_from_store', {
-      toAddress,
-      satoshis,
-      selectedUtxos: selectedUtxos.map(u => ({
-        txid: u.txid,
-        vout: u.vout,
-        satoshis: u.satoshis,
-        script: u.script,
-        wif: u.wif,
-        address: u.address
-      })),
-      totalInput,
-      feeRate
-    })
-
-    return {
-      tx: null,
-      rawTx: result.rawTx,
-      txid: result.txid,
-      fee: result.fee,
-      change: result.change,
-      changeAddress: result.changeAddress,
-      numOutputs: result.change > 0 ? 2 : 1,
-      spentOutpoints: result.spentOutpoints
-    }
-  }
-
-  // JS fallback (browser dev mode)
-  const changePrivKey = PrivateKey.fromWif(changeWif)
-  const changeAddress = changePrivKey.toPublicKey().toAddress()
-
-  const { fee, change } = calculateChangeAndFee(
-    totalInput, satoshis, selectedUtxos.length, feeRate
-  )
-
-  if (change < 0) {
-    throw new Error(`Insufficient funds (need ${fee} sats for fee)`)
-  }
-
-  // S-10: Validate output sum matches input sum before building transaction
-  const multiOutputSum = satoshis + change + fee
-  if (multiOutputSum !== totalInput) {
-    throw new Error(`Output sum validation failed: inputs=${totalInput}, outputs=${satoshis}+${change}+${fee}=${multiOutputSum}`)
-  }
-
-  const tx = new Transaction()
-
-  // Add inputs — each with its own key
-  for (const utxo of selectedUtxos) {
-    const inputPrivKey = PrivateKey.fromWif(utxo.wif)
-    const inputLockingScript = new P2PKH().lock(utxo.address)
-
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        inputPrivKey,
-        'all',
-        false,
-        utxo.satoshis,
-        inputLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
-
-  // Add recipient output
-  tx.addOutput({
-    lockingScript: new P2PKH().lock(toAddress),
-    satoshis
+  const result = await tauriInvoke<{
+    rawTx: string
+    txid: string
+    fee: number
+    change: number
+    changeAddress: string
+    spentOutpoints: Array<{ txid: string; vout: number }>
+  }>('build_multi_key_p2pkh_tx_from_store', {
+    toAddress,
+    satoshis,
+    selectedUtxos: selectedUtxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.script,
+      wif: u.wif,
+      address: u.address
+    })),
+    totalInput,
+    feeRate
   })
 
-  // Add change output if there is any change
-  if (change > 0) {
-    tx.addOutput({
-      lockingScript: new P2PKH().lock(changeAddress),
-      satoshis: change
-    })
-  }
-
-  await tx.sign()
-
   return {
-    tx,
-    rawTx: tx.toHex(),
-    txid: tx.id('hex'),
-    fee,
-    change,
-    changeAddress,
-    numOutputs: tx.outputs.length,
-    spentOutpoints: selectedUtxos.map(u => ({ txid: u.txid, vout: u.vout }))
+    tx: null,
+    rawTx: result.rawTx,
+    txid: result.txid,
+    fee: result.fee,
+    change: result.change,
+    changeAddress: result.changeAddress,
+    numOutputs: result.change > 0 ? 2 : 1,
+    spentOutpoints: result.spentOutpoints
   }
 }
 
@@ -445,96 +312,41 @@ export async function buildMultiKeyP2PKHTx(params: BuildMultiKeyP2PKHTxParams): 
 export async function buildConsolidationTx(
   params: BuildConsolidationTxParams
 ): Promise<BuiltConsolidationTransaction> {
-  const { wif, utxos, feeRate } = params
+  const { utxos, feeRate } = params
 
   if (utxos.length < 2) {
     throw new Error('Need at least 2 UTXOs to consolidate')
   }
 
-  // Delegate to Rust when running inside Tauri — use key store (WIF never leaves Rust)
-  if (isTauri()) {
-    const result = await tauriInvoke<{
-      rawTx: string
-      txid: string
-      fee: number
-      outputSats: number
-      address: string
-      spentOutpoints: Array<{ txid: string; vout: number }>
-    }>('build_consolidation_tx_from_store', {
-      utxos: utxos.map(u => ({
-        txid: u.txid,
-        vout: u.vout,
-        satoshis: u.satoshis,
-        script: u.script
-      })),
-      feeRate
-    })
-
-    return {
-      tx: null,
-      rawTx: result.rawTx,
-      txid: result.txid,
-      fee: result.fee,
-      outputSats: result.outputSats,
-      address: result.address,
-      spentOutpoints: result.spentOutpoints
-    }
+  if (!isTauri()) {
+    throw new Error('Transaction building requires Tauri runtime')
   }
 
-  // JS fallback (browser dev mode)
-  const privateKey = PrivateKey.fromWif(wif)
-  const publicKey = privateKey.toPublicKey()
-  const address = publicKey.toAddress()
-  const lockingScript = new P2PKH().lock(address)
-
-  // Calculate total input
-  let totalInput = 0
-  for (const utxo of utxos) {
-    totalInput += utxo.satoshis
-  }
-
-  // Calculate fee (n inputs, 1 output)
-  const fee = calculateTxFee(utxos.length, 1, feeRate)
-  const outputSats = totalInput - fee
-
-  if (outputSats <= 0) {
-    throw new Error(`Cannot consolidate: total ${totalInput} sats minus ${fee} fee leaves no output`)
-  }
-
-  const tx = new Transaction()
-
-  // Add all inputs
-  for (const utxo of utxos) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        privateKey,
-        'all',
-        false,
-        utxo.satoshis,
-        lockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
-
-  // Single output back to our address
-  tx.addOutput({
-    lockingScript: new P2PKH().lock(address),
-    satoshis: outputSats
+  const result = await tauriInvoke<{
+    rawTx: string
+    txid: string
+    fee: number
+    outputSats: number
+    address: string
+    spentOutpoints: Array<{ txid: string; vout: number }>
+  }>('build_consolidation_tx_from_store', {
+    utxos: utxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.script
+    })),
+    feeRate
   })
 
-  await tx.sign()
-
   return {
-    tx,
-    rawTx: tx.toHex(),
-    txid: tx.id('hex'),
-    fee,
-    outputSats,
-    address,
-    spentOutpoints: utxos.map(u => ({ txid: u.txid, vout: u.vout }))
+    tx: null,
+    rawTx: result.rawTx,
+    txid: result.txid,
+    fee: result.fee,
+    outputSats: result.outputSats,
+    address: result.address,
+    spentOutpoints: result.spentOutpoints
   }
 }
 
@@ -586,18 +398,17 @@ export interface BuiltMultiOutputTransaction extends BuiltTransaction {
 export async function buildMultiOutputP2PKHTx(
   params: BuildMultiOutputP2PKHTxParams
 ): Promise<BuiltMultiOutputTransaction> {
-  const { wif, outputs, selectedUtxos, totalInput, feeRate } = params
+  const { outputs, selectedUtxos, totalInput, feeRate } = params
 
   if (outputs.length === 0) {
     throw new Error('Must have at least one output')
   }
 
-  const totalSent = outputs.reduce((sum, o) => sum + o.satoshis, 0)
+  if (!isTauri()) {
+    throw new Error('Multi-output transaction building requires Tauri runtime')
+  }
 
-  // JS implementation (Tauri path not used — multi-output is pure JS on all platforms)
-  const privateKey = PrivateKey.fromWif(wif)
-  const fromAddress = privateKey.toPublicKey().toAddress()
-  const sourceLockingScript = new P2PKH().lock(fromAddress)
+  const totalSent = outputs.reduce((sum, o) => sum + o.satoshis, 0)
 
   // Calculate fee: n inputs, (numRecipients + 1 change) outputs
   const numOutputsWithChange = outputs.length + 1
@@ -610,50 +421,115 @@ export async function buildMultiOutputP2PKHTx(
     )
   }
 
-  const tx = new Transaction()
-
-  for (const utxo of selectedUtxos) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        privateKey, 'all', false, utxo.satoshis, sourceLockingScript
-      ),
-      sequence: 0xffffffff,
-    })
-  }
-
-  for (const output of outputs) {
-    tx.addOutput({ lockingScript: new P2PKH().lock(output.address), satoshis: output.satoshis })
-  }
-
-  if (change > 0) {
-    tx.addOutput({ lockingScript: new P2PKH().lock(fromAddress), satoshis: change })
-  }
-
-  await tx.sign()
+  // TODO: Create a dedicated Rust command `build_multi_output_p2pkh_tx_from_store`
+  // For now, build using the single-output Tauri command per-output is not feasible
+  // (multi-output must be a single atomic transaction). This path will be enabled
+  // once the Rust backend command is implemented.
+  const result = await tauriInvoke<{
+    rawTx: string
+    txid: string
+    fee: number
+    change: number
+    changeAddress: string
+    spentOutpoints: Array<{ txid: string; vout: number }>
+  }>('build_multi_output_p2pkh_tx_from_store', {
+    outputs: outputs.map(o => ({
+      address: o.address,
+      satoshis: o.satoshis
+    })),
+    selectedUtxos: selectedUtxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.script ?? ''
+    })),
+    totalInput,
+    feeRate
+  })
 
   return {
-    tx,
-    rawTx: tx.toHex(),
-    txid: tx.id('hex'),
-    fee,
-    change,
-    changeAddress: fromAddress,
-    numOutputs: tx.outputs.length,
-    spentOutpoints: selectedUtxos.map(u => ({ txid: u.txid, vout: u.vout })),
+    tx: null,
+    rawTx: result.rawTx,
+    txid: result.txid,
+    fee: result.fee,
+    change: result.change,
+    changeAddress: result.changeAddress,
+    numOutputs: result.change > 0 ? outputs.length + 1 : outputs.length,
+    spentOutpoints: result.spentOutpoints,
     totalSent,
   }
+}
+
+// Base58 alphabet for address decoding
+const BASE58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+/**
+ * Decode a Base58 string to bytes.
+ * Used internally by p2pkhLockingScriptHex to extract the pubkey hash.
+ * Non-Base58 characters are silently skipped to maintain backwards
+ * compatibility with the SDK's lenient behaviour.
+ */
+function base58Decode(str: string): Uint8Array {
+  const bytes: number[] = [0]
+  for (const char of str) {
+    const value = BASE58_CHARS.indexOf(char)
+    if (value < 0) continue // skip invalid chars (spaces, etc.)
+    let carry = value
+    for (let j = 0; j < bytes.length; j++) {
+      carry += bytes[j]! * 58
+      bytes[j] = carry & 0xff
+      carry >>= 8
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff)
+      carry >>= 8
+    }
+  }
+  // Leading '1's = leading zero bytes
+  for (const char of str) {
+    if (char !== '1') break
+    bytes.push(0)
+  }
+  return new Uint8Array(bytes.reverse())
+}
+
+/**
+ * Convert a byte array to hex string.
+ */
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**
  * Create a P2PKH locking script hex for an address.
  *
- * Useful for tracking change UTXOs after transaction broadcast.
+ * Constructs the standard P2PKH script:
+ *   OP_DUP OP_HASH160 <20-byte-pubkeyhash> OP_EQUALVERIFY OP_CHECKSIG
  *
- * @param address - BSV address
- * @returns Locking script as hex string
+ * The pubkey hash is extracted from the Base58Check-encoded address
+ * (bytes 1..21, skipping the version byte and checksum).
+ *
+ * This is a pure function with no SDK dependencies.
+ *
+ * @param address - BSV address (Base58Check encoded)
+ * @returns Locking script as hex string (50 hex chars / 25 bytes)
  */
 export function p2pkhLockingScriptHex(address: string): string {
-  return new P2PKH().lock(address).toHex()
+  const decoded = base58Decode(address)
+  // Base58Check: [version(1)] [pubkeyHash(20)] [checksum(4)] = 25 bytes
+  // For short/invalid addresses, zero-pad the pubkey hash to 20 bytes
+  // to maintain backwards compatibility with the SDK's lenient behaviour.
+  let pubkeyHash: Uint8Array
+  if (decoded.length >= 21) {
+    // Normal case: extract 20-byte hash after version byte
+    pubkeyHash = decoded.slice(1, 21)
+  } else {
+    // Short address: use whatever bytes are available, zero-padded
+    const hash = new Uint8Array(20)
+    const available = decoded.slice(1)
+    hash.set(available.slice(0, 20))
+    pubkeyHash = hash
+  }
+  // OP_DUP(76) OP_HASH160(a9) OP_PUSH20(14) <hash> OP_EQUALVERIFY(88) OP_CHECKSIG(ac)
+  return '76a914' + bytesToHex(pubkeyHash) + '88ac'
 }

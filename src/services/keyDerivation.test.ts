@@ -1,185 +1,157 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { PrivateKey, PublicKey } from '@bsv/sdk'
 import {
-  deriveChildPrivateKey,
+  deriveChildKey,
   deriveSenderAddress,
-  getDerivedAddresses,
+  getDerivedAddressesFromKeys,
   findDerivedKeyForAddress,
   addKnownSender,
   loadKnownSenders,
   getKnownSenders,
-  debugFindInvoiceNumber
+  debugFindInvoiceNumber,
+  getCommonInvoiceNumbers,
+  type DerivedKeyResult,
+  type DerivedAddressResult
 } from './keyDerivation'
 
-// Test keys (deterministic for testing)
-// Using known test vectors
+// Mock the tauri utility module
+const mockTauriInvoke = vi.fn()
+vi.mock('../utils/tauri', () => ({
+  isTauri: () => true,
+  tauriInvoke: (...args: unknown[]) => mockTauriInvoke(...args),
+}))
+
+// Test keys
 const TEST_RECEIVER_WIF = 'L1HKVVLHXiUhecWnwFYF6L3shkf1E12HUmuZTESvBXUdx3yqVP1D'
 const TEST_SENDER_PUBKEY = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+const TEST_ANOTHER_SENDER = '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5'
 
 describe('Key Derivation Service', () => {
-  let receiverPrivateKey: PrivateKey
-  let senderPublicKey: PublicKey
-
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
-
-    receiverPrivateKey = PrivateKey.fromWif(TEST_RECEIVER_WIF)
-    senderPublicKey = PublicKey.fromString(TEST_SENDER_PUBKEY)
   })
 
-  describe('deriveChildPrivateKey', () => {
-    it('should derive a child private key using BRC-42', () => {
-      const invoiceNumber = '0'
-      const childKey = deriveChildPrivateKey(receiverPrivateKey, senderPublicKey, invoiceNumber)
+  describe('deriveChildKey', () => {
+    it('should call Tauri derive_child_key command', async () => {
+      const mockResult: DerivedKeyResult = {
+        wif: 'L2childWif',
+        address: '1ChildAddress',
+        pubKey: '02childpubkey'
+      }
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
 
-      expect(childKey).toBeDefined()
-      expect(childKey).toBeInstanceOf(PrivateKey)
+      const result = await deriveChildKey(TEST_RECEIVER_WIF, TEST_SENDER_PUBKEY, '0')
+
+      expect(mockTauriInvoke).toHaveBeenCalledWith('derive_child_key', {
+        wif: TEST_RECEIVER_WIF,
+        senderPubKey: TEST_SENDER_PUBKEY,
+        invoiceNumber: '0',
+      })
+      expect(result).toEqual(mockResult)
     })
 
-    it('should produce different keys for different invoice numbers', () => {
-      const child1 = deriveChildPrivateKey(receiverPrivateKey, senderPublicKey, '0')
-      const child2 = deriveChildPrivateKey(receiverPrivateKey, senderPublicKey, '1')
+    it('should produce different keys for different invoice numbers', async () => {
+      const result1: DerivedKeyResult = { wif: 'L2wif1', address: '1Addr1', pubKey: '02pk1' }
+      const result2: DerivedKeyResult = { wif: 'L2wif2', address: '1Addr2', pubKey: '02pk2' }
+      mockTauriInvoke.mockResolvedValueOnce(result1).mockResolvedValueOnce(result2)
 
-      expect(child1.toWif()).not.toBe(child2.toWif())
+      const child1 = await deriveChildKey(TEST_RECEIVER_WIF, TEST_SENDER_PUBKEY, '0')
+      const child2 = await deriveChildKey(TEST_RECEIVER_WIF, TEST_SENDER_PUBKEY, '1')
+
+      expect(child1.wif).not.toBe(child2.wif)
     })
 
-    it('should produce deterministic results', () => {
-      const invoiceNumber = 'test-invoice'
-      const child1 = deriveChildPrivateKey(receiverPrivateKey, senderPublicKey, invoiceNumber)
-      const child2 = deriveChildPrivateKey(receiverPrivateKey, senderPublicKey, invoiceNumber)
+    it('should handle empty invoice number', async () => {
+      const mockResult: DerivedKeyResult = { wif: 'L2wif', address: '1Addr', pubKey: '02pk' }
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
 
-      expect(child1.toWif()).toBe(child2.toWif())
-    })
+      const result = await deriveChildKey(TEST_RECEIVER_WIF, TEST_SENDER_PUBKEY, '')
 
-    it('should handle empty invoice number', () => {
-      const childKey = deriveChildPrivateKey(receiverPrivateKey, senderPublicKey, '')
-
-      expect(childKey).toBeDefined()
-      expect(childKey.toWif()).toBeDefined()
-    })
-
-    it('should handle complex invoice numbers', () => {
-      const complexInvoice = 'MjAyNS0wMS0yOQ== bGVnYWN5' // Base64 encoded
-      const childKey = deriveChildPrivateKey(receiverPrivateKey, senderPublicKey, complexInvoice)
-
-      expect(childKey).toBeDefined()
+      expect(result).toBeDefined()
+      expect(result.wif).toBeDefined()
     })
   })
 
   describe('deriveSenderAddress', () => {
-    it('should derive a valid BSV address', () => {
-      const address = deriveSenderAddress(receiverPrivateKey, senderPublicKey, '0')
+    it('should return the derived address', async () => {
+      const mockResult: DerivedKeyResult = { wif: 'L2wif', address: '1DerivedAddr', pubKey: '02pk' }
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
 
-      expect(address).toBeDefined()
-      expect(typeof address).toBe('string')
-      expect(address.length).toBeGreaterThan(20)
-      // BSV addresses typically start with 1
-      expect(address[0]).toBe('1')
+      const address = await deriveSenderAddress(TEST_RECEIVER_WIF, TEST_SENDER_PUBKEY, '0')
+
+      expect(address).toBe('1DerivedAddr')
     })
 
-    it('should produce same address as deriveChildPrivateKey', () => {
-      const invoiceNumber = 'test'
-      const childKey = deriveChildPrivateKey(receiverPrivateKey, senderPublicKey, invoiceNumber)
-      const expectedAddress = childKey.toPublicKey().toAddress()
+    it('should produce different addresses for different senders', async () => {
+      mockTauriInvoke
+        .mockResolvedValueOnce({ wif: 'w1', address: '1Addr1', pubKey: 'pk1' })
+        .mockResolvedValueOnce({ wif: 'w2', address: '1Addr2', pubKey: 'pk2' })
 
-      const derivedAddress = deriveSenderAddress(receiverPrivateKey, senderPublicKey, invoiceNumber)
-
-      expect(derivedAddress).toBe(expectedAddress)
-    })
-
-    it('should produce different addresses for different senders', () => {
-      // Different sender public key
-      const anotherSenderPubKey = PublicKey.fromString(
-        '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5'
-      )
-
-      const address1 = deriveSenderAddress(receiverPrivateKey, senderPublicKey, '0')
-      const address2 = deriveSenderAddress(receiverPrivateKey, anotherSenderPubKey, '0')
+      const address1 = await deriveSenderAddress(TEST_RECEIVER_WIF, TEST_SENDER_PUBKEY, '0')
+      const address2 = await deriveSenderAddress(TEST_RECEIVER_WIF, TEST_ANOTHER_SENDER, '0')
 
       expect(address1).not.toBe(address2)
     })
   })
 
-  describe('getDerivedAddresses', () => {
-    it('should return empty array with no known senders', () => {
-      const addresses = getDerivedAddresses(receiverPrivateKey, [], [])
-
+  describe('getDerivedAddressesFromKeys', () => {
+    it('should return empty array with no known senders', async () => {
+      const addresses = await getDerivedAddressesFromKeys(TEST_RECEIVER_WIF, [], [])
       expect(addresses).toEqual([])
+      expect(mockTauriInvoke).not.toHaveBeenCalled()
     })
 
-    it('should derive addresses for all sender/invoice combinations', () => {
+    it('should call Tauri get_derived_addresses command', async () => {
       const senders = [TEST_SENDER_PUBKEY]
       const invoices = ['0', '1', '2']
+      const mockResults: DerivedAddressResult[] = [
+        { address: '1A', senderPubKey: TEST_SENDER_PUBKEY, invoiceNumber: '0' },
+        { address: '1B', senderPubKey: TEST_SENDER_PUBKEY, invoiceNumber: '1' },
+        { address: '1C', senderPubKey: TEST_SENDER_PUBKEY, invoiceNumber: '2' },
+      ]
+      mockTauriInvoke.mockResolvedValueOnce(mockResults)
 
-      const addresses = getDerivedAddresses(receiverPrivateKey, senders, invoices)
+      const addresses = await getDerivedAddressesFromKeys(TEST_RECEIVER_WIF, senders, invoices)
 
       expect(addresses).toHaveLength(3)
-      addresses.forEach(a => {
-        expect(a.address).toBeDefined()
-        expect(a.senderPubKey).toBe(TEST_SENDER_PUBKEY)
-        expect(invoices).toContain(a.invoiceNumber)
-        expect(a.privateKey).toBeInstanceOf(PrivateKey)
+      expect(mockTauriInvoke).toHaveBeenCalledWith('get_derived_addresses', {
+        wif: TEST_RECEIVER_WIF,
+        senderPubKeys: senders,
+        invoiceNumbers: invoices,
       })
-    })
-
-    it('should handle invalid sender public keys gracefully', () => {
-      const senders = ['invalid_pubkey', TEST_SENDER_PUBKEY]
-      const invoices = ['0']
-
-      // Should not throw, should skip invalid
-      const addresses = getDerivedAddresses(receiverPrivateKey, senders, invoices)
-
-      // Only valid sender should produce results
-      expect(addresses).toHaveLength(1)
-      expect(addresses[0]!.senderPubKey).toBe(TEST_SENDER_PUBKEY)
-    })
-
-    it('should produce unique addresses for each combination', () => {
-      const senders = [TEST_SENDER_PUBKEY]
-      const invoices = ['0', '1', '2', '3', '4']
-
-      const addresses = getDerivedAddresses(receiverPrivateKey, senders, invoices)
-      const uniqueAddresses = new Set(addresses.map(a => a.address))
-
-      expect(uniqueAddresses.size).toBe(addresses.length)
     })
   })
 
   describe('findDerivedKeyForAddress', () => {
-    it('should find the invoice number for a known derived address', () => {
-      // First, derive an address
-      const targetAddress = deriveSenderAddress(receiverPrivateKey, senderPublicKey, '5')
+    it('should call Tauri find_derived_key_for_address command', async () => {
+      const mockResult: DerivedKeyResult = { wif: 'L2found', address: '1Target', pubKey: '02pk' }
+      mockTauriInvoke.mockResolvedValueOnce(mockResult)
 
-      // Then try to find it
-      const result = findDerivedKeyForAddress(
-        targetAddress,
-        receiverPrivateKey,
-        TEST_SENDER_PUBKEY,
-        100 // search up to 100
+      const result = await findDerivedKeyForAddress(
+        TEST_RECEIVER_WIF,
+        '1Target',
+        TEST_SENDER_PUBKEY
       )
 
       expect(result).not.toBeNull()
-      expect(result!.invoiceNumber).toBe('5')
-      expect(result!.privateKey.toPublicKey().toAddress()).toBe(targetAddress)
+      expect(result!.address).toBe('1Target')
+      expect(mockTauriInvoke).toHaveBeenCalledWith('find_derived_key_for_address', {
+        wif: TEST_RECEIVER_WIF,
+        targetAddress: '1Target',
+        senderPubKey: TEST_SENDER_PUBKEY,
+        invoiceNumbers: expect.any(Array),
+        maxNumeric: 100,
+      })
     })
 
-    it('should return null for non-matching address', () => {
-      const result = findDerivedKeyForAddress(
-        '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', // random address
-        receiverPrivateKey,
-        TEST_SENDER_PUBKEY,
-        10
-      )
+    it('should return null for non-matching address', async () => {
+      mockTauriInvoke.mockResolvedValueOnce(null)
 
-      expect(result).toBeNull()
-    })
-
-    it('should handle invalid sender public key', () => {
-      const result = findDerivedKeyForAddress(
+      const result = await findDerivedKeyForAddress(
+        TEST_RECEIVER_WIF,
         '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2',
-        receiverPrivateKey,
-        'invalid_pubkey',
+        TEST_SENDER_PUBKEY,
+        [],
         10
       )
 
@@ -205,12 +177,20 @@ describe('Key Derivation Service', () => {
         expect(count).toBe(1)
       })
 
+      it('should reject invalid public keys', () => {
+        const before = getKnownSenders().length
+        addKnownSender('not-a-valid-pubkey')
+        addKnownSender('04invalid-uncompressed')
+        addKnownSender('02short')
+
+        const after = getKnownSenders()
+        // No new senders should have been added
+        expect(after).toHaveLength(before)
+      })
+
       it('should persist to localStorage', () => {
-        // The addKnownSender function tries to persist to localStorage
-        // We verify the function completes without throwing
         expect(() => addKnownSender(TEST_SENDER_PUBKEY)).not.toThrow()
 
-        // And that the sender is in the internal list
         const senders = getKnownSenders()
         expect(senders).toContain(TEST_SENDER_PUBKEY)
       })
@@ -232,7 +212,6 @@ describe('Key Derivation Service', () => {
       it('should handle invalid JSON gracefully', () => {
         localStorage.setItem('simply_sats_known_senders', 'invalid json')
 
-        // Should not throw
         expect(() => loadKnownSenders()).not.toThrow()
       })
 
@@ -255,67 +234,61 @@ describe('Key Derivation Service', () => {
     })
   })
 
-  describe('debugFindInvoiceNumber', { timeout: 30000 }, () => {
-    it('should find invoice number for known address', () => {
-      // Create an address with known invoice number
-      const knownInvoice = '42'
-      const targetAddress = deriveSenderAddress(receiverPrivateKey, senderPublicKey, knownInvoice)
+  describe('debugFindInvoiceNumber', () => {
+    it('should call findDerivedKeyForAddress with extended invoices', async () => {
+      // Mock import.meta.env.DEV
+      const origDev = import.meta.env.DEV
+      import.meta.env.DEV = true
 
-      const result = debugFindInvoiceNumber(
-        receiverPrivateKey,
-        TEST_SENDER_PUBKEY,
-        targetAddress
-      )
+      mockTauriInvoke.mockResolvedValueOnce({ wif: 'L2found', address: '1Target', pubKey: '02pk' })
+
+      const result = await debugFindInvoiceNumber(TEST_RECEIVER_WIF, TEST_SENDER_PUBKEY, '1Target')
 
       expect(result.found).toBe(true)
-      expect(result.invoiceNumber).toBe(knownInvoice)
-      expect(result.testedCount).toBeGreaterThan(0)
+
+      import.meta.env.DEV = origDev
     })
 
-    it('should return found=false for non-matching address', () => {
-      const result = debugFindInvoiceNumber(
-        receiverPrivateKey,
-        TEST_SENDER_PUBKEY,
-        '1NonExistentAddress123'
-      )
+    it('should return found=false when not found', async () => {
+      const origDev = import.meta.env.DEV
+      import.meta.env.DEV = true
+
+      mockTauriInvoke.mockResolvedValueOnce(null)
+
+      const result = await debugFindInvoiceNumber(TEST_RECEIVER_WIF, TEST_SENDER_PUBKEY, '1Nonexistent')
 
       expect(result.found).toBe(false)
-      expect(result.testedCount).toBeGreaterThan(0)
+
+      import.meta.env.DEV = origDev
+    })
+  })
+
+  describe('getCommonInvoiceNumbers', () => {
+    it('should return a non-empty array', () => {
+      const invoices = getCommonInvoiceNumbers()
+
+      expect(invoices).toBeDefined()
+      expect(invoices.length).toBeGreaterThan(0)
     })
 
-    it('should test common invoice number patterns', () => {
-      // The function tests various patterns including:
-      // - Common invoice numbers
-      // - Numeric 0-1000
-      // - BRC-29 format
-      // - BRC-43 protocols
-      // - BSV Desktop Base64 patterns
+    it('should include standard invoice number patterns', () => {
+      const invoices = getCommonInvoiceNumbers()
 
-      const result = debugFindInvoiceNumber(
-        receiverPrivateKey,
-        TEST_SENDER_PUBKEY,
-        '1RandomAddress'
-      )
+      // Numeric patterns
+      expect(invoices).toContain('0')
+      expect(invoices).toContain('1')
 
-      // Should have tested many combinations
-      expect(result.testedCount).toBeGreaterThan(1000)
+      // Standard labels
+      expect(invoices).toContain('default')
+      expect(invoices).toContain('payment')
     })
 
-    it('should find Base64-encoded invoice numbers', () => {
-      // BSV Desktop uses Base64 encoded invoice numbers
-      const base64Invoice = 'MjAyNS0wMS0yOQ== bGVnYWN5' // Base64 date + 'legacy'
-      const targetAddress = deriveSenderAddress(receiverPrivateKey, senderPublicKey, base64Invoice)
+    it('should return a copy', () => {
+      const invoices1 = getCommonInvoiceNumbers()
+      const invoices2 = getCommonInvoiceNumbers()
 
-      // Note: This may or may not find it depending on date range
-      // The function searches last 60 days
-      const result = debugFindInvoiceNumber(
-        receiverPrivateKey,
-        TEST_SENDER_PUBKEY,
-        targetAddress
-      )
-
-      // Either finds it or tests a lot of combinations
-      expect(result.testedCount).toBeGreaterThan(100)
+      expect(invoices1).toEqual(invoices2)
+      expect(invoices1).not.toBe(invoices2)
     })
   })
 })

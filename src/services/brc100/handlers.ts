@@ -6,7 +6,6 @@
  * encrypt, decrypt, getTaggedKeys.
  */
 
-import { PrivateKey, PublicKey } from '@bsv/sdk'
 import { brc100Logger as _brc100Logger } from '../logger'
 import type { WalletKeys, LockedUTXO } from '../wallet'
 import { lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV, getWifForOperation } from '../wallet'
@@ -49,13 +48,8 @@ const MAX_DECRYPT_PAYLOAD_SIZE = 1024 * 1024     // 1MB for decryption ciphertex
 const MAX_OUTPUTS_ARRAY_SIZE = 100               // S-67: Max outputs in createAction
 const MAX_TAG_LENGTH = 256                        // S-69: Max tag string length
 
-/** A-35: Helpers to reduce response mutation boilerplate across switch cases */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- A-35: available for incremental adoption in remaining switch cases
-function setResult(response: Record<string, unknown>, result: Record<string, unknown>): void {
-  response.result = result
-}
-
-function setError(response: Record<string, unknown>, code: number, message: string): void {
+/** A-35: Helper to reduce response mutation boilerplate across switch cases */
+function setError(response: BRC100Response, code: number, message: string): void {
   response.error = { code, message }
 }
 
@@ -309,8 +303,8 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
           setError(response, -32602, 'Invalid outpoint format, expected 64-char-hex-txid.vout')
           return
         }
-        const txid = outpointMatch[1]
-        const vout = parseInt(outpointMatch[2], 10)
+        const txid = outpointMatch[1]!
+        const vout = parseInt(outpointMatch[2]!, 10)
         if (vout > 0xFFFFFFFF) {
           setError(response, -32602, 'Invalid outpoint vout index (exceeds uint32 max)')
           return
@@ -415,14 +409,6 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         response.error = { code: -32602, message: 'Invalid public key format' }
         break
       }
-      // S-66: Validate public key is actually on the secp256k1 curve
-      try {
-        PublicKey.fromString(recipientPubKey)
-      } catch {
-        setError(response, -32602, 'Invalid public key: not on secp256k1 curve')
-        break
-      }
-
       try {
         const result = await encryptECIES(keys, plaintext, recipientPubKey)
         response.result = {
@@ -501,7 +487,6 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
 
       try {
         const identityWif = await getWifForOperation('identity', 'getTaggedKeys', keys)
-        const rootPrivKey = PrivateKey.fromWif(identityWif)
         const derivedKeys: Array<{
           keyId: string
           publicKey: string
@@ -516,7 +501,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
             domain: request.origin
           }
 
-          const derived = deriveTaggedKey(rootPrivKey, tag)
+          const derived = await deriveTaggedKey(identityWif, tag)
           derivedKeys.push({
             keyId,
             publicKey: derived.publicKey,

@@ -3,7 +3,6 @@
  */
 
 export {
-  deriveKeysFromPath,
   deriveWalletKeys,
   deriveWalletKeysForAccount,
   keysFromWif,

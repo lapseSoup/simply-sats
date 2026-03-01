@@ -39,13 +39,9 @@ vi.mock('./logger', () => ({
   },
 }))
 
-// Mock P2PKH from @bsv/sdk
-vi.mock('@bsv/sdk', () => ({
-  P2PKH: class {
-    lock(address: string) {
-      return { toHex: () => `script_${address}` }
-    }
-  },
+// Mock p2pkhLockingScriptHex — it no longer uses @bsv/sdk internally
+vi.mock('../domain/transaction/builder', () => ({
+  p2pkhLockingScriptHex: (address: string) => `script_${address}`,
 }))
 
 // ---------------------------------------------------------------------------

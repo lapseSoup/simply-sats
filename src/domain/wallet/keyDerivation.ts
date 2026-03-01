@@ -1,17 +1,15 @@
 /**
- * Pure Key Derivation Functions
+ * Key Derivation Functions (Tauri-only)
  *
- * This module provides pure functions for HD wallet key derivation
+ * This module provides functions for HD wallet key derivation
  * following the BRC-100 standard (Yours Wallet compatible).
  *
- * When running inside Tauri, derivation is delegated to Rust so that
+ * All derivation is delegated to Rust via Tauri commands so that
  * mnemonics and private keys never enter the webview's JavaScript heap.
- * Falls back to @bsv/sdk in browser dev mode and tests.
  *
  * @module domain/wallet/keyDerivation
  */
 
-import { HD, Mnemonic, PrivateKey } from '@bsv/sdk'
 import type { WalletKeys, KeyPair } from '../types'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
 
@@ -36,40 +34,6 @@ export const WALLET_PATHS = {
 } as const
 
 /**
- * Derive a key pair from a mnemonic and derivation path.
- *
- * This is a pure function with no side effects. It deterministically
- * derives a private/public key pair from the given BIP-39 mnemonic
- * using the specified BIP-32 derivation path.
- *
- * @param mnemonic - A valid BIP-39 mnemonic phrase (12 or 24 words)
- * @param path - BIP-32 derivation path (e.g., "m/44'/236'/0'/1/0")
- * @returns A KeyPair containing WIF, address, and public key
- *
- * @example
- * ```typescript
- * const keys = deriveKeysFromPath(
- *   'abandon abandon abandon ... about',
- *   WALLET_PATHS.yours.wallet
- * )
- * console.log(keys.address) // "1..."
- * ```
- */
-export function deriveKeysFromPath(mnemonic: string, path: string): KeyPair {
-  const seed = Mnemonic.fromString(mnemonic).toSeed()
-  const masterNode = HD.fromSeed(seed)
-  const childNode = masterNode.derive(path)
-  const privateKey = childNode.privKey
-  const publicKey = privateKey.toPublicKey()
-
-  return {
-    wif: privateKey.toWif(),
-    address: publicKey.toAddress(),
-    pubKey: publicKey.toString()
-  }
-}
-
-/**
  * Derive all wallet keys from a mnemonic.
  *
  * Derives the complete set of keys for a Simply Sats wallet:
@@ -91,34 +55,10 @@ export function deriveKeysFromPath(mnemonic: string, path: string): KeyPair {
  * ```
  */
 export async function deriveWalletKeys(mnemonic: string): Promise<WalletKeys> {
-  // Delegate to Rust when running in Tauri — mnemonic stays in native memory
-  if (isTauri()) {
-    try {
-      return await tauriInvoke<WalletKeys>('derive_wallet_keys', { mnemonic })
-    } catch (_e) {
-      // Fall through to JS implementation
-    }
+  if (!isTauri()) {
+    throw new Error('Key derivation requires the Tauri runtime')
   }
-
-  const paths = WALLET_PATHS.yours
-  const wallet = deriveKeysFromPath(mnemonic, paths.wallet)
-  const ord = deriveKeysFromPath(mnemonic, paths.ordinals)
-  const identity = deriveKeysFromPath(mnemonic, paths.identity)
-
-  return {
-    mnemonic,
-    walletType: 'yours',
-    walletWif: wallet.wif,
-    walletAddress: wallet.address,
-    walletPubKey: wallet.pubKey,
-    ordWif: ord.wif,
-    ordAddress: ord.address,
-    ordPubKey: ord.pubKey,
-    identityWif: identity.wif,
-    identityAddress: identity.address,
-    identityPubKey: identity.pubKey,
-    accountIndex: 0
-  }
+  return await tauriInvoke<WalletKeys>('derive_wallet_keys', { mnemonic })
 }
 
 /**
@@ -148,44 +88,13 @@ export async function deriveWalletKeys(mnemonic: string): Promise<WalletKeys> {
  * ```
  */
 export async function deriveWalletKeysForAccount(mnemonic: string, accountIndex: number): Promise<WalletKeys> {
-  // Delegate to Rust when running in Tauri — mnemonic stays in native memory
-  if (isTauri()) {
-    try {
-      return await tauriInvoke<WalletKeys>('derive_wallet_keys_for_account', {
-        mnemonic,
-        accountIndex
-      })
-    } catch (_e) {
-      // Fall through to JS implementation
-    }
+  if (!isTauri()) {
+    throw new Error('Key derivation requires the Tauri runtime')
   }
-
-  // Derive paths with account index
-  // wallet:   m/44'/236'/accountIndex'/1/0
-  // ordinals: m/44'/236'/(accountIndex*2+1)'/0/0  - separate from wallet
-  // identity: m/0'/236'/accountIndex'/0/0
-  const walletPath = `m/44'/236'/${accountIndex}'/1/0`
-  const ordinalsPath = `m/44'/236'/${accountIndex * 2 + 1}'/0/0`
-  const identityPath = `m/0'/236'/${accountIndex}'/0/0`
-
-  const wallet = deriveKeysFromPath(mnemonic, walletPath)
-  const ord = deriveKeysFromPath(mnemonic, ordinalsPath)
-  const identity = deriveKeysFromPath(mnemonic, identityPath)
-
-  return {
+  return await tauriInvoke<WalletKeys>('derive_wallet_keys_for_account', {
     mnemonic,
-    walletType: 'yours',
-    walletWif: wallet.wif,
-    walletAddress: wallet.address,
-    walletPubKey: wallet.pubKey,
-    ordWif: ord.wif,
-    ordAddress: ord.address,
-    ordPubKey: ord.pubKey,
-    identityWif: identity.wif,
-    identityAddress: identity.address,
-    identityPubKey: identity.pubKey,
     accountIndex
-  }
+  })
 }
 
 /**
@@ -206,22 +115,8 @@ export async function deriveWalletKeysForAccount(mnemonic: string, accountIndex:
  * ```
  */
 export async function keysFromWif(wif: string): Promise<KeyPair> {
-  // Delegate to Rust when running in Tauri
-  if (isTauri()) {
-    try {
-      const result = await tauriInvoke<{ wif: string; address: string; pubKey: string }>('keys_from_wif', { wif })
-      return result
-    } catch (_e) {
-      // Fall through to JS implementation
-    }
+  if (!isTauri()) {
+    throw new Error('Key derivation requires the Tauri runtime')
   }
-
-  const privateKey = PrivateKey.fromWif(wif)
-  const publicKey = privateKey.toPublicKey()
-
-  return {
-    wif: privateKey.toWif(),
-    address: publicKey.toAddress(),
-    pubKey: publicKey.toString()
-  }
+  return await tauriInvoke<KeyPair>('keys_from_wif', { wif })
 }

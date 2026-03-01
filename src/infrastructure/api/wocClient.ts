@@ -3,7 +3,7 @@
  * Handles all WoC API interactions with proper error handling
  */
 
-import { P2PKH } from '@bsv/sdk'
+import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
 import type { UTXO } from '../../domain/types'
 import { type Result, ok, err } from '../../domain/types'
 import type { WocTransaction } from '../../services/wallet/types'
@@ -186,8 +186,8 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
           return err(createApiError('INVALID_RESPONSE', 'Expected array of UTXOs'))
         }
 
-        // Generate the P2PKH locking script for this address
-        const lockingScript = new P2PKH().lock(address)
+        // Generate the P2PKH locking script hex for this address
+        const scriptHex = p2pkhLockingScriptHex(address)
 
         const utxos = data
           .filter((utxo: { tx_hash: string; tx_pos: number; value: number }) => {
@@ -202,7 +202,7 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
             txid: utxo.tx_hash,
             vout: utxo.tx_pos,
             satoshis: utxo.value,
-            script: lockingScript.toHex()
+            script: scriptHex
           }))
         return ok(utxos)
       } catch (e) {

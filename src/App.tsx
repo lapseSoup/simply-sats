@@ -17,8 +17,7 @@ import { AppModals } from './AppModals'
 import { AppTabNav, AppTabContent, type Tab } from './AppTabs'
 
 import type { PaymentNotification } from './services/messageBox'
-import { loadNotifications, startPaymentListener } from './services/messageBox'
-import { PrivateKey } from '@bsv/sdk'
+import { loadNotifications, startPaymentListenerFromWif } from './services/messageBox'
 import { needsInitialSync, syncWallet, getLastSyncTimeForAccount } from './services/sync'
 import { discoverAccounts } from './services/accountDiscovery'
 import { getAccountKeys } from './services/accounts'
@@ -178,8 +177,7 @@ function WalletApp() {
     const setupListener = async () => {
       const { getWifForOperation } = await import('./services/wallet')
       const identityWif = await getWifForOperation('identity', 'paymentListener', wallet)
-      const identityPrivKey = PrivateKey.fromWif(identityWif)
-      return startPaymentListener(identityPrivKey, handleNewPayment)
+      return startPaymentListenerFromWif(identityWif, handleNewPayment)
     }
 
     let stopListener: (() => void) | undefined

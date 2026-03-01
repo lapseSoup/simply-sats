@@ -47,8 +47,7 @@ vi.mock('../../services/database', () => ({
 
 // Mock key derivation
 vi.mock('../../services/keyDerivation', () => ({
-  deriveSenderAddress: vi.fn().mockReturnValue('derivedAddress123'),
-  deriveChildPrivateKey: vi.fn().mockReturnValue({ toWif: () => 'derivedWif' })
+  deriveSenderAddress: vi.fn().mockResolvedValue('derivedAddress123'),
 }))
 
 // Mock qrcode.react
