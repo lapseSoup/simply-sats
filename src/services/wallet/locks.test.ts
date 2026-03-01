@@ -21,112 +21,33 @@ const { mockDbState } = vi.hoisted(() => {
 
 // ─── Mock utils/tauri ──────────────────────────────────────────────
 vi.mock('../../utils/tauri', () => ({
-  isTauri: () => false,
+  isTauri: () => true,
   tauriInvoke: async (cmd: string, _args?: Record<string, unknown>) => {
+    if (cmd === 'keys_from_wif') {
+      return {
+        wif: 'L1RMEbBkMJ3JKzn3e3cE9Fm4XLKP5Pmjbsci7dqASiJVTCTxhsWi',
+        address: '1MockAddress',
+        pubKey: '02abcdef0102030405060708090a0b0c0d0e0f1011'
+      }
+    }
     if (cmd === 'pubkey_to_hash160') {
-      // Return the same hash that the mock PublicKey.toHash() produces
       return 'abcdef0102030405060708090a0b0c0d0e0f1011'
+    }
+    if (cmd === 'build_lock_tx_from_store') {
+      return {
+        rawTx: 'deadbeef',
+        txid: 'mock-lock-txid-abc123'
+      }
+    }
+    if (cmd === 'build_unlock_tx_from_store') {
+      return {
+        rawTx: 'deadbeef',
+        txid: 'mock-txid-abc123'
+      }
     }
     throw new Error(`Unmocked Tauri command: ${cmd}`)
   },
 }))
-
-// ─── Mock @bsv/sdk ─────────────────────────────────────────────────
-vi.mock('@bsv/sdk', () => {
-  const mockPublicKeyHash = [0xab, 0xcd, 0xef, 0x01, 0x02, 0x03, 0x04, 0x05,
-    0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
-    0x0e, 0x0f, 0x10, 0x11]
-  const mockPublicKeyBytes = [0x02, ...mockPublicKeyHash]
-
-  const mockPublicKey = {
-    toAddress: () => '1MockAddress',
-    toHash: () => mockPublicKeyHash,
-    encode: (compressed: boolean) => compressed ? mockPublicKeyBytes : mockPublicKeyBytes,
-    toString: () => '02abcdef0102030405060708090a0b0c0d0e0f1011'
-  }
-
-  const mockSignature = {
-    toDER: () => [0x30, 0x44, 0x02, 0x20, ...new Array(32).fill(0x01), 0x02, 0x20, ...new Array(32).fill(0x02)]
-  }
-
-  const mockPrivateKey = {
-    toPublicKey: () => mockPublicKey,
-    sign: vi.fn(() => mockSignature)
-  }
-
-  // Must be a real function (not arrow) so it works with `new`
-  function MockTransaction(this: Record<string, unknown>) {
-    this.version = 1
-    this.lockTime = 0
-    this.outputs = [] as unknown[]
-    this.addInput = vi.fn()
-    this.addOutput = vi.fn((output: unknown) => {
-      (this.outputs as unknown[]).push(output)
-    })
-    this.sign = vi.fn(async () => { /* no-op */ })
-    this.toHex = vi.fn(() => 'deadbeef')
-    this.id = vi.fn(() => 'mock-txid-abc123')
-  }
-
-  const mockLockingScript = {
-    toBinary: () => new Uint8Array([0x01, 0x02, 0x03]),
-    toHex: () => '010203',
-    fromBinary: vi.fn(),
-    fromHex: vi.fn()
-  }
-
-  const mockUnlockingScript = {
-    fromBinary: vi.fn(() => ({ toBinary: () => [] }))
-  }
-
-  // P2PKH and Script must also be constructable with `new`
-  function MockP2PKH() {
-    return {
-      lock: vi.fn(() => ({
-        toHex: () => '76a914abcdef88ac',
-        toBinary: () => [0x76, 0xa9, 0x14]
-      })),
-      unlock: vi.fn(() => ({
-        sign: vi.fn(),
-        estimateLength: vi.fn(async () => 107)
-      }))
-    }
-  }
-
-  function MockScript() {
-    return {
-      writeBin: vi.fn(),
-      toBinary: () => [0x01, 0x02]
-    }
-  }
-
-  return {
-    PrivateKey: {
-      fromWif: vi.fn(() => mockPrivateKey)
-    },
-    PublicKey: {
-      fromString: vi.fn(() => mockPublicKey)
-    },
-    P2PKH: MockP2PKH,
-    Transaction: MockTransaction,
-    Script: MockScript,
-    LockingScript: {
-      fromBinary: vi.fn(() => mockLockingScript),
-      fromHex: vi.fn(() => mockLockingScript)
-    },
-    UnlockingScript: {
-      fromBinary: vi.fn(() => mockUnlockingScript)
-    },
-    TransactionSignature: {
-      SIGHASH_ALL: 0x01,
-      SIGHASH_FORKID: 0x40,
-      format: vi.fn(() => [0x01, 0x02, 0x03])
-    },
-    Hash: {
-      sha256: vi.fn(() => new Array(32).fill(0xaa))
-    }
-  }
-})
 
 // ─── Mock domain/locks ──────────────────────────────────────────────
 vi.mock('../../domain/locks', () => ({
@@ -226,6 +147,20 @@ vi.mock('./types', async () => {
     getWifForOperation: vi.fn().mockResolvedValue('L1RMEbBkMJ3JKzn3e3cE9Fm4XLKP5Pmjbsci7dqASiJVTCTxhsWi')
   }
 })
+
+// ─── Mock brc100/script ─────────────────────────────────────────────
+vi.mock('../brc100/script', () => ({
+  createWrootzOpReturn: vi.fn(() => '6a00' + '06' + Buffer.from('wrootz').toString('hex') + '04' + Buffer.from('lock').toString('hex') + '0a' + Buffer.from('origin-abc').toString('hex')),
+  convertToLockingScript: vi.fn((hex: string) => ({
+    toHex: () => hex,
+    toBinary: () => hex.match(/.{1,2}/g)!.map((b: string) => parseInt(b, 16))
+  }))
+}))
+
+// ─── Mock domain/transaction/builder ────────────────────────────────
+vi.mock('../../domain/transaction/builder', () => ({
+  p2pkhLockingScriptHex: vi.fn(() => '76a914abcdef88ac')
+}))
 
 // ─── Import modules under test (after mocks) ───────────────────────
 import {

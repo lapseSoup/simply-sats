@@ -1,4 +1,53 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// ---------------------------------------------------------------------------
+// Mock the Tauri runtime so that key derivation works in the test environment.
+// ---------------------------------------------------------------------------
+
+/** Simple hash of a string to produce deterministic hex for test keys */
+function simpleHash(input: string): string {
+  let h = 0
+  for (let i = 0; i < input.length; i++) {
+    h = ((h << 5) - h + input.charCodeAt(i)) | 0
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+vi.mock('../utils/tauri', () => ({
+  isTauri: () => true,
+  tauriInvoke: vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === 'derive_wallet_keys' || cmd === 'derive_wallet_keys_for_account') {
+      const mnemonic = args?.mnemonic as string
+      const h = simpleHash(mnemonic)
+      return {
+        mnemonic,
+        walletType: 'yours',
+        walletWif: `L1mock${h}walletWif`,
+        walletAddress: `1mock${h}walletAddr`,
+        walletPubKey: `02mock${h}walletPub`,
+        ordWif: `L1mock${h}ordWif`,
+        ordAddress: `1mock${h}ordAddr`,
+        ordPubKey: `02mock${h}ordPub`,
+        identityWif: `L1mock${h}identityWif`,
+        identityAddress: `1mock${h}identityAddr`,
+        identityPubKey: `02${h}${h}${h}${h}${h}${h}${h}${h}`.slice(0, 66),
+      }
+    }
+    if (cmd === 'keys_from_wif') {
+      const wif = args?.wif as string
+      const h = simpleHash(wif)
+      return {
+        wif,
+        address: `1mockWif${h}Addr`,
+        pubKey: `02mockWif${h}Pub`,
+      }
+    }
+    // Delegate unknown commands to the @tauri-apps/api/core invoke mock
+    const { invoke } = await import('@tauri-apps/api/core')
+    return invoke(cmd, args)
+  }),
+}))
+
 import {
   signMessage,
   signData,

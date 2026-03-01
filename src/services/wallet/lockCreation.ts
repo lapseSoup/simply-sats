@@ -3,14 +3,11 @@
  *
  * Handles creating time-locked UTXOs using the OP_PUSH_TX technique.
  * Based on jdh7190's bsv-lock implementation.
+ *
+ * Transaction building is delegated to the Rust backend via Tauri commands.
+ * Private keys never enter the JavaScript heap.
  */
 
-import {
-  PrivateKey,
-  P2PKH,
-  Transaction,
-  LockingScript
-} from '@bsv/sdk'
 import type { UTXO, LockedUTXO } from './types'
 import { getWifForOperation } from './types'
 import { calculateLockFee } from './fees'
@@ -28,6 +25,9 @@ import {
   createWrootzOpReturn as createWrootzOpReturnHex,
   convertToLockingScript
 } from '../brc100/script'
+import type { ScriptLike } from '../brc100/script'
+import { isTauri, tauriInvoke } from '../../utils/tauri'
+import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
 
 // Re-export pure domain functions for backwards compatibility
 import {
@@ -45,16 +45,19 @@ export function parseTimelockScript(scriptHex: string): { unlockBlock: number; p
 }
 
 /**
- * Create a Wrootz protocol OP_RETURN script as a LockingScript.
+ * Create a Wrootz protocol OP_RETURN script as a ScriptLike.
  * Delegates to brc100/script for the hex encoding, then converts.
  */
-function createWrootzOpReturn(action: string, data: string): LockingScript {
+function createWrootzOpReturn(action: string, data: string): ScriptLike {
   return convertToLockingScript(createWrootzOpReturnHex(action, data))
 }
 
 /**
  * Lock BSV until a specific block height using OP_PUSH_TX technique
  * Based on jdh7190's bsv-lock implementation
+ *
+ * Transaction building is delegated to Rust via Tauri commands.
+ * This function requires the Tauri desktop runtime.
  *
  * @param ordinalOrigin - Optional ordinal origin to link this lock to (for Wrootz)
  */
@@ -92,22 +95,26 @@ export async function lockBSV(
     walletLogger.warn(dustWarning, { satoshis })
   }
 
+  if (!isTauri()) {
+    throw new Error('Lock transaction building requires Tauri runtime')
+  }
+
+  // Derive keys via Tauri (WIF never persisted in JS state)
   const wif = await getWifForOperation('wallet', 'lockBSV')
-  const privateKey = PrivateKey.fromWif(wif)
-  const publicKey = privateKey.toPublicKey()
-  const fromAddress = publicKey.toAddress()
 
-  // Get public key hash as hex string for the timelock script
-  const publicKeyHashBytes = publicKey.toHash() as number[]
-  const publicKeyHashHex = publicKeyHashBytes.map(b => b.toString(16).padStart(2, '0')).join('')
+  // Derive address and public key from WIF via Rust
+  const keyInfo = await tauriInvoke<{ wif: string; address: string; pubKey: string }>('keys_from_wif', { wif })
+  const fromAddress = keyInfo.address
+  const publicKeyHex = keyInfo.pubKey
 
-  // Create the OP_PUSH_TX timelock locking script
+  // Get public key hash via Rust
+  const publicKeyHashHex = await tauriInvoke<string>('pubkey_to_hash160', { pubKeyHex: publicKeyHex })
+
+  // Create the OP_PUSH_TX timelock locking script (pure JS — no SDK dependency)
   const timelockScript = createTimelockScript(publicKeyHashHex, unlockBlock)
 
-  // Generate locking script for the source address (for signing inputs)
-  const sourceLockingScript = new P2PKH().lock(fromAddress)
-
-  const tx = new Transaction()
+  // Generate locking script hex for the source address (pure JS)
+  const sourceLockingScriptHex = p2pkhLockingScriptHex(fromAddress)
 
   // Select UTXOs
   const inputsToUse: UTXO[] = []
@@ -143,62 +150,36 @@ export async function lockBSV(
     return err(new InsufficientFundsError(satoshis + fee, totalInput))
   }
 
-  // Add inputs
-  for (const utxo of inputsToUse) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        privateKey,
-        'all',
-        false,
-        utxo.satoshis,
-        sourceLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
-
-  // Add locked output (output 0)
-  const lockScriptBin = timelockScript.toBinary()
-  const lockScriptBytes: number[] = []
-  for (let i = 0; i < lockScriptBin.length; i++) {
-    lockScriptBytes.push(lockScriptBin[i]!)
-  }
-  tx.addOutput({
-    lockingScript: LockingScript.fromBinary(lockScriptBytes),
-    satoshis
+  // Build and sign the lock transaction entirely in Rust.
+  // The Rust command handles: input construction, custom timelock output,
+  // optional OP_RETURN output, change output, and signing.
+  const buildResult = await tauriInvoke<{
+    rawTx: string
+    txid: string
+  }>('build_lock_tx_from_store', {
+    selectedUtxos: inputsToUse.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.script ?? sourceLockingScriptHex
+    })),
+    lockSatoshis: satoshis,
+    timelockScriptHex: timelockScript.toHex(),
+    changeAddress: fromAddress,
+    changeSatoshis: change,
+    opReturnHex: ordinalOrigin ? createWrootzOpReturnHex('lock', ordinalOrigin) : undefined
   })
 
-  // Add OP_RETURN with ordinal reference if provided (output 1)
-  if (ordinalOrigin) {
-    const opReturnScript = createWrootzOpReturn('lock', ordinalOrigin)
-    tx.addOutput({
-      lockingScript: opReturnScript,
-      satoshis: 0
-    })
-  }
-
-  // Add change output if there is any change
-  if (change > 0) {
-    tx.addOutput({
-      lockingScript: new P2PKH().lock(fromAddress),
-      satoshis: change
-    })
-  }
-
-  await tx.sign()
+  const rawTx = buildResult.rawTx
+  const pendingTxid = buildResult.txid
 
   // Get the UTXOs we're about to spend
   const utxosToSpend = inputsToUse.map(u => ({ txid: u.txid, vout: u.vout }))
 
-  // Compute txid before broadcast for pending marking
-  const pendingTxid = tx.id('hex')
-
   // Mark pending -> broadcast -> rollback on failure (shared pattern)
   let txid: string
   try {
-    txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
+    txid = await executeBroadcast(rawTx, pendingTxid, utxosToSpend)
   } catch (broadcastError) {
     return err(new AppError(
       broadcastError instanceof Error ? broadcastError.message : 'Broadcast failed',
@@ -212,7 +193,7 @@ export async function lockBSV(
     satoshis,
     lockingScript: timelockScript.toHex(),
     unlockBlock,
-    publicKeyHex: publicKey.toString(),
+    publicKeyHex,
     createdAt: Date.now(),
     lockBlock
   }
@@ -223,7 +204,7 @@ export async function lockBSV(
     await withTransaction(async () => {
       await recordSentTransaction(
         txid,
-        tx.toHex(),
+        rawTx,
         `Locked ${satoshis} sats until block ${unlockBlock}`,
         ['lock'],
         -(satoshis + fee),  // Negative: locked amount + mining fee
@@ -233,12 +214,14 @@ export async function lockBSV(
 
       // Track change UTXO so balance stays correct until next sync
       if (change > 0) {
+        // Determine change output index: after lock output (0), optional OP_RETURN (1), then change
+        const changeVout = ordinalOrigin ? 2 : 1
         try {
           await addUTXO({
             txid,
-            vout: tx.outputs.length - 1, // Change is always last output
+            vout: changeVout,
             satoshis: change,
-            lockingScript: new P2PKH().lock(fromAddress).toHex(),
+            lockingScript: sourceLockingScriptHex,
             address: fromAddress,
             basket: 'default',
             spendable: true,

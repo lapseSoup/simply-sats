@@ -66,39 +66,6 @@ const {
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('@bsv/sdk', () => {
-  class MockTransaction {
-    _hex: string
-    _id: string
-    constructor() {
-      this._hex = 'deadbeef'
-      this._id = 'mock-tx-id-from-obj'
-    }
-    toHex() { return this._hex }
-    id(_encoding: string) { return this._id }
-  }
-  class MockPrivateKey {
-    _wif: string
-    constructor(wif?: string) { this._wif = wif ?? 'default-wif' }
-    static fromWif(wif: string) { return new MockPrivateKey(wif) }
-    toPublicKey() {
-      return {
-        toAddress: () => `addr_${this._wif}`
-      }
-    }
-  }
-  class MockPublicKey {
-    _hex: string
-    constructor(hex?: string) { this._hex = hex ?? 'mock-pubkey' }
-    static fromString(hex: string) { return new MockPublicKey(hex) }
-  }
-  return {
-    PrivateKey: MockPrivateKey,
-    PublicKey: MockPublicKey,
-    Transaction: MockTransaction,
-  }
-})
-
 vi.mock('../keyDerivation', () => ({
   deriveChildKey: (...args: unknown[]) => mockDeriveChildPrivateKey(...args),
 }))
@@ -171,7 +138,6 @@ import {
   consolidateUtxos,
   getAllSpendableUTXOs,
 } from './transactions'
-import { Transaction } from '@bsv/sdk'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -263,13 +229,16 @@ describe('Transaction Service', () => {
       expect(txid).toBe(MOCK_TXID)
     })
 
-    it('should broadcast a Transaction object using toHex and id', async () => {
+    it('should broadcast a TransactionLike object using toHex and id', async () => {
       mockInfraBroadcast.mockResolvedValue(MOCK_TXID)
-      const tx = new Transaction()
+      const tx = {
+        toHex: () => 'deadbeef',
+        id: (_encoding: string) => 'mock-tx-id-from-obj',
+      }
 
       const txid = await broadcastTransaction(tx)
 
-      // Transaction.toHex() returns 'deadbeef', id('hex') returns 'mock-tx-id-from-obj'
+      // TransactionLike.toHex() returns 'deadbeef', id('hex') returns 'mock-tx-id-from-obj'
       expect(mockInfraBroadcast).toHaveBeenCalledWith('deadbeef', 'mock-tx-id-from-obj')
       expect(txid).toBe(MOCK_TXID)
     })

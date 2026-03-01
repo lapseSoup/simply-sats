@@ -3,7 +3,6 @@
  * Fetching, scanning, and transferring 1Sat Ordinals
  */
 
-import { PrivateKey, P2PKH, Transaction, Script } from '@bsv/sdk'
 import type { UTXO, Ordinal, GpOrdinalItem, OrdinalDetails } from './types'
 import { gpOrdinalsApi } from '../../infrastructure/api/clients'
 import { getWocClient } from '../../infrastructure/api/wocClient'
@@ -27,6 +26,7 @@ import {
   isOneSatOutput,
   formatOrdinalOrigin
 } from '../../domain/ordinals'
+import { isTauri, tauriInvoke } from '../../utils/tauri'
 
 // Create a child logger for ordinals-specific logging
 const ordLogger = walletLogger
@@ -254,44 +254,16 @@ export async function transferOrdinal(
   fundingUtxos: UTXO[],
   accountId: number
 ): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('Ordinal transfers require Tauri runtime')
+  }
+
   // Acquire sync lock to prevent concurrent sync from modifying UTXOs during transfer
   const releaseLock = await acquireSyncLock(accountId)
   try {
-    const ordPrivateKey = PrivateKey.fromWif(ordWif)
-    const ordPublicKey = ordPrivateKey.toPublicKey()
-    const ordFromAddress = ordPublicKey.toAddress()
-    // Use the stored locking script if available (ordinals have inscription envelope scripts,
-    // not plain P2PKH). Falling back to derived P2PKH only when no script is provided.
-    const ordSourceLockingScript = ordinalUtxo.script
-      ? Script.fromHex(ordinalUtxo.script)
-      : new P2PKH().lock(ordFromAddress)
-
-    const fundingPrivateKey = PrivateKey.fromWif(fundingWif)
-    const fundingPublicKey = fundingPrivateKey.toPublicKey()
-    const fundingFromAddress = fundingPublicKey.toAddress()
-    const fundingSourceLockingScript = new P2PKH().lock(fundingFromAddress)
-
-    const tx = new Transaction()
-
-    // Add ordinal input first (the 1-sat inscription)
-    tx.addInput({
-      sourceTXID: ordinalUtxo.txid,
-      sourceOutputIndex: ordinalUtxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        ordPrivateKey,
-        'all',
-        false,
-        ordinalUtxo.satoshis,
-        ordSourceLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-
-    // Select funding UTXOs first, then calculate fee with actual input count
+    // Select funding UTXOs — use preliminary estimate for selection loop
     const fundingToUse: UTXO[] = []
     let totalFunding = 0
-
-    // Use preliminary estimate for selection loop
     const prelimFee = calculateTxFee(1 + Math.min(fundingUtxos.length, 2), 2)
     for (const utxo of fundingUtxos) {
       fundingToUse.push(utxo)
@@ -301,60 +273,40 @@ export async function transferOrdinal(
 
     // Recalculate fee with actual input count
     const estimatedFee = calculateTxFee(1 + fundingToUse.length, 2)
-
     if (totalFunding < estimatedFee) {
       throw new Error(`Insufficient funds for fee (need ~${estimatedFee} sats)`)
     }
 
-    // Add funding inputs
-    for (const utxo of fundingToUse) {
-      tx.addInput({
-        sourceTXID: utxo.txid,
-        sourceOutputIndex: utxo.vout,
-        unlockingScriptTemplate: new P2PKH().unlock(
-          fundingPrivateKey,
-          'all',
-          false,
-          utxo.satoshis,
-          fundingSourceLockingScript
-        ),
-        sequence: 0xffffffff
-      })
-    }
-
-    // Add ordinal output first (important: ordinals go to first output)
-    tx.addOutput({
-      lockingScript: new P2PKH().lock(toAddress),
-      satoshis: 1 // Always 1 sat for ordinals
+    // Build and sign via Rust backend
+    const built = await tauriInvoke<{
+      rawTx: string
+      txid: string
+      fee: number
+      change: number
+      spentOutpoints: Array<{ txid: string; vout: number }>
+    }>('build_ordinal_transfer_tx', {
+      ordWif,
+      ordinalUtxo: {
+        txid: ordinalUtxo.txid,
+        vout: ordinalUtxo.vout,
+        satoshis: ordinalUtxo.satoshis,
+        script: ordinalUtxo.script ?? '',
+      },
+      toAddress,
+      fundingWif,
+      fundingUtxos: fundingToUse.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script ?? '',
+      })),
     })
 
-    // Calculate actual fee and change
-    const totalInput = ordinalUtxo.satoshis + totalFunding
-    const actualFee = calculateTxFee(1 + fundingToUse.length, 2)
-    const change = totalInput - 1 - actualFee
+    const utxosToSpend = built.spentOutpoints
+    const actualFee = built.fee
 
-    // Add change output if there is any change
-    // Note: BSV has no dust limit - all change amounts are valid
-    if (change > 0) {
-      tx.addOutput({
-        lockingScript: new P2PKH().lock(fundingFromAddress),
-        satoshis: change
-      })
-    }
-
-    await tx.sign()
-
-    // Get the UTXOs we're about to spend
-    const utxosToSpend = [
-      { txid: ordinalUtxo.txid, vout: ordinalUtxo.vout },
-      ...fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
-    ]
-
-    // Compute txid before broadcast for pending marking
-    const pendingTxid = tx.id('hex')
-
-    // Mark pending → broadcast → rollback on failure (shared pattern)
-    const txid = await executeBroadcast(tx, pendingTxid, utxosToSpend)
+    // Mark pending -> broadcast -> rollback on failure (shared pattern)
+    const txid = await executeBroadcast(built.rawTx, built.txid, utxosToSpend)
 
     // Track transaction locally
     try {
@@ -375,7 +327,7 @@ export async function transferOrdinal(
 
       await recordSentTransaction(
         txid,
-        tx.toHex(),
+        built.rawTx,
         `Transferred ordinal ${ordinalOrigin} to ${toAddress.slice(0, 8)}...`,
         ['ordinal', 'transfer'],
         -actualFee  // Fee sats only — the ordinal sat is not counted in BSV balance

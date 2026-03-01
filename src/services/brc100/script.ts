@@ -4,7 +4,15 @@
  * Script building functions for BRC-100 operations.
  */
 
-import { LockingScript } from '@bsv/sdk'
+/**
+ * Minimal script object compatible with the Transaction builder interface.
+ * Replaces the @bsv/sdk LockingScript type with a lightweight implementation
+ * that provides the same API surface needed by callers.
+ */
+export interface ScriptLike {
+  toHex(): string
+  toBinary(): number[]
+}
 
 /**
  * Encode a number for use in Bitcoin script
@@ -79,22 +87,21 @@ export function createWrootzOpReturn(action: string, data: string): string {
 }
 
 /**
- * Convert a hex string to a proper LockingScript object
- * Handles all BSV SDK requirements including toHex() and toUint8Array()
+ * Convert a hex string to a ScriptLike object.
+ * Provides toHex() and toBinary() methods compatible with the Transaction builder interface.
  */
-export function convertToLockingScript(scriptHex: string): LockingScript {
-  const scriptBytes = new Uint8Array(
-    scriptHex.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16))
-  )
-  // Convert Uint8Array to number[] for BSV SDK
-  const bytesArray: number[] = Array.from(scriptBytes)
-  return LockingScript.fromBinary(bytesArray)
+export function convertToLockingScript(scriptHex: string): ScriptLike {
+  const bytes = scriptHex.match(/.{1,2}/g)!.map((byte: string) => parseInt(byte, 16))
+  return {
+    toHex: () => scriptHex,
+    toBinary: () => bytes
+  }
 }
 
 /**
- * Create a minimal LockingScript-compatible object from hex
- * Used for Transaction output construction where we only need toHex()
+ * Create a minimal ScriptLike object from hex.
+ * Used for Transaction output construction where we only need toHex().
  */
-export function createScriptFromHex(scriptHex: string): LockingScript {
+export function createScriptFromHex(scriptHex: string): ScriptLike {
   return convertToLockingScript(scriptHex)
 }

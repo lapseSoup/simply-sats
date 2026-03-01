@@ -19,12 +19,16 @@ const {
   mockGetUtxos,
   mockCreateAccount,
   mockBroadcastTransaction,
+  mockIsTauri,
+  mockTauriInvoke,
 } = vi.hoisted(() => ({
   mockDecrypt: vi.fn(),
   mockIsEncryptedData: vi.fn(() => true),
   mockGetUtxos: vi.fn(),
   mockCreateAccount: vi.fn(),
   mockBroadcastTransaction: vi.fn(),
+  mockIsTauri: vi.fn(() => true),
+  mockTauriInvoke: vi.fn(),
 }))
 
 // ---------- Mocks ----------
@@ -60,18 +64,15 @@ vi.mock('./logger', () => ({
   walletLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-// Mock @bsv/sdk classes used in executeSweep
-vi.mock('@bsv/sdk', () => ({
-  PrivateKey: { fromWif: vi.fn(() => ({ toPublicKey: () => ({ toString: () => 'pubkey' }) })) },
-  P2PKH: vi.fn(() => ({
-    lock: vi.fn(() => ({ toHex: () => 'lockhex' })),
-    unlock: vi.fn(),
-  })),
-  Transaction: vi.fn(() => ({
-    addInput: vi.fn(),
-    addOutput: vi.fn(),
-    sign: vi.fn(),
-  })),
+// Mock Tauri utils (used for WIF validation and transaction building)
+vi.mock('../utils/tauri', () => ({
+  isTauri: mockIsTauri,
+  tauriInvoke: mockTauriInvoke,
+}))
+
+// Mock domain transaction builder (used for locking script generation)
+vi.mock('../domain/transaction/builder', () => ({
+  p2pkhLockingScriptHex: vi.fn((addr: string) => `script_for_${addr}`),
 }))
 
 import type { RecoveredAccount } from './backupRecovery'
@@ -120,6 +121,9 @@ const makeUtxo = (sats: number, txid = 'tx' + sats): UTXO => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Default: Tauri available, keys_from_wif returns valid key info
+  mockIsTauri.mockReturnValue(true)
+  mockTauriInvoke.mockResolvedValue({ wif: 'test', address: 'testaddr', pubKey: 'testpub' })
 })
 
 // ---------- readBackupFolder ----------

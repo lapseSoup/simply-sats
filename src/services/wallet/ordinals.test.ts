@@ -30,6 +30,8 @@ const {
   mockIsOneSatOutput,
   mockFormatOrdinalOrigin,
   mockAcquireSyncLock,
+  mockIsTauri,
+  mockTauriInvoke,
 } = vi.hoisted(() => ({
   mockGpOrdinalsGet: vi.fn(),
   mockGetUtxosSafe: vi.fn(),
@@ -48,6 +50,8 @@ const {
   mockIsOneSatOutput: vi.fn(),
   mockFormatOrdinalOrigin: vi.fn(),
   mockAcquireSyncLock: vi.fn(),
+  mockIsTauri: vi.fn(),
+  mockTauriInvoke: vi.fn(),
 }))
 
 // ---------------------------------------------------------------------------
@@ -106,42 +110,14 @@ vi.mock('../../domain/ordinals', () => ({
   formatOrdinalOrigin: (...args: unknown[]) => mockFormatOrdinalOrigin(...args),
 }))
 
-// Mock @bsv/sdk — we need PrivateKey, PublicKey, P2PKH, Transaction
-vi.mock('@bsv/sdk', () => {
-  const mockSign = vi.fn().mockResolvedValue(undefined)
-  class MockTransaction {
-    _inputs: unknown[] = []
-    _outputs: unknown[] = []
-    addInput(input: unknown) { this._inputs.push(input) }
-    addOutput(output: unknown) { this._outputs.push(output) }
-    async sign() { return mockSign() }
-    toHex() { return 'deadbeef' }
-    id(_enc: string) { return 'mock-pending-txid' }
-  }
-  class MockPrivateKey {
-    _wif: string
-    constructor(wif?: string) { this._wif = wif ?? 'default-wif' }
-    static fromWif(wif: string) { return new MockPrivateKey(wif) }
-    toPublicKey() {
-      return {
-        toAddress: () => `addr_${this._wif}`,
-      }
-    }
-  }
-  class MockP2PKH {
-    lock(_addr: string) { return { toHex: () => `lockscript` } }
-    unlock(..._args: unknown[]) { return {} }
-  }
-  class MockScript {
-    static fromHex(_hex: string) { return { toHex: () => _hex } }
-  }
-  return {
-    PrivateKey: MockPrivateKey,
-    Transaction: MockTransaction,
-    P2PKH: MockP2PKH,
-    Script: MockScript,
-  }
-})
+vi.mock('../../utils/tauri', () => ({
+  isTauri: (...args: unknown[]) => mockIsTauri(...args),
+  tauriInvoke: (...args: unknown[]) => mockTauriInvoke(...args),
+}))
+
+vi.mock('../../infrastructure/database', () => ({
+  markOrdinalTransferred: vi.fn().mockResolvedValue(undefined),
+}))
 
 // ---------------------------------------------------------------------------
 // Import under test
@@ -483,7 +459,24 @@ describe('Ordinals Service', () => {
       { txid: 'bb'.repeat(32), vout: 0, satoshis: 10000, script: '76a914...88ac' },
     ]
 
+    /** Default result from the Tauri build_ordinal_transfer_tx command */
+    function makeBuiltOrdinalTx(overrides: Record<string, unknown> = {}) {
+      return {
+        rawTx: 'deadbeef',
+        txid: 'mock-pending-txid',
+        fee: 200,
+        change: 9799,
+        spentOutpoints: [
+          { txid: ordinalUtxo.txid, vout: 0 },
+          { txid: fundingUtxos[0]!.txid, vout: 0 },
+        ],
+        ...overrides,
+      }
+    }
+
     beforeEach(() => {
+      mockIsTauri.mockReturnValue(true)
+      mockTauriInvoke.mockResolvedValue(makeBuiltOrdinalTx())
       mockCalculateTxFee.mockReturnValue(200)
       mockExecuteBroadcast.mockResolvedValue(MOCK_TXID)
       mockRecordSentTransaction.mockResolvedValue(undefined)
@@ -495,10 +488,15 @@ describe('Ordinals Service', () => {
       const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
+      expect(mockTauriInvoke).toHaveBeenCalledWith('build_ordinal_transfer_tx', expect.objectContaining({
+        ordWif,
+        toAddress,
+        fundingWif,
+      }))
       expect(mockExecuteBroadcast).toHaveBeenCalled()
       expect(mockRecordSentTransaction).toHaveBeenCalledWith(
         MOCK_TXID,
-        expect.any(String),
+        'deadbeef',
         expect.stringContaining('Transferred ordinal'),
         ['ordinal', 'transfer'],
         expect.any(Number)  // negative fee sats
@@ -536,6 +534,18 @@ describe('Ordinals Service', () => {
       const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, multipleUtxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
+      // Should only pass needed funding UTXOs to Tauri (first one has 5000 which > 150 + 100)
+      const invokeCall = mockTauriInvoke.mock.calls[0]!
+      const args = invokeCall[1] as { fundingUtxos: unknown[] }
+      expect(args.fundingUtxos).toHaveLength(1)
+    })
+
+    it('should throw when not running in Tauri', async () => {
+      mockIsTauri.mockReturnValue(false)
+
+      await expect(
+        transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos, 1)
+      ).rejects.toThrow('Ordinal transfers require Tauri runtime')
     })
   })
 })

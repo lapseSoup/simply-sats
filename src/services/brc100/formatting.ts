@@ -3,9 +3,11 @@
  *
  * Handles building and broadcasting transactions from createAction requests,
  * including coin selection, output construction, and database tracking.
+ *
+ * Transaction building is delegated to the Tauri (Rust) backend.
+ * No @bsv/sdk imports — all cryptographic operations happen in Rust.
  */
 
-import { PrivateKey, P2PKH, Transaction } from '@bsv/sdk'
 import { brc100Logger } from '../logger'
 import type { WalletKeys } from '../wallet'
 import { getUTXOs, calculateTxFee, getWifForOperation } from '../wallet'
@@ -21,22 +23,28 @@ import {
 } from '../overlay'
 import { parseInscription, isInscriptionScript } from '../inscription'
 import type { CreateActionRequest } from './types'
-import { convertToLockingScript } from './script'
 import { selectCoins } from '../../domain/transaction/coinSelection'
 import { isInscriptionTransaction } from './utils'
 import { type Result, ok, err } from '../../domain/types'
+import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
+import { isTauri, tauriInvoke } from '../../utils/tauri'
 
 // Build and broadcast a transaction from createAction request
+// Transaction building requires the Tauri runtime (Rust backend).
 export async function buildAndBroadcastAction(
   keys: WalletKeys,
   actionRequest: CreateActionRequest
 ): Promise<Result<{ txid: string }, string>> {
+  if (!isTauri()) {
+    return err('BRC-100 action transaction building requires Tauri runtime')
+  }
+
   try {
   const walletWif = await getWifForOperation('wallet', 'buildAndBroadcastAction', keys)
-  const privateKey = PrivateKey.fromWif(walletWif)
-  const publicKey = privateKey.toPublicKey()
-  const fromAddress = publicKey.toAddress()
-  const sourceLockingScript = new P2PKH().lock(fromAddress)
+  // Derive address from WIF via Tauri
+  const keyInfo = await tauriInvoke<{ address: string }>('keys_from_wif', { wif: walletWif })
+  const fromAddress = keyInfo.address
+  const fromScriptHex = p2pkhLockingScriptHex(fromAddress)
 
   // Check if this is an inscription
   const isInscription = isInscriptionTransaction(actionRequest)
@@ -78,8 +86,6 @@ export async function buildAndBroadcastAction(
     return err('Total output amount exceeds safe integer range')
   }
 
-  const tx = new Transaction()
-
   // Use domain coin selection (smallest-first, proper fee buffer)
   const numOutputs = actionRequest.outputs.length + 1 // outputs + change
   const estimatedFee = calculateTxFee(Math.min(utxos.length, 3), numOutputs)
@@ -100,47 +106,22 @@ export async function buildAndBroadcastAction(
     return err(`Insufficient funds (need ${fee} sats for fee)`)
   }
 
-  // Add inputs
-  for (const utxo of inputsToUse) {
-    tx.addInput({
-      sourceTXID: utxo.txid,
-      sourceOutputIndex: utxo.vout,
-      unlockingScriptTemplate: new P2PKH().unlock(
-        privateKey,
-        'all',
-        false,
-        utxo.satoshis,
-        sourceLockingScript
-      ),
-      sequence: 0xffffffff
-    })
-  }
+  // Build and sign the transaction via Tauri
+  const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_p2pkh_tx', {
+    wif: walletWif,
+    toAddress: fromAddress,
+    satoshis: totalOutput,
+    selectedUtxos: inputsToUse.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      satoshis: u.satoshis,
+      script: u.script ?? fromScriptHex
+    })),
+    totalInput,
+    feeRate: 0.1
+  })
 
-  // Add outputs from request
-  for (const output of actionRequest.outputs) {
-    // Convert hex string to proper Script object
-    const lockingScript = convertToLockingScript(output.lockingScript)
-    tx.addOutput({
-      lockingScript,
-      satoshis: output.satoshis
-    })
-  }
-
-  // Add change output if there is any change
-  // Note: BSV has no dust limit - all change amounts are valid
-  if (change > 0) {
-    tx.addOutput({
-      lockingScript: new P2PKH().lock(fromAddress),
-      satoshis: change
-    })
-  }
-
-  // Set locktime if specified
-  if (actionRequest.lockTime) {
-    tx.lockTime = actionRequest.lockTime
-  }
-
-  await tx.sign()
+  const rawTx = txResult.rawTx
 
   // Determine topic based on output baskets and transaction type
   let topic: string = TOPICS.DEFAULT
@@ -154,7 +135,7 @@ export async function buildAndBroadcastAction(
   else if (hasOrdinalsBasket || isInscription) topic = TOPICS.ORDINALS
 
   // Broadcast via overlay network AND WhatsOnChain
-  const broadcastResult = await broadcastWithOverlay(tx.toHex(), topic)
+  const broadcastResult = await broadcastWithOverlay(rawTx, topic)
 
   // Check if broadcast succeeded
   const overlaySuccess = broadcastResult.overlayResults.some(r => r.accepted)
@@ -164,7 +145,7 @@ export async function buildAndBroadcastAction(
     return err(`Failed to broadcast: ${(!broadcastResult.minerBroadcast.ok ? broadcastResult.minerBroadcast.error : undefined) || 'No nodes accepted'}`)
   }
 
-  const txid = broadcastResult.txid || tx.id('hex')
+  const txid = broadcastResult.txid || txResult.txid
 
   // Log overlay results
   brc100Logger.info('Overlay broadcast results', {
@@ -179,7 +160,7 @@ export async function buildAndBroadcastAction(
     // Record the transaction
     const addTxResult = await addTransaction({
       txid,
-      rawTx: tx.toHex(),
+      rawTx,
       description: actionRequest.description,
       createdAt: Date.now(),
       status: 'pending',
@@ -241,7 +222,7 @@ export async function buildAndBroadcastAction(
         txid,
         vout: changeVout,
         satoshis: change,
-        lockingScript: new P2PKH().lock(fromAddress).toHex(),
+        lockingScript: fromScriptHex,
         basket: BASKETS.DEFAULT,
         spendable: true,
         createdAt: Date.now(),

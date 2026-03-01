@@ -9,7 +9,6 @@
 // Re-export domain layer functions with same signatures as old code
 export {
   deriveWalletKeys as restoreWallet,
-  deriveKeysFromPath,
   keysFromWif,
   WALLET_PATHS
 } from '../domain/wallet/keyDerivation'

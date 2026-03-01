@@ -155,7 +155,7 @@ describe('createWrootzOpReturn', () => {
 })
 
 describe('convertToLockingScript', () => {
-  it('should convert hex string to LockingScript', () => {
+  it('should convert hex string to ScriptLike with toHex()', () => {
     // Simple P2PKH script (OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG)
     const scriptHex = '76a914' + '00'.repeat(20) + '88ac'
 
@@ -164,6 +164,18 @@ describe('convertToLockingScript', () => {
     expect(lockingScript).toBeDefined()
     expect(typeof lockingScript.toHex).toBe('function')
     expect(lockingScript.toHex()).toBe(scriptHex)
+  })
+
+  it('should provide toBinary() returning correct byte array', () => {
+    const scriptHex = '76a914' + '00'.repeat(20) + '88ac'
+
+    const lockingScript = convertToLockingScript(scriptHex)
+
+    const bytes = lockingScript.toBinary()
+    expect(bytes[0]).toBe(0x76)
+    expect(bytes[1]).toBe(0xa9)
+    expect(bytes[2]).toBe(0x14)
+    expect(bytes.length).toBe(25) // 3 prefix + 20 hash + 2 suffix
   })
 
   it('should handle OP_RETURN scripts', () => {
@@ -176,7 +188,7 @@ describe('convertToLockingScript', () => {
 })
 
 describe('createScriptFromHex', () => {
-  it('should create LockingScript from hex (alias for convertToLockingScript)', () => {
+  it('should create ScriptLike from hex (alias for convertToLockingScript)', () => {
     const scriptHex = '76a914' + 'ab'.repeat(20) + '88ac'
 
     const script1 = createScriptFromHex(scriptHex)

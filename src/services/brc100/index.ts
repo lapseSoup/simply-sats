@@ -62,6 +62,8 @@ export {
   convertToLockingScript
 } from './script'
 
+export type { ScriptLike } from './script'
+
 // Re-export utility functions
 export {
   getBlockHeight,
