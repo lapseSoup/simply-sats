@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react'
-import { PrivateKey } from '@bsv/sdk'
 import {
   RefreshCw,
   Users,
@@ -51,8 +50,7 @@ export function SettingsAdvanced() {
     try {
       const { getWifForOperation } = await import('../../../services/wallet')
       const identityWif = await getWifForOperation('identity', 'checkMessageBox', wallet)
-      const identityPrivKey = PrivateKey.fromWif(identityWif)
-      const newPayments = await checkForPayments(identityPrivKey)
+      const newPayments = await checkForPayments(identityWif)
       setPaymentNotifications(getPaymentNotifications())
       if (newPayments.length > 0) {
         showToast(`Found ${newPayments.length} new payment(s)!`)
@@ -78,9 +76,8 @@ export function SettingsAdvanced() {
       try {
         const { getWifForOperation } = await import('../../../services/wallet')
         const identityWif = await getWifForOperation('identity', 'debugInvoiceFinder', wallet)
-        const identityPrivKey = PrivateKey.fromWif(identityWif)
         for (const sender of senders) {
-          const result = debugFindInvoiceNumber(identityPrivKey, sender, debugAddressInput)
+          const result = await debugFindInvoiceNumber(identityWif, sender, debugAddressInput)
           if (result.found) {
             setDebugResult(`Found: "${result.invoiceNumber}"`)
             setDebugSearching(false)

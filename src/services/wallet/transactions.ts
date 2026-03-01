@@ -6,9 +6,14 @@
  * This module handles orchestration: validation, UTXO locking, broadcasting, and DB recording.
  */
 
-import { PrivateKey, PublicKey, Transaction } from '@bsv/sdk'
 import type { UTXO, ExtendedUTXO } from './types'
 import { getFeeRate } from './fees'
+
+/** Minimal interface for Transaction-like objects (replaces @bsv/sdk Transaction import) */
+interface TransactionLike {
+  toHex(): string
+  id(format: string): string
+}
 import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { selectCoins, selectCoinsMultiKey } from '../../domain/transaction/coinSelection'
 import {
@@ -27,7 +32,7 @@ import {
   BASKETS
 } from '../sync'
 import { getDerivedAddresses, withTransaction, addUTXO } from '../database'
-import { deriveChildPrivateKey } from '../keyDerivation'
+import { deriveChildKey } from '../keyDerivation'
 import { walletLogger } from '../logger'
 import { resetInactivityTimer } from '../autoLock'
 import { acquireSyncLock } from '../cancellation'
@@ -47,7 +52,7 @@ import { type Result, ok, err } from '../../domain/types'
  * Accepts either a Transaction object or a raw hex string.
  * Delegates to the infrastructure broadcastService for the actual cascade.
  */
-export async function broadcastTransaction(txOrHex: Transaction | string): Promise<string> {
+export async function broadcastTransaction(txOrHex: TransactionLike | string): Promise<string> {
   const txhex = typeof txOrHex === 'string' ? txOrHex : txOrHex.toHex()
   const localTxid = typeof txOrHex === 'string' ? undefined : txOrHex.id('hex')
   return infraBroadcast(txhex, localTxid)
@@ -80,7 +85,7 @@ function validateSendRequest(toAddress: string, satoshis: number): Result<void, 
  * Accepts either a Transaction object or a raw hex string.
  */
 export async function executeBroadcast(
-  txOrHex: Transaction | string,
+  txOrHex: TransactionLike | string,
   pendingTxid: string,
   spentOutpoints: { txid: string; vout: number }[]
 ): Promise<string> {
@@ -278,8 +283,6 @@ export async function getAllSpendableUTXOs(walletWif: string, accountId?: number
 
   // Get UTXOs from default basket
   const defaultUtxos = await getSpendableUtxosFromDatabase(BASKETS.DEFAULT)
-  const walletPrivKey = PrivateKey.fromWif(walletWif)
-  const walletAddress = walletPrivKey.toPublicKey().toAddress()
 
   for (const u of defaultUtxos) {
     result.push({
@@ -288,7 +291,7 @@ export async function getAllSpendableUTXOs(walletWif: string, accountId?: number
       satoshis: u.satoshis,
       script: u.lockingScript,
       wif: walletWif,
-      address: walletAddress
+      address: u.address || ''
     })
   }
 
@@ -303,12 +306,12 @@ export async function getAllSpendableUTXOs(walletWif: string, accountId?: number
       // Re-derive the child private key from (identityKey + senderPubkey + invoiceNumber)
       // so we never rely on the WIF stored in the database
       try {
-        const childKey = deriveChildPrivateKey(
-          PrivateKey.fromWif(identityWif),
-          PublicKey.fromString(d.senderPubkey),
+        const childKey = await deriveChildKey(
+          identityWif,
+          d.senderPubkey,
           d.invoiceNumber
         )
-        derivedWifMap.set(d.address, childKey.toWif())
+        derivedWifMap.set(d.address, childKey.wif)
       } catch (e) {
         walletLogger.warn('getAllSpendableUTXOs: failed to re-derive child key', {
           address: d.address,

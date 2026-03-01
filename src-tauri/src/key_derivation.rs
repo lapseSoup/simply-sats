@@ -13,11 +13,10 @@ use bip32::XPrv;
 use bip39::Mnemonic;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use ripemd::Ripemd160;
-use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
+
+use crate::bsv_sdk_adapter::{sdk_address_from_wif, sdk_privkey_to_wif, sdk_pubkey_hex_from_wif};
 
 /// Matches the TypeScript `WalletKeys` interface exactly.
 /// Debug intentionally omitted to prevent accidental secret logging.
@@ -89,60 +88,18 @@ fn derive_xprv_from_seed(seed: &[u8], path: &str) -> Result<XPrv, String> {
     Ok(key)
 }
 
-/// Convert a 32-byte private key to WIF (Wallet Import Format) for mainnet.
-///
-/// Format: Base58Check( 0x80 || privkey_bytes || 0x01 )
-/// The 0x01 suffix indicates a compressed public key.
-fn privkey_to_wif(privkey_bytes: &[u8; 32]) -> String {
-    let mut payload = Vec::with_capacity(34);
-    payload.push(0x80); // mainnet prefix
-    payload.extend_from_slice(privkey_bytes);
-    payload.push(0x01); // compressed flag
-    bs58::encode(payload)
-        .with_check()
-        .into_string()
-}
-
-/// Derive a compressed public key hex string from a secret key.
-fn pubkey_hex(secp: &Secp256k1<secp256k1::All>, sk: &SecretKey) -> String {
-    let pk = PublicKey::from_secret_key(secp, sk);
-    hex::encode(pk.serialize()) // 33 bytes compressed
-}
-
-/// Derive a P2PKH address from a compressed public key (mainnet).
-///
-/// Address = Base58Check( 0x00 || RIPEMD160(SHA256(compressed_pubkey)) )
-fn pubkey_to_address(secp: &Secp256k1<secp256k1::All>, sk: &SecretKey) -> String {
-    let pk = PublicKey::from_secret_key(secp, sk);
-    let compressed = pk.serialize(); // 33 bytes
-
-    // Hash160 = RIPEMD160(SHA256(pubkey))
-    let sha_hash = Sha256::digest(compressed);
-    let ripe_hash = Ripemd160::digest(sha_hash);
-
-    let mut payload = Vec::with_capacity(21);
-    payload.push(0x00); // mainnet P2PKH prefix
-    payload.extend_from_slice(&ripe_hash);
-
-    bs58::encode(payload).with_check().into_string()
-}
-
 /// Derive a full KeyPair from a BIP-39 seed and BIP-32 path.
 fn derive_keypair(seed: &[u8], path: &str) -> Result<KeyPair, String> {
     let xprv = derive_xprv_from_seed(seed, path)?;
     let mut privkey_bytes: [u8; 32] = xprv.to_bytes().into();
 
-    let secp = Secp256k1::new();
-    let sk = SecretKey::from_slice(&privkey_bytes)
-        .map_err(|e| format!("Invalid secret key: {}", e))?;
-
-    let result = KeyPair {
-        wif: privkey_to_wif(&privkey_bytes),
-        address: pubkey_to_address(&secp, &sk),
-        pub_key: pubkey_hex(&secp, &sk),
-    };
+    let wif = sdk_privkey_to_wif(&privkey_bytes)?;
     privkey_bytes.zeroize();
-    Ok(result)
+
+    let address = sdk_address_from_wif(&wif)?;
+    let pub_key = sdk_pubkey_hex_from_wif(&wif)?;
+
+    Ok(KeyPair { wif, address, pub_key })
 }
 
 /// Parse and validate a mnemonic, returning the 64-byte BIP-39 seed.
@@ -238,45 +195,40 @@ pub fn generate_mnemonic() -> Result<String, String> {
 /// Returns address and compressed public key hex.
 #[tauri::command]
 pub fn keys_from_wif(wif: String) -> Result<serde_json::Value, String> {
-    // Decode Base58Check
-    let decoded = bs58::decode(wif.trim())
+    let wif_str = wif.trim();
+
+    // Validate WIF format: decode Base58Check, check mainnet prefix
+    let decoded = bs58::decode(wif_str)
         .with_check(None)
         .into_vec()
         .map_err(|e| format!("Invalid WIF: {}", e))?;
 
-    // Validate format: 0x80 + 32 bytes + optional 0x01 compression flag
     if decoded.is_empty() || decoded[0] != 0x80 {
         return Err("Invalid WIF prefix (expected 0x80 for mainnet)".into());
     }
 
-    let mut privkey_bytes: [u8; 32] = if decoded.len() == 34 && decoded[33] == 0x01 {
-        // Compressed WIF (most common)
-        decoded[1..33]
-            .try_into()
-            .map_err(|_| "Invalid private key length")?
-    } else if decoded.len() == 33 {
-        // Uncompressed WIF
-        decoded[1..33]
-            .try_into()
-            .map_err(|_| "Invalid private key length")?
-    } else {
+    if decoded.len() != 33 && !(decoded.len() == 34 && decoded[33] == 0x01) {
         return Err(format!(
             "Invalid WIF length: expected 33 or 34 bytes, got {}",
             decoded.len()
         ));
-    };
+    }
 
-    let secp = Secp256k1::new();
-    let sk = SecretKey::from_slice(&privkey_bytes)
-        .map_err(|e| format!("Invalid private key: {}", e))?;
-
-    let result = serde_json::json!({
-        "wif": privkey_to_wif(&privkey_bytes),
-        "address": pubkey_to_address(&secp, &sk),
-        "pubKey": pubkey_hex(&secp, &sk),
-    });
+    // Extract privkey bytes and re-encode as normalized (compressed) WIF
+    let mut privkey_bytes: [u8; 32] = decoded[1..33]
+        .try_into()
+        .map_err(|_| "Invalid private key length")?;
+    let normalized_wif = sdk_privkey_to_wif(&privkey_bytes)?;
     privkey_bytes.zeroize();
-    Ok(result)
+
+    let address = sdk_address_from_wif(&normalized_wif)?;
+    let pub_key = sdk_pubkey_hex_from_wif(&normalized_wif)?;
+
+    Ok(serde_json::json!({
+        "wif": normalized_wif,
+        "address": address,
+        "pubKey": pub_key,
+    }))
 }
 
 #[cfg(test)]

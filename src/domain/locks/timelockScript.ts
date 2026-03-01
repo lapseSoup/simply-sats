@@ -14,7 +14,7 @@
  * @module domain/locks/timelockScript
  */
 
-import { Script, PublicKey } from '@bsv/sdk'
+import { tauriInvoke } from '../../utils/tauri'
 
 // ============================================
 // Script Constants
@@ -40,6 +40,130 @@ export const LOCKUP_SUFFIX = `OP_NOP 0 OP_PICK 0065cd1d OP_LESSTHAN OP_VERIFY 0 
  * Used to identify whether a script hex is a timelock script.
  */
 export const TIMELOCK_SCRIPT_SIGNATURE = '2097dfd76851bf465e8f715593b217714858bbe9570ff3bd5e33840a34e20ff026'
+
+// ============================================
+// Opcode Map for ASM-to-Hex Conversion
+// ============================================
+
+/** BSV script opcode byte values for all opcodes used in the timelock script. */
+const OPCODE_MAP: Record<string, number> = {
+  OP_0: 0x00,
+  OP_1: 0x51,
+  OP_2: 0x52,
+  OP_3: 0x53,
+  OP_4: 0x54,
+  OP_5: 0x55,
+  OP_6: 0x56,
+  OP_7: 0x57,
+  OP_8: 0x58,
+  OP_9: 0x59,
+  OP_NOP: 0x61,
+  OP_IF: 0x63,
+  OP_ELSE: 0x67,
+  OP_ENDIF: 0x68,
+  OP_VERIFY: 0x69,
+  OP_DROP: 0x75,
+  OP_NIP: 0x77,
+  OP_PICK: 0x79,
+  OP_ROLL: 0x7a,
+  OP_SWAP: 0x7c,
+  OP_CAT: 0x7e,
+  OP_SPLIT: 0x7f,
+  OP_NUM2BIN: 0x80,
+  OP_BIN2NUM: 0x81,
+  OP_SIZE: 0x82,
+  OP_EQUAL: 0x87,
+  OP_EQUALVERIFY: 0x88,
+  OP_ADD: 0x93,
+  OP_SUB: 0x94,
+  OP_MUL: 0x95,
+  OP_DIV: 0x96,
+  OP_MOD: 0x97,
+  OP_LESSTHAN: 0x9f,
+  OP_GREATERTHAN: 0xa0,
+  OP_GREATERTHANOREQUAL: 0xa2,
+  OP_HASH160: 0xa9,
+  OP_HASH256: 0xaa,
+  OP_CHECKSIG: 0xac,
+}
+
+/**
+ * Lightweight script object returned by createTimelockScript.
+ *
+ * Provides the same toHex() and toBinary() interface as @bsv/sdk's Script,
+ * but implemented without external dependencies.
+ */
+export interface CompiledScript {
+  /** Get the script as a hex string */
+  toHex(): string
+  /** Get the script as a binary Uint8Array */
+  toBinary(): Uint8Array
+}
+
+/**
+ * Convert a hex string to a Uint8Array.
+ */
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+  }
+  return bytes
+}
+
+/**
+ * Convert BSV script ASM notation to hex string.
+ *
+ * Handles:
+ * - Named opcodes (OP_DUP, OP_HASH160, etc.)
+ * - The token "0" as OP_0 (0x00)
+ * - Hex data with automatic push opcode prefixing (1-75 bytes -> length prefix)
+ *
+ * @param asm - Space-separated ASM tokens
+ * @returns Hex-encoded script
+ */
+function asmToHex(asm: string): string {
+  const tokens = asm.split(/\s+/).filter(t => t.length > 0)
+  let hex = ''
+
+  for (const token of tokens) {
+    // Named opcode
+    if (token.startsWith('OP_')) {
+      const opcode = OPCODE_MAP[token]
+      if (opcode === undefined) {
+        throw new Error(`Unknown opcode: ${token}`)
+      }
+      hex += opcode.toString(16).padStart(2, '0')
+      continue
+    }
+
+    // Token "0" is OP_0
+    if (token === '0') {
+      hex += '00'
+      continue
+    }
+
+    // Hex data push
+    const dataLen = token.length / 2
+    if (dataLen >= 1 && dataLen <= 75) {
+      // Direct push: 1-byte length prefix + data
+      hex += dataLen.toString(16).padStart(2, '0') + token
+    } else if (dataLen >= 76 && dataLen <= 255) {
+      // OP_PUSHDATA1: 0x4c + 1-byte length + data
+      hex += '4c' + dataLen.toString(16).padStart(2, '0') + token
+    } else if (dataLen >= 256 && dataLen <= 65535) {
+      // OP_PUSHDATA2: 0x4d + 2-byte little-endian length + data
+      hex += '4d'
+      hex += (dataLen & 0xff).toString(16).padStart(2, '0')
+      hex += ((dataLen >> 8) & 0xff).toString(16).padStart(2, '0')
+      hex += token
+    } else {
+      throw new Error(`Data push too large: ${dataLen} bytes`)
+    }
+  }
+
+  return hex
+}
 
 // ============================================
 // Byte Conversion Utilities
@@ -112,7 +236,7 @@ export interface ParsedTimelockScript {
  *
  * @param publicKeyHash - Hash160 of the public key (40-char hex string)
  * @param blockHeight - Block height at which the funds can be unlocked
- * @returns Compiled Script object
+ * @returns Compiled script object with toHex() and toBinary() methods
  *
  * @example
  * ```typescript
@@ -120,10 +244,14 @@ export interface ParsedTimelockScript {
  * const scriptHex = script.toHex()
  * ```
  */
-export function createTimelockScript(publicKeyHash: string, blockHeight: number): Script {
+export function createTimelockScript(publicKeyHash: string, blockHeight: number): CompiledScript {
   const nLockTimeHex = int2Hex(blockHeight)
   const scriptASM = `${LOCKUP_PREFIX} ${publicKeyHash} ${nLockTimeHex} ${LOCKUP_SUFFIX}`
-  return Script.fromASM(scriptASM)
+  const scriptHex = asmToHex(scriptASM)
+  return {
+    toHex: () => scriptHex,
+    toBinary: () => hexToBytes(scriptHex),
+  }
 }
 
 /**
@@ -132,7 +260,10 @@ export function createTimelockScript(publicKeyHash: string, blockHeight: number)
  * This allows accurate fee calculation before creating the transaction,
  * avoiding the need to build the full script just to measure it.
  *
- * @param publicKeyHex - Compressed public key hex (66-char string)
+ * The PKH is always 20 bytes, so the script size only varies with the
+ * nLockTime encoding. We use a dummy PKH to compute the size.
+ *
+ * @param _publicKeyHex - Compressed public key hex (66-char string) — unused but kept for API compatibility
  * @param blockHeight - Target block height for the lock
  * @returns Script size in bytes
  *
@@ -142,11 +273,10 @@ export function createTimelockScript(publicKeyHash: string, blockHeight: number)
  * const fee = calculateLockFee(1, size)
  * ```
  */
-export function getTimelockScriptSize(publicKeyHex: string, blockHeight: number): number {
-  const publicKey = PublicKey.fromString(publicKeyHex)
-  const publicKeyHashBytes = publicKey.toHash() as number[]
-  const publicKeyHashHex = publicKeyHashBytes.map(b => b.toString(16).padStart(2, '0')).join('')
-  const script = createTimelockScript(publicKeyHashHex, blockHeight)
+export function getTimelockScriptSize(_publicKeyHex: string, blockHeight: number): number {
+  // PKH is always 20 bytes — use a dummy value since script size is independent of PKH content
+  const dummyPkh = '0'.repeat(40)
+  const script = createTimelockScript(dummyPkh, blockHeight)
   return script.toBinary().length
 }
 
@@ -236,13 +366,11 @@ export function isTimelockScript(scriptHex: string): boolean {
  *
  * @example
  * ```typescript
- * const pkh = publicKeyToHash(wallet.walletPubKey)
+ * const pkh = await publicKeyToHash(wallet.walletPubKey)
  * const parsed = parseTimelockScript(scriptHex)
  * const isOurs = parsed?.publicKeyHash === pkh
  * ```
  */
-export function publicKeyToHash(publicKeyHex: string): string {
-  const publicKey = PublicKey.fromString(publicKeyHex)
-  const hashBytes = publicKey.toHash() as number[]
-  return hashBytes.map(b => b.toString(16).padStart(2, '0')).join('')
+export async function publicKeyToHash(publicKeyHex: string): Promise<string> {
+  return tauriInvoke<string>('pubkey_to_hash160', { pubKeyHex: publicKeyHex })
 }

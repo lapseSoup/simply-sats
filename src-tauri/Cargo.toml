@@ -33,9 +33,8 @@ sha2 = "0.10.9"
 base64 = "0.22"
 bip32 = { version = "0.5.3", features = ["secp256k1"] }
 bip39 = "2.2.2"
-secp256k1 = { version = "0.29.1", features = ["global-context"] }
-ripemd = "0.1.3"
-bs58 = { version = "0.5.1", features = ["check"] }
+secp256k1 = { version = "0.29.1", features = ["global-context"] }  # Used by adapter ECDH — will remove when SDK adds native ECDH
+bs58 = { version = "0.5.1", features = ["check"] }  # WIF mainnet prefix validation
 hmac = "0.12.1"
 hex = "0.4"
 zeroize = "1.8.2"
@@ -46,6 +45,12 @@ log = "0.4"
 env_logger = "0.11"
 rusqlite = { version = "0.31", features = ["bundled"] }  # Pre-init database for fresh installs
 dirs = "5"  # Platform-specific directory paths for pre-init
+
+# BSV SDK — comprehensive BSV blockchain toolkit (pinned to known-good commit)
+bsv-sdk = { git = "https://github.com/Bittoku/bsv-sdk-rust", rev = "4f2f9ce2016d9e3dbbfa9829d58180fb13429742" }
+
+[dev-dependencies]
+ripemd = "0.1.3"  # Only used in adapter byte-comparison tests
 
 [features]
 default = []

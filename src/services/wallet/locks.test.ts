@@ -19,6 +19,18 @@ const { mockDbState } = vi.hoisted(() => {
   }
 })
 
+// ─── Mock utils/tauri ──────────────────────────────────────────────
+vi.mock('../../utils/tauri', () => ({
+  isTauri: () => false,
+  tauriInvoke: async (cmd: string, _args?: Record<string, unknown>) => {
+    if (cmd === 'pubkey_to_hash160') {
+      // Return the same hash that the mock PublicKey.toHash() produces
+      return 'abcdef0102030405060708090a0b0c0d0e0f1011'
+    }
+    throw new Error(`Unmocked Tauri command: ${cmd}`)
+  },
+}))
+
 // ─── Mock @bsv/sdk ─────────────────────────────────────────────────
 vi.mock('@bsv/sdk', () => {
   const mockPublicKeyHash = [0xab, 0xcd, 0xef, 0x01, 0x02, 0x03, 0x04, 0x05,

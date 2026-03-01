@@ -5,7 +5,6 @@
  */
 
 import { useCallback } from 'react'
-import { PrivateKey, PublicKey } from '@bsv/sdk'
 import type { WalletKeys, UTXO, Ordinal, ExtendedUTXO } from '../services/wallet'
 import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import {
@@ -20,7 +19,7 @@ import { listOrdinal } from '../services/wallet/marketplace'
 import {
   getDerivedAddresses
 } from '../infrastructure/database'
-import { deriveChildPrivateKey } from '../services/keyDerivation'
+import { deriveChildKey } from '../services/keyDerivation'
 import {
   getSpendableUtxosFromDatabase
 } from '../services/sync'
@@ -54,12 +53,12 @@ async function buildExtendedUtxos(
       // Re-derive the child private key from (identityKey + senderPubkey + invoiceNumber)
       // so we never need the WIF stored in the database
       try {
-        const childKey = deriveChildPrivateKey(
-          PrivateKey.fromWif(identityWif),
-          PublicKey.fromString(d.senderPubkey),
+        const childKey = await deriveChildKey(
+          identityWif,
+          d.senderPubkey,
           d.invoiceNumber
         )
-        derivedMap.set(d.address, childKey.toWif())
+        derivedMap.set(d.address, childKey.wif)
       } catch (e) {
         walletLogger.warn('Failed to re-derive child key for derived address', {
           address: d.address,

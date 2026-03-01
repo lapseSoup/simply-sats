@@ -138,21 +138,26 @@ describe('BRC-100 Service', () => {
   })
 
   describe('Signing Functions', () => {
-    // Note: These tests validate the signing interface exists
-    // The actual signature format conversion has known issues in brc100.ts
-    // that should be fixed separately
+    // Note: Signing now delegates entirely to Tauri commands.
+    // These tests verify the functions are exported and callable.
+    // Detailed Tauri-mocked tests live in signing.test.ts.
 
     describe('signMessage', () => {
       it('should have signMessage function available', () => {
         expect(typeof signMessage).toBe('function')
       })
 
-      it('should sign a message with identity key', async () => {
-        const message = 'Hello, World!'
-        const signature = await signMessage(await getTestKeys(), message)
+      it('should delegate to Tauri sign_message_from_store', async () => {
+        const { invoke } = await import('@tauri-apps/api/core')
+        vi.mocked(invoke).mockResolvedValueOnce('3045022100abcdef')
 
-        expect(signature).toBeDefined()
-        expect(typeof signature).toBe('string')
+        const signature = await signMessage(await getTestKeys(), 'Hello, World!')
+
+        expect(signature).toBe('3045022100abcdef')
+        expect(invoke).toHaveBeenCalledWith(
+          'sign_message_from_store',
+          expect.objectContaining({ message: 'Hello, World!', keyType: 'identity' })
+        )
       })
     })
 
@@ -161,154 +166,55 @@ describe('BRC-100 Service', () => {
         expect(typeof signData).toBe('function')
       })
 
-      it('should sign with identity key by default', async () => {
+      it('should delegate to Tauri sign_data_from_store', async () => {
+        const { invoke } = await import('@tauri-apps/api/core')
+        vi.mocked(invoke).mockResolvedValueOnce('3045sig_identity')
+
         const data = [1, 2, 3, 4, 5]
         const signature = await signData(await getTestKeys(), data)
 
-        expect(signature).toBeDefined()
-        expect(typeof signature).toBe('string')
-      })
-
-      it('should sign with wallet key when specified', async () => {
-        const data = [1, 2, 3, 4, 5]
-        const sigIdentity = await signData(await getTestKeys(), data, 'identity')
-        const sigWallet = await signData(await getTestKeys(), data, 'wallet')
-
-        expect(sigIdentity).not.toBe(sigWallet)
-      })
-
-      it('should sign with ordinals key when specified', async () => {
-        const data = [1, 2, 3, 4, 5]
-        const sigOrdinals = await signData(await getTestKeys(), data, 'ordinals')
-
-        expect(sigOrdinals).toBeDefined()
-      })
-
-      it('should handle empty data array', async () => {
-        const signature = await signData(await getTestKeys(), [])
-
-        expect(signature).toBeDefined()
+        expect(signature).toBe('3045sig_identity')
+        expect(invoke).toHaveBeenCalledWith(
+          'sign_data_from_store',
+          expect.objectContaining({ keyType: 'identity' })
+        )
       })
     })
 
     describe('verifySignature', () => {
-      it('should verify a valid signature created with signMessage', async () => {
+      it('should delegate to Tauri verify_signature', async () => {
+        const { invoke } = await import('@tauri-apps/api/core')
+        vi.mocked(invoke).mockResolvedValueOnce(true)
+
         const keys = await getTestKeys()
-        const message = 'Hello, World!'
-
-        // Create a signature using signMessage
-        const signatureHex = await signMessage(keys, message)
-
-        // Verify with the corresponding public key
         const result = await verifySignature(
           keys.identityPubKey,
-          message,
-          signatureHex
+          'Hello, World!',
+          '3045022100abcdef'
         )
 
         expect(result).toBe(true)
-      })
-
-      it('should reject signature with wrong message', async () => {
-        const keys = await getTestKeys()
-        const message = 'Hello, World!'
-        const wrongMessage = 'Different message'
-
-        // Create a signature for the original message
-        const signatureHex = await signMessage(keys, message)
-
-        // Try to verify with a different message - should fail
-        const result = await verifySignature(
-          keys.identityPubKey,
-          wrongMessage,
-          signatureHex
+        expect(invoke).toHaveBeenCalledWith(
+          'verify_signature',
+          expect.objectContaining({
+            publicKeyHex: keys.identityPubKey,
+            message: 'Hello, World!',
+            signatureHex: '3045022100abcdef'
+          })
         )
-
-        expect(result).toBe(false)
       })
 
-      it('should reject signature with wrong public key', async () => {
-        const keys = await getTestKeys()
-        const message = 'Hello, World!'
+      it('should return false when Tauri says invalid', async () => {
+        const { invoke } = await import('@tauri-apps/api/core')
+        vi.mocked(invoke).mockResolvedValueOnce(false)
 
-        // Create a signature with identity key
-        const signatureHex = await signMessage(keys, message)
-
-        // Try to verify with a different public key (wallet key instead of identity key)
-        // These are different keys derived from the same mnemonic
-        const result = await verifySignature(
-          keys.walletPubKey,  // Wrong key!
-          message,
-          signatureHex
-        )
-
-        expect(result).toBe(false)
-      })
-
-      it('should return false for empty signature', async () => {
         const result = await verifySignature(
           (await getTestKeys()).identityPubKey,
           'message',
-          ''
+          'bad-sig'
         )
 
         expect(result).toBe(false)
-      })
-
-      it('should return false for invalid/malformed signature hex', async () => {
-        const result = await verifySignature(
-          (await getTestKeys()).identityPubKey,
-          'message',
-          'not-valid-hex-at-all!'
-        )
-
-        expect(result).toBe(false)
-      })
-
-      it('should return false for random hex that is not a valid signature', async () => {
-        const result = await verifySignature(
-          (await getTestKeys()).identityPubKey,
-          'message',
-          'abcdef1234567890abcdef1234567890'  // Random hex, not a valid DER signature
-        )
-
-        expect(result).toBe(false)
-      })
-
-      it('should return false for truncated signature', async () => {
-        const keys = await getTestKeys()
-        const message = 'Hello, World!'
-
-        // Create a valid signature
-        const signatureHex = await signMessage(keys, message)
-
-        // Truncate the signature
-        const truncatedSig = signatureHex.slice(0, signatureHex.length / 2)
-
-        const result = await verifySignature(
-          keys.identityPubKey,
-          message,
-          truncatedSig
-        )
-
-        expect(result).toBe(false)
-      })
-
-      it('should verify signatures for different messages independently', async () => {
-        const keys = await getTestKeys()
-        const message1 = 'Message One'
-        const message2 = 'Message Two'
-
-        const sig1 = await signMessage(keys, message1)
-        const sig2 = await signMessage(keys, message2)
-
-        // Each signature should verify with its own message
-        expect(await verifySignature(keys.identityPubKey, message1, sig1)).toBe(true)
-        expect(await verifySignature(keys.identityPubKey, message2, sig2)).toBe(true)
-
-        // But not with swapped messages
-        expect(await verifySignature(keys.identityPubKey, message1, sig2)).toBe(false)
-        expect(await verifySignature(keys.identityPubKey, message2, sig1)).toBe(false)
       })
     })
   })

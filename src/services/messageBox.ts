@@ -8,7 +8,7 @@
  * Without this message, we can't derive the private key to spend payments sent to us!
  */
 
-import { PrivateKey, PublicKey, Hash, Random } from '@bsv/sdk'
+import { tauriInvoke } from '../utils/tauri'
 import { messageLogger } from './logger'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 
@@ -61,45 +61,65 @@ function saveNotifications(): void {
   }
 }
 
+/** Convert a hex string to a Uint8Array. */
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+  }
+  return bytes
+}
+
 /**
  * Create authentication headers for MessageBox API
  * This is a simplified BRC-103 auth implementation
  */
 async function createAuthHeaders(
-  privateKey: PrivateKey,
+  identityWif: string,
   method: string,
   path: string,
   body?: string
 ): Promise<Record<string, string>> {
   const timestamp = Date.now().toString()
-  // Generate random bytes for nonce
-  const nonceBytes = Random(16)
+  // Generate random bytes for nonce (Web Crypto API)
+  const nonceBytes = crypto.getRandomValues(new Uint8Array(16))
   const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('')
 
   // Create the message to sign
   const messageToSign = `${method}${path}${timestamp}${nonce}${body || ''}`
-  const messageHash = Hash.sha256(new TextEncoder().encode(messageToSign))
 
-  // Sign with identity key
-  const signature = privateKey.sign(messageHash)
+  // Hash the message with SHA-256 (first hash)
+  const messageHashHex = await tauriInvoke<string>('sha256_hash', { data: messageToSign })
+
+  // sign_data internally SHA-256 hashes before ECDSA signing (second hash),
+  // matching the original @bsv/sdk double-hash: Hash.sha256(msg) -> privateKey.sign(hash)
+  const signatureDerHex = await tauriInvoke<string>('sign_data', {
+    wif: identityWif,
+    data: Array.from(hexToBytes(messageHashHex))
+  })
+
+  // Get public key from WIF
+  const keyInfo = await tauriInvoke<{ wif: string; address: string; pubKey: string }>(
+    'keys_from_wif', { wif: identityWif }
+  )
 
   return {
     'Content-Type': 'application/json',
-    'x-bsv-auth-pubkey': privateKey.toPublicKey().toString(),
+    'x-bsv-auth-pubkey': keyInfo.pubKey,
     'x-bsv-auth-timestamp': timestamp,
     'x-bsv-auth-nonce': nonce,
-    'x-bsv-auth-signature': signature.toDER('hex') as string
+    'x-bsv-auth-signature': signatureDerHex
   }
 }
 
 /**
  * List messages from our payment inbox
  */
-export async function listPaymentMessages(identityPrivateKey: PrivateKey): Promise<PaymentMessage[]> {
+export async function listPaymentMessages(identityWif: string): Promise<PaymentMessage[]> {
   const path = `/api/v1/message/${PAYMENT_INBOX}`
 
   try {
-    const headers = await createAuthHeaders(identityPrivateKey, 'GET', path)
+    const headers = await createAuthHeaders(identityWif, 'GET', path)
 
     const response = await fetch(`${MESSAGEBOX_HOST}${path}`, {
       method: 'GET',
@@ -127,7 +147,7 @@ export async function listPaymentMessages(identityPrivateKey: PrivateKey): Promi
  * Acknowledge (delete) messages we've processed
  */
 export async function acknowledgeMessages(
-  identityPrivateKey: PrivateKey,
+  identityWif: string,
   messageIds: string[]
 ): Promise<boolean> {
   if (messageIds.length === 0) return true
@@ -136,7 +156,7 @@ export async function acknowledgeMessages(
   const body = JSON.stringify({ messageIds })
 
   try {
-    const headers = await createAuthHeaders(identityPrivateKey, 'POST', path, body)
+    const headers = await createAuthHeaders(identityWif, 'POST', path, body)
 
     const response = await fetch(`${MESSAGEBOX_HOST}${path}`, {
       method: 'POST',
@@ -181,10 +201,10 @@ function parsePaymentMessage(message: PaymentMessage): PaymentNotification | nul
 /**
  * Check for new payment messages and process them
  */
-export async function checkForPayments(identityPrivateKey: PrivateKey): Promise<PaymentNotification[]> {
+export async function checkForPayments(identityWif: string): Promise<PaymentNotification[]> {
   messageLogger.info('Checking MessageBox for payment notifications')
 
-  const messages = await listPaymentMessages(identityPrivateKey)
+  const messages = await listPaymentMessages(identityWif)
   messageLogger.info('Found messages in payment inbox', { count: messages.length })
 
   const newNotifications: PaymentNotification[] = []
@@ -210,7 +230,7 @@ export async function checkForPayments(identityPrivateKey: PrivateKey): Promise<
 
   // Acknowledge processed messages
   if (processedIds.length > 0) {
-    await acknowledgeMessages(identityPrivateKey, processedIds)
+    await acknowledgeMessages(identityWif, processedIds)
     saveNotifications()
   }
 
@@ -254,29 +274,35 @@ export function clearNotifications(): void {
 }
 
 /**
- * Derive the private key for a payment using the notification info
+ * Derive the private key for a payment using the notification info.
+ * Returns the child WIF and address via Tauri's BRC-42 derivation command.
  */
-export function deriveKeyFromNotification(
-  identityPrivateKey: PrivateKey,
+export async function deriveKeyFromNotification(
+  identityWif: string,
   notification: PaymentNotification
-): { privateKey: PrivateKey; address: string } {
-  const senderPubKey = PublicKey.fromString(notification.senderPublicKey)
-
+): Promise<{ wif: string; address: string }> {
   // Construct the invoice number in BRC-29 format
   const invoiceNumber = `${notification.derivationPrefix} ${notification.derivationSuffix}`
 
-  // Use SDK's BRC-42 derivation
-  const childPrivKey = identityPrivateKey.deriveChild(senderPubKey, invoiceNumber)
-  const address = childPrivKey.toPublicKey().toAddress()
+  // Use Tauri's BRC-42 derivation
+  const result = await tauriInvoke<{ wif: string; address: string; pubKey: string }>(
+    'derive_child_key',
+    {
+      wif: identityWif,
+      senderPubKey: notification.senderPublicKey,
+      invoiceNumber
+    }
+  )
 
-  return { privateKey: childPrivKey, address }
+  return { wif: result.wif, address: result.address }
 }
 
 /**
- * Start periodic checking for payment messages
+ * Start periodic checking for payment messages.
+ * Accepts a WIF string for the identity key.
  */
 export function startPaymentListener(
-  identityPrivateKey: PrivateKey,
+  identityWif: string,
   onNewPayment?: (notification: PaymentNotification) => void,
   intervalMs = 30000 // Check every 30 seconds
 ): () => void {
@@ -289,7 +315,7 @@ export function startPaymentListener(
   messageLogger.info('Starting payment message listener')
 
   // Initial check
-  checkForPayments(identityPrivateKey).then(newPayments => {
+  checkForPayments(identityWif).then(newPayments => {
     for (const payment of newPayments) {
       onNewPayment?.(payment)
     }
@@ -300,7 +326,7 @@ export function startPaymentListener(
   // Set up interval
   const intervalId = setInterval(async () => {
     try {
-      const newPayments = await checkForPayments(identityPrivateKey)
+      const newPayments = await checkForPayments(identityWif)
       for (const payment of newPayments) {
         onNewPayment?.(payment)
       }
@@ -315,6 +341,19 @@ export function startPaymentListener(
     isListening = false
     messageLogger.info('Payment listener stopped')
   }
+}
+
+/**
+ * Start periodic checking for payment messages using a WIF string.
+ *
+ * @deprecated Use `startPaymentListener` directly — it now accepts WIF strings.
+ */
+export function startPaymentListenerFromWif(
+  identityWif: string,
+  onNewPayment?: (notification: PaymentNotification) => void,
+  intervalMs = 30000
+): () => void {
+  return startPaymentListener(identityWif, onNewPayment, intervalMs)
 }
 
 export type { PaymentNotification }

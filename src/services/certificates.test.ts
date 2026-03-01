@@ -7,12 +7,51 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { PrivateKey } from '@bsv/sdk'
 
 // Hoisted mock state
-const { mockExecute, mockSelect } = vi.hoisted(() => ({
-  mockExecute: vi.fn(),
-  mockSelect: vi.fn(),
+const { mockExecute, mockSelect, mockTauriInvoke, signatureStore } = vi.hoisted(() => {
+  /** Track sign_message calls so verify_signature can validate them */
+  const signatureStore = new Map<string, { wif: string; message: string }>()
+  let sigCounter = 0
+
+  const mockTauriInvoke = vi.fn().mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === 'sign_message') {
+      const wif = args?.wif as string
+      const message = args?.message as string
+      sigCounter++
+      const fakeSig = `deadbeef${sigCounter.toString(16).padStart(8, '0')}`
+      signatureStore.set(fakeSig, { wif, message })
+      return Promise.resolve(fakeSig)
+    }
+    if (cmd === 'verify_signature') {
+      const pubKeyHex = args?.publicKeyHex as string
+      const message = args?.message as string
+      const sigHex = args?.signatureHex as string
+      if (!sigHex || sigHex === '') return Promise.resolve(false)
+      const stored = signatureStore.get(sigHex)
+      if (!stored) return Promise.resolve(false)
+      // Certifier pubkey maps to certifier WIF, subject pubkey maps to subject WIF
+      const wifForPubKey: Record<string, string> = {
+        '03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd': 'L1RrrnXkcKut5DEMwtDthjwRcTTwED36thyL1DebVrKuwvohjMNi',
+        '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798': 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn',
+      }
+      const expectedWif = wifForPubKey[pubKeyHex]
+      return Promise.resolve(stored.wif === expectedWif && stored.message === message)
+    }
+    return Promise.reject(new Error(`Unmocked Tauri command: ${cmd}`))
+  })
+
+  return {
+    mockExecute: vi.fn(),
+    mockSelect: vi.fn(),
+    mockTauriInvoke,
+    signatureStore,
+  }
+})
+
+vi.mock('../utils/tauri', () => ({
+  tauriInvoke: mockTauriInvoke,
+  isTauri: () => true,
 }))
 
 vi.mock('./database', () => ({
@@ -57,23 +96,23 @@ import type { WalletKeys } from './wallet/types'
 
 // ---------- Test fixtures ----------
 
-const certifierKey = PrivateKey.fromWif('L1RrrnXkcKut5DEMwtDthjwRcTTwED36thyL1DebVrKuwvohjMNi')
-const certifierPubKey = certifierKey.toPublicKey().toString()
+const certifierWif = 'L1RrrnXkcKut5DEMwtDthjwRcTTwED36thyL1DebVrKuwvohjMNi'
+const certifierPubKey = '03a34b99f22c790c4e36b2b3c2c35a36db06226e41c692fc82b8b56ac1c540c5bd'
 
-const subjectKey = PrivateKey.fromWif('KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn')
-const subjectPubKey = subjectKey.toPublicKey().toString()
+const subjectWif = 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn'
+const subjectPubKey = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
 
 const testKeys: WalletKeys = {
   mnemonic: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
   walletType: 'yours',
-  walletWif: subjectKey.toWif(),
-  walletAddress: subjectKey.toPublicKey().toAddress(),
+  walletWif: subjectWif,
+  walletAddress: '1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH',
   walletPubKey: subjectPubKey,
-  ordWif: subjectKey.toWif(),
-  ordAddress: subjectKey.toPublicKey().toAddress(),
+  ordWif: subjectWif,
+  ordAddress: '1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH',
   ordPubKey: subjectPubKey,
-  identityWif: certifierKey.toWif(),
-  identityAddress: certifierKey.toPublicKey().toAddress(),
+  identityWif: certifierWif,
+  identityAddress: '1F3sAm6ZtwLAUnj7d38pGFxtP3RVEvtsbV',
   identityPubKey: certifierPubKey,
 }
 
@@ -91,6 +130,7 @@ function makeCertData(): Omit<Certificate, 'id' | 'signature'> {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  signatureStore.clear()
   mockExecute.mockResolvedValue({ lastInsertId: 1, rowsAffected: 1 })
   mockSelect.mockResolvedValue([])
 })
@@ -121,24 +161,26 @@ describe('generateSerialNumber', () => {
 // ---------- signCertificate ----------
 
 describe('signCertificate', () => {
-  it('should produce a hex-encoded signature', () => {
+  it('should produce a hex-encoded signature', async () => {
     const certData = makeCertData()
-    const sig = signCertificate(certData, certifierKey.toWif())
+    const sig = await signCertificate(certData, certifierWif)
     expect(sig).toMatch(/^[0-9a-f]+$/i)
   })
 
-  it('should produce deterministic signatures for same input', () => {
+  it('should invoke Tauri sign_message with correct args', async () => {
     const certData = makeCertData()
-    const sig1 = signCertificate(certData, certifierKey.toWif())
-    const sig2 = signCertificate(certData, certifierKey.toWif())
-    expect(sig1).toBe(sig2)
+    await signCertificate(certData, certifierWif)
+    expect(mockTauriInvoke).toHaveBeenCalledWith('sign_message', {
+      wif: certifierWif,
+      message: expect.any(String),
+    })
   })
 
-  it('should produce different signatures for different data', () => {
+  it('should produce different signatures for different data', async () => {
     const cert1 = makeCertData()
     const cert2 = { ...makeCertData(), serialNumber: 'DIFFERENT-SERIAL' }
-    const sig1 = signCertificate(cert1, certifierKey.toWif())
-    const sig2 = signCertificate(cert2, certifierKey.toWif())
+    const sig1 = await signCertificate(cert1, certifierWif)
+    const sig2 = await signCertificate(cert2, certifierWif)
     expect(sig1).not.toBe(sig2)
   })
 })
@@ -146,17 +188,17 @@ describe('signCertificate', () => {
 // ---------- verifyCertificateSignature ----------
 
 describe('verifyCertificateSignature', () => {
-  it('should verify a valid certificate signature', () => {
+  it('should verify a valid certificate signature', async () => {
     const certData = makeCertData()
-    const sig = signCertificate(certData, certifierKey.toWif())
+    const sig = await signCertificate(certData, certifierWif)
     const cert: Certificate = { ...certData, signature: sig }
 
-    expect(verifyCertificateSignature(cert)).toBe(true)
+    expect(await verifyCertificateSignature(cert)).toBe(true)
   })
 
-  it('should reject a tampered certificate', () => {
+  it('should reject a tampered certificate', async () => {
     const certData = makeCertData()
-    const sig = signCertificate(certData, certifierKey.toWif())
+    const sig = await signCertificate(certData, certifierWif)
     // Tamper with a top-level field that changes the signing data hash
     const cert: Certificate = {
       ...certData,
@@ -164,30 +206,30 @@ describe('verifyCertificateSignature', () => {
       serialNumber: 'TAMPERED-SERIAL-999',
     }
 
-    expect(verifyCertificateSignature(cert)).toBe(false)
+    expect(await verifyCertificateSignature(cert)).toBe(false)
   })
 
-  it('should reject a certificate signed by a different key', () => {
+  it('should reject a certificate signed by a different key', async () => {
     const certData = makeCertData()
     // Sign with subject key instead of certifier key
-    const sig = signCertificate(certData, subjectKey.toWif())
+    const sig = await signCertificate(certData, subjectWif)
     const cert: Certificate = { ...certData, signature: sig }
 
-    expect(verifyCertificateSignature(cert)).toBe(false)
+    expect(await verifyCertificateSignature(cert)).toBe(false)
   })
 
-  it('should return false for a malformed signature', () => {
+  it('should return false for a malformed signature', async () => {
     const certData = makeCertData()
     const cert: Certificate = { ...certData, signature: 'not-a-valid-signature' }
 
-    expect(verifyCertificateSignature(cert)).toBe(false)
+    expect(await verifyCertificateSignature(cert)).toBe(false)
   })
 
-  it('should return false for an empty signature', () => {
+  it('should return false for an empty signature', async () => {
     const certData = makeCertData()
     const cert: Certificate = { ...certData, signature: '' }
 
-    expect(verifyCertificateSignature(cert)).toBe(false)
+    expect(await verifyCertificateSignature(cert)).toBe(false)
   })
 })
 
@@ -513,7 +555,7 @@ describe('listCertificates', () => {
 describe('proveCertificate', () => {
   it('should create a proof with selective field disclosure', async () => {
     const certData = makeCertData()
-    const sig = signCertificate(certData, certifierKey.toWif())
+    const sig = await signCertificate(certData, certifierWif)
     const cert: Certificate = {
       ...certData,
       signature: sig,
@@ -565,9 +607,10 @@ describe('proveCertificate', () => {
   })
 
   it('should handle fields that do not exist in the certificate', async () => {
+    const sig = await signCertificate(makeCertData(), certifierWif)
     const cert: Certificate = {
       ...makeCertData(),
-      signature: signCertificate(makeCertData(), certifierKey.toWif()),
+      signature: sig,
       expiresAt: Date.now() + 86400000,
     }
 

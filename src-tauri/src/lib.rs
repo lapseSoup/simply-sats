@@ -12,7 +12,9 @@ use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
 
+mod brc42_derivation;
 mod brc100_signing;
+mod bsv_sdk_adapter;
 mod crypto;
 mod http_server;
 mod key_derivation;
@@ -733,7 +735,21 @@ pub fn run() {
             key_store::build_p2pkh_tx_from_store,
             key_store::build_multi_key_p2pkh_tx_from_store,
             key_store::build_consolidation_tx_from_store,
-            key_store::get_wif_for_operation
+            key_store::get_wif_for_operation,
+            key_store::derive_child_key_from_store,
+            key_store::get_derived_addresses_from_store,
+            key_store::find_derived_key_from_store,
+            key_store::derive_tagged_key_from_store,
+            brc42_derivation::derive_child_key,
+            brc42_derivation::get_derived_addresses,
+            brc42_derivation::find_derived_key_for_address,
+            brc42_derivation::derive_tagged_key,
+            brc42_derivation::validate_bsv_address,
+            brc42_derivation::p2pkh_script_hex,
+            brc42_derivation::pubkey_to_address,
+            brc42_derivation::sha256_hash,
+            brc42_derivation::sha256_hash_bytes,
+            brc42_derivation::pubkey_to_hash160
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();

@@ -100,7 +100,7 @@ vi.mock('@bsv/sdk', () => {
 })
 
 vi.mock('../keyDerivation', () => ({
-  deriveChildPrivateKey: (...args: unknown[]) => mockDeriveChildPrivateKey(...args),
+  deriveChildKey: (...args: unknown[]) => mockDeriveChildPrivateKey(...args),
 }))
 
 vi.mock('../../infrastructure/api/broadcastService', () => ({
@@ -841,15 +841,17 @@ describe('Transaction Service', () => {
           privateKeyWif: undefined,
         },
       ])
-      // Mock deriveChildPrivateKey to return a fake PrivateKey-like object
-      mockDeriveChildPrivateKey.mockReturnValue({
-        toWif: () => 'L1aChildWif...',
+      // Mock deriveChildKey to return a DerivedKeyResult
+      mockDeriveChildPrivateKey.mockResolvedValue({
+        wif: 'L1aChildWif...',
+        address: '1DerivedAddr',
+        pubKey: '02childpubkey',
       })
 
       const identityWif = 'L1identityWif'
       const result = await getAllSpendableUTXOs(walletWif, undefined, identityWif)
 
-      // deriveChildPrivateKey must have been called (re-derivation path exercised)
+      // deriveChildKey must have been called (re-derivation path exercised)
       expect(mockDeriveChildPrivateKey).toHaveBeenCalledTimes(1)
       expect(result).toHaveLength(1)
       expect(result[0]!.wif).toBe('L1aChildWif...')
@@ -883,7 +885,7 @@ describe('Transaction Service', () => {
 
       // UTXO must be skipped — no WIF available
       expect(result).toHaveLength(0)
-      // deriveChildPrivateKey must NOT have been called
+      // deriveChildKey must NOT have been called
       expect(mockDeriveChildPrivateKey).not.toHaveBeenCalled()
     })
 

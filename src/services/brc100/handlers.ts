@@ -6,7 +6,6 @@
  * encrypt, decrypt, getTaggedKeys.
  */
 
-import { PrivateKey } from '@bsv/sdk'
 import { brc100Logger as _brc100Logger } from '../logger'
 import type { WalletKeys, LockedUTXO } from '../wallet'
 import { lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV, getWifForOperation } from '../wallet'
@@ -444,7 +443,6 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
 
       try {
         const identityWif = await getWifForOperation('identity', 'getTaggedKeys', keys)
-        const rootPrivKey = PrivateKey.fromWif(identityWif)
         const derivedKeys: Array<{
           keyId: string
           publicKey: string
@@ -459,7 +457,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
             domain: request.origin
           }
 
-          const derived = deriveTaggedKey(rootPrivKey, tag)
+          const derived = await deriveTaggedKey(identityWif, tag)
           derivedKeys.push({
             keyId,
             publicKey: derived.publicKey,
