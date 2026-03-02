@@ -303,12 +303,10 @@ describe('useSyncData', () => {
       expect(opts.setSyncError).toHaveBeenCalledWith(null)
     })
 
-    it('respects isCancelled during balance loading', async () => {
-      let callCount = 0
-      const isCancelled = () => {
-        callCount++
-        return callCount > 1 // cancel after first call
-      }
+    it('respects isCancelled — skips all state updates when cancelled after queries', async () => {
+      // isCancelled returns true on the first check (after Promise.allSettled),
+      // so no state updates should happen at all.
+      const isCancelled = () => true
       const opts = makeOptions()
       const { result } = renderHook(() => useSyncData(opts))
 
@@ -316,10 +314,11 @@ describe('useSyncData', () => {
         await result.current.fetchDataFromDB(makeWalletKeys(), 1, vi.fn(), isCancelled)
       })
 
-      // Balance should not be set because isCancelled returns true before setBalance
-      // (depends on timing — the check is after the Promise.all for balance)
-      // At minimum, downstream setters should not ALL be called
+      // No state should be set because isCancelled returns true immediately
+      expect(opts.setBalance).not.toHaveBeenCalled()
+      expect(opts.setTxHistory).not.toHaveBeenCalled()
       expect(opts.setOrdBalance).not.toHaveBeenCalled()
+      expect(opts.setUtxos).not.toHaveBeenCalled()
     })
 
     it('handles balance read failure gracefully', async () => {

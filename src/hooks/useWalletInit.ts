@@ -38,6 +38,8 @@ interface UseWalletInitOptions {
   setSessionPassword: (password: string | null) => void
   refreshAccounts: () => Promise<void>
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
+  /** Pre-load cached DB data (balance, txs, ordinals, etc.) so it's visible the moment the loading spinner disappears. */
+  preloadDataFromDB: (wallet: WalletKeys, accountId: number) => Promise<void>
 }
 
 interface UseWalletInitReturn {
@@ -52,7 +54,8 @@ export function useWalletInit({
   setIsLocked,
   setSessionPassword,
   refreshAccounts,
-  storeKeysInRust
+  storeKeysInRust,
+  preloadDataFromDB
 }: UseWalletInitOptions): UseWalletInitReturn {
   const [loading, setLoading] = useState(true)
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -84,24 +87,21 @@ export function useWalletInit({
         if (!mounted) return
         uiLogger.info('Database initialized successfully')
 
-        const repairResult = await repairUTXOs()
+        // Run independent DB setup operations in parallel (~150ms → ~50ms)
+        const [repairResult, , contactsResult] = await Promise.all([
+          repairUTXOs(),
+          ensureDerivedAddressesTable(),
+          ensureContactsTable().then(() => getContacts())
+        ])
         if (!mounted) return
+
         if (repairResult.ok && repairResult.value > 0) {
           uiLogger.info('Repaired UTXOs', { count: repairResult.value })
         } else if (!repairResult.ok) {
           uiLogger.warn('Failed to repair UTXOs', { error: repairResult.error.message })
         }
-
-        if (!mounted) return
-
-        await ensureDerivedAddressesTable()
-        if (!mounted) return
         uiLogger.debug('Derived addresses table ready')
 
-        await ensureContactsTable()
-        if (!mounted) return
-        const contactsResult = await getContacts()
-        if (!mounted) return
         if (contactsResult.ok) {
           setContacts(contactsResult.value)
           uiLogger.info('Loaded contacts', { count: contactsResult.value.length })
@@ -155,8 +155,10 @@ export function useWalletInit({
                 // shows Account 1's address but Account 7's balance/history (or vice-versa),
                 // causing the cross-account data bleed.
                 let walletKeys = keys
+                let activeAccountForPreload: { id?: number | null } | null = null
                 try {
                   const activeAccount = await getActiveAccount()
+                  activeAccountForPreload = activeAccount
                   if (!mounted) return
                   if (activeAccount) {
                     const targetIndex = activeAccount.derivationIndex ?? ((activeAccount.id ?? 1) - 1)
@@ -199,6 +201,17 @@ export function useWalletInit({
                 setWallet({ ...walletKeys, mnemonic: '' })
                 setSessionPassword('')
                 setModuleSessionPassword('')
+
+                // Pre-load cached DB data BEFORE the loading spinner disappears.
+                // This means the UI shows balance, activity, ordinals, etc. the
+                // instant the spinner goes away — no empty-state flash.
+                if (activeAccountForPreload?.id != null) {
+                  try {
+                    await preloadDataFromDB({ ...walletKeys, mnemonic: '' }, activeAccountForPreload.id)
+                  } catch (e) {
+                    walletLogger.warn('Pre-load from DB failed (non-critical)', { error: String(e) })
+                  }
+                }
               } else {
                 walletLogger.error('Failed to load unprotected wallet')
                 setIsLocked(true) // Fallback to lock screen
@@ -239,7 +252,7 @@ export function useWalletInit({
     return () => {
       mounted = false
     }
-  }, [setWallet, setIsLocked, setSessionPassword, refreshAccounts, storeKeysInRust])
+  }, [setWallet, setIsLocked, setSessionPassword, refreshAccounts, storeKeysInRust, preloadDataFromDB])
 
   // Migration: remove old localStorage locks (database is source of truth)
   useEffect(() => {

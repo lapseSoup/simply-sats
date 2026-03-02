@@ -99,7 +99,11 @@ export function useSyncData({
 
     if (isCancelled?.()) return
 
-    // Apply balance
+    // ── PHASE 1: Apply all cached data IMMEDIATELY (no awaits) ──────────
+    // Every setState call below is synchronous. React batches them and
+    // re-renders once, giving the user instant data display (~0ms).
+
+    // Balance
     if (balanceResult.status === 'fulfilled') {
       const [defaultBal, derivedBal] = balanceResult.value
       const totalBalance = defaultBal + derivedBal
@@ -111,29 +115,25 @@ export function useSyncData({
       syncLogger.warn('fetchDataFromDB: balance read failed', { error: String(balanceResult.reason) })
     }
 
-    // Apply transaction history
+    // Transaction history — set immediately WITHOUT awaiting mergeOrdinalTxEntries.
+    // The merge adds synthetic ordinal-receive entries and runs in Phase 2.
+    let dbTxHistory: TxHistoryItem[] = []
     if (txResult.status === 'fulfilled') {
       const dbTxs = txResult.value.ok ? txResult.value.value : []
-      const dbTxHistory: TxHistoryItem[] = dbTxs.map(tx => ({
+      dbTxHistory = dbTxs.map(tx => ({
         tx_hash: tx.txid,
         height: tx.blockHeight || 0,
         amount: tx.amount,
         description: tx.description,
         createdAt: tx.createdAt
       }))
-
-      // Merge ordinal receives not in DB transactions (old ordinals WoC missed)
-      await mergeOrdinalTxEntries(dbTxHistory, activeAccountId)
-
       dbTxHistory.sort(compareTxByHeight)
       setTxHistory(dbTxHistory)
     } else {
       syncLogger.warn('fetchDataFromDB: tx history read failed', { error: String(txResult.reason) })
     }
 
-    if (isCancelled?.()) return
-
-    // Apply locks
+    // Locks
     if (locksResult.status === 'fulfilled') {
       const mapped = mapDbLocksToLockedUtxos(locksResult.value, wallet.walletPubKey)
       onLocksLoaded(mapped)
@@ -141,59 +141,30 @@ export function useSyncData({
       syncLogger.warn('fetchDataFromDB: locks read failed', { error: String(locksResult.reason) })
     }
 
-    // Apply ordinals from cache
-    if (ordinalsResult.status === 'fulfilled') {
-      const cachedOrdinals = ordinalsResult.value
-      if (cachedOrdinals.length > 0) {
-        const ordinals: Ordinal[] = cachedOrdinals.map(cached => ({
-          origin: cached.origin,
-          txid: cached.txid,
-          vout: cached.vout,
-          satoshis: cached.satoshis,
-          contentType: cached.contentType,
-          content: cached.contentHash
-        }))
-        setOrdinalsWithRef(ordinals)
-      } else {
-        // Cache empty — fall back to UTXOs table (basket='ordinals')
-        try {
-          const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
-          if (isCancelled?.()) return
-          setOrdinalsWithRef(dbOrdinals)
-        } catch (e) {
-          syncLogger.warn('fetchDataFromDB: ordinals fallback read failed', { error: String(e) })
-        }
-      }
-
-      // Load content previews in a single batch query
-      try {
-        const allOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
-        if (isCancelled?.()) return
-        const newCache = await getBatchOrdinalContent(allOrigins)
-        if (isCancelled?.()) return
-        for (const [k, v] of newCache) { contentCacheRef.current.set(k, v) }
-        bumpCacheVersion()
-      } catch (e) {
-        syncLogger.warn('fetchDataFromDB: ordinal content batch read failed', { error: String(e) })
-      }
-    } else {
+    // Ordinals from cache — set the list immediately, content previews load in Phase 2
+    const cachedOrdinals = ordinalsResult.status === 'fulfilled' ? ordinalsResult.value : []
+    if (cachedOrdinals.length > 0) {
+      const ordinals: Ordinal[] = cachedOrdinals.map(cached => ({
+        origin: cached.origin,
+        txid: cached.txid,
+        vout: cached.vout,
+        satoshis: cached.satoshis,
+        contentType: cached.contentType,
+        content: cached.contentHash
+      }))
+      setOrdinalsWithRef(ordinals)
+    } else if (ordinalsResult.status === 'rejected') {
       syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(ordinalsResult.reason) })
     }
 
-    // Apply UTXOs
+    // UTXOs
     if (utxoResult.status === 'fulfilled') {
       setUtxos(utxoResult.value)
     } else {
       syncLogger.warn('fetchDataFromDB: UTXOs read failed', { error: String(utxoResult.reason) })
     }
 
-    // B-27: Check isCancelled before final state setters to prevent overwriting
-    // data from a newer account switch that completed while we were still loading.
-    if (isCancelled?.()) return
-
-    // Restore cached ord balance from localStorage so the UI shows the last-known
-    // value instantly, rather than flashing 0 until the API responds.
-    // fetchData() updates this cache after every successful API fetch.
+    // Ord balance from localStorage cache
     try {
       const cachedOrdBal = localStorage.getItem(`${STORAGE_KEYS.CACHED_ORD_BALANCE}_${activeAccountId}`)
       setOrdBalance(cachedOrdBal ? Number(cachedOrdBal) : 0)
@@ -201,6 +172,76 @@ export function useSyncData({
       setOrdBalance(0)
     }
     setSyncError(null)
+
+    // ── PHASE 2: Background enrichment (fire-and-forget) ────────────────
+    // These operations add supplementary data (merged ordinal txs, content
+    // previews, empty-cache fallback). They're non-blocking so the UI
+    // shows cached data immediately while these complete in the background.
+
+    // Merge ordinal receives into tx history (uses already-fetched cachedOrdinals, no re-query)
+    if (dbTxHistory.length > 0 || cachedOrdinals.length > 0) {
+      ;(async () => {
+        try {
+          // Build ordinal txid→height map from the already-fetched cache (no DB round-trip)
+          const ordinalTxidHeights = new Map<string, number>()
+          if (cachedOrdinals.length > 0) {
+            for (const c of cachedOrdinals) ordinalTxidHeights.set(c.txid, c.blockHeight ?? -1)
+          } else {
+            // Cache was empty — fall back to UTXOs-table ordinals (also needs a query)
+            try {
+              const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
+              for (const o of dbOrdinals) ordinalTxidHeights.set(o.txid, -1)
+            } catch { /* swallow */ }
+          }
+
+          if (isCancelled?.()) return
+
+          // Add synthetic entries for ordinal txids not in DB tx history
+          const dbTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
+          let added = 0
+          for (const [txid, height] of ordinalTxidHeights) {
+            if (!dbTxidSet.has(txid)) {
+              dbTxHistory.push({ tx_hash: txid, height, amount: 1, createdAt: 0 })
+              added++
+            }
+          }
+
+          if (added > 0 && !isCancelled?.()) {
+            dbTxHistory.sort(compareTxByHeight)
+            setTxHistory([...dbTxHistory])
+          }
+        } catch (e) {
+          syncLogger.warn('fetchDataFromDB: merge ordinal tx entries failed', { error: String(e) })
+        }
+      })()
+    }
+
+    // Ordinals empty-cache fallback + content preview loading
+    if (ordinalsResult.status === 'fulfilled') {
+      ;(async () => {
+        try {
+          // If cache was empty, fall back to UTXOs table
+          if (cachedOrdinals.length === 0) {
+            try {
+              const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
+              if (!isCancelled?.()) setOrdinalsWithRef(dbOrdinals)
+            } catch (e) {
+              syncLogger.warn('fetchDataFromDB: ordinals fallback read failed', { error: String(e) })
+            }
+          }
+
+          // Load content previews in a single batch query
+          const allOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
+          if (isCancelled?.()) return
+          const newCache = await getBatchOrdinalContent(allOrigins)
+          if (isCancelled?.()) return
+          for (const [k, v] of newCache) { contentCacheRef.current.set(k, v) }
+          bumpCacheVersion()
+        } catch (e) {
+          syncLogger.warn('fetchDataFromDB: ordinal content batch read failed', { error: String(e) })
+        }
+      })()
+    }
   }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, bumpCacheVersion, contentCacheRef])
 
   // Fetch data from database and API
