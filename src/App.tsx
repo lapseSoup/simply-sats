@@ -264,7 +264,8 @@ function WalletApp() {
             }
           })()
         } else {
-          // Already-synced account — background-sync if data is stale (>5 min since last sync).
+          // Already-synced account — always fetch API data (ordinals, balances),
+          // and background-sync from blockchain if data is stale.
           const SYNC_COOLDOWN_MS = 5 * 60 * 1000
           const lastSyncTime = await getLastSyncTimeForAccount(activeAccountId!)
           const isStale = (Date.now() - lastSyncTime) > SYNC_COOLDOWN_MS
@@ -276,7 +277,7 @@ function WalletApp() {
                 if (cancelled) return
                 await performSyncRef.current(false, false, true)
                 if (cancelled) return
-                await fetchDataFromDBRef.current()
+                await fetchDataRef.current()
               } catch (e) {
                 logger.warn('Background sync after switch failed', { error: String(e) })
               } finally {
@@ -284,7 +285,17 @@ function WalletApp() {
               }
             })()
           } else {
-            logger.info('Account data fresh, skipping sync', { accountId: activeAccountId, lastSyncTime })
+            // Data is fresh from blockchain perspective, but still need to load API
+            // data (ordinals, ord balance) that isn't cached in the DB.
+            logger.info('Account data fresh, loading API data', { accountId: activeAccountId, lastSyncTime })
+            ;(async () => {
+              try {
+                if (cancelled) return
+                await fetchDataRef.current()
+              } catch (e) {
+                logger.warn('Fresh account API fetch failed', { error: String(e) })
+              }
+            })()
           }
         }
       } catch (e) {
