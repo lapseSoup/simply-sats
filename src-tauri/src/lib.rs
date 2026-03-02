@@ -12,6 +12,7 @@ use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
 
+mod arc_broadcaster;
 mod brc42_derivation;
 mod brc100_signing;
 mod bsv_sdk_adapter;
@@ -21,6 +22,7 @@ mod key_derivation;
 mod key_store;
 mod rate_limiter;
 mod secure_storage;
+mod spv;
 mod transaction;
 
 use rate_limiter::{
@@ -756,7 +758,11 @@ pub fn run() {
             brc42_derivation::pubkey_to_address,
             brc42_derivation::sha256_hash,
             brc42_derivation::sha256_hash_bytes,
-            brc42_derivation::pubkey_to_hash160
+            brc42_derivation::pubkey_to_hash160,
+            spv::verify_merkle_path,
+            spv::parse_beef,
+            spv::verify_beef,
+            arc_broadcaster::broadcast_transaction
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
