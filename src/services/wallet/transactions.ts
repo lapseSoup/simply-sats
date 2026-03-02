@@ -36,7 +36,7 @@ import { deriveChildKey } from '../keyDerivation'
 import { walletLogger } from '../logger'
 import { resetInactivityTimer } from '../autoLock'
 import { acquireSyncLock } from '../cancellation'
-import { broadcastTransaction as infraBroadcast } from '../../infrastructure/api/broadcastService'
+import { isTauri, tauriInvoke } from '../../utils/tauri'
 import {
   AppError,
   ErrorCodes,
@@ -48,14 +48,29 @@ import type { RecipientOutput } from '../../domain/transaction/builder'
 import { type Result, ok, err } from '../../domain/types'
 
 /**
- * Broadcast a signed transaction - try multiple endpoints for non-standard scripts.
+ * Broadcast a signed transaction via the Rust ARC broadcaster (Tauri) or WoC fallback.
  * Accepts either a Transaction object or a raw hex string.
- * Delegates to the infrastructure broadcastService for the actual cascade.
  */
 export async function broadcastTransaction(txOrHex: TransactionLike | string): Promise<string> {
   const txhex = typeof txOrHex === 'string' ? txOrHex : txOrHex.toHex()
-  const localTxid = typeof txOrHex === 'string' ? undefined : txOrHex.id('hex')
-  return infraBroadcast(txhex, localTxid)
+
+  if (isTauri()) {
+    const result = await tauriInvoke<{ txid: string; status: string }>('broadcast_transaction', { rawHex: txhex })
+    return result.txid
+  }
+
+  // Non-Tauri fallback: use WoC API directly
+  const response = await fetch('https://api.whatsonchain.com/v1/bsv/main/tx/raw', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txhex })
+  })
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`Broadcast failed: ${body}`)
+  }
+  const txid = await response.text()
+  return txid.trim().replace(/"/g, '')
 }
 
 /**
@@ -104,7 +119,7 @@ export async function executeBroadcast(
   // Now broadcast the transaction
   try {
     const txHex = typeof txOrHex === 'string' ? txOrHex : txOrHex.toHex()
-    const txid = await infraBroadcast(txHex, pendingTxid)
+    const txid = await broadcastTransaction(txHex)
     if (!txid) {
       throw new Error('Broadcast returned empty transaction ID')
     }

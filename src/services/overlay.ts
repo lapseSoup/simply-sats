@@ -13,7 +13,7 @@
 
 import { p2pkhLockingScriptHex } from '../domain/transaction/builder'
 import { overlayLogger } from './logger'
-import { broadcastTransaction } from '../infrastructure/api/broadcastService'
+import { broadcastTransaction } from './wallet/transactions'
 import { getWocClient } from '../infrastructure/api/wocClient'
 import { ok, err, type Result } from '../domain/types'
 
@@ -466,8 +466,8 @@ export async function getBeef(txid: string): Promise<string | null> {
  * Broadcast transaction via overlay network AND miners (4-endpoint cascade)
  *
  * This ensures maximum reliability by broadcasting to both
- * the overlay network and the traditional miners via broadcastService
- * (WoC -> ARC JSON -> ARC text -> mAPI).
+ * the overlay network and the traditional miners via the Rust ARC broadcaster
+ * (Tauri) or WoC fallback (browser).
  */
 export async function broadcastWithOverlay(
   rawTx: string,

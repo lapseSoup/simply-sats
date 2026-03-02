@@ -20,7 +20,7 @@ const { mockBroadcastTransaction, mockGetTxProofSafe } = vi.hoisted(() => ({
   mockGetTxProofSafe: vi.fn(),
 }))
 
-vi.mock('../infrastructure/api/broadcastService', () => ({
+vi.mock('./wallet/transactions', () => ({
   broadcastTransaction: (...args: unknown[]) => mockBroadcastTransaction(...args),
 }))
 

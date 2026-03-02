@@ -16,7 +16,7 @@ import { DbError, ErrorCodes } from '../errors'
 // ---------------------------------------------------------------------------
 
 const {
-  mockInfraBroadcast,
+  mockTauriInvoke,
   mockBuildP2PKHTx,
   mockBuildMultiKeyP2PKHTx,
   mockBuildConsolidationTx,
@@ -39,7 +39,7 @@ const {
 } = vi.hoisted(() => {
   const releaseLock = vi.fn()
   return {
-    mockInfraBroadcast: vi.fn(),
+    mockTauriInvoke: vi.fn(),
     mockBuildP2PKHTx: vi.fn(),
     mockBuildMultiKeyP2PKHTx: vi.fn(),
     mockBuildConsolidationTx: vi.fn(),
@@ -70,8 +70,9 @@ vi.mock('../keyDerivation', () => ({
   deriveChildKey: (...args: unknown[]) => mockDeriveChildPrivateKey(...args),
 }))
 
-vi.mock('../../infrastructure/api/broadcastService', () => ({
-  broadcastTransaction: (...args: unknown[]) => mockInfraBroadcast(...args),
+vi.mock('../../utils/tauri', () => ({
+  isTauri: () => true,
+  tauriInvoke: (...args: unknown[]) => mockTauriInvoke(...args),
 }))
 
 vi.mock('../../domain/wallet/validation', () => ({
@@ -203,7 +204,7 @@ describe('Transaction Service', () => {
 
     // Sensible defaults — individual tests override as needed
     mockIsValidBSVAddress.mockReturnValue(true)
-    mockInfraBroadcast.mockResolvedValue(MOCK_TXID)
+    mockTauriInvoke.mockResolvedValue({ txid: MOCK_TXID, status: 'success' })
     mockMarkUtxosPendingSpend.mockResolvedValue({ ok: true, value: undefined })
     mockConfirmUtxosSpent.mockResolvedValue({ ok: true, value: undefined })
     mockRollbackPendingSpend.mockResolvedValue({ ok: true, value: undefined })
@@ -220,17 +221,17 @@ describe('Transaction Service', () => {
   // =========================================================================
 
   describe('broadcastTransaction', () => {
-    it('should broadcast a hex string directly', async () => {
-      mockInfraBroadcast.mockResolvedValue(MOCK_TXID)
+    it('should broadcast a hex string via Tauri invoke', async () => {
+      mockTauriInvoke.mockResolvedValue({ txid: MOCK_TXID, status: 'success' })
 
       const txid = await broadcastTransaction('deadbeef')
 
-      expect(mockInfraBroadcast).toHaveBeenCalledWith('deadbeef', undefined)
+      expect(mockTauriInvoke).toHaveBeenCalledWith('broadcast_transaction', { rawHex: 'deadbeef' })
       expect(txid).toBe(MOCK_TXID)
     })
 
-    it('should broadcast a TransactionLike object using toHex and id', async () => {
-      mockInfraBroadcast.mockResolvedValue(MOCK_TXID)
+    it('should broadcast a TransactionLike object using toHex', async () => {
+      mockTauriInvoke.mockResolvedValue({ txid: MOCK_TXID, status: 'success' })
       const tx = {
         toHex: () => 'deadbeef',
         id: (_encoding: string) => 'mock-tx-id-from-obj',
@@ -238,13 +239,12 @@ describe('Transaction Service', () => {
 
       const txid = await broadcastTransaction(tx)
 
-      // TransactionLike.toHex() returns 'deadbeef', id('hex') returns 'mock-tx-id-from-obj'
-      expect(mockInfraBroadcast).toHaveBeenCalledWith('deadbeef', 'mock-tx-id-from-obj')
+      expect(mockTauriInvoke).toHaveBeenCalledWith('broadcast_transaction', { rawHex: 'deadbeef' })
       expect(txid).toBe(MOCK_TXID)
     })
 
     it('should propagate broadcast errors', async () => {
-      mockInfraBroadcast.mockRejectedValue(new Error('network error'))
+      mockTauriInvoke.mockRejectedValue(new Error('network error'))
 
       await expect(broadcastTransaction('deadbeef')).rejects.toThrow('network error')
     })
@@ -258,12 +258,12 @@ describe('Transaction Service', () => {
     const outpoints = [{ txid: 'aaaa', vout: 0 }]
 
     it('should mark pending, broadcast, and return txid on success', async () => {
-      mockInfraBroadcast.mockResolvedValue(MOCK_TXID)
+      mockTauriInvoke.mockResolvedValue({ txid: MOCK_TXID, status: 'success' })
 
       const txid = await executeBroadcast('deadbeef', 'pending-123', outpoints)
 
       expect(mockMarkUtxosPendingSpend).toHaveBeenCalledWith(outpoints, 'pending-123')
-      expect(mockInfraBroadcast).toHaveBeenCalledWith('deadbeef', 'pending-123')
+      expect(mockTauriInvoke).toHaveBeenCalledWith('broadcast_transaction', { rawHex: 'deadbeef' })
       expect(txid).toBe(MOCK_TXID)
       // Should NOT rollback on success
       expect(mockRollbackPendingSpend).not.toHaveBeenCalled()
@@ -277,12 +277,12 @@ describe('Transaction Service', () => {
       ).rejects.toThrow('Failed to prepare transaction - UTXOs could not be locked')
 
       // Should never reach broadcast
-      expect(mockInfraBroadcast).not.toHaveBeenCalled()
+      expect(mockTauriInvoke).not.toHaveBeenCalled()
       expect(mockRollbackPendingSpend).not.toHaveBeenCalled()
     })
 
     it('should rollback pending status when broadcast fails', async () => {
-      mockInfraBroadcast.mockRejectedValue(new Error('broadcast rejected'))
+      mockTauriInvoke.mockRejectedValue(new Error('broadcast rejected'))
 
       await expect(
         executeBroadcast('deadbeef', 'pending-123', outpoints)
@@ -293,7 +293,7 @@ describe('Transaction Service', () => {
     })
 
     it('should throw if broadcast returns empty txid', async () => {
-      mockInfraBroadcast.mockResolvedValue('')
+      mockTauriInvoke.mockResolvedValue({ txid: '', status: 'success' })
 
       await expect(
         executeBroadcast('deadbeef', 'pending-123', outpoints)
@@ -304,7 +304,7 @@ describe('Transaction Service', () => {
     })
 
     it('should still throw broadcast error even if rollback fails', async () => {
-      mockInfraBroadcast.mockRejectedValue(new Error('broadcast rejected'))
+      mockTauriInvoke.mockRejectedValue(new Error('broadcast rejected'))
       mockRollbackPendingSpend.mockResolvedValue({ ok: false, error: new Error('rollback DB error') })
 
       await expect(
@@ -367,7 +367,7 @@ describe('Transaction Service', () => {
       expect(result.error.message).toMatch(/Invalid BSV address/)
       // Should not attempt coin selection or broadcast
       expect(mockSelectCoins).not.toHaveBeenCalled()
-      expect(mockInfraBroadcast).not.toHaveBeenCalled()
+      expect(mockTauriInvoke).not.toHaveBeenCalled()
     })
 
     it('should return err on zero amount', async () => {

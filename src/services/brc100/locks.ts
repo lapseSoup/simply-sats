@@ -8,7 +8,7 @@
  * No @bsv/sdk imports — all cryptographic operations happen in Rust.
  */
 
-import { broadcastTransaction as infraBroadcast } from '../../infrastructure/api/broadcastService'
+import { broadcastTransaction as infraBroadcast } from '../wallet/transactions'
 import { brc100Logger } from '../logger'
 import type { WalletKeys } from '../wallet'
 import { getUTXOs, calculateTxFee, getWifForOperation } from '../wallet'
