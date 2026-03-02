@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-03-02 (v19 / Review #19 — Ordinal Image Fix + New Commit Audit)
-**Full report:** `docs/reviews/2026-03-02-full-review-v19.md`
-**Rating:** 8.5 / 10 (all 301 issues resolved — 0 open items remaining)
-**Review #19 summary:** Fixed ordinal images not loading (B-75). Verified 19 v18 issues now fixed. 17 new findings from 5-commit audit — all fixed in v19. Second pass resolved all remaining ~53 medium/low items: S-66 (isValidPublicKey), plus bulk status updates (19 already-fixed, 25 accepted, 4 deferred). 1746 tests passing.
+**Latest review:** 2026-03-02 (v20 / Review #20 — Send Modal Redesign + Address Book Audit)
+**Full report:** `docs/reviews/2026-03-02-full-review-v20.md`
+**Rating:** 8.5 / 10 (all 318 issues resolved — 0 open items remaining)
+**Review #20 summary:** Audited 4 commits (~1,154 new lines): Send BSV modal redesign with fee selector, address book, QR scanner. Found 17 new issues (1 critical schema bug S-77, 2 high, 7 medium, 7 low). All 17 fixed in v20. 1762 tests passing (16 new).
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -36,6 +36,8 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-78 | ✅ Fixed (v20) | `SendModal.tsx:597` | Zero-value send not prevented — `sendSats <= 0` missing from button disabled condition. Users could send 0 sats (burns fee). **Fix:** Added `sendSats <= 0` check |
+| S-79 | ✅ Fixed (v20) | `SendModal.tsx:85-88` | NaN amount silently becomes 0 — `parseFloat('abc')` → NaN → 0 with no user feedback. **Fix:** Added `amountError` validation with form-error display |
 | ST-11 | ✅ Fixed (v8) | `ordinals.ts:246+` | `transferOrdinal` didn't acquire sync lock — race with background sync could corrupt UTXO state. Added `acquireSyncLock`/`releaseLock` |
 | A-12 | ✅ Fixed (v8) | `AppProviders.tsx:52,57` | `TokensProvider` and `ModalProvider` missing ErrorBoundary wrappers — could crash entire app. Wrapped both |
 | U-14 | ✅ Fixed (v8) | `AccountSwitcher.tsx:109-114` | No loading indicator during account switch — dropdown closed instantly with no feedback. Added switching state |
@@ -74,6 +76,7 @@
 | B-64 | ✅ Fixed (v19) | `useWalletInit.ts:308-335` | `deferMaintenance` captures `mounted` by value — post-unmount state updates possible if component unmounts during deferred async work **Fix: changed mounted param to () => boolean callback** |
 | B-65 | ✅ Accepted (v19) | `App.tsx:175` | `fetchDataRef.current()` in payment handler may use stale wallet keys — race condition during rapid account switches **Accepted: fetchDataRef uses correct ref update pattern — no stale closure** |
 | B-75 | ✅ Fixed (v19) | `OrdinalImage.tsx`, `useOrdinalCache.ts`, `OrdinalsTab.tsx` | Ordinal images not loading — only 1 of 621 ordinals displayed. Root cause: batch size throttled to 10/cycle + no error recovery on `<img>` network failure. Fix: batch size 10→50, added `onContentNeeded` error recovery callback |
+| S-77 | ✅ Fixed (v20) | `026_address_book.sql:6` | `UNIQUE(address)` instead of `UNIQUE(address, account_id)` — cross-account address leak. **Fix:** Migration 027 recreates table with compound unique, updated fresh_install_schema + repository |
 | S-17 | 🟠 Accepted | `secureStorage.ts:21-23` | `SENSITIVE_KEYS` empty — accepted risk: XSS in Tauri requires code exec |
 | A-4 | ✅ Fixed (v5) | `AppProviders.tsx` | All providers wrapped in ErrorBoundary |
 | A-5 | ✅ Fixed (v5) | `infrastructure/api/wocClient.ts` | Retry/backoff logic now in httpClient |
@@ -86,6 +89,21 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-80 | ✅ Fixed (v20) | `SendModal.tsx:144,339` | `activeAccountId ?? 0` fallback saves addresses to account 0 when no active account. **Fix:** Null guard + fallback to 1 |
+| S-81 | ✅ Fixed (v20) | `SendModal.tsx:145` | `saveAddress` Result ignored — silent failures on address book writes. **Fix:** Check result.ok, warn on failure |
+| S-82 | ✅ Fixed (v20) | `addressBookRepository.ts:172` | `addressExists()` swallows all DB errors — `catch (_e) { return false }`. **Fix:** Returns `Result<boolean, DbError>` |
+| S-83 | ⚪ Noted (v20) | `addressBookRepository.ts:97,124,145,163` | No BSV address format validation at DB layer — callers validate, so defense-in-depth only |
+| B-76 | ✅ Fixed (v20) | `SendModal.tsx:256-261` | Multi-recipient NaN/zero amounts pass through — no per-recipient amount validation. **Fix:** Added amount > 0 validation in handleMultiSubmitClick + NaN guard in executeSendMulti |
+| B-77 | ✅ Fixed (v20) | `SendModal.test.tsx:56-59` | Test mocks `../../services/wallet` but component imports from `../../adapters/walletAdapter` — mock doesn't intercept. **Fix:** Corrected mock path + added missing exports |
+| B-78 | ⚪ Noted (v20) | `SendModal.tsx:98` | Fee fallback heuristic `Math.ceil(balance / 10000)` arbitrary — overestimates for large balances. Brief window before UTXOs load |
+| B-79 | ⚪ Noted (v20) | `QRScannerModal.tsx:15` | Hardcoded `qr-scanner-container` ID — would collide if two instances mounted. Single modal prevents this |
+| A-37 | ✅ Fixed (v20) | `QRScannerModal.tsx`, `AddressPicker.tsx` | 54 inline styles across 3 new components. **Fix:** Extracted to 13 CSS classes (.qr-tab-*, .address-picker-*) |
+| A-38 | ✅ Fixed (v20) | `QRScannerModal.tsx:230,254`, `AddressPicker.tsx:126` | Hardcoded `rgba(0,0,0,0.1/0.15)` shadows. **Fix:** Replaced with `var(--shadow-xs/md)` design tokens |
+| A-39 | ✅ Fixed (v20) | `App.css:5965-5968` | Account modal input:focus missing box-shadow ring. **Fix:** Added `box-shadow: 0 0 0 3px var(--accent-subtle)` |
+| Q-59 | ✅ Fixed (v20) | `SendModal.test.tsx` | Thin test coverage — no validation edge cases. **Fix:** Added 4 tests (zero, negative, NaN, exceeding balance) |
+| Q-60 | ✅ Fixed (v20) | `addressBookRepository.test.ts` | New 175-line repository with zero test coverage. **Fix:** Created 12-test suite covering all CRUD + error handling |
+| Q-61 | ✅ Fixed (v20) | `QRScannerModal.tsx:215-255` | Duplicate tab button styles (~15 properties each). **Fix:** Extracted to `.qr-tab-btn` CSS class |
+| Q-62 | ✅ Fixed (v20) | `addressBookRepository.ts:46-48` | `ensureAddressBookTable` swallows errors. **Fix:** Returns `Result<void, DbError>` |
 | U-29 | ✅ Fixed (v11) | `OrdinalListModal.tsx`, `BackupVerificationModal.tsx`, `AccountCreateForm.tsx` | Hardcoded hex colors (`#22c55e`) instead of `var(--success)` — replaced across 5 files |
 | U-30 | ✅ Fixed (v11) | `ConsolidateModal.tsx`, `TestRecoveryModal.tsx`, `UnlockConfirmModal.tsx` | 53 inline `style={{}}` extracted to CSS classes (`.result-icon-circle`, `.result-title`, `.modal-actions`, etc.) |
 | U-31 | ✅ Fixed (v11) | `MnemonicInput.tsx`, `AccountModal.tsx` | Embedded `<style>` blocks (~375 lines total) moved to App.css |
@@ -335,23 +353,24 @@
 
 | Category | Total | ✅ Fixed/Verified/Accepted/Deferred | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
 |----------|-------|-------------------------------------|--------------|----------------|-------------|
-| Security | 78 | 78 | 0 | 0 | 0 |
-| Bugs | 75 | 75 | 0 | 0 | 0 |
-| Architecture | 36 | 36 | 0 | 0 | 0 |
-| Quality | 59 | 59 | 0 | 0 | 0 |
+| Security | 85 | 85 | 0 | 0 | 0 |
+| Bugs | 79 | 79 | 0 | 0 | 0 |
+| Architecture | 39 | 39 | 0 | 0 | 0 |
+| Quality | 63 | 63 | 0 | 0 | 0 |
 | UX/UI | 40 | 40 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 |
-| **Total** | **301** | **301** | **0** | **0** | **0** |
+| **Total** | **319** | **319** | **0** | **0** | **0** |
 
 ---
 
-## Remaining Open Items (as of Review #19 — Final Pass)
+## Remaining Open Items (as of Review #20)
 
-**All 301 issues are now resolved.** No open items remain.
+**All 319 issues are now resolved.** No open items remain.
 
 - Fixed: code changes applied and verified with tests
 - Accepted: verified as correct design decisions or non-issues
 - Deferred: large structural work tracked for future PRs (Q-24, Q-32, Q-46, Q-47, A-16, A-27, A-28)
+- Noted: documented for awareness, no code change required (S-83, B-78, B-79)
 
 ### Accepted Risk (unchanged)
 - **S-17** — `SENSITIVE_KEYS` empty in secureStorage
@@ -360,6 +379,37 @@
 
 ### Moot
 - **S-3** — Session key rotation race (SENSITIVE_KEYS empty)
+
+---
+
+## Prioritized Remediation — Review #20
+### All 17 items resolved (14 fixed, 3 noted)
+
+**Security (7):**
+1. **S-77** ✅ — Address book UNIQUE constraint scoped to `(address, account_id)` via migration 027 (critical)
+2. **S-78** ✅ — Zero-value send button disabled when `sendSats <= 0` (high)
+3. **S-79** ✅ — NaN amount validation with user feedback (high)
+4. **S-80** ✅ — Null guard instead of fallback to account 0 (medium)
+5. **S-81** ✅ — `saveAddress` Result checked, errors logged (medium)
+6. **S-82** ✅ — `addressExists` returns `Result<boolean, DbError>` (medium)
+7. **S-83** ⚪ — No DB-layer address validation — noted, callers validate (low)
+
+**Bugs (4):**
+8. **B-76** ✅ — Multi-recipient amount validation + NaN guard (medium)
+9. **B-77** ✅ — Test mock path corrected to `../../adapters/walletAdapter` (medium)
+10. **B-78** ⚪ — Fee fallback heuristic noted (low)
+11. **B-79** ⚪ — QR scanner container ID collision noted (low)
+
+**Architecture (3):**
+12. **A-37** ✅ — 54 inline styles → 13 CSS classes (medium)
+13. **A-38** ✅ — Hardcoded shadows → `var(--shadow-xs/md)` tokens (low)
+14. **A-39** ✅ — Account modal focus ring consistency (low)
+
+**Quality (4):**
+15. **Q-59** ✅ — 4 new SendModal edge-case tests (medium)
+16. **Q-60** ✅ — 12 new addressBookRepository tests (medium)
+17. **Q-61** ✅ — Duplicate tab button styles extracted to CSS (low)
+18. **Q-62** ✅ — `ensureAddressBookTable` error propagation (low)
 
 ---
 

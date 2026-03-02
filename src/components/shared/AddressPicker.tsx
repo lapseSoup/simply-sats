@@ -112,46 +112,17 @@ export function AddressPicker({ onSelect, accountId }: AddressPickerProps) {
         <div
           role="listbox"
           aria-label="Address book"
-          style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: '4px',
-            width: '280px',
-            maxHeight: '320px',
-            overflowY: 'auto',
-            backgroundColor: 'var(--bg-secondary)',
-            border: '1px solid var(--border-primary)',
-            borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-            zIndex: 100,
-          }}
+          className="address-picker-dropdown"
         >
           {isEmpty && (
-            <div
-              style={{
-                padding: '16px',
-                textAlign: 'center',
-                color: 'var(--text-tertiary)',
-                fontSize: '13px',
-              }}
-            >
+            <div className="address-picker-empty">
               No saved addresses
             </div>
           )}
 
           {hasRecent && (
             <div>
-              <div
-                style={{
-                  padding: '8px 12px 4px',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                }}
-              >
+              <div className="address-picker-section-label">
                 Recent
               </div>
               {recentAddresses.map((entry) => (
@@ -165,27 +136,12 @@ export function AddressPicker({ onSelect, accountId }: AddressPickerProps) {
           )}
 
           {hasRecent && hasSaved && (
-            <div
-              style={{
-                height: '1px',
-                backgroundColor: 'var(--border-primary)',
-                margin: '4px 0',
-              }}
-            />
+            <div className="address-picker-divider" />
           )}
 
           {hasSaved && (
             <div>
-              <div
-                style={{
-                  padding: '8px 12px 4px',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: 'var(--text-tertiary)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                }}
-              >
+              <div className="address-picker-section-label">
                 Saved
               </div>
               {savedAddresses.map((entry) => (
@@ -210,8 +166,6 @@ function AddressRow({
   entry: AddressBookEntry
   onSelect: (address: string) => void
 }) {
-  const [isHovered, setIsHovered] = useState(false)
-
   const handleClick = useCallback(() => {
     onSelect(entry.address)
   }, [onSelect, entry.address])
@@ -220,20 +174,13 @@ function AddressRow({
     <div
       role="option"
       tabIndex={0}
+      className="address-picker-row"
       onClick={handleClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           handleClick()
         }
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      style={{
-        padding: '8px 12px',
-        cursor: 'pointer',
-        backgroundColor: isHovered ? 'var(--bg-tertiary)' : 'transparent',
-        transition: 'background-color 0.1s ease',
       }}
     >
       {entry.label && (

@@ -199,36 +199,11 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
     <Modal onClose={onClose} title="Scan QR Code" size="sm">
       <div className="modal-content compact">
         {/* Tab switcher */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '2px',
-            marginBottom: '12px',
-            background: 'var(--bg-tertiary)',
-            borderRadius: '8px',
-            padding: '2px',
-          }}
-        >
+        <div className="qr-tab-switcher">
           <button
             type="button"
             onClick={() => handleTabSwitch('camera')}
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              padding: '8px 12px',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              background: activeTab === 'camera' ? 'var(--bg-secondary)' : 'transparent',
-              color: activeTab === 'camera' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-              boxShadow: activeTab === 'camera' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-            }}
+            className={`qr-tab-btn ${activeTab === 'camera' ? 'active' : ''}`}
           >
             <Camera size={14} strokeWidth={1.75} />
             Camera
@@ -236,23 +211,7 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
           <button
             type="button"
             onClick={() => handleTabSwitch('upload')}
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              padding: '8px 12px',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              background: activeTab === 'upload' ? 'var(--bg-secondary)' : 'transparent',
-              color: activeTab === 'upload' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-              boxShadow: activeTab === 'upload' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-            }}
+            className={`qr-tab-btn ${activeTab === 'upload' ? 'active' : ''}`}
           >
             <Upload size={14} strokeWidth={1.75} />
             Upload Image
@@ -263,16 +222,7 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
         {activeTab === 'camera' && (
           <div>
             {cameraPermissionDenied ? (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '24px 16px',
-                  textAlign: 'center',
-                }}
-              >
+              <div className="qr-permission-denied">
                 <AlertTriangle size={32} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
                 <div style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: 500 }}>
                   Camera Access Denied
@@ -294,35 +244,14 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
               <>
                 <div
                   id={SCANNER_CONTAINER_ID}
-                  style={{
-                    width: '100%',
-                    minHeight: '260px',
-                    borderRadius: '8px',
-                    overflow: 'hidden',
-                    background: 'var(--bg-tertiary)',
-                    border: '1px solid var(--border-primary)',
-                  }}
+                  className="qr-scanner-container"
                 />
                 {scanning && (
-                  <div
-                    style={{
-                      textAlign: 'center',
-                      color: 'var(--text-tertiary)',
-                      fontSize: '12px',
-                      marginTop: '8px',
-                    }}
-                  >
+                  <div className="qr-scanner-hint" style={{ fontSize: '12px' }}>
                     Starting camera...
                   </div>
                 )}
-                <div
-                  style={{
-                    textAlign: 'center',
-                    color: 'var(--text-tertiary)',
-                    fontSize: '11px',
-                    marginTop: '8px',
-                  }}
-                >
+                <div className="qr-scanner-hint">
                   Position a QR code within the frame to scan
                 </div>
               </>
@@ -342,17 +271,7 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
             }}
           >
             <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '24px',
-                border: '2px dashed var(--border-primary)',
-                borderRadius: '12px',
-                width: '100%',
-                cursor: 'pointer',
-              }}
+              className="qr-upload-area"
               onClick={handleUploadClick}
               role="button"
               tabIndex={0}

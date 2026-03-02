@@ -86,6 +86,7 @@ export function SendModal({ onClose }: SendModalProps) {
     ? Math.round(parseFloat(sendAmount || '0'))
     : btcToSatoshis(parseFloat(sendAmount || '0'))
   const sendSats = Number.isNaN(rawSendSats) ? 0 : rawSendSats
+  const amountError = sendAmount !== '' && (Number.isNaN(rawSendSats) || rawSendSats < 0) ? 'Enter a valid amount' : ''
   const availableSats = balance
 
   // Use coin-controlled UTXOs when selected, otherwise full UTXO set
@@ -141,8 +142,11 @@ export function SendModal({ onClose }: SendModalProps) {
 
   // Hooks must be called before any conditional returns
   const recordSentAddress = useCallback(async (address: string) => {
-    const acctId = activeAccountId ?? 0
-    await saveAddress(address, '', acctId)
+    if (!activeAccountId) return
+    const result = await saveAddress(address, '', activeAccountId)
+    if (!result.ok) {
+      console.warn('Failed to save address to book:', result.error.message)
+    }
   }, [activeAccountId])
 
   const handleQRScan = useCallback((address: string) => {
@@ -186,12 +190,21 @@ export function SendModal({ onClose }: SendModalProps) {
   const handleMultiSubmitClick = () => {
     if (sendingRef.current) return
 
-    // Validate all recipient addresses before proceeding
+    // Validate all recipient addresses and amounts before proceeding
     const errors: Record<number, string> = {}
     for (const r of recipients) {
       if (!r.address) continue
       if (!isValidBSVAddress(r.address)) {
         errors[r.id] = 'Invalid BSV address'
+      }
+    }
+    for (const r of recipients) {
+      if (!r.amount) continue
+      const parsed = displayInSats
+        ? Math.round(parseFloat(r.amount))
+        : btcToSatoshis(parseFloat(r.amount))
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        errors[r.id] = errors[r.id] || 'Enter a valid amount'
       }
     }
     if (Object.keys(errors).length > 0) {
@@ -255,9 +268,12 @@ export function SendModal({ onClose }: SendModalProps) {
 
     const parsedRecipients: RecipientOutput[] = recipients.map(r => ({
       address: r.address,
-      satoshis: displayInSats
-        ? Math.round(parseFloat(r.amount || '0'))
-        : btcToSatoshis(parseFloat(r.amount || '0'))
+      satoshis: (() => {
+        const raw = displayInSats
+          ? Math.round(parseFloat(r.amount || '0'))
+          : btcToSatoshis(parseFloat(r.amount || '0'))
+        return Number.isNaN(raw) ? 0 : raw
+      })()
     }))
     const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
 
@@ -336,7 +352,7 @@ export function SendModal({ onClose }: SendModalProps) {
               <div style={{ display: 'flex', gap: '2px', paddingTop: '6px' }}>
                 <AddressPicker
                   onSelect={handleAddressSelect}
-                  accountId={activeAccountId ?? 0}
+                  accountId={activeAccountId ?? 1}
                 />
                 <button
                   type="button"
@@ -396,6 +412,9 @@ export function SendModal({ onClose }: SendModalProps) {
                 }
                 ≈ ${formatUSD(sendSats)} USD
               </div>
+            )}
+            {amountError && (
+              <div className="form-error" role="alert">{amountError}</div>
             )}
           </div>
 
@@ -594,7 +613,7 @@ export function SendModal({ onClose }: SendModalProps) {
             <button
               className="btn btn-primary"
               onClick={handleSubmitClick}
-              disabled={sending || !sendAddress || !sendAmount || !!addressError || sendSats + fee > availableSats}
+              disabled={sending || !sendAddress || !sendAmount || !!addressError || sendSats <= 0 || sendSats + fee > availableSats}
               aria-busy={sending}
             >
               {sending ? (

@@ -27,24 +27,31 @@ function rowToEntry(row: AddressBookRow): AddressBookEntry {
 /**
  * Ensure address_book table exists (for browser/WASM mode)
  */
-export async function ensureAddressBookTable(): Promise<void> {
+export async function ensureAddressBookTable(): Promise<Result<void, DbError>> {
   const database = getDatabase()
 
   try {
     await database.execute(`
       CREATE TABLE IF NOT EXISTS address_book (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        address TEXT NOT NULL UNIQUE,
+        address TEXT NOT NULL,
         label TEXT NOT NULL DEFAULT '',
         last_used_at INTEGER NOT NULL,
         use_count INTEGER NOT NULL DEFAULT 1,
-        account_id INTEGER NOT NULL DEFAULT 0
+        account_id INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(address, account_id)
       )
     `)
     await database.execute('CREATE INDEX IF NOT EXISTS idx_address_book_account ON address_book(account_id)')
     await database.execute('CREATE INDEX IF NOT EXISTS idx_address_book_last_used ON address_book(last_used_at DESC)')
+    return ok(undefined)
   } catch (e) {
     dbLogger.error('Failed to ensure address_book table:', e)
+    return err(new DbError(
+      `ensureAddressBookTable failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
   }
 }
 
@@ -102,7 +109,7 @@ export async function saveAddress(address: string, label: string, accountId: num
     const result = await database.execute(
       `INSERT INTO address_book (address, label, last_used_at, use_count, account_id)
        VALUES ($1, $2, $3, 1, $4)
-       ON CONFLICT(address) DO UPDATE SET
+       ON CONFLICT(address, account_id) DO UPDATE SET
          last_used_at = $3,
          use_count = use_count + 1,
          label = CASE WHEN $2 != '' THEN $2 ELSE address_book.label END`,
@@ -160,7 +167,7 @@ export async function deleteAddress(address: string): Promise<Result<void, DbErr
 /**
  * Check if an address exists in the book
  */
-export async function addressExists(address: string): Promise<boolean> {
+export async function addressExists(address: string): Promise<Result<boolean, DbError>> {
   const database = getDatabase()
 
   try {
@@ -168,8 +175,12 @@ export async function addressExists(address: string): Promise<boolean> {
       'SELECT id FROM address_book WHERE address = $1',
       [address]
     )
-    return rows.length > 0
-  } catch (_e) {
-    return false
+    return ok(rows.length > 0)
+  } catch (e) {
+    return err(new DbError(
+      `addressExists failed: ${e instanceof Error ? e.message : String(e)}`,
+      'QUERY_FAILED',
+      e
+    ))
   }
 }
