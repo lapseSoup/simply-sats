@@ -1431,7 +1431,7 @@ body::-webkit-scrollbar {
 
 /* Scrollable modal body — used by TransactionDetailModal for pinned-footer layout */
 .modal-content-scroll {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
