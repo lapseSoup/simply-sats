@@ -153,13 +153,15 @@ export const RETRY_CONFIG = {
  */
 export const RATE_LIMITS = {
   // Delay between sequential address sync requests (ms)
-  addressSyncDelay: 1000,
+  // WoC free tier allows ~3 req/s — 1500ms between batches keeps us under.
+  addressSyncDelay: 1500,
 
-  // Maximum concurrent API requests
-  maxConcurrentRequests: 3,
+  // Maximum concurrent API requests per batch
+  // Reduced from 3 → 2 to stay within WoC rate limits
+  maxConcurrentRequests: 2,
 
   // Delay between token balance fetches (ms)
-  tokenFetchDelay: 500
+  tokenFetchDelay: 750
 } as const
 
 /**

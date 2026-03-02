@@ -496,6 +496,18 @@ fn include_migrations() -> Vec<Migration> {
         // and WAL mode is set by configure_database() in run() using rusqlite before
         // the plugin initializes. Both are marked as applied in the checksums list above
         // so the plugin doesn't try to run them.
+        Migration {
+            version: 24,
+            description: "Add transferred flag to ordinal_cache",
+            sql: include_str!("../migrations/024_ordinal_cache_transferred_flag.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 25,
+            description: "Add block_height to ordinal_cache",
+            sql: include_str!("../migrations/025_ordinal_cache_block_height.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

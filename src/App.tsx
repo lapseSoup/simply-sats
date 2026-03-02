@@ -326,10 +326,14 @@ function WalletApp() {
       // Skip when discovery is pending — background sync holds the DB lock and would
       // race with discoverAccounts' createAccount calls, causing "database is locked" errors.
       // Fire-and-forget: failures are logged but don't affect the active account.
+      // Delay start by 10s to let the active account's sync finish first and avoid
+      // overwhelming WoC with concurrent requests from multiple accounts.
       const otherAccounts = accountsRef.current.filter(a => a.id !== activeAccountId)
       if (otherAccounts.length > 0 && !discoveryParams) {
         const sessionPwd = getSessionPassword()
         ;(async () => {
+          // Wait for active account sync to settle before syncing other accounts
+          await new Promise(resolve => setTimeout(resolve, 10_000))
           for (const account of otherAccounts) {
             if (cancelled) break  // B-41: Stop syncing inactive accounts if superseded
             try {
@@ -349,6 +353,8 @@ function WalletApp() {
             } catch (e) {
               logger.warn('Background sync failed for account', { accountId: account.id, error: String(e) })
             }
+            // Inter-account cooldown — give WoC rate limits time to recover
+            if (!cancelled) await new Promise(resolve => setTimeout(resolve, 3_000))
           }
         })()
       }

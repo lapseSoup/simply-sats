@@ -66,9 +66,24 @@ export function useWalletInit({
 
     const init = async () => {
       const t0 = performance.now()
+      const timings: string[] = []
       const lap = (label: string) => {
         const elapsed = Math.round(performance.now() - t0)
         walletLogger.info(`⏱ INIT ${label}`, { elapsedMs: elapsed })
+        timings.push(`${elapsed}ms — ${label}`)
+      }
+      // Store timings so they're readable even if devtools opens after init
+      const flushTimings = () => {
+        sessionStorage.setItem('__init_timings', JSON.stringify(timings))
+        const logTimings = () => {
+          console.log('%c── INIT TIMING BREAKDOWN ──', 'font-weight:bold;color:#f90')
+          for (const t of timings) console.log(`  ⏱ ${t}`)
+          console.log('%c───────────────────────────', 'font-weight:bold;color:#f90')
+        }
+        logTimings()
+        // Re-log every 3s for 15s so it's visible even if devtools opens late
+        let count = 0
+        const iv = setInterval(() => { count++; logTimings(); if (count >= 5) clearInterval(iv) }, 3000)
       }
 
       // ── CRITICAL PATH: Only what's needed to show data ──────────────
@@ -112,6 +127,7 @@ export function useWalletInit({
         if (!walletExists) {
           // No wallet — show onboarding
           lap('TOTAL — setLoading(false) [no wallet]')
+          flushTimings()
           setLoading(false)
           // Background: run deferred maintenance
           deferMaintenance(mounted, refreshAccounts, setContacts)
@@ -124,6 +140,7 @@ export function useWalletInit({
             walletLogger.info('Found encrypted wallet with accounts, showing lock screen')
             setIsLocked(true)
             lap('TOTAL — setLoading(false) [lock screen]')
+            flushTimings()
             setLoading(false)
             // Background: run deferred maintenance
             deferMaintenance(mounted, refreshAccounts, setContacts)
@@ -139,6 +156,7 @@ export function useWalletInit({
             if (!loadResult.ok) {
               walletLogger.error('Failed to load unprotected wallet', loadResult.error)
               setIsLocked(true)
+              flushTimings()
               setLoading(false)
               return
             }
@@ -199,6 +217,7 @@ export function useWalletInit({
               setModuleSessionPassword('')
 
               lap('TOTAL — setLoading(false) [data ready]')
+              flushTimings()
               if (!mounted) return
               setLoading(false)
 
@@ -250,6 +269,7 @@ export function useWalletInit({
 
       if (!mounted) return
       lap('TOTAL — setLoading(false)')
+      flushTimings()
       setLoading(false)
     }
     init()
