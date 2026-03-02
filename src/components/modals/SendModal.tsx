@@ -1,13 +1,17 @@
 import { useState, useMemo, useRef, useCallback } from 'react'
-import { AlertTriangle, Crosshair, Settings } from 'lucide-react'
-import { useWalletState, useWalletActions } from '../../contexts'
+import { AlertTriangle, Crosshair, Settings, ScanLine } from 'lucide-react'
+import { useWalletState, useWalletActions, useAccounts } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
 import { useAddressValidation } from '../../hooks/useAddressValidation'
 import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
+import { FeeEstimation } from '../shared/FeeEstimation'
+import { AddressPicker } from '../shared/AddressPicker'
 import { CoinControlModal } from './CoinControlModal'
+import { QRScannerModal } from './QRScannerModal'
+import { saveAddress } from '../../infrastructure/database'
 import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { toWalletUtxo } from '../../domain/types'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
@@ -20,6 +24,7 @@ interface SendModalProps {
 export function SendModal({ onClose }: SendModalProps) {
   const { wallet, balance, utxos, feeRateKB } = useWalletState()
   const { handleSend, handleSendMulti, performSync } = useWalletActions()
+  const { activeAccountId } = useAccounts()
   const { displayInSats, showToast, formatUSD } = useUI()
 
   const [sendAddress, setSendAddress] = useState('')
@@ -30,7 +35,11 @@ export function SendModal({ onClose }: SendModalProps) {
   const { addressError, validateAddress } = useAddressValidation()
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showCoinControl, setShowCoinControl] = useState(false)
+  const [showQRScanner, setShowQRScanner] = useState(false)
   const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
+
+  // Fee rate override (per-transaction, does not persist to settings)
+  const [feeRateOverride, setFeeRateOverride] = useState<number | null>(null)
 
   // Multi-recipient mode
   const [multiRecipient, setMultiRecipient] = useState(false)
@@ -68,8 +77,9 @@ export function SendModal({ onClose }: SendModalProps) {
     }, 0)
   }, [multiRecipient, recipients, displayInSats])
 
-  // Use fee rate from settings (convert from sats/KB to sats/byte), fallback to 0.05 sat/byte
-  const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : 0.05
+  // Use fee rate override if set, otherwise from settings (convert from sats/KB to sats/byte), fallback to 0.05 sat/byte
+  const feeRate = feeRateOverride ?? (feeRateKB > 0 ? feeRateKB / 1000 : 0.05)
+  const effectiveFeeRateKB = feeRate * 1000
 
   // Parse amount based on display mode (sats or BSV)
   const rawSendSats = displayInSats
@@ -129,6 +139,27 @@ export function SendModal({ onClose }: SendModalProps) {
 
   const maxSendSats = maxSendResult.maxSats
 
+  // Hooks must be called before any conditional returns
+  const recordSentAddress = useCallback(async (address: string) => {
+    const acctId = activeAccountId ?? 0
+    await saveAddress(address, '', acctId)
+  }, [activeAccountId])
+
+  const handleQRScan = useCallback((address: string) => {
+    setSendAddress(address)
+    validateAddress(address)
+    setShowQRScanner(false)
+  }, [validateAddress])
+
+  const handleAddressSelect = useCallback((address: string) => {
+    setSendAddress(address)
+    validateAddress(address)
+  }, [validateAddress])
+
+  const handleFeeRateChange = useCallback((rate: number) => {
+    setFeeRateOverride(rate)
+  }, [])
+
   if (!wallet) return null
 
   // Check if confirmation is required based on amount
@@ -178,7 +209,8 @@ export function SendModal({ onClose }: SendModalProps) {
 
   const executeWithSendGuard = async (
     handler: () => Promise<{ ok: true; value?: unknown } | { ok: false; error: string }>,
-    successToast: string
+    successToast: string,
+    sentAddress?: string
   ) => {
     sendingRef.current = true
     setShowConfirmation(false)
@@ -190,6 +222,7 @@ export function SendModal({ onClose }: SendModalProps) {
 
       if (result.ok) {
         showToast(successToast)
+        if (sentAddress) void recordSentAddress(sentAddress)
         onClose()
         void performSync()
       } else {
@@ -197,6 +230,7 @@ export function SendModal({ onClose }: SendModalProps) {
         if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
           // TX is on-chain. Show clean success toast and silently sync to reconcile balance.
           showToast(successToast)
+          if (sentAddress) void recordSentAddress(sentAddress)
           onClose()
           void performSync()
         } else {
@@ -212,7 +246,8 @@ export function SendModal({ onClose }: SendModalProps) {
   const executeSend = () =>
     executeWithSendGuard(
       () => handleSend(sendAddress, sendSats, selectedUtxos ?? undefined),
-      `Sent ${sendSats.toLocaleString()} sats!`
+      `Sent ${sendSats.toLocaleString()} sats!`,
+      sendAddress
     )
 
   const executeSendMulti = async () => {
@@ -278,26 +313,57 @@ export function SendModal({ onClose }: SendModalProps) {
       )}
     <Modal onClose={onClose} title="Send BSV" className="send-modal">
       <div className="modal-content compact">
+          {/* Address field with QR + address book buttons */}
           <div className="form-group">
             <label className="form-label" htmlFor="send-address">To</label>
-            <input
-              id="send-address"
-              type="text"
-              className={`form-input mono ${addressError ? 'input-error' : ''}`}
-              placeholder="Enter BSV address"
-              value={sendAddress}
-              onChange={e => {
-                setSendAddress(e.target.value)
-                validateAddress(e.target.value)
-              }}
-              autoComplete="off"
-              aria-invalid={!!addressError}
-              aria-describedby={addressError ? 'address-error' : undefined}
-            />
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <input
+                  id="send-address"
+                  type="text"
+                  className={`form-input mono ${addressError ? 'input-error' : ''}`}
+                  placeholder="Enter BSV address"
+                  value={sendAddress}
+                  onChange={e => {
+                    setSendAddress(e.target.value)
+                    validateAddress(e.target.value)
+                  }}
+                  autoComplete="off"
+                  aria-invalid={!!addressError}
+                  aria-describedby={addressError ? 'address-error' : undefined}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '2px', paddingTop: '6px' }}>
+                <AddressPicker
+                  onSelect={handleAddressSelect}
+                  accountId={activeAccountId ?? 0}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowQRScanner(true)}
+                  aria-label="Scan QR code"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--text-secondary)',
+                    borderRadius: '4px',
+                  }}
+                >
+                  <ScanLine size={16} />
+                </button>
+              </div>
+            </div>
             {addressError && (
               <div id="address-error" className="form-error" role="alert">{addressError}</div>
             )}
           </div>
+
+          {/* Amount field */}
           <div className="form-group">
             <label className="form-label" htmlFor="send-amount">
               Amount ({displayInSats ? 'sats' : 'BSV'})
@@ -331,92 +397,9 @@ export function SendModal({ onClose }: SendModalProps) {
                 ≈ ${formatUSD(sendSats)} USD
               </div>
             )}
-            {!multiRecipient && (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ fontSize: 12, padding: '4px 8px', marginTop: 4 }}
-                onClick={() => setMultiRecipient(true)}
-              >
-                + Multiple recipients
-              </button>
-            )}
           </div>
 
-          {multiRecipient && (
-            <div className="form-group">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <label className="form-label" style={{ margin: 0 }}>Recipients</label>
-                <button
-                  type="button"
-                  style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', fontSize: 11, cursor: 'pointer' }}
-                  onClick={() => { setMultiRecipient(false); setRecipients([{ id: 0, address: '', amount: '' }]); setNextRecipientId(1) }}
-                >
-                  - Single recipient
-                </button>
-              </div>
-              {recipients.map((r) => (
-                <div key={r.id} style={{ marginBottom: 6 }}>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                    <input
-                      type="text"
-                      className={`form-input mono ${recipientErrors[r.id] ? 'input-error' : ''}`}
-                      placeholder="BSV address"
-                      value={r.address}
-                      onChange={e => {
-                        setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, address: e.target.value } : x))
-                        validateRecipientAddress(r.id, e.target.value)
-                      }}
-                      style={{ flex: 2 }}
-                      autoComplete="off"
-                      aria-invalid={!!recipientErrors[r.id]}
-                    />
-                    <input
-                      type="number"
-                      className="form-input"
-                      placeholder={displayInSats ? '0' : '0.00000000'}
-                      step={displayInSats ? '1' : '0.00000001'}
-                      min="0"
-                      value={r.amount}
-                      onChange={e => {
-                        setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, amount: e.target.value } : x))
-                      }}
-                      style={{ flex: 1 }}
-                      autoComplete="off"
-                    />
-                    {recipients.length > 1 && (
-                      <button
-                        type="button"
-                        style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 18, lineHeight: 1, paddingTop: 8 }}
-                        onClick={() => {
-                          setRecipients(prev => prev.filter(x => x.id !== r.id))
-                          setRecipientErrors(prev => { const next = { ...prev }; delete next[r.id]; return next })
-                        }}
-                        aria-label="Remove recipient"
-                      >
-                        -
-                      </button>
-                    )}
-                  </div>
-                  {recipientErrors[r.id] && (
-                    <div className="form-error" role="alert" style={{ fontSize: 11, marginTop: 2 }}>{recipientErrors[r.id]}</div>
-                  )}
-                </div>
-              ))}
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ fontSize: 12, padding: '4px 8px', width: '100%' }}
-                onClick={() => {
-                  setRecipients(r => [...r, { id: nextRecipientId, address: '', amount: '' }])
-                  setNextRecipientId(n => n + 1)
-                }}
-              >
-                + Add recipient
-              </button>
-            </div>
-          )}
-
+          {/* Send summary — always visible */}
           <div className="send-summary compact">
             <div className="send-summary-row">
               <span>Balance</span>
@@ -429,7 +412,7 @@ export function SendModal({ onClose }: SendModalProps) {
                   <span>{sendSats.toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats)})</span></span>
                 </div>
                 <div className="send-summary-row">
-                  <span>Fee <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>({feeRateKB} sats/KB)</span></span>
+                  <span>Fee <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>({effectiveFeeRateKB} sats/KB{feeRateOverride !== null ? ' · custom' : ''})</span></span>
                   <span>{fee} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(fee)})</span></span>
                 </div>
                 <div className="send-summary-row total">
@@ -444,23 +427,98 @@ export function SendModal({ onClose }: SendModalProps) {
           <details className="send-advanced">
             <summary className="send-advanced-toggle">Advanced Options</summary>
             <div className="send-advanced-content">
-              {/* Transaction details */}
-              {sendSats > 0 && (
-                <div className="send-tx-details">
-                  <div className="send-tx-row">
-                    <span>Est. Size</span>
-                    <span>{txSize} bytes</span>
+              {/* Multiple recipients toggle */}
+              {!multiRecipient ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ width: '100%', fontSize: 12, padding: '8px 12px' }}
+                  onClick={() => setMultiRecipient(true)}
+                >
+                  + Multiple recipients
+                </button>
+              ) : (
+                <div className="form-group" style={{ marginTop: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <label className="form-label" style={{ margin: 0 }}>Recipients</label>
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', fontSize: 11, cursor: 'pointer' }}
+                      onClick={() => { setMultiRecipient(false); setRecipients([{ id: 0, address: '', amount: '' }]); setNextRecipientId(1) }}
+                    >
+                      - Single recipient
+                    </button>
                   </div>
-                  <div className="send-tx-row">
-                    <span>Inputs</span>
-                    <span>{inputCount}</span>
-                  </div>
-                  <div className="send-tx-row">
-                    <span>Outputs</span>
-                    <span>{outputCount}</span>
-                  </div>
+                  {recipients.map((r) => (
+                    <div key={r.id} style={{ marginBottom: 6 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        <input
+                          type="text"
+                          className={`form-input mono ${recipientErrors[r.id] ? 'input-error' : ''}`}
+                          placeholder="BSV address"
+                          value={r.address}
+                          onChange={e => {
+                            setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, address: e.target.value } : x))
+                            validateRecipientAddress(r.id, e.target.value)
+                          }}
+                          style={{ flex: 2 }}
+                          autoComplete="off"
+                          aria-invalid={!!recipientErrors[r.id]}
+                        />
+                        <input
+                          type="number"
+                          className="form-input"
+                          placeholder={displayInSats ? '0' : '0.00000000'}
+                          step={displayInSats ? '1' : '0.00000001'}
+                          min="0"
+                          value={r.amount}
+                          onChange={e => {
+                            setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, amount: e.target.value } : x))
+                          }}
+                          style={{ flex: 1 }}
+                          autoComplete="off"
+                        />
+                        {recipients.length > 1 && (
+                          <button
+                            type="button"
+                            style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 18, lineHeight: 1, paddingTop: 8 }}
+                            onClick={() => {
+                              setRecipients(prev => prev.filter(x => x.id !== r.id))
+                              setRecipientErrors(prev => { const next = { ...prev }; delete next[r.id]; return next })
+                            }}
+                            aria-label="Remove recipient"
+                          >
+                            -
+                          </button>
+                        )}
+                      </div>
+                      {recipientErrors[r.id] && (
+                        <div className="form-error" role="alert" style={{ fontSize: 11, marginTop: 2 }}>{recipientErrors[r.id]}</div>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12, padding: '4px 8px', width: '100%' }}
+                    onClick={() => {
+                      setRecipients(r => [...r, { id: nextRecipientId, address: '', amount: '' }])
+                      setNextRecipientId(n => n + 1)
+                    }}
+                  >
+                    + Add recipient
+                  </button>
                 </div>
               )}
+
+              {/* Fee Rate selector */}
+              <FeeEstimation
+                inputCount={sendSats > 0 ? inputCount : 1}
+                outputCount={sendSats > 0 ? outputCount : 2}
+                currentFee={fee}
+                onFeeRateChange={handleFeeRateChange}
+                compact={true}
+              />
 
               {/* Coin Control */}
               <button
@@ -489,6 +547,24 @@ export function SendModal({ onClose }: SendModalProps) {
                 >
                   Clear selection (use automatic)
                 </button>
+              )}
+
+              {/* Transaction details */}
+              {sendSats > 0 && (
+                <div className="send-tx-details" style={{ marginTop: 8 }}>
+                  <div className="send-tx-row">
+                    <span>Est. Size</span>
+                    <span>{txSize} bytes</span>
+                  </div>
+                  <div className="send-tx-row">
+                    <span>Inputs</span>
+                    <span>{inputCount}</span>
+                  </div>
+                  <div className="send-tx-row">
+                    <span>Outputs</span>
+                    <span>{outputCount}</span>
+                  </div>
+                </div>
               )}
             </div>
           </details>
@@ -531,6 +607,14 @@ export function SendModal({ onClose }: SendModalProps) {
           )}
         </div>
       </Modal>
+
+    {/* QR Scanner Modal */}
+    {showQRScanner && (
+      <QRScannerModal
+        onScan={handleQRScan}
+        onClose={() => setShowQRScanner(false)}
+      />
+    )}
 
     {/* Coin Control Modal */}
     {showCoinControl && (

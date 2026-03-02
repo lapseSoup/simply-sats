@@ -73,6 +73,16 @@ export interface DerivedAddress {
 import type { Contact } from '../../domain/types'
 export type { Contact }
 
+// Address book entry (BSV addresses with labels, separate from contacts)
+export interface AddressBookEntry {
+  id?: number
+  address: string
+  label: string
+  lastUsedAt: number
+  useCount: number
+  accountId: number
+}
+
 // BRC-100 action result for tracking createAction outcomes
 export interface ActionResult {
   id?: number
