@@ -69,8 +69,9 @@ impl KeyStoreInner {
         self.wallet_wif.is_some()
     }
 
-    /// Get the WIF for a given key type
-    fn get_wif(&self, key_type: &str) -> Result<String, String> {
+    /// Get the WIF for a given key type.
+    /// Used by key_store commands and the auth module.
+    pub fn get_wif(&self, key_type: &str) -> Result<String, String> {
         match key_type {
             "wallet" => self.wallet_wif.clone().ok_or_else(|| "No wallet key stored".to_string()),
             "ord" | "ordinals" => self.ord_wif.clone().ok_or_else(|| "No ordinals key stored".to_string()),

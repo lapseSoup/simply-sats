@@ -13,6 +13,7 @@ use subtle::ConstantTimeEq;
 type HmacSha256 = Hmac<Sha256>;
 
 mod arc_broadcaster;
+mod auth;
 mod brc42_derivation;
 mod brc100_signing;
 mod bsv_sdk_adapter;
@@ -660,6 +661,9 @@ pub fn run() {
     let key_store: key_store::SharedKeyStore = Arc::new(Mutex::new(key_store::KeyStoreInner::new()));
     let key_store_for_server = key_store.clone();
 
+    // Auth state — BRC-31 authenticated messaging (peer + transport)
+    let auth_state: Arc<auth::AuthState> = Arc::new(auth::AuthState::new());
+
     // Rate limiter — generate/load per-installation HMAC key, then load persisted state.
     // This happens before Tauri builder so the manager is ready for .manage().
     let rate_limit_manager: SharedRateLimitManager = {
@@ -693,6 +697,7 @@ pub fn run() {
         .manage(session_state)
         .manage(rate_limit_manager)
         .manage(key_store)
+        .manage(auth_state)
         .invoke_handler(tauri::generate_handler![
             check_address_balance,
             respond_to_brc100,
@@ -770,7 +775,10 @@ pub fn run() {
             spv::verify_merkle_path,
             spv::parse_beef,
             spv::verify_beef,
-            arc_broadcaster::broadcast_transaction
+            arc_broadcaster::broadcast_transaction,
+            auth::auth_create_session,
+            auth::auth_send_message,
+            auth::auth_verify_certificate
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
