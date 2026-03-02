@@ -76,7 +76,7 @@ export async function cacheOrdinalsInBackground(
       })
     }
 
-    // 2. Fetch missing content (up to 10 per cycle)
+    // 2. Fetch missing content (up to 50 per cycle)
     if (isCancelled()) return
     const toFetch: Ordinal[] = []
     for (const ord of allOrdinals) {
@@ -85,7 +85,7 @@ export async function cacheOrdinalsInBackground(
       if (!hasCached) {
         toFetch.push(ord)
       }
-      if (toFetch.length >= 10) break
+      if (toFetch.length >= 50) break
     }
 
     if (toFetch.length === 0) return

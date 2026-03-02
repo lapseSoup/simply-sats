@@ -336,6 +336,7 @@ function WalletApp() {
         ;(async () => {
           // Wait for active account sync to settle before syncing other accounts
           await new Promise(resolve => setTimeout(resolve, 10_000))
+          if (cancelled) return // B-68: Check after initial delay
           for (const account of otherAccounts) {
             if (cancelled) break  // B-41: Stop syncing inactive accounts if superseded
             try {

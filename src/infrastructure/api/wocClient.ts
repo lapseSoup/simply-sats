@@ -87,6 +87,9 @@ function throttledRequest<T>(fn: () => Promise<T>): Promise<T> {
       await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_GAP_MS - elapsed))
     }
     _lastRequestTime = Date.now()
+  }).catch(() => {
+    // B-66: Swallow errors so the queue continues even if one request's
+    // timing logic fails. Individual request errors are handled by callers.
   })
   return _throttleQueue.then(fn)
 }

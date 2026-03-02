@@ -382,6 +382,11 @@ export async function decryptWithSharedSecret(
   // Decode the combined data
   const combined = new Uint8Array(base64ToBuffer(encryptedMessage))
 
+  // S-68: Minimum size check — salt(16) + IV(12) + at least 1 byte ciphertext = 29
+  if (combined.length < 29) {
+    throw new Error('Encrypted message too short — corrupted or invalid')
+  }
+
   // Extract salt, IV, and ciphertext
   // Format: salt (16 bytes) + IV (12 bytes) + ciphertext
   const salt = combined.slice(0, 16)

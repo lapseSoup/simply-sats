@@ -205,19 +205,21 @@ export function useSyncData({
 
           if (isCancelled?.()) return
 
-          // Add synthetic entries for ordinal txids not in DB tx history
-          const dbTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
+          // B-67: Copy before mutating — dbTxHistory was already passed to
+          // setTxHistory above, so pushing onto it would mutate React state.
+          const mergedHistory = [...dbTxHistory]
+          const dbTxidSet = new Set(mergedHistory.map(tx => tx.tx_hash))
           let added = 0
           for (const [txid, height] of ordinalTxidHeights) {
             if (!dbTxidSet.has(txid)) {
-              dbTxHistory.push({ tx_hash: txid, height, amount: 1, createdAt: 0 })
+              mergedHistory.push({ tx_hash: txid, height, amount: 1, createdAt: 0 })
               added++
             }
           }
 
           if (added > 0 && !isCancelled?.()) {
-            dbTxHistory.sort(compareTxByHeight)
-            setTxHistory([...dbTxHistory])
+            mergedHistory.sort(compareTxByHeight)
+            setTxHistory(mergedHistory)
           }
         } catch (e) {
           syncLogger.warn('fetchDataFromDB: merge ordinal tx entries failed', { error: String(e) })
@@ -244,6 +246,8 @@ export function useSyncData({
           if (isCancelled?.()) return
           const newCache = await getBatchOrdinalContent(allOrigins)
           if (isCancelled?.()) return
+          // B-60: Map.set() is atomic in single-threaded JS — concurrent syncs
+          // may overwrite entries for the same key, but this is idempotent.
           for (const [k, v] of newCache) { contentCacheRef.current.set(k, v) }
           bumpCacheVersion()
         } catch (e) {

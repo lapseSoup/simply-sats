@@ -6,15 +6,22 @@ vi.mock('../../utils/tauri', () => ({
   tauriInvoke: vi.fn(),
 }))
 
+vi.mock('../../domain/wallet/validation', () => ({
+  isValidBSVAddress: vi.fn(() => true),
+}))
+
 import { listOrdinal, cancelOrdinalListing, purchaseOrdinal } from './marketplace'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
+import { isValidBSVAddress } from '../../domain/wallet/validation'
 
 const mockIsTauri = vi.mocked(isTauri)
 const mockTauriInvoke = vi.mocked(tauriInvoke)
+const mockIsValidBSVAddress = vi.mocked(isValidBSVAddress)
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockIsTauri.mockReturnValue(true)
+  mockIsValidBSVAddress.mockReturnValue(true)
 })
 
 const dummyUtxo = { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' }
@@ -78,20 +85,52 @@ describe('listOrdinal', () => {
     expect(result).toEqual({ ok: false, error: 'Marketplace requires Tauri runtime' })
     expect(mockTauriInvoke).not.toHaveBeenCalled()
   })
+
+  it('returns err for invalid pay address (S-64)', async () => {
+    mockIsValidBSVAddress.mockReturnValue(false)
+
+    const result = await listOrdinal(
+      'ordWif',
+      dummyUtxo,
+      'payWif',
+      [dummyPaymentUtxo],
+      'invalidAddr',
+      'ordAddr',
+      50000,
+    )
+
+    expect(result).toEqual({ ok: false, error: 'Invalid payment address' })
+    expect(mockTauriInvoke).not.toHaveBeenCalled()
+  })
+
+  it('returns err for invalid price (S-70)', async () => {
+    const result = await listOrdinal(
+      'ordWif',
+      dummyUtxo,
+      'payWif',
+      [dummyPaymentUtxo],
+      'payAddr',
+      'ordAddr',
+      -100,
+    )
+
+    expect(result.ok).toBe(false)
+    expect(mockTauriInvoke).not.toHaveBeenCalled()
+  })
 })
 
 describe('cancelOrdinalListing', () => {
-  it('invokes cancel_ordinal_listing and returns txid', async () => {
+  it('invokes cancel_ordinal_listing and returns Result with txid', async () => {
     mockTauriInvoke.mockResolvedValue({ rawTx: 'cafebabe', txid: 'def456' })
 
-    const txid = await cancelOrdinalListing(
+    const result = await cancelOrdinalListing(
       'ordWif',
       dummyUtxo,
       'payWif',
       [dummyPaymentUtxo],
     )
 
-    expect(txid).toBe('def456')
+    expect(result).toEqual({ ok: true, value: 'def456' })
     expect(mockTauriInvoke).toHaveBeenCalledWith('cancel_ordinal_listing', {
       ordWif: 'ordWif',
       listingUtxo: { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' },
@@ -100,20 +139,28 @@ describe('cancelOrdinalListing', () => {
     })
   })
 
-  it('throws when not in Tauri runtime', async () => {
+  it('returns err when not in Tauri runtime (B-55)', async () => {
     mockIsTauri.mockReturnValue(false)
 
-    await expect(
-      cancelOrdinalListing('ordWif', dummyUtxo, 'payWif', []),
-    ).rejects.toThrow('Marketplace requires Tauri runtime')
+    const result = await cancelOrdinalListing('ordWif', dummyUtxo, 'payWif', [])
+
+    expect(result).toEqual({ ok: false, error: 'Marketplace requires Tauri runtime' })
+  })
+
+  it('returns err when Tauri invoke fails', async () => {
+    mockTauriInvoke.mockRejectedValue(new Error('unlock failed'))
+
+    const result = await cancelOrdinalListing('ordWif', dummyUtxo, 'payWif', [dummyPaymentUtxo])
+
+    expect(result).toEqual({ ok: false, error: 'unlock failed' })
   })
 })
 
 describe('purchaseOrdinal', () => {
-  it('invokes purchase_ordinal and returns txid', async () => {
+  it('invokes purchase_ordinal and returns Result with txid', async () => {
     mockTauriInvoke.mockResolvedValue({ rawTx: 'baadf00d', txid: 'ghi789' })
 
-    const txid = await purchaseOrdinal({
+    const result = await purchaseOrdinal({
       paymentWif: 'payWif',
       paymentUtxos: [dummyPaymentUtxo],
       ordAddress: '1BuyerOrdAddress',
@@ -122,7 +169,7 @@ describe('purchaseOrdinal', () => {
       priceSats: 10000,
     })
 
-    expect(txid).toBe('ghi789')
+    expect(result).toEqual({ ok: true, value: 'ghi789' })
     expect(mockTauriInvoke).toHaveBeenCalledWith('purchase_ordinal', {
       paymentWif: 'payWif',
       paymentUtxos: [{ txid: 'b'.repeat(64), vout: 0, satoshis: 100000, script: '' }],
@@ -133,18 +180,61 @@ describe('purchaseOrdinal', () => {
     })
   })
 
-  it('throws when not in Tauri runtime', async () => {
+  it('returns err when not in Tauri runtime (B-55)', async () => {
     mockIsTauri.mockReturnValue(false)
 
-    await expect(
-      purchaseOrdinal({
-        paymentWif: 'payWif',
-        paymentUtxos: [],
-        ordAddress: '1Addr',
-        listingUtxo: dummyUtxo,
-        payout: 'dW5sb2Nrc2NyaXB0',
-        priceSats: 10000,
-      }),
-    ).rejects.toThrow('Marketplace requires Tauri runtime')
+    const result = await purchaseOrdinal({
+      paymentWif: 'payWif',
+      paymentUtxos: [],
+      ordAddress: '1Addr',
+      listingUtxo: dummyUtxo,
+      payout: 'dW5sb2Nrc2NyaXB0',
+      priceSats: 10000,
+    })
+
+    expect(result).toEqual({ ok: false, error: 'Marketplace requires Tauri runtime' })
+  })
+
+  it('returns err for invalid ordAddress (S-64)', async () => {
+    mockIsValidBSVAddress.mockReturnValue(false)
+
+    const result = await purchaseOrdinal({
+      paymentWif: 'payWif',
+      paymentUtxos: [dummyPaymentUtxo],
+      ordAddress: 'badAddr',
+      listingUtxo: dummyUtxo,
+      payout: 'dW5sb2Nrc2NyaXB0',
+      priceSats: 10000,
+    })
+
+    expect(result).toEqual({ ok: false, error: 'Invalid ordinal destination address' })
+  })
+
+  it('returns err for invalid price (S-70)', async () => {
+    const result = await purchaseOrdinal({
+      paymentWif: 'payWif',
+      paymentUtxos: [dummyPaymentUtxo],
+      ordAddress: '1Addr',
+      listingUtxo: dummyUtxo,
+      payout: 'dW5sb2Nrc2NyaXB0',
+      priceSats: 0,
+    })
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('returns err when Tauri invoke fails', async () => {
+    mockTauriInvoke.mockRejectedValue(new Error('purchase failed'))
+
+    const result = await purchaseOrdinal({
+      paymentWif: 'payWif',
+      paymentUtxos: [dummyPaymentUtxo],
+      ordAddress: '1Addr',
+      listingUtxo: dummyUtxo,
+      payout: 'dW5sb2Nrc2NyaXB0',
+      priceSats: 10000,
+    })
+
+    expect(result).toEqual({ ok: false, error: 'purchase failed' })
   })
 })

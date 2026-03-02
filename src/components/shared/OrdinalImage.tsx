@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, memo } from 'react'
+import { useState, useCallback, useEffect, useRef, memo } from 'react'
 import { Image, FileText, Braces, Diamond } from 'lucide-react'
 import { getOrdinalContentUrl, isImageOrdinal } from '../../utils/ordinals'
 
@@ -18,6 +18,9 @@ interface OrdinalImageProps {
   lazy?: boolean
   /** Cached content for rendering text/JSON previews or data-URL images */
   cachedContent?: { contentData?: Uint8Array; contentText?: string; contentType?: string }
+  /** Called when <img> network load fails and no cached content was available.
+   *  Triggers service-layer fetch with retry + inscription origin resolution. */
+  onContentNeeded?: (origin: string, contentType?: string) => void
 }
 
 export const OrdinalImage = memo(function OrdinalImage({
@@ -26,7 +29,8 @@ export const OrdinalImage = memo(function OrdinalImage({
   size = 'md',
   alt = 'Ordinal',
   lazy = true,
-  cachedContent
+  cachedContent,
+  onContentNeeded
 }: OrdinalImageProps) {
   // If we already have a cached blob URL, start as 'loaded' to avoid the loading
   // shimmer flash (opacity: 0 → 1 transition) on every re-render/remount.
@@ -43,15 +47,26 @@ export const OrdinalImage = memo(function OrdinalImage({
   const isText = contentType?.startsWith('text/') && !contentType?.includes('html')
   const isJson = contentType?.includes('json')
 
-  const handleLoad = useCallback(() => setStatus('loaded'), [])
-  const handleError = useCallback(() => setStatus('error'), [])
-
   // Generate blob URL for cached images — uses module-level cache to prevent flicker.
   // On remount (from react-window scroll), the lazy initializer reads the cached URL
   // so the <img> renders with the correct src immediately (no loading flash).
   const [cachedImageUrl, setCachedImageUrl] = useState<string | undefined>(
     () => (origin ? blobUrlCache.get(origin) : undefined)
   )
+
+  const handleLoad = useCallback(() => setStatus('loaded'), [])
+  // Track whether we've already triggered a content fetch for this origin
+  // to prevent infinite retry loops (fetch once per mount).
+  const fetchAttemptedRef = useRef(false)
+  const handleError = useCallback(() => {
+    setStatus('error')
+    // If the direct <img> network load failed and no cached content was available,
+    // trigger a service-layer fetch which has retry + inscription origin resolution.
+    if (origin && !cachedImageUrl && onContentNeeded && !fetchAttemptedRef.current) {
+      fetchAttemptedRef.current = true
+      onContentNeeded(origin, contentType)
+    }
+  }, [origin, cachedImageUrl, onContentNeeded, contentType])
   useEffect(() => {
     // If the module-level cache already has a blob URL for this origin, skip entirely.
     // Ordinal content is immutable — once created, the blob URL never needs to change.
@@ -72,8 +87,10 @@ export const OrdinalImage = memo(function OrdinalImage({
         const blob = new Blob([buf], { type: contentType || 'image/png' })
         const blobUrl = URL.createObjectURL(blob)
         if (origin) {
-          // Evict oldest entry if cache exceeds 500 (memory safety)
-          if (blobUrlCache.size > 500) {
+          // B-69: Evict oldest entry if cache exceeds limit (memory safety).
+          // Limit set to 1000 — FIFO eviction revokes blob URLs that may still
+          // be rendered in scrolled-out-of-view <img> tags.
+          if (blobUrlCache.size > 1000) {
             const firstKey = blobUrlCache.keys().next().value
             if (firstKey) {
               URL.revokeObjectURL(blobUrlCache.get(firstKey)!)

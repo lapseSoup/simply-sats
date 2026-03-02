@@ -9,6 +9,7 @@
 import { isTauri, tauriInvoke } from '../../utils/tauri'
 import type { UTXO } from './types'
 import { type Result, ok, err } from '../../domain/types'
+import { isValidBSVAddress } from '../../domain/wallet/validation'
 
 /** Shape returned by the Rust BuiltTransactionResult (camelCase via serde). */
 interface BuiltTxResult {
@@ -23,6 +24,14 @@ interface BuiltTxResult {
 /** Map a UTXO to the shape expected by the Rust UtxoInput struct. */
 function toUtxoInput(u: UTXO) {
   return { txid: u.txid, vout: u.vout, satoshis: u.satoshis, script: u.script ?? '' }
+}
+
+// S-70: Validate price parameter for marketplace operations
+function validatePrice(priceSats: number): string | null {
+  if (!Number.isFinite(priceSats) || priceSats <= 0 || !Number.isInteger(priceSats)) {
+    return 'Invalid price: must be a positive integer in satoshis'
+  }
+  return null
 }
 
 /**
@@ -49,6 +58,14 @@ export async function listOrdinal(
 ): Promise<Result<string, string>> {
   if (!isTauri()) return err('Marketplace requires Tauri runtime')
 
+  // S-64: Validate addresses before sending to Rust backend
+  if (!isValidBSVAddress(payAddress)) return err('Invalid payment address')
+  if (!isValidBSVAddress(ordAddress)) return err('Invalid ordinal address')
+
+  // S-70: Validate price
+  const priceError = validatePrice(priceSats)
+  if (priceError) return err(priceError)
+
   try {
     const result = await tauriInvoke<BuiltTxResult>('create_ordinal_listing', {
       ordWif,
@@ -73,23 +90,27 @@ export async function listOrdinal(
  * @param listingUtxo - The UTXO of the listed ordinal (in the lock script)
  * @param paymentWif - WIF private key for fee payment
  * @param paymentUtxos - UTXOs available for paying the cancellation fee
- * @returns Transaction ID of the cancellation
+ * @returns Result with the transaction ID on success
  */
 export async function cancelOrdinalListing(
   ordWif: string,
   listingUtxo: UTXO,
   paymentWif: string,
   paymentUtxos: UTXO[],
-): Promise<string> {
-  if (!isTauri()) throw new Error('Marketplace requires Tauri runtime')
+): Promise<Result<string, string>> {
+  if (!isTauri()) return err('Marketplace requires Tauri runtime')
 
-  const result = await tauriInvoke<BuiltTxResult>('cancel_ordinal_listing', {
-    ordWif,
-    listingUtxo: toUtxoInput(listingUtxo),
-    paymentWif,
-    paymentUtxos: paymentUtxos.map(toUtxoInput),
-  })
-  return result.txid
+  try {
+    const result = await tauriInvoke<BuiltTxResult>('cancel_ordinal_listing', {
+      ordWif,
+      listingUtxo: toUtxoInput(listingUtxo),
+      paymentWif,
+      paymentUtxos: paymentUtxos.map(toUtxoInput),
+    })
+    return ok(result.txid)
+  } catch (e) {
+    return err(e instanceof Error ? e.message : 'Cancellation failed')
+  }
 }
 
 /**
@@ -104,7 +125,7 @@ export async function cancelOrdinalListing(
  * @param params.listingUtxo   - The UTXO of the listed ordinal (the locked 1-sat output)
  * @param params.payout        - Base64-encoded payment output script from the listing tx
  * @param params.priceSats     - Expected price in satoshis (used to validate funding)
- * @returns Transaction ID of the purchase
+ * @returns Result with the transaction ID on success
  */
 export async function purchaseOrdinal(params: {
   paymentWif: string
@@ -113,16 +134,27 @@ export async function purchaseOrdinal(params: {
   listingUtxo: UTXO
   payout: string
   priceSats: number
-}): Promise<string> {
-  if (!isTauri()) throw new Error('Marketplace requires Tauri runtime')
+}): Promise<Result<string, string>> {
+  if (!isTauri()) return err('Marketplace requires Tauri runtime')
 
-  const result = await tauriInvoke<BuiltTxResult>('purchase_ordinal', {
-    paymentWif: params.paymentWif,
-    paymentUtxos: params.paymentUtxos.map(toUtxoInput),
-    ordAddress: params.ordAddress,
-    listingUtxo: toUtxoInput(params.listingUtxo),
-    payout: params.payout,
-    priceSats: params.priceSats,
-  })
-  return result.txid
+  // S-64: Validate ordinal destination address
+  if (!isValidBSVAddress(params.ordAddress)) return err('Invalid ordinal destination address')
+
+  // S-70: Validate price
+  const priceError = validatePrice(params.priceSats)
+  if (priceError) return err(priceError)
+
+  try {
+    const result = await tauriInvoke<BuiltTxResult>('purchase_ordinal', {
+      paymentWif: params.paymentWif,
+      paymentUtxos: params.paymentUtxos.map(toUtxoInput),
+      ordAddress: params.ordAddress,
+      listingUtxo: toUtxoInput(params.listingUtxo),
+      payout: params.payout,
+      priceSats: params.priceSats,
+    })
+    return ok(result.txid)
+  } catch (e) {
+    return err(e instanceof Error ? e.message : 'Purchase failed')
+  }
 }

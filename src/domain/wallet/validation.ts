@@ -236,6 +236,27 @@ function rotr(x: number, n: number): number {
 }
 
 /**
+ * Validate a public key format.
+ *
+ * Checks that the key is a valid hex string with the correct length and prefix:
+ * - Compressed: 33 bytes (66 hex chars), prefix 02 or 03
+ * - Uncompressed: 65 bytes (130 hex chars), prefix 04
+ *
+ * This checks format only — it does not verify the point lies on secp256k1.
+ *
+ * @param pubkeyHex - Public key as a hex string
+ * @returns True if the format is valid
+ */
+export function isValidPublicKey(pubkeyHex: string): boolean {
+  if (typeof pubkeyHex !== 'string') return false
+  // Compressed: 02/03 prefix + 32 bytes (64 hex chars)
+  if (/^0[23][0-9a-fA-F]{64}$/.test(pubkeyHex)) return true
+  // Uncompressed: 04 prefix + 64 bytes (128 hex chars)
+  if (/^04[0-9a-fA-F]{128}$/.test(pubkeyHex)) return true
+  return false
+}
+
+/**
  * Validate a transaction ID format.
  *
  * Transaction IDs (txids) are 32-byte SHA-256 hashes represented as

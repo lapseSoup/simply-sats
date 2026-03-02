@@ -42,7 +42,9 @@ let isListening = false
 // Suppress repeated 401 errors — after first failure, back off exponentially
 // to avoid flooding the console with "Mutual-authentication failed!" every 30s
 let _authFailureCount = 0
+let _lastAuthFailureTime = 0
 const AUTH_FAILURE_MAX_SUPPRESS = 10 // After 10 failures, stop trying until reset
+const AUTH_FAILURE_RESET_MS = 5 * 60 * 1000 // S-76: Allow one retry after 5 min cooldown
 
 /** Reset auth failure counter (call on account switch or app restart) */
 export function resetMessageBoxAuth(): void { _authFailureCount = 0 }
@@ -125,8 +127,13 @@ async function createAuthHeaders(
  */
 export async function listPaymentMessages(identityWif: string): Promise<PaymentMessage[]> {
   // Skip if we've had too many auth failures (don't spam the API)
+  // S-76: Allow one retry after cooldown period to detect recovered auth
   if (_authFailureCount >= AUTH_FAILURE_MAX_SUPPRESS) {
-    return []
+    if (Date.now() - _lastAuthFailureTime > AUTH_FAILURE_RESET_MS) {
+      _authFailureCount = 0
+    } else {
+      return []
+    }
   }
 
   const path = `/api/v1/message/${PAYMENT_INBOX}`
@@ -145,6 +152,7 @@ export async function listPaymentMessages(identityWif: string): Promise<PaymentM
       }
       if (response.status === 401) {
         _authFailureCount++
+        _lastAuthFailureTime = Date.now()
         if (_authFailureCount === 1) {
           messageLogger.warn('MessageBox auth failed — will suppress further attempts', { status: 401 })
         }

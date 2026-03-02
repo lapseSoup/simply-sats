@@ -182,7 +182,9 @@ export function useWalletLock({
         const keys = await getKeysForAccount(account, null)
         if (keys) {
           // Pre-load cached data BEFORE closing lock screen so UI has data from first frame
-          try { await preloadDataFromDB({ ...keys, mnemonic: '' }, account.id ?? 1) } catch (_e) { walletLogger.warn('Pre-load from DB failed during unlock (non-critical)', { error: String(_e) }) }
+          // B-70: Log warning when account.id is null — fallback to 1 may load wrong account
+          const acctId = account.id ?? (() => { walletLogger.warn('B-70: account.id is null during unlock, falling back to 1'); return 1 })()
+          try { await preloadDataFromDB({ ...keys, mnemonic: '' }, acctId) } catch (_e) { walletLogger.warn('Pre-load from DB failed during unlock (non-critical)', { error: String(_e) }) }
           setWalletState(keys)
           setWalletKeys(keys)
           setIsLocked(false)

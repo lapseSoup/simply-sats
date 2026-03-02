@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react'
 import { Search, LayoutGrid, List as ListIcon, ChevronRight, PenLine } from 'lucide-react'
 import { List } from 'react-window'
-import { useWalletState } from '../../contexts'
+import { useWalletState, useSyncContext } from '../../contexts'
 import type { Ordinal } from '../../services/wallet'
 import { EmptyState, NoOrdinalsEmpty } from '../shared/EmptyState'
 import { OrdinalsGridSkeleton } from '../shared/Skeleton'
@@ -41,7 +41,14 @@ function getContentCategory(contentType: string | undefined): ContentCategory {
 export const OrdinalsTab = memo(function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
   // Note: _onTransferOrdinal is available for future use
   // cacheVersion (part of state context) triggers re-render when content cache updates
-  const { ordinals, contentCacheSnapshot, loading } = useWalletState()
+  const { ordinals, contentCacheSnapshot, loading, activeAccountId } = useWalletState()
+  const { fetchOrdinalContentIfMissing } = useSyncContext()
+
+  // When <img> direct load fails, trigger service-layer fetch with retry + origin resolution.
+  // The fetched content flows back via bumpCacheVersion → contentCacheSnapshot rebuild → re-render.
+  const handleContentNeeded = useCallback((origin: string, contentType?: string) => {
+    fetchOrdinalContentIfMissing(origin, contentType, activeAccountId ?? undefined)
+  }, [fetchOrdinalContentIfMissing, activeAccountId])
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>('newest')
@@ -261,6 +268,7 @@ export const OrdinalsTab = memo(function OrdinalsTab({ onSelectOrdinal, onTransf
               ordinal={ord}
               onSelect={onSelectOrdinal}
               cachedContent={contentCacheSnapshot.get(ord.origin)}
+              onContentNeeded={handleContentNeeded}
             />
           ))}
         </div>
@@ -277,6 +285,7 @@ export const OrdinalsTab = memo(function OrdinalsTab({ onSelectOrdinal, onTransf
               ordinal={ord}
               onSelect={onSelectOrdinal}
               cachedContent={contentCacheSnapshot.get(ord.origin)}
+              onContentNeeded={handleContentNeeded}
             />
           ))}
         </div>
@@ -333,9 +342,10 @@ interface OrdinalItemProps {
   ordinal: Ordinal
   onSelect: (ordinal: Ordinal) => void
   cachedContent?: { contentData?: Uint8Array; contentText?: string }
+  onContentNeeded?: (origin: string, contentType?: string) => void
 }
 
-const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect, cachedContent }: OrdinalItemProps) {
+const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect, cachedContent, onContentNeeded }: OrdinalItemProps) {
   return (
     <div
       className="ordinal-card"
@@ -356,12 +366,13 @@ const OrdinalGridItem = memo(function OrdinalGridItem({ ordinal, onSelect, cache
         size="lg"
         alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
         cachedContent={cachedContent}
+        onContentNeeded={onContentNeeded}
       />
     </div>
   )
 })
 
-const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect, cachedContent }: OrdinalItemProps) {
+const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect, cachedContent, onContentNeeded }: OrdinalItemProps) {
   return (
     <div
       className="ordinal-list-item"
@@ -382,6 +393,7 @@ const OrdinalListItem = memo(function OrdinalListItem({ ordinal, onSelect, cache
         size="sm"
         alt={`Ordinal ${ordinal.origin.slice(0, 8)}`}
         cachedContent={cachedContent}
+        onContentNeeded={onContentNeeded}
       />
       <div className="ordinal-list-info">
         <div className="ordinal-list-id">{ordinal.origin}</div>

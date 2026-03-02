@@ -88,21 +88,29 @@ export async function transferToken(
       tokenInputsUsed.push(utxo)
     }
 
-    // Calculate fee
+    // B-54: Calculate fee iteratively — the initial estimate assumes 2 funding
+    // inputs, but if more are needed the fee rises, potentially requiring yet
+    // more inputs. Loop until funding covers the recalculated fee.
     const tokenChange = tokensAdded - amountToSend
     const numOutputs = (tokenChange > 0n) ? 3 : 2 // recipient + (token change?) + BSV change
-    const numFundingInputs = Math.min(fundingUtxos.length, 2)
-    const estimatedFee = calculateTxFee(tokenInputsUsed.length + numFundingInputs, numOutputs)
 
-    // Select funding UTXOs
     const fundingToUse: UTXO[] = []
     let totalFunding = 0
+    let estimatedFee = calculateTxFee(tokenInputsUsed.length + Math.min(fundingUtxos.length, 2), numOutputs)
 
     for (const utxo of fundingUtxos) {
       fundingToUse.push(utxo)
       totalFunding += utxo.satoshis
-
       if (totalFunding >= estimatedFee + 100) break
+    }
+
+    // Recalculate fee with actual input count and continue selecting if needed
+    estimatedFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, numOutputs)
+    while (totalFunding < estimatedFee + 100 && fundingToUse.length < fundingUtxos.length) {
+      const next = fundingUtxos[fundingToUse.length]!
+      fundingToUse.push(next)
+      totalFunding += next.satoshis
+      estimatedFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, numOutputs)
     }
 
     if (totalFunding < estimatedFee) {

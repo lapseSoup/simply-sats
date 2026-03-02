@@ -73,7 +73,10 @@ export function useWalletInit({
         timings.push(`${elapsed}ms — ${label}`)
       }
       // Store timings so they're readable even if devtools opens after init
+      // S-74: Only expose timing data in dev builds — production timing reveals
+      // wallet security posture (passwordless vs encrypted) to malicious extensions.
       const flushTimings = () => {
+        if (!import.meta.env.DEV) return
         sessionStorage.setItem('__init_timings', JSON.stringify(timings))
         const logTimings = () => {
           console.log('%c── INIT TIMING BREAKDOWN ──', 'font-weight:bold;color:#f90')
@@ -130,7 +133,7 @@ export function useWalletInit({
           flushTimings()
           setLoading(false)
           // Background: run deferred maintenance
-          deferMaintenance(mounted, refreshAccounts, setContacts)
+          deferMaintenance(() => mounted, refreshAccounts, setContacts)
           return
         }
 
@@ -143,7 +146,7 @@ export function useWalletInit({
             flushTimings()
             setLoading(false)
             // Background: run deferred maintenance
-            deferMaintenance(mounted, refreshAccounts, setContacts)
+            deferMaintenance(() => mounted, refreshAccounts, setContacts)
             return
           }
 
@@ -213,6 +216,9 @@ export function useWalletInit({
               // Set wallet state — data is already loaded, so when the spinner
               // disappears the wallet UI has data from the very first frame.
               setWallet({ ...walletKeys, mnemonic: '' })
+              // S-73: Empty string is the NO_PASSWORD sentinel — intentionally falsy.
+              // sessionPasswordStore uses `=== null` checks, not truthiness.
+              // getAccountKeys() handles '' correctly for passwordless wallets.
               setSessionPassword('')
               setModuleSessionPassword('')
 
@@ -231,7 +237,7 @@ export function useWalletInit({
                     await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
                   }
                 } catch (e) { walletLogger.warn('Deferred storeKeysInRust failed', { error: String(e) }) }
-                deferMaintenance(mounted, refreshAccounts, setContacts)
+                deferMaintenance(() => mounted, refreshAccounts, setContacts)
               })()
               return
             } else {
@@ -306,13 +312,13 @@ export function useWalletInit({
  * Called fire-and-forget AFTER setLoading(false) so the UI is already visible.
  */
 function deferMaintenance(
-  mounted: boolean,
+  isMounted: () => boolean, // B-64: callback instead of captured boolean value
   refreshAccounts: () => Promise<void>,
   setContacts: Dispatch<SetStateAction<Contact[]>>
 ) {
   ;(async () => {
     try {
-      if (!mounted) return
+      if (!isMounted()) return
       // These 3 are independent — run in parallel
       const [repairResult, , contactsResult] = await Promise.all([
         repairUTXOs(),
@@ -327,7 +333,7 @@ function deferMaintenance(
         setContacts(contactsResult.value)
       }
 
-      if (!mounted) return
+      if (!isMounted()) return
       await refreshAccounts()
     } catch (e) {
       uiLogger.warn('Deferred maintenance failed (non-critical)', { error: String(e) })

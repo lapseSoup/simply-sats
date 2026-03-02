@@ -190,8 +190,8 @@ export const BRC100_SERVER_CONFIG = {
  * Encryption Configuration
  */
 export const ENCRYPTION_CONFIG = {
-  // PBKDF2 iterations (OWASP recommended minimum)
-  pbkdf2Iterations: 100000,
+  // PBKDF2 iterations (OWASP 2025 recommended minimum)
+  pbkdf2Iterations: 600000,
 
   // Salt length in bytes
   saltLength: 16,

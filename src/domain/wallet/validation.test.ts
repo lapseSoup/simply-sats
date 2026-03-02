@@ -3,6 +3,7 @@ import {
   normalizeMnemonic,
   validateMnemonic,
   isValidBSVAddress,
+  isValidPublicKey,
   isValidTxid,
   isValidSatoshiAmount
 } from './validation'
@@ -54,6 +55,36 @@ describe('BSV Address Validation', () => {
 
   it('should reject invalid characters', () => {
     expect(isValidBSVAddress('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN0')).toBe(false)
+  })
+})
+
+describe('Public Key Validation', () => {
+  it('should accept valid compressed key (02 prefix)', () => {
+    expect(isValidPublicKey('02' + 'ab'.repeat(32))).toBe(true)
+  })
+
+  it('should accept valid compressed key (03 prefix)', () => {
+    expect(isValidPublicKey('03' + 'cd'.repeat(32))).toBe(true)
+  })
+
+  it('should accept valid uncompressed key (04 prefix)', () => {
+    expect(isValidPublicKey('04' + 'ef'.repeat(64))).toBe(true)
+  })
+
+  it('should reject wrong prefix', () => {
+    expect(isValidPublicKey('05' + 'ab'.repeat(32))).toBe(false)
+  })
+
+  it('should reject wrong length', () => {
+    expect(isValidPublicKey('02abcdef')).toBe(false)
+  })
+
+  it('should reject non-hex characters', () => {
+    expect(isValidPublicKey('02' + 'zz'.repeat(32))).toBe(false)
+  })
+
+  it('should reject empty string', () => {
+    expect(isValidPublicKey('')).toBe(false)
   })
 })
 

@@ -37,6 +37,7 @@ import { resolvePublicKey } from './outputs'
 import { createLockTransaction } from './locks'
 import { buildAndBroadcastAction } from './formatting'
 import { deriveTaggedKey, type DerivationTag } from '../keyDerivation'
+import { isValidPublicKey } from '../../domain/wallet/validation'
 
 // A3: In-flight unlock operations — prevents double-spend from concurrent calls
 const inflightUnlocks = new Map<string, Promise<void>>()
@@ -47,6 +48,11 @@ const MAX_ENCRYPT_PAYLOAD_SIZE = 1024 * 1024     // 1MB for encryption plaintext
 const MAX_DECRYPT_PAYLOAD_SIZE = 1024 * 1024     // 1MB for decryption ciphertext
 const MAX_OUTPUTS_ARRAY_SIZE = 100               // S-67: Max outputs in createAction
 const MAX_TAG_LENGTH = 256                        // S-69: Max tag string length
+
+// Q-55: JSON-RPC 2.0 standard error codes
+const RPC_INVALID_PARAMS = -32602
+const RPC_INTERNAL_ERROR = -32000
+const RPC_METHOD_NOT_FOUND = -32601
 
 /** A-35: Helper to reduce response mutation boilerplate across switch cases */
 function setError(response: BRC100Response, code: number, message: string): void {
@@ -89,7 +95,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       const params = getParams<GetPublicKeyParams>(request)
       // S-43: Runtime validation for getPublicKey params
       if (params.identityKey !== undefined && typeof params.identityKey !== 'boolean') {
-        response.error = { code: -32602, message: 'identityKey must be a boolean' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'identityKey must be a boolean' }
         break
       }
       response.result = { publicKey: resolvePublicKey(keys, params) }
@@ -100,12 +106,12 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       const sigRequest = getParams<SignatureRequest>(request)
       // S-43: Runtime validation for createSignature params
       if (!Array.isArray(sigRequest.data) || !sigRequest.data.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 255)) {
-        response.error = { code: -32602, message: 'data must be an array of bytes (0-255)' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'data must be an array of bytes (0-255)' }
         break
       }
       // S-63: Prevent memory exhaustion from oversized payloads
       if (sigRequest.data.length > MAX_SIGNATURE_DATA_SIZE) {
-        setError(response, -32602, `data exceeds maximum size (${MAX_SIGNATURE_DATA_SIZE} bytes)`)
+        setError(response, RPC_INVALID_PARAMS, `data exceeds maximum size (${MAX_SIGNATURE_DATA_SIZE} bytes)`)
         break
       }
       // signData uses _from_store in Tauri; keys only needed for JS fallback
@@ -125,7 +131,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
 
       // S-67: Limit outputs array size to prevent DoS
       if (actionRequest.outputs && actionRequest.outputs.length > MAX_OUTPUTS_ARRAY_SIZE) {
-        setError(response, -32602, `outputs array exceeds maximum size (${MAX_OUTPUTS_ARRAY_SIZE})`)
+        setError(response, RPC_INVALID_PARAMS, `outputs array exceeds maximum size (${MAX_OUTPUTS_ARRAY_SIZE})`)
         break
       }
 
@@ -136,7 +142,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         // Handle lock transaction
         const lockOutput = actionRequest.outputs.find(o => o.basket === 'wrootz_locks')
         if (!lockOutput) {
-          response.error = { code: -32000, message: 'No lock output found' }
+          response.error = { code: RPC_INTERNAL_ERROR, message: 'No lock output found' }
           break
         }
 
@@ -148,7 +154,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         const ordinalOrigin = ordinalTag?.replace('ordinal_', '') || undefined
 
         if (unlockTag && unlockBlock === 0) {
-          response.error = { code: -32000, message: `Invalid unlock block in tag: ${unlockTag}` }
+          response.error = { code: RPC_INTERNAL_ERROR, message: `Invalid unlock block in tag: ${unlockTag}` }
           break
         }
 
@@ -164,7 +170,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
           }
         } else {
           response.error = {
-            code: -32000,
+            code: RPC_INTERNAL_ERROR,
             message: lockResult.error
           }
         }
@@ -175,7 +181,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
           response.result = { txid: actionResult.value.txid }
         } else {
           response.error = {
-            code: -32000,
+            code: RPC_INTERNAL_ERROR,
             message: actionResult.error
           }
         }
@@ -192,11 +198,11 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       // S-71: BSV max supply is 21M BTC = 2.1e15 satoshis
       const MAX_BSV_SATOSHIS = 21_000_000_00_000_000
       if (typeof rawSatoshis !== 'number' || !Number.isFinite(rawSatoshis) || rawSatoshis <= 0 || !Number.isInteger(rawSatoshis) || rawSatoshis > MAX_BSV_SATOSHIS) {
-        setError(response, -32602, `Invalid satoshis parameter: ${rawSatoshis}`)
+        setError(response, RPC_INVALID_PARAMS, `Invalid satoshis parameter: ${rawSatoshis}`)
         break
       }
       if (typeof rawBlocks !== 'number' || !Number.isFinite(rawBlocks) || rawBlocks <= 0 || !Number.isInteger(rawBlocks)) {
-        response.error = { code: -32602, message: `Invalid blocks parameter: ${rawBlocks}` }
+        response.error = { code: RPC_INVALID_PARAMS, message: `Invalid blocks parameter: ${rawBlocks}` }
         break
       }
       const satoshis = rawSatoshis
@@ -214,12 +220,12 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         // Get spendable UTXOs from database and convert to wallet UTXO format
         const dbUtxosResult = await getSpendableUTXOs(activeAccountId)
         if (!dbUtxosResult.ok) {
-          response.error = { code: -32000, message: `Database error: ${dbUtxosResult.error.message}` }
+          response.error = { code: RPC_INTERNAL_ERROR, message: `Database error: ${dbUtxosResult.error.message}` }
           break
         }
         const dbUtxos = dbUtxosResult.value
         if (dbUtxos.length === 0) {
-          response.error = { code: -32000, message: 'No spendable UTXOs available' }
+          response.error = { code: RPC_INTERNAL_ERROR, message: 'No spendable UTXOs available' }
           break
         }
 
@@ -264,7 +270,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         }
       } catch (error) {
         response.error = {
-          code: -32000,
+          code: RPC_INTERNAL_ERROR,
           message: error instanceof Error ? error.message : 'Lock failed'
         }
       }
@@ -282,9 +288,9 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       if (existing) {
         try {
           await existing
-          response.error = { code: -32000, message: 'Unlock already completed for this outpoint' }
+          response.error = { code: RPC_INTERNAL_ERROR, message: 'Unlock already completed for this outpoint' }
         } catch {
-          response.error = { code: -32000, message: 'Previous unlock attempt failed for this outpoint' }
+          response.error = { code: RPC_INTERNAL_ERROR, message: 'Previous unlock attempt failed for this outpoint' }
         }
         break
       }
@@ -300,25 +306,25 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         // Q-53: Strict outpoint format validation — must be exactly txid(64 hex chars).vout(digits)
         const outpointMatch = outpoint.match(/^([a-f0-9]{64})\.(\d+)$/)
         if (!outpointMatch) {
-          setError(response, -32602, 'Invalid outpoint format, expected 64-char-hex-txid.vout')
+          setError(response, RPC_INVALID_PARAMS, 'Invalid outpoint format, expected 64-char-hex-txid.vout')
           return
         }
         const txid = outpointMatch[1]!
         const vout = parseInt(outpointMatch[2]!, 10)
         if (vout > 0xFFFFFFFF) {
-          setError(response, -32602, 'Invalid outpoint vout index (exceeds uint32 max)')
+          setError(response, RPC_INVALID_PARAMS, 'Invalid outpoint vout index (exceeds uint32 max)')
           return
         }
         const lock = locks.find(l => l.utxo.txid === txid && l.utxo.vout === vout)
 
         if (!lock) {
-          response.error = { code: -32000, message: 'Lock not found' }
+          response.error = { code: RPC_INTERNAL_ERROR, message: 'Lock not found' }
           return
         }
 
         if (currentHeight < lock.unlockBlock) {
           response.error = {
-            code: -32000,
+            code: RPC_INTERNAL_ERROR,
             message: `Lock not yet spendable. ${lock.unlockBlock - currentHeight} blocks remaining`
           }
           return
@@ -368,7 +374,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         await unlockOperation
       } catch (error) {
         response.error = {
-          code: -32000,
+          code: RPC_INTERNAL_ERROR,
           message: error instanceof Error ? error.message : 'Unlock failed'
         }
       } finally {
@@ -383,30 +389,30 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       const params = getParams<EncryptDecryptParams>(request)
       // S-43: Validate plaintext is a byte array before processing
       if (params.plaintext && (!Array.isArray(params.plaintext) || !params.plaintext.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 255))) {
-        response.error = { code: -32602, message: 'plaintext must be an array of bytes (0-255)' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'plaintext must be an array of bytes (0-255)' }
         break
       }
       // S-63: Prevent memory exhaustion from oversized payloads
       if (params.plaintext && params.plaintext.length > MAX_ENCRYPT_PAYLOAD_SIZE) {
-        setError(response, -32602, `plaintext exceeds maximum size (${MAX_ENCRYPT_PAYLOAD_SIZE} bytes)`)
+        setError(response, RPC_INVALID_PARAMS, `plaintext exceeds maximum size (${MAX_ENCRYPT_PAYLOAD_SIZE} bytes)`)
         break
       }
       const plaintext = params.plaintext ? new TextDecoder().decode(new Uint8Array(params.plaintext)) : undefined
       const recipientPubKey = params.counterparty
 
       if (!plaintext) {
-        response.error = { code: -32602, message: 'Missing plaintext parameter' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'Missing plaintext parameter' }
         break
       }
 
       if (!recipientPubKey) {
-        response.error = { code: -32602, message: 'Missing counterparty/publicKey parameter' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'Missing counterparty/publicKey parameter' }
         break
       }
 
-      // Validate public key format (compressed: 66 hex chars starting with 02/03, uncompressed: 130 hex chars starting with 04)
-      if (!/^(02|03)[0-9a-fA-F]{64}$/.test(recipientPubKey) && !/^04[0-9a-fA-F]{128}$/.test(recipientPubKey)) {
-        response.error = { code: -32602, message: 'Invalid public key format' }
+      // S-66: Validate public key format before ECIES encrypt
+      if (!isValidPublicKey(recipientPubKey)) {
+        response.error = { code: RPC_INVALID_PARAMS, message: 'Invalid public key format' }
         break
       }
       try {
@@ -417,7 +423,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         }
       } catch (error) {
         response.error = {
-          code: -32000,
+          code: RPC_INTERNAL_ERROR,
           message: error instanceof Error ? error.message : 'Encryption failed'
         }
       }
@@ -432,28 +438,34 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       const senderPubKey = params.counterparty
 
       if (!ciphertext) {
-        response.error = { code: -32602, message: 'Missing ciphertext parameter' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'Missing ciphertext parameter' }
         break
       }
 
       // S-42: Validate ciphertext is a byte array before ECIES decrypt
       if (!Array.isArray(ciphertext) || !ciphertext.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 255)) {
-        response.error = { code: -32602, message: 'ciphertext must be an array of bytes (0-255)' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'ciphertext must be an array of bytes (0-255)' }
         break
       }
       // S-63: Prevent memory exhaustion from oversized payloads
       if (ciphertext.length > MAX_DECRYPT_PAYLOAD_SIZE) {
-        setError(response, -32602, `ciphertext exceeds maximum size (${MAX_DECRYPT_PAYLOAD_SIZE} bytes)`)
+        setError(response, RPC_INVALID_PARAMS, `ciphertext exceeds maximum size (${MAX_DECRYPT_PAYLOAD_SIZE} bytes)`)
         break
       }
       // S-68: Minimum ciphertext size — must have at least salt(16) + IV(12) = 28 bytes
       if (ciphertext.length < 28) {
-        setError(response, -32602, 'ciphertext too short (minimum 28 bytes for salt + IV)')
+        setError(response, RPC_INVALID_PARAMS, 'ciphertext too short (minimum 28 bytes for salt + IV)')
         break
       }
 
       if (!senderPubKey) {
-        response.error = { code: -32602, message: 'Missing counterparty/senderPublicKey parameter' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'Missing counterparty/senderPublicKey parameter' }
+        break
+      }
+
+      // S-66: Validate sender public key format before ECIES decrypt
+      if (!isValidPublicKey(senderPubKey)) {
+        response.error = { code: RPC_INVALID_PARAMS, message: 'Invalid sender public key format' }
         break
       }
 
@@ -462,7 +474,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         response.result = { plaintext }
       } catch (error) {
         response.error = {
-          code: -32000,
+          code: RPC_INTERNAL_ERROR,
           message: error instanceof Error ? error.message : 'Decryption failed'
         }
       }
@@ -474,12 +486,12 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       const params = getParams<GetTaggedKeysParams>(request)
       // S-43: Runtime validation for getTaggedKeys params
       if (!params.tag || typeof params.tag !== 'string') {
-        response.error = { code: -32602, message: 'tag must be a non-empty string' }
+        response.error = { code: RPC_INVALID_PARAMS, message: 'tag must be a non-empty string' }
         break
       }
       // S-69: Prevent DoS from excessively long tag strings in key derivation
       if (params.tag.length > MAX_TAG_LENGTH) {
-        setError(response, -32602, `tag exceeds maximum length (${MAX_TAG_LENGTH} chars)`)
+        setError(response, RPC_INVALID_PARAMS, `tag exceeds maximum length (${MAX_TAG_LENGTH} chars)`)
         break
       }
       const label = params.tag
@@ -516,7 +528,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         }
       } catch (error) {
         response.error = {
-          code: -32000,
+          code: RPC_INTERNAL_ERROR,
           message: error instanceof Error ? error.message : 'Key derivation failed'
         }
       }
@@ -524,7 +536,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
     }
 
     default:
-      response.error = { code: -32601, message: 'Method not found' }
+      response.error = { code: RPC_METHOD_NOT_FOUND, message: 'Method not found' }
   }
 
   return response

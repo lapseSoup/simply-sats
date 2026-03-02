@@ -180,9 +180,9 @@ describe('cacheOrdinalsInBackground', () => {
     expect(mockedGetCachedOrdinals).not.toHaveBeenCalled()
   })
 
-  it('fetches content for up to 10 ordinals missing from cache', async () => {
-    // Create 15 ordinals, none in contentCacheRef, none in DB
-    const ordinals = Array.from({ length: 15 }, (_, i) =>
+  it('fetches content for up to 50 ordinals missing from cache', async () => {
+    // Create 60 ordinals, none in contentCacheRef, none in DB
+    const ordinals = Array.from({ length: 60 }, (_, i) =>
       makeOrdinal({ origin: `origin-${i}`, txid: `txid-${i}` })
     )
 
@@ -195,8 +195,8 @@ describe('cacheOrdinalsInBackground', () => {
 
     await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
 
-    // Should fetch at most 10
-    expect(mockedFetchOrdinalContent).toHaveBeenCalledTimes(10)
+    // Should fetch at most 50
+    expect(mockedFetchOrdinalContent).toHaveBeenCalledTimes(50)
   })
 
   it('skips content fetch for ordinals already in contentCacheRef', async () => {
