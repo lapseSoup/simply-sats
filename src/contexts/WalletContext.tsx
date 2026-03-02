@@ -164,6 +164,17 @@ export function WalletProvider({ children }: WalletProviderProps) {
 
   // --- Extracted hooks ---
 
+  // Pre-load DB data — called by useWalletLock (before lock screen closes) and
+  // useWalletInit (before loading spinner disappears) so cached data is visible
+  // the instant the UI transitions.
+  const preloadDataFromDB = useCallback(async (walletKeys: WalletKeys, accountId: number) => {
+    await syncFetchDataFromDB(
+      walletKeys,
+      accountId,
+      (loadedLocks) => { setLocks(loadedLocks) }
+    )
+  }, [syncFetchDataFromDB, setLocks])
+
   const {
     isLocked, setIsLocked,
     sessionPassword, setSessionPassword,
@@ -175,18 +186,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
     getKeysForAccount,
     refreshAccounts,
     storeKeysInRust,
-    setWalletState
+    setWalletState,
+    preloadDataFromDB
   })
-
-  // Pre-load DB data during init — called by useWalletInit before setLoading(false)
-  // so cached data is visible the instant the loading spinner disappears.
-  const preloadDataFromDB = useCallback(async (walletKeys: WalletKeys, accountId: number) => {
-    await syncFetchDataFromDB(
-      walletKeys,
-      accountId,
-      (loadedLocks) => { setLocks(loadedLocks) }
-    )
-  }, [syncFetchDataFromDB, setLocks])
 
   const {
     loading,

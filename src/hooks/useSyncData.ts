@@ -77,6 +77,7 @@ export function useSyncData({
   ) => {
     if (activeAccountId == null) return
 
+    const _t0 = performance.now()
     syncLogger.debug('fetchDataFromDB: loading cached data', { activeAccountId })
 
     // Run all DB reads in parallel — they're independent queries and parallelizing
@@ -97,6 +98,7 @@ export function useSyncData({
       getUTXOsFromDB(undefined, activeAccountId)
     ])
 
+    syncLogger.info('⏱ fetchDataFromDB: queries done', { elapsedMs: Math.round(performance.now() - _t0) })
     if (isCancelled?.()) return
 
     // ── PHASE 1: Apply all cached data IMMEDIATELY (no awaits) ──────────
@@ -172,6 +174,8 @@ export function useSyncData({
       setOrdBalance(0)
     }
     setSyncError(null)
+
+    syncLogger.info('⏱ fetchDataFromDB: Phase 1 state setters done', { elapsedMs: Math.round(performance.now() - _t0) })
 
     // ── PHASE 2: Background enrichment (fire-and-forget) ────────────────
     // These operations add supplementary data (merged ordinal txs, content

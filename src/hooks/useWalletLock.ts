@@ -38,6 +38,8 @@ interface UseWalletLockOptions {
   refreshAccounts: () => Promise<void>
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
   setWalletState: Dispatch<SetStateAction<WalletKeys | null>>
+  /** Pre-load cached DB data (balance, txs, ordinals, etc.) BEFORE closing lock screen so data is visible the instant the lock screen unmounts. */
+  preloadDataFromDB: (wallet: WalletKeys, accountId: number) => Promise<void>
 }
 
 interface UseWalletLockReturn {
@@ -57,7 +59,8 @@ export function useWalletLock({
   getKeysForAccount,
   refreshAccounts,
   storeKeysInRust,
-  setWalletState
+  setWalletState,
+  preloadDataFromDB
 }: UseWalletLockOptions): UseWalletLockReturn {
   const [isLocked, setIsLocked] = useState(false)
   const [autoLockMinutes, setAutoLockMinutesState] = useState<number>(() => {
@@ -178,6 +181,8 @@ export function useWalletLock({
       if (!hasPassword()) {
         const keys = await getKeysForAccount(account, null)
         if (keys) {
+          // Pre-load cached data BEFORE closing lock screen so UI has data from first frame
+          try { await preloadDataFromDB({ ...keys, mnemonic: '' }, account.id ?? 1) } catch (_e) { walletLogger.warn('Pre-load from DB failed during unlock (non-critical)', { error: String(_e) }) }
           setWalletState(keys)
           setWalletKeys(keys)
           setIsLocked(false)
@@ -195,6 +200,9 @@ export function useWalletLock({
       const keys = await getKeysForAccount(account, password)
       if (keys) {
         await recordSuccessfulUnlock()
+        // Pre-load ALL cached data BEFORE closing lock screen.
+        // This ensures balance, txs, ordinals appear instantly when lock screen unmounts.
+        try { await preloadDataFromDB({ ...keys, mnemonic: '' }, account.id ?? 1) } catch (_e) { walletLogger.warn('Pre-load from DB failed during unlock (non-critical)', { error: String(_e) }) }
         setWalletState(keys)
         setWalletKeys(keys)
         setIsLocked(false)
@@ -240,7 +248,7 @@ export function useWalletLock({
         await new Promise(resolve => setTimeout(resolve, UNLOCK_MIN_TIME_MS - elapsed))
       }
     }
-  }, [activeAccount, getKeysForAccount, refreshAccounts, storeKeysInRust, setWalletState, setSessionPassword])
+  }, [activeAccount, getKeysForAccount, refreshAccounts, storeKeysInRust, setWalletState, setSessionPassword, preloadDataFromDB])
 
   // Set auto-lock timeout
   const setAutoLockMinutes = useCallback((minutes: number) => {

@@ -65,170 +65,171 @@ export function useWalletInit({
     let mounted = true
 
     const init = async () => {
-      try {
-        await migrateToSecureStorage()
-        if (!mounted) return
-
-        // Retry DB init up to 3 times with backoff (ARCH-3: graceful degradation)
-        let initAttempts = 0
-        const MAX_INIT_ATTEMPTS = 3
-        while (initAttempts < MAX_INIT_ATTEMPTS) {
-          try {
-            await initDatabase()
-            break
-          } catch (dbErr) {
-            initAttempts++
-            uiLogger.error(`Database init failed (attempt ${initAttempts}/${MAX_INIT_ATTEMPTS})`, dbErr)
-            if (initAttempts >= MAX_INIT_ATTEMPTS) throw dbErr
-            if (!mounted) return
-            await new Promise(resolve => setTimeout(resolve, 500 * initAttempts))
-          }
-        }
-        if (!mounted) return
-        uiLogger.info('Database initialized successfully')
-
-        // Run independent DB setup operations in parallel (~150ms → ~50ms)
-        const [repairResult, , contactsResult] = await Promise.all([
-          repairUTXOs(),
-          ensureDerivedAddressesTable(),
-          ensureContactsTable().then(() => getContacts())
-        ])
-        if (!mounted) return
-
-        if (repairResult.ok && repairResult.value > 0) {
-          uiLogger.info('Repaired UTXOs', { count: repairResult.value })
-        } else if (!repairResult.ok) {
-          uiLogger.warn('Failed to repair UTXOs', { error: repairResult.error.message })
-        }
-        uiLogger.debug('Derived addresses table ready')
-
-        if (contactsResult.ok) {
-          setContacts(contactsResult.value)
-          uiLogger.info('Loaded contacts', { count: contactsResult.value.length })
-        } else {
-          uiLogger.error('Failed to load contacts from DB', contactsResult.error)
-        }
-
-        await refreshAccounts()
-        if (!mounted) return
-      } catch (err) {
-        uiLogger.error('Failed to initialize database', err)
-        if (mounted) setLoading(false)
-        return
+      const t0 = performance.now()
+      const lap = (label: string) => {
+        const elapsed = Math.round(performance.now() - t0)
+        walletLogger.info(`⏱ INIT ${label}`, { elapsedMs: elapsed })
       }
 
-      if (!mounted) return
+      // ── CRITICAL PATH: Only what's needed to show data ──────────────
+      // Everything else is deferred to after setLoading(false).
 
-      // Try to load wallet (legacy support + new account system)
-      if (await hasWallet()) {
-        const allAccounts = await getAllAccounts()
+      try {
+        // Step 1: Init DB + migrate secure storage in parallel.
+        // Both are independent — running them together saves ~50-200ms.
+        await Promise.all([
+          migrateToSecureStorage(),
+          (async () => {
+            let initAttempts = 0
+            const MAX_INIT_ATTEMPTS = 3
+            while (initAttempts < MAX_INIT_ATTEMPTS) {
+              try {
+                await initDatabase()
+                return
+              } catch (dbErr) {
+                initAttempts++
+                uiLogger.error(`Database init failed (attempt ${initAttempts}/${MAX_INIT_ATTEMPTS})`, dbErr)
+                if (initAttempts >= MAX_INIT_ATTEMPTS) throw dbErr
+                if (!mounted) return
+                await new Promise(resolve => setTimeout(resolve, 500 * initAttempts))
+              }
+            }
+          })()
+        ])
         if (!mounted) return
+        lap('initDatabase + migrateToSecureStorage')
+
+        // Step 2: Check wallet existence, load accounts + active account in parallel.
+        // These are 3 independent DB reads — parallelizing saves ~20-40ms.
+        const [walletExists, allAccounts, activeAccount] = await Promise.all([
+          hasWallet(),
+          getAllAccounts(),
+          getActiveAccount()
+        ])
+        if (!mounted) return
+        lap('hasWallet + getAllAccounts + getActiveAccount')
+
+        if (!walletExists) {
+          // No wallet — show onboarding
+          lap('TOTAL — setLoading(false) [no wallet]')
+          setLoading(false)
+          // Background: run deferred maintenance
+          deferMaintenance(mounted, refreshAccounts, setContacts)
+          return
+        }
 
         if (allAccounts.length > 0) {
           if (hasPassword()) {
+            // Password-protected wallet — show lock screen immediately
             walletLogger.info('Found encrypted wallet with accounts, showing lock screen')
             setIsLocked(true)
-          } else {
-            // Passwordless wallet — load directly, no lock screen
-            walletLogger.info('Found unprotected wallet, loading directly')
-            try {
-              const loadResult = await loadWallet(null)
-              if (!mounted) return
-              if (!loadResult.ok) {
-                walletLogger.error('Failed to load unprotected wallet', loadResult.error)
-                setIsLocked(true)
-                return
-              }
-              const keys = loadResult.value
-              if (keys) {
-                // Populate Rust key store so operations like lockBSV/unlockBSV can get the WIF.
-                // This is required for no-password wallets — the unlock flow (useWalletLock)
-                // is skipped entirely, so we must store keys here on startup.
-                if (keys.mnemonic) {
-                  await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
-                }
+            lap('TOTAL — setLoading(false) [lock screen]')
+            setLoading(false)
+            // Background: run deferred maintenance
+            deferMaintenance(mounted, refreshAccounts, setContacts)
+            return
+          }
 
-                // CRITICAL: loadWallet always returns Account 1 keys (from secure storage).
-                // If the active account in the DB is different (e.g. Account 7, derivation
-                // index 1), we must derive the CORRECT keys so the wallet address, public
-                // keys, and React state all match the active account.  Without this, the UI
-                // shows Account 1's address but Account 7's balance/history (or vice-versa),
-                // causing the cross-account data bleed.
-                let walletKeys = keys
-                let activeAccountForPreload: { id?: number | null } | null = null
-                try {
-                  const activeAccount = await getActiveAccount()
-                  activeAccountForPreload = activeAccount
-                  if (!mounted) return
-                  if (activeAccount) {
-                    const targetIndex = activeAccount.derivationIndex ?? ((activeAccount.id ?? 1) - 1)
-                    const loadedIndex = keys.accountIndex ?? 0
-                    if (targetIndex !== loadedIndex) {
-                      walletLogger.info('Active account differs from loaded keys — deriving correct account keys', {
-                        activeAccountId: activeAccount.id,
-                        targetIndex,
-                        loadedIndex
-                      })
-                      try {
-                        const pubKeys = await invoke<PublicWalletKeys>('switch_account_from_store', { accountIndex: targetIndex })
-                        walletKeys = {
-                          mnemonic: '',
-                          walletType: pubKeys.walletType as 'yours',
-                          walletWif: '',
-                          walletAddress: pubKeys.walletAddress,
-                          walletPubKey: pubKeys.walletPubKey,
-                          ordWif: '',
-                          ordAddress: pubKeys.ordAddress,
-                          ordPubKey: pubKeys.ordPubKey,
-                          identityWif: '',
-                          identityAddress: pubKeys.identityAddress,
-                          identityPubKey: pubKeys.identityPubKey,
-                          accountIndex: targetIndex
-                        }
-                        walletLogger.info('Derived correct active account keys on startup', {
-                          accountId: activeAccount.id, targetIndex, address: walletKeys.walletAddress?.substring(0, 12)
-                        })
-                      } catch (rustErr) {
-                        walletLogger.warn('Failed to derive active account keys from Rust — falling back to stored keys', { error: String(rustErr) })
-                        // Fall back to the stored keys (Account 1) — less ideal but better than crash
-                      }
-                    }
-                  }
-                } catch (activeAccErr) {
-                  walletLogger.warn('Failed to determine active account on startup — using stored keys', { error: String(activeAccErr) })
-                }
-
-                setWallet({ ...walletKeys, mnemonic: '' })
-                setSessionPassword('')
-                setModuleSessionPassword('')
-
-                // Pre-load cached DB data BEFORE the loading spinner disappears.
-                // This means the UI shows balance, activity, ordinals, etc. the
-                // instant the spinner goes away — no empty-state flash.
-                if (activeAccountForPreload?.id != null) {
-                  try {
-                    await preloadDataFromDB({ ...walletKeys, mnemonic: '' }, activeAccountForPreload.id)
-                  } catch (e) {
-                    walletLogger.warn('Pre-load from DB failed (non-critical)', { error: String(e) })
-                  }
-                }
-              } else {
-                walletLogger.error('Failed to load unprotected wallet')
-                setIsLocked(true) // Fallback to lock screen
-              }
-            } catch (e) {
-              walletLogger.error('Error loading unprotected wallet', e)
-              setIsLocked(true) // Fallback
+          // ── Passwordless wallet — load keys + data, then show UI ──
+          walletLogger.info('Found unprotected wallet, loading directly')
+          try {
+            const loadResult = await loadWallet(null)
+            lap('loadWallet')
+            if (!mounted) return
+            if (!loadResult.ok) {
+              walletLogger.error('Failed to load unprotected wallet', loadResult.error)
+              setIsLocked(true)
+              setLoading(false)
+              return
             }
+            const keys = loadResult.value
+            if (keys) {
+              // Determine if we need to switch to a different account's keys.
+              // loadWallet always returns Account 1 keys from secure storage.
+              let walletKeys = keys
+              const accountId = activeAccount?.id ?? 1
+              let needsAccountSwitch = false
+
+              if (activeAccount) {
+                const targetIndex = activeAccount.derivationIndex ?? ((activeAccount.id ?? 1) - 1)
+                const loadedIndex = keys.accountIndex ?? 0
+                needsAccountSwitch = targetIndex !== loadedIndex
+                if (needsAccountSwitch) {
+                  walletLogger.info('Active account differs from loaded keys — deriving correct keys', {
+                    activeAccountId: activeAccount.id, targetIndex, loadedIndex
+                  })
+                  // Must store mnemonic in Rust first, then derive the active account's keys
+                  await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
+                  lap('storeKeysInRust (for account switch)')
+                  try {
+                    const pubKeys = await invoke<PublicWalletKeys>('switch_account_from_store', { accountIndex: targetIndex })
+                    walletKeys = {
+                      mnemonic: '',
+                      walletType: pubKeys.walletType as 'yours',
+                      walletWif: '',
+                      walletAddress: pubKeys.walletAddress,
+                      walletPubKey: pubKeys.walletPubKey,
+                      ordWif: '',
+                      ordAddress: pubKeys.ordAddress,
+                      ordPubKey: pubKeys.ordPubKey,
+                      identityWif: '',
+                      identityAddress: pubKeys.identityAddress,
+                      identityPubKey: pubKeys.identityPubKey,
+                      accountIndex: targetIndex
+                    }
+                    lap('switch_account_from_store')
+                  } catch (rustErr) {
+                    walletLogger.warn('Failed to derive active account keys — falling back to stored keys', { error: String(rustErr) })
+                  }
+                }
+              }
+
+              // Pre-load ALL cached data BEFORE the spinner disappears.
+              try {
+                await preloadDataFromDB({ ...walletKeys, mnemonic: '' }, accountId)
+                lap('preloadDataFromDB')
+              } catch (e) {
+                walletLogger.warn('Pre-load from DB failed (non-critical)', { error: String(e) })
+              }
+
+              // Set wallet state — data is already loaded, so when the spinner
+              // disappears the wallet UI has data from the very first frame.
+              setWallet({ ...walletKeys, mnemonic: '' })
+              setSessionPassword('')
+              setModuleSessionPassword('')
+
+              lap('TOTAL — setLoading(false) [data ready]')
+              if (!mounted) return
+              setLoading(false)
+
+              // ── DEFERRED: Non-critical operations (fire-and-forget) ──
+              // These run AFTER the UI is visible. The user sees data instantly
+              // while maintenance, contacts, and Rust key store populate in the background.
+              ;(async () => {
+                try {
+                  // Store keys in Rust if not done during account switch
+                  if (!needsAccountSwitch && keys.mnemonic) {
+                    await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
+                  }
+                } catch (e) { walletLogger.warn('Deferred storeKeysInRust failed', { error: String(e) }) }
+                deferMaintenance(mounted, refreshAccounts, setContacts)
+              })()
+              return
+            } else {
+              walletLogger.error('Failed to load unprotected wallet')
+              setIsLocked(true)
+            }
+          } catch (e) {
+            walletLogger.error('Error loading unprotected wallet', e)
+            setIsLocked(true)
           }
         } else {
-          // No accounts yet - try loading with empty password (legacy unencrypted support)
+          // No accounts yet — try loading with empty password (legacy unencrypted support)
           try {
             const legacyResult = await loadWallet('')
             if (!mounted) return
             const keys = legacyResult.ok ? legacyResult.value : null
             if (keys) {
-              // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
               setWallet({ ...keys, mnemonic: '' })
               setSessionPassword('')
               setModuleSessionPassword('')
@@ -243,8 +244,12 @@ export function useWalletInit({
             setIsLocked(true)
           }
         }
+      } catch (err) {
+        uiLogger.error('Failed to initialize', err)
       }
+
       if (!mounted) return
+      lap('TOTAL — setLoading(false)')
       setLoading(false)
     }
     init()
@@ -274,4 +279,38 @@ export function useWalletInit({
     setContacts,
     refreshContacts
   }
+}
+
+/**
+ * Run non-critical maintenance operations in the background.
+ * Called fire-and-forget AFTER setLoading(false) so the UI is already visible.
+ */
+function deferMaintenance(
+  mounted: boolean,
+  refreshAccounts: () => Promise<void>,
+  setContacts: Dispatch<SetStateAction<Contact[]>>
+) {
+  ;(async () => {
+    try {
+      if (!mounted) return
+      // These 3 are independent — run in parallel
+      const [repairResult, , contactsResult] = await Promise.all([
+        repairUTXOs(),
+        ensureDerivedAddressesTable(),
+        ensureContactsTable().then(() => getContacts())
+      ])
+
+      if (repairResult.ok && repairResult.value > 0) {
+        uiLogger.info('Repaired UTXOs', { count: repairResult.value })
+      }
+      if (contactsResult.ok) {
+        setContacts(contactsResult.value)
+      }
+
+      if (!mounted) return
+      await refreshAccounts()
+    } catch (e) {
+      uiLogger.warn('Deferred maintenance failed (non-critical)', { error: String(e) })
+    }
+  })()
 }
