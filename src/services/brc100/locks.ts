@@ -138,7 +138,7 @@ export async function createLockTransaction(
 
     // Broadcast via infrastructure service (cascade: WoC -> ARC -> mAPI)
     // Broadcast FIRST — only save to DB on success to avoid phantom records
-    await infraBroadcast(rawTx, txid)
+    await infraBroadcast(rawTx)
 
     // Broadcast succeeded — now persist to database
     const addLockResult = await addUTXO({

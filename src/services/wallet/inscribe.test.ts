@@ -81,8 +81,8 @@ describe('buildInscriptionTx', () => {
       destinationAddress: '1Dest',
     })
 
-    const callArgs = vi.mocked(tauriInvoke).mock.calls[0][1] as Record<string, unknown>
-    const fundingUtxos = callArgs.fundingUtxos as Array<{ script: string }>
-    expect(fundingUtxos[0].script).toBe('')
+    const callArgs = vi.mocked(tauriInvoke).mock.calls[0]![1] as Record<string, unknown>
+    const fundingUtxos = callArgs!.fundingUtxos as Array<{ script: string }>
+    expect(fundingUtxos[0]!.script).toBe('')
   })
 })
