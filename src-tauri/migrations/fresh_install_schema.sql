@@ -283,14 +283,15 @@ CREATE TABLE IF NOT EXISTS ordinal_cache (
     block_height INTEGER
 );
 
--- Address book (026)
+-- Address book (026 + 027 fix unique constraint)
 CREATE TABLE IF NOT EXISTS address_book (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    address TEXT NOT NULL UNIQUE,
+    address TEXT NOT NULL,
     label TEXT NOT NULL DEFAULT '',
     last_used_at INTEGER NOT NULL,
     use_count INTEGER NOT NULL DEFAULT 1,
-    account_id INTEGER NOT NULL DEFAULT 0
+    account_id INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(address, account_id)
 );
 
 -- ==================== INDEXES ====================

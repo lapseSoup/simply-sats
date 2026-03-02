@@ -52,10 +52,14 @@ vi.mock('../../contexts/UIContext', () => ({
   })
 }))
 
-// Mock the wallet service
-vi.mock('../../services/wallet', () => ({
+// Mock the wallet adapter (SendModal imports from adapters/walletAdapter, not services/wallet)
+vi.mock('../../adapters/walletAdapter', () => ({
   calculateExactFee: vi.fn().mockReturnValue({ fee: 100, inputCount: 2, outputCount: 2, totalInput: 100000, canSend: true }),
-  calculateTxFee: vi.fn().mockReturnValue(100)
+  calculateTxFee: vi.fn().mockReturnValue(100),
+  calculateMaxSend: vi.fn().mockReturnValue({ maxSats: 99900, fee: 100, numInputs: 2 }),
+  P2PKH_INPUT_SIZE: 148,
+  P2PKH_OUTPUT_SIZE: 34,
+  TX_OVERHEAD: 10,
 }))
 
 // Mock address book repository
@@ -64,7 +68,7 @@ vi.mock('../../infrastructure/database', async (importOriginal) => {
   return {
     ...actual,
     saveAddress: vi.fn().mockResolvedValue({ ok: true, value: 1 }),
-    addressExists: vi.fn().mockResolvedValue(false),
+    addressExists: vi.fn().mockResolvedValue({ ok: true, value: false }),
     getAddressBook: vi.fn().mockResolvedValue({ ok: true, value: [] }),
     getRecentAddresses: vi.fn().mockResolvedValue({ ok: true, value: [] }),
   }
@@ -204,5 +208,65 @@ describe('SendModal', () => {
     // The exact text depends on component implementation
     // Amount input is type="number" so value is numeric
     expect(amountInput).toHaveValue(1000)
+  })
+
+  // --- Q-59: Additional validation tests ---
+
+  it('disables send button when amount is zero', () => {
+    render(<SendModal onClose={mockOnClose} />)
+
+    const addressInput = screen.getByLabelText('To')
+    const amountInput = screen.getByLabelText(/Amount/)
+
+    fireEvent.change(addressInput, { target: { value: '1ValidBSVAddress123' } })
+    fireEvent.change(amountInput, { target: { value: '0' } })
+
+    // sendSats = 0, so the condition `sendSats <= 0` is true → button disabled
+    const sendButton = screen.getByRole('button', { name: /send/i })
+    expect(sendButton).toBeDisabled()
+  })
+
+  it('disables send button when amount is negative', () => {
+    render(<SendModal onClose={mockOnClose} />)
+
+    const addressInput = screen.getByLabelText('To')
+    const amountInput = screen.getByLabelText(/Amount/)
+
+    fireEvent.change(addressInput, { target: { value: '1ValidBSVAddress123' } })
+    fireEvent.change(amountInput, { target: { value: '-500' } })
+
+    // parseFloat('-500') = -500, but Number.isNaN check passes, rawSendSats = -500
+    // However sendSats = -500 which is <= 0, so button disabled
+    const sendButton = screen.getByRole('button', { name: /send/i })
+    expect(sendButton).toBeDisabled()
+  })
+
+  it('disables send button when amount is non-numeric text', () => {
+    render(<SendModal onClose={mockOnClose} />)
+
+    const addressInput = screen.getByLabelText('To')
+    const amountInput = screen.getByLabelText(/Amount/)
+
+    fireEvent.change(addressInput, { target: { value: '1ValidBSVAddress123' } })
+    fireEvent.change(amountInput, { target: { value: 'abc' } })
+
+    // parseFloat('abc') = NaN, so sendSats = 0 (fallback), button disabled
+    const sendButton = screen.getByRole('button', { name: /send/i })
+    expect(sendButton).toBeDisabled()
+  })
+
+  it('disables send button when amount exceeds available balance', () => {
+    render(<SendModal onClose={mockOnClose} />)
+
+    const addressInput = screen.getByLabelText('To')
+    const amountInput = screen.getByLabelText(/Amount/)
+
+    fireEvent.change(addressInput, { target: { value: '1ValidBSVAddress123' } })
+    // Balance is 100,000 sats. With fee of 100 sats (from mock), 100000 + 100 > 100000
+    fireEvent.change(amountInput, { target: { value: '100000' } })
+
+    // sendSats (100000) + fee (100) > availableSats (100000) → button disabled
+    const sendButton = screen.getByRole('button', { name: /send/i })
+    expect(sendButton).toBeDisabled()
   })
 })
