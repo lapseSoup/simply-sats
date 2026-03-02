@@ -381,6 +381,82 @@ pub async fn build_consolidation_tx_from_store(
     transaction::build_consolidation_tx((*wif).clone(), utxos, fee_rate)
 }
 
+/// Build a lock transaction using the wallet key from the store
+#[tauri::command]
+pub async fn build_lock_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    selected_utxos: Vec<transaction::UtxoInput>,
+    lock_satoshis: u64,
+    timelock_script_hex: String,
+    change_address: String,
+    change_satoshis: u64,
+    op_return_hex: Option<String>,
+) -> Result<transaction::BuiltLockResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    drop(store);
+    transaction::build_lock_tx(
+        (*wif).clone(),
+        selected_utxos,
+        lock_satoshis,
+        timelock_script_hex,
+        change_address,
+        change_satoshis,
+        op_return_hex,
+    )
+}
+
+/// Build an unlock transaction using the wallet key from the store
+#[tauri::command]
+pub async fn build_unlock_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    locked_txid: String,
+    locked_vout: u32,
+    locked_satoshis: u64,
+    locking_script_hex: String,
+    unlock_block: u32,
+    to_address: String,
+    output_satoshis: u64,
+) -> Result<transaction::BuiltLockResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    drop(store);
+    transaction::build_unlock_tx(
+        (*wif).clone(),
+        locked_txid,
+        locked_vout,
+        locked_satoshis,
+        locking_script_hex,
+        unlock_block,
+        to_address,
+        output_satoshis,
+    )
+}
+
+/// Build a multi-output P2PKH transaction using the wallet key from the store
+#[tauri::command]
+pub async fn build_multi_output_p2pkh_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    outputs: Vec<transaction::OutputDescriptor>,
+    selected_utxos: Vec<transaction::UtxoInput>,
+    total_input: u64,
+    fee_rate: f64,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    drop(store);
+    transaction::build_multi_output_p2pkh_tx(
+        (*wif).clone(),
+        outputs,
+        selected_utxos,
+        total_input,
+        fee_rate,
+    )
+}
+
 // ==================== BRC-42/43 Key Derivation Commands (from store) ====================
 
 /// Derive a BRC-42 child key using a key from the store

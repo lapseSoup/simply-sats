@@ -11,6 +11,7 @@
 
 use crate::bsv_sdk_adapter::{sdk_address_from_wif, sdk_privkey_from_wif};
 use bsv_sdk::script::address::Address;
+use bsv_sdk::script::Script;
 use bsv_sdk::transaction::template::p2pkh;
 use bsv_sdk::transaction::template::UnlockingScriptTemplate;
 use bsv_sdk::transaction::{Transaction as SdkTransaction, TransactionOutput};
@@ -296,6 +297,317 @@ pub fn build_consolidation_tx(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Lock/Unlock result type
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuiltLockResult {
+    /// Hex-encoded raw signed transaction
+    pub raw_tx: String,
+    /// Transaction ID
+    pub txid: String,
+}
+
+// ---------------------------------------------------------------------------
+// Lock transaction builder
+// ---------------------------------------------------------------------------
+
+/// Build and sign a transaction that creates a CLTV time-locked output.
+///
+/// Inputs: P2PKH UTXOs signed with wallet key.
+/// Output 0: Custom timelock locking script (lock_satoshis).
+/// Output 1 (optional): OP_RETURN data output (0 sats).
+/// Output 2 (optional): P2PKH change output (change_satoshis).
+#[tauri::command]
+pub fn build_lock_tx(
+    wif: String,
+    selected_utxos: Vec<UtxoInput>,
+    lock_satoshis: u64,
+    timelock_script_hex: String,
+    change_address: String,
+    change_satoshis: u64,
+    op_return_hex: Option<String>,
+) -> Result<BuiltLockResult, String> {
+    let mut tx = SdkTransaction::new();
+
+    // Add P2PKH inputs
+    for utxo in &selected_utxos {
+        tx.add_input_from(&utxo.txid, utxo.vout, &utxo.script, utxo.satoshis)
+            .map_err(|e| format!("Failed to add input: {}", e))?;
+    }
+
+    // Output 0: Timelock locking script
+    let lock_script = Script::from_hex(&timelock_script_hex)
+        .map_err(|e| format!("Invalid timelock script hex: {}", e))?;
+    let mut lock_output = TransactionOutput::new();
+    lock_output.satoshis = lock_satoshis;
+    lock_output.locking_script = lock_script;
+    tx.add_output(lock_output);
+
+    // Output 1 (optional): OP_RETURN
+    if let Some(ref op_hex) = op_return_hex {
+        let op_script = Script::from_hex(op_hex)
+            .map_err(|e| format!("Invalid OP_RETURN hex: {}", e))?;
+        let mut op_output = TransactionOutput::new();
+        op_output.satoshis = 0;
+        op_output.locking_script = op_script;
+        tx.add_output(op_output);
+    }
+
+    // Output 2 (optional): P2PKH change
+    if change_satoshis > 0 {
+        add_p2pkh_output(&mut tx, &change_address, change_satoshis)?;
+    }
+
+    // Sign all inputs with the wallet key
+    let privkey = sdk_privkey_from_wif(&wif)?;
+    let template = p2pkh::unlock(privkey, None);
+    for i in 0..tx.input_count() {
+        let unlock_script = template
+            .sign(&tx, i as u32)
+            .map_err(|e| format!("Failed to sign input {}: {}", i, e))?;
+        tx.inputs[i].unlocking_script = Some(unlock_script);
+    }
+
+    Ok(BuiltLockResult {
+        raw_tx: tx.to_hex(),
+        txid: tx.tx_id_hex(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Unlock transaction builder
+// ---------------------------------------------------------------------------
+
+/// Build and sign a transaction that spends a CLTV-locked UTXO.
+///
+/// The nLockTime is set to `unlock_block` and nSequence to 0xFFFFFFFE
+/// to enable nLockTime validation. The input is signed with a standard
+/// P2PKH template — the on-chain script's OP_CHECKLOCKTIMEVERIFY opcode
+/// validates that nLockTime >= the threshold block height.
+#[tauri::command]
+pub fn build_unlock_tx(
+    wif: String,
+    locked_txid: String,
+    locked_vout: u32,
+    locked_satoshis: u64,
+    locking_script_hex: String,
+    unlock_block: u32,
+    to_address: String,
+    output_satoshis: u64,
+) -> Result<BuiltLockResult, String> {
+    let mut tx = SdkTransaction::new();
+
+    // Set nLockTime to the unlock block height
+    tx.lock_time = unlock_block;
+
+    // Add the locked UTXO as input
+    tx.add_input_from(&locked_txid, locked_vout, &locking_script_hex, locked_satoshis)
+        .map_err(|e| format!("Failed to add locked input: {}", e))?;
+
+    // Set nSequence to 0xFFFFFFFE to enable nLockTime
+    tx.inputs[0].sequence_number = 0xFFFFFFFE;
+
+    // Output: P2PKH to destination
+    add_p2pkh_output(&mut tx, &to_address, output_satoshis)?;
+
+    // Sign with standard P2PKH template
+    let privkey = sdk_privkey_from_wif(&wif)?;
+    let template = p2pkh::unlock(privkey, None);
+    let unlock_script = template
+        .sign(&tx, 0)
+        .map_err(|e| format!("Failed to sign unlock input: {}", e))?;
+    tx.inputs[0].unlocking_script = Some(unlock_script);
+
+    Ok(BuiltLockResult {
+        raw_tx: tx.to_hex(),
+        txid: tx.tx_id_hex(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Ordinal transfer transaction builder
+// ---------------------------------------------------------------------------
+
+/// Build and sign a 2-key transaction to transfer an ordinal.
+///
+/// Input 0: ordinal UTXO (signed with ord_wif).
+/// Inputs 1+: funding UTXOs (signed with funding_wif).
+/// Output 0: ordinal to recipient (1 sat P2PKH).
+/// Output 1: change to funding address (P2PKH).
+#[tauri::command]
+pub fn build_ordinal_transfer_tx(
+    ord_wif: String,
+    ordinal_utxo: UtxoInput,
+    to_address: String,
+    funding_wif: String,
+    funding_utxos: Vec<UtxoInput>,
+) -> Result<BuiltTransactionResult, String> {
+    let funding_address = sdk_address_from_wif(&funding_wif)?;
+
+    let mut tx = SdkTransaction::new();
+
+    // Input 0: ordinal UTXO
+    tx.add_input_from(&ordinal_utxo.txid, ordinal_utxo.vout, &ordinal_utxo.script, ordinal_utxo.satoshis)
+        .map_err(|e| format!("Failed to add ordinal input: {}", e))?;
+
+    // Inputs 1+: funding UTXOs
+    for utxo in &funding_utxos {
+        tx.add_input_from(&utxo.txid, utxo.vout, &utxo.script, utxo.satoshis)
+            .map_err(|e| format!("Failed to add funding input: {}", e))?;
+    }
+
+    // Output 0: ordinal to recipient (1 sat)
+    add_p2pkh_output(&mut tx, &to_address, 1)?;
+
+    // Calculate total funding input and fee
+    let total_funding: u64 = funding_utxos.iter().map(|u| u.satoshis).sum();
+    let total_input = ordinal_utxo.satoshis + total_funding;
+    // 1 ordinal input + N funding inputs, 2 outputs (ordinal + change)
+    let fee = calculate_tx_fee(1 + funding_utxos.len(), 2, 0.05);
+    let change = total_input
+        .checked_sub(1) // ordinal output
+        .and_then(|v| v.checked_sub(fee))
+        .ok_or_else(|| format!(
+            "Insufficient funds: need 1 sat + {} fee, have {} total",
+            fee, total_input
+        ))?;
+
+    // Output 1: change to funding address
+    if change > 0 {
+        add_p2pkh_output(&mut tx, &funding_address, change)?;
+    }
+
+    // Sign input 0 with ordinal key
+    let ord_privkey = sdk_privkey_from_wif(&ord_wif)?;
+    let ord_template = p2pkh::unlock(ord_privkey, None);
+    let ord_unlock = ord_template
+        .sign(&tx, 0)
+        .map_err(|e| format!("Failed to sign ordinal input: {}", e))?;
+    tx.inputs[0].unlocking_script = Some(ord_unlock);
+
+    // Sign inputs 1+ with funding key
+    let funding_privkey = sdk_privkey_from_wif(&funding_wif)?;
+    let funding_template = p2pkh::unlock(funding_privkey, None);
+    for i in 1..tx.input_count() {
+        let unlock_script = funding_template
+            .sign(&tx, i as u32)
+            .map_err(|e| format!("Failed to sign funding input {}: {}", i, e))?;
+        tx.inputs[i].unlocking_script = Some(unlock_script);
+    }
+
+    // Build spent outpoints list
+    let mut spent_outpoints = vec![SpentOutpoint {
+        txid: ordinal_utxo.txid.clone(),
+        vout: ordinal_utxo.vout,
+    }];
+    spent_outpoints.extend(funding_utxos.iter().map(|u| SpentOutpoint {
+        txid: u.txid.clone(),
+        vout: u.vout,
+    }));
+
+    Ok(BuiltTransactionResult {
+        raw_tx: tx.to_hex(),
+        txid: tx.tx_id_hex(),
+        fee,
+        change,
+        change_address: funding_address,
+        spent_outpoints,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Multi-output P2PKH transaction builder
+// ---------------------------------------------------------------------------
+
+/// Output descriptor for multi-output transactions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputDescriptor {
+    pub address: String,
+    pub satoshis: u64,
+}
+
+/// Build and sign a single-key transaction with multiple P2PKH outputs.
+///
+/// All inputs are signed with the same key. A change output is appended
+/// after the specified outputs if there are leftover funds.
+#[tauri::command]
+pub fn build_multi_output_p2pkh_tx(
+    wif: String,
+    outputs: Vec<OutputDescriptor>,
+    selected_utxos: Vec<UtxoInput>,
+    total_input: u64,
+    fee_rate: f64,
+) -> Result<BuiltTransactionResult, String> {
+    if outputs.is_empty() {
+        return Err("At least one output is required".into());
+    }
+
+    let from_address = sdk_address_from_wif(&wif)?;
+
+    let total_output: u64 = outputs.iter().map(|o| o.satoshis).sum();
+
+    // Calculate fee: outputs count + potential change output
+    let prelim_change = total_input.saturating_sub(total_output);
+    let will_have_change = prelim_change > 100;
+    let num_outputs = outputs.len() + if will_have_change { 1 } else { 0 };
+    let fee = calculate_tx_fee(selected_utxos.len(), num_outputs, fee_rate);
+
+    let change = total_input
+        .checked_sub(total_output)
+        .and_then(|v| v.checked_sub(fee))
+        .ok_or_else(|| format!(
+            "Insufficient funds: need {} + {} fee, have {}",
+            total_output, fee, total_input
+        ))?;
+
+    // Build transaction
+    let mut tx = SdkTransaction::new();
+
+    for utxo in &selected_utxos {
+        tx.add_input_from(&utxo.txid, utxo.vout, &utxo.script, utxo.satoshis)
+            .map_err(|e| format!("Failed to add input: {}", e))?;
+    }
+
+    // Add all specified outputs
+    for out in &outputs {
+        add_p2pkh_output(&mut tx, &out.address, out.satoshis)?;
+    }
+
+    // Add change output
+    if change > 0 {
+        add_p2pkh_output(&mut tx, &from_address, change)?;
+    }
+
+    // Sign all inputs with the same key
+    let privkey = sdk_privkey_from_wif(&wif)?;
+    let template = p2pkh::unlock(privkey, None);
+    for i in 0..tx.input_count() {
+        let unlock_script = template
+            .sign(&tx, i as u32)
+            .map_err(|e| format!("Failed to sign input {}: {}", i, e))?;
+        tx.inputs[i].unlocking_script = Some(unlock_script);
+    }
+
+    Ok(BuiltTransactionResult {
+        raw_tx: tx.to_hex(),
+        txid: tx.tx_id_hex(),
+        fee,
+        change,
+        change_address: from_address,
+        spent_outpoints: selected_utxos
+            .iter()
+            .map(|u| SpentOutpoint {
+                txid: u.txid.clone(),
+                vout: u.vout,
+            })
+            .collect(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -522,5 +834,343 @@ mod tests {
             5000,
             0.1,
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Lock transaction tests
+    // -----------------------------------------------------------------------
+
+    fn make_test_utxo(txid_char: &str, satoshis: u64) -> UtxoInput {
+        UtxoInput {
+            txid: txid_char.repeat(64),
+            vout: 0,
+            satoshis,
+            script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+        }
+    }
+
+    /// Build a simple CLTV timelock script for testing:
+    /// <block_height> OP_CHECKLOCKTIMEVERIFY OP_DROP OP_DUP OP_HASH160 <pkh> OP_EQUALVERIFY OP_CHECKSIG
+    fn make_test_timelock_script_hex(block_height: u32) -> String {
+        let mut script = Vec::new();
+        // Push block height as little-endian (use minimal encoding)
+        let height_bytes = block_height.to_le_bytes();
+        // Find the minimal length needed
+        let len = if block_height <= 0x7f {
+            1
+        } else if block_height <= 0x7fff {
+            2
+        } else if block_height <= 0x7fffff {
+            3
+        } else {
+            4
+        };
+        script.push(len as u8); // push N bytes
+        script.extend_from_slice(&height_bytes[..len]);
+        script.push(0xb1); // OP_CHECKLOCKTIMEVERIFY
+        script.push(0x75); // OP_DROP
+        script.push(0x76); // OP_DUP
+        script.push(0xa9); // OP_HASH160
+        script.push(0x14); // push 20 bytes
+        script.extend_from_slice(&[0x00; 20]); // placeholder pkh
+        script.push(0x88); // OP_EQUALVERIFY
+        script.push(0xac); // OP_CHECKSIG
+        hex::encode(script)
+    }
+
+    #[test]
+    fn build_lock_tx_basic() {
+        let wif = get_test_wif();
+        let address = get_test_address();
+        let timelock_hex = make_test_timelock_script_hex(800000);
+
+        let result = build_lock_tx(
+            wif,
+            vec![make_test_utxo("a", 10000)],
+            5000,
+            timelock_hex,
+            address,
+            4900,
+            None,
+        );
+
+        assert!(result.is_ok(), "build_lock_tx failed: {:?}", result.err());
+        let built = result.unwrap();
+        assert!(!built.raw_tx.is_empty());
+        assert_eq!(built.txid.len(), 64);
+    }
+
+    #[test]
+    fn build_lock_tx_with_op_return() {
+        let wif = get_test_wif();
+        let address = get_test_address();
+        let timelock_hex = make_test_timelock_script_hex(800000);
+        // Simple OP_RETURN: OP_FALSE OP_RETURN <data>
+        let op_return_hex = "006a04deadbeef".to_string();
+
+        let result = build_lock_tx(
+            wif,
+            vec![make_test_utxo("b", 10000)],
+            5000,
+            timelock_hex,
+            address,
+            4900,
+            Some(op_return_hex),
+        );
+
+        assert!(result.is_ok(), "build_lock_tx with OP_RETURN failed: {:?}", result.err());
+        let built = result.unwrap();
+        assert!(!built.raw_tx.is_empty());
+
+        // Verify OP_RETURN data is in the raw tx
+        assert!(built.raw_tx.contains("deadbeef"));
+    }
+
+    #[test]
+    fn build_lock_tx_no_change() {
+        let wif = get_test_wif();
+        let address = get_test_address();
+        let timelock_hex = make_test_timelock_script_hex(800000);
+
+        let result = build_lock_tx(
+            wif,
+            vec![make_test_utxo("c", 5000)],
+            5000,
+            timelock_hex,
+            address,
+            0, // no change
+            None,
+        );
+
+        assert!(result.is_ok(), "build_lock_tx no change failed: {:?}", result.err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Unlock transaction tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_unlock_tx_basic() {
+        let wif = get_test_wif();
+        let address = get_test_address();
+        let locking_script_hex = make_test_timelock_script_hex(800000);
+
+        let result = build_unlock_tx(
+            wif,
+            "a".repeat(64),
+            0,
+            10000,
+            locking_script_hex,
+            800000,
+            address,
+            9800,
+        );
+
+        assert!(result.is_ok(), "build_unlock_tx failed: {:?}", result.err());
+        let built = result.unwrap();
+        assert!(!built.raw_tx.is_empty());
+        assert_eq!(built.txid.len(), 64);
+
+        // Verify nLockTime is set in the raw tx
+        let raw_bytes = hex::decode(&built.raw_tx).unwrap();
+        let len = raw_bytes.len();
+        // Last 4 bytes = nLockTime (little-endian)
+        let lock_time_bytes = &raw_bytes[len - 4..];
+        let lock_time = u32::from_le_bytes([
+            lock_time_bytes[0],
+            lock_time_bytes[1],
+            lock_time_bytes[2],
+            lock_time_bytes[3],
+        ]);
+        assert_eq!(lock_time, 800000, "nLockTime should be 800000");
+    }
+
+    #[test]
+    fn build_unlock_tx_sets_sequence() {
+        let wif = get_test_wif();
+        let address = get_test_address();
+        let locking_script_hex = make_test_timelock_script_hex(900000);
+
+        let result = build_unlock_tx(
+            wif,
+            "b".repeat(64),
+            0,
+            5000,
+            locking_script_hex,
+            900000,
+            address,
+            4800,
+        );
+
+        assert!(result.is_ok(), "build_unlock_tx failed: {:?}", result.err());
+        let built = result.unwrap();
+
+        // Parse the raw tx back and verify sequence number
+        let parsed = SdkTransaction::from_hex(&built.raw_tx).unwrap();
+        assert_eq!(parsed.inputs[0].sequence_number, 0xFFFFFFFE);
+        assert_eq!(parsed.lock_time, 900000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Ordinal transfer transaction tests
+    // -----------------------------------------------------------------------
+
+    fn get_test_ord_wif() -> String {
+        let keys = crate::key_derivation::derive_wallet_keys(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string()
+        ).unwrap();
+        keys.ord_wif
+    }
+
+    #[test]
+    fn build_ordinal_transfer_tx_basic() {
+        let ord_wif = get_test_ord_wif();
+        let funding_wif = get_test_wif();
+
+        let result = build_ordinal_transfer_tx(
+            ord_wif,
+            UtxoInput {
+                txid: "a".repeat(64),
+                vout: 0,
+                satoshis: 1,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            },
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            funding_wif,
+            vec![make_test_utxo("b", 10000)],
+        );
+
+        assert!(result.is_ok(), "build_ordinal_transfer_tx failed: {:?}", result.err());
+        let built = result.unwrap();
+
+        assert!(!built.raw_tx.is_empty());
+        assert_eq!(built.txid.len(), 64);
+        assert!(built.fee > 0);
+        assert!(built.change > 0);
+        // 1 ordinal input + 1 funding input = 2 spent outpoints
+        assert_eq!(built.spent_outpoints.len(), 2);
+    }
+
+    #[test]
+    fn build_ordinal_transfer_tx_insufficient_funds() {
+        let ord_wif = get_test_ord_wif();
+        let funding_wif = get_test_wif();
+
+        let result = build_ordinal_transfer_tx(
+            ord_wif,
+            UtxoInput {
+                txid: "a".repeat(64),
+                vout: 0,
+                satoshis: 1,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            },
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            funding_wif,
+            vec![make_test_utxo("b", 1)], // only 1 sat — not enough for fee
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Insufficient funds"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Multi-output P2PKH transaction tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_multi_output_p2pkh_tx_basic() {
+        let wif = get_test_wif();
+        let address = get_test_address();
+
+        let result = build_multi_output_p2pkh_tx(
+            wif,
+            vec![
+                OutputDescriptor {
+                    address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+                    satoshis: 1000,
+                },
+                OutputDescriptor {
+                    address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+                    satoshis: 2000,
+                },
+            ],
+            vec![make_test_utxo("a", 20000)],
+            20000,
+            0.1,
+        );
+
+        assert!(result.is_ok(), "build_multi_output_p2pkh_tx failed: {:?}", result.err());
+        let built = result.unwrap();
+
+        assert!(!built.raw_tx.is_empty());
+        assert_eq!(built.txid.len(), 64);
+        assert!(built.fee > 0);
+        assert!(built.change > 0);
+        assert_eq!(built.change_address, address);
+        // fee + change + 3000 = 20000
+        assert_eq!(built.fee + built.change + 3000, 20000);
+    }
+
+    #[test]
+    fn build_multi_output_p2pkh_tx_empty_outputs() {
+        let wif = get_test_wif();
+
+        let result = build_multi_output_p2pkh_tx(
+            wif,
+            vec![], // empty outputs
+            vec![make_test_utxo("a", 10000)],
+            10000,
+            0.1,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("At least one output"));
+    }
+
+    #[test]
+    fn build_multi_output_p2pkh_tx_insufficient_funds() {
+        let wif = get_test_wif();
+
+        let result = build_multi_output_p2pkh_tx(
+            wif,
+            vec![
+                OutputDescriptor {
+                    address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+                    satoshis: 50000,
+                },
+            ],
+            vec![make_test_utxo("a", 1000)],
+            1000,
+            0.1,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Insufficient funds"));
+    }
+
+    #[test]
+    fn build_multi_output_p2pkh_tx_multiple_inputs() {
+        let wif = get_test_wif();
+
+        let result = build_multi_output_p2pkh_tx(
+            wif,
+            vec![
+                OutputDescriptor {
+                    address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+                    satoshis: 3000,
+                },
+            ],
+            vec![
+                make_test_utxo("a", 2000),
+                make_test_utxo("b", 5000),
+            ],
+            7000,
+            0.1,
+        );
+
+        assert!(result.is_ok(), "multi-output multi-input failed: {:?}", result.err());
+        let built = result.unwrap();
+        assert_eq!(built.spent_outpoints.len(), 2);
+        assert_eq!(built.fee + built.change + 3000, 7000);
     }
 }
