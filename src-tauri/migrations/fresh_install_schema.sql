@@ -283,6 +283,16 @@ CREATE TABLE IF NOT EXISTS ordinal_cache (
     block_height INTEGER
 );
 
+-- Address book (026)
+CREATE TABLE IF NOT EXISTS address_book (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    address TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL DEFAULT '',
+    last_used_at INTEGER NOT NULL,
+    use_count INTEGER NOT NULL DEFAULT 1,
+    account_id INTEGER NOT NULL DEFAULT 0
+);
+
 -- ==================== INDEXES ====================
 
 CREATE INDEX IF NOT EXISTS idx_utxos_basket ON utxos(basket);
@@ -318,6 +328,8 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_origin ON audit_log(origin);
 CREATE INDEX IF NOT EXISTS idx_ordinal_cache_origin ON ordinal_cache(origin);
 CREATE INDEX IF NOT EXISTS idx_ordinal_cache_account ON ordinal_cache(account_id);
 CREATE INDEX IF NOT EXISTS idx_ordinal_cache_transferred ON ordinal_cache(transferred);
+CREATE INDEX IF NOT EXISTS idx_address_book_account ON address_book(account_id);
+CREATE INDEX IF NOT EXISTS idx_address_book_last_used ON address_book(last_used_at DESC);
 
 -- ==================== DEFAULT DATA ====================
 

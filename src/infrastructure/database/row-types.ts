@@ -361,6 +361,22 @@ export interface OrdinalCacheStatsRow {
 }
 
 // ============================================
+// Address Book Table Rows
+// ============================================
+
+/**
+ * Raw address book row from database
+ */
+export interface AddressBookRow {
+  id: number
+  address: string
+  label: string
+  last_used_at: number
+  use_count: number
+  account_id: number
+}
+
+// ============================================
 // Aggregate Query Rows
 // ============================================
 

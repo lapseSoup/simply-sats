@@ -32,6 +32,9 @@ vi.mock('../../contexts', () => ({
   }),
   useWalletActions: () => ({
     handleSend: mockHandleSend
+  }),
+  useAccounts: () => ({
+    activeAccountId: 1
   })
 }))
 
@@ -54,6 +57,18 @@ vi.mock('../../services/wallet', () => ({
   calculateExactFee: vi.fn().mockReturnValue({ fee: 100, inputCount: 2, outputCount: 2, totalInput: 100000, canSend: true }),
   calculateTxFee: vi.fn().mockReturnValue(100)
 }))
+
+// Mock address book repository
+vi.mock('../../infrastructure/database', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual,
+    saveAddress: vi.fn().mockResolvedValue({ ok: true, value: 1 }),
+    addressExists: vi.fn().mockResolvedValue(false),
+    getAddressBook: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+    getRecentAddresses: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+  }
+})
 
 describe('SendModal', () => {
   beforeEach(() => {
