@@ -25,7 +25,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   return (
     <Modal onClose={onClose} title="Settings">
-      <div className="modal-content">
+      <div className="modal-content-scroll">
         <SettingsWallet />
         <SettingsAppearance />
         <SettingsTransactions />

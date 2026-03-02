@@ -28,7 +28,11 @@ export const OrdinalImage = memo(function OrdinalImage({
   lazy = true,
   cachedContent
 }: OrdinalImageProps) {
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading')
+  // If we already have a cached blob URL, start as 'loaded' to avoid the loading
+  // shimmer flash (opacity: 0 → 1 transition) on every re-render/remount.
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(
+    () => (origin && blobUrlCache.has(origin)) ? 'loaded' : 'loading'
+  )
   const url = getOrdinalContentUrl(origin)
 
   // Prefer contentType from cached DB entry (resolved from HTTP header during fetch)
@@ -49,13 +53,16 @@ export const OrdinalImage = memo(function OrdinalImage({
     () => (origin ? blobUrlCache.get(origin) : undefined)
   )
   useEffect(() => {
-    if (isImage && cachedContent?.contentData && cachedContent.contentData.length > 0) {
-      // Cache hit — reuse existing blob URL (no new blob creation, no flicker)
-      if (origin && blobUrlCache.has(origin)) {
-        setCachedImageUrl(blobUrlCache.get(origin))
-        return // No cleanup — module cache owns the URL lifetime
-      }
+    // If the module-level cache already has a blob URL for this origin, skip entirely.
+    // Ordinal content is immutable — once created, the blob URL never needs to change.
+    // This prevents flicker when contentCacheSnapshot rebuilds cause new Uint8Array
+    // references for the same binary data, which would otherwise trigger blob recreation
+    // → <img src> change → loading state → visible flicker.
+    if (origin && blobUrlCache.has(origin)) {
+      return
+    }
 
+    if (isImage && cachedContent?.contentData && cachedContent.contentData.length > 0) {
       try {
         // Use a sliced copy of the buffer — the Uint8Array may be a view into a
         // larger shared ArrayBuffer (e.g. from SQLite), so .buffer alone can include
@@ -80,7 +87,7 @@ export const OrdinalImage = memo(function OrdinalImage({
       } catch {
         setCachedImageUrl(undefined)
       }
-    } else {
+    } else if (!origin || !blobUrlCache.has(origin)) {
       setCachedImageUrl(undefined)
     }
   // B-62: Include cachedContent?.contentType so effect re-runs when the resolved
