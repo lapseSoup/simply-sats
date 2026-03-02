@@ -69,6 +69,28 @@ const WOC_MAX_RETRIES = 3
 /** Base delay for exponential backoff (ms) */
 const WOC_RETRY_BASE_DELAY_MS = 500
 
+/**
+ * Global request throttle — ensures a minimum gap between WoC API requests.
+ * Without this, concurrent syncs (active account + background accounts + lock
+ * detection) overwhelm WoC's rate limit, causing 429 → CORS block → TypeError
+ * cascades. The 500ms minimum gap keeps us well under the 3 req/sec limit.
+ */
+let _lastRequestTime = 0
+const MIN_REQUEST_GAP_MS = 500
+let _throttleQueue: Promise<void> = Promise.resolve()
+
+function throttledRequest<T>(fn: () => Promise<T>): Promise<T> {
+  _throttleQueue = _throttleQueue.then(async () => {
+    const now = Date.now()
+    const elapsed = now - _lastRequestTime
+    if (elapsed < MIN_REQUEST_GAP_MS) {
+      await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_GAP_MS - elapsed))
+    }
+    _lastRequestTime = Date.now()
+  })
+  return _throttleQueue.then(fn)
+}
+
 export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
   const cfg: WocConfig = { ...DEFAULT_WOC_CONFIG, ...config }
 
@@ -95,10 +117,10 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
     }
 
     try {
-      const response = await fetch(url, {
+      const response = await throttledRequest(() => fetch(url, {
         ...options,
         signal: controller.signal
-      })
+      }))
 
       // Retry on 429 (rate limited) and 5xx (server errors) if we have attempts remaining
       if ((response.status === 429 || response.status >= 500) && attempt < WOC_MAX_RETRIES - 1) {

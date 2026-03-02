@@ -266,6 +266,13 @@ fn configure_database(app_data_dir: &std::path::Path) {
     } else {
         log::info!("configure_database: WAL mode and busy_timeout=30000 applied");
     }
+
+    // Resilient schema patching — add columns that may have been missed by the migration
+    // runner. These are idempotent: ALTER TABLE ADD COLUMN fails harmlessly if the column
+    // already exists. This covers edge cases where _sqlx_migrations recorded the migration
+    // as applied but the ALTER TABLE never actually ran.
+    let _ = conn.execute_batch("ALTER TABLE ordinal_cache ADD COLUMN transferred INTEGER DEFAULT 0;");
+    let _ = conn.execute_batch("ALTER TABLE ordinal_cache ADD COLUMN block_height INTEGER;");
 }
 
 /// Pre-initialize the database for fresh installs.

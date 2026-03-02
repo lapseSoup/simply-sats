@@ -17,7 +17,7 @@ import { AppModals } from './AppModals'
 import { AppTabNav, AppTabContent, type Tab } from './AppTabs'
 
 import type { PaymentNotification } from './services/messageBox'
-import { loadNotifications, startPaymentListenerFromWif } from './services/messageBox'
+import { loadNotifications, startPaymentListenerFromWif, resetMessageBoxAuth } from './services/messageBox'
 import { needsInitialSync, syncWallet, getLastSyncTimeForAccount } from './services/sync'
 import { discoverAccounts } from './services/accountDiscovery'
 import { getAccountKeys } from './services/accounts'
@@ -164,6 +164,8 @@ function WalletApp() {
   useEffect(() => {
     if (!wallet) return
 
+    // Reset auth failure counter on account switch — new identity key may succeed
+    resetMessageBoxAuth()
     loadNotifications()
 
     const handleNewPayment = (payment: PaymentNotification) => {

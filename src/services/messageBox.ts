@@ -39,6 +39,14 @@ interface PaymentNotification {
 let paymentNotifications: PaymentNotification[] = []
 let isListening = false
 
+// Suppress repeated 401 errors — after first failure, back off exponentially
+// to avoid flooding the console with "Mutual-authentication failed!" every 30s
+let _authFailureCount = 0
+const AUTH_FAILURE_MAX_SUPPRESS = 10 // After 10 failures, stop trying until reset
+
+/** Reset auth failure counter (call on account switch or app restart) */
+export function resetMessageBoxAuth(): void { _authFailureCount = 0 }
+
 // Load persisted notifications
 export function loadNotifications(): void {
   try {
@@ -116,6 +124,11 @@ async function createAuthHeaders(
  * List messages from our payment inbox
  */
 export async function listPaymentMessages(identityWif: string): Promise<PaymentMessage[]> {
+  // Skip if we've had too many auth failures (don't spam the API)
+  if (_authFailureCount >= AUTH_FAILURE_MAX_SUPPRESS) {
+    return []
+  }
+
   const path = `/api/v1/message/${PAYMENT_INBOX}`
 
   try {
@@ -130,10 +143,20 @@ export async function listPaymentMessages(identityWif: string): Promise<PaymentM
       if (response.status === 404) {
         return [] // No messages
       }
+      if (response.status === 401) {
+        _authFailureCount++
+        if (_authFailureCount === 1) {
+          messageLogger.warn('MessageBox auth failed — will suppress further attempts', { status: 401 })
+        }
+        return []
+      }
       const errorText = await response.text()
       messageLogger.error('MessageBox error', undefined, { status: response.status, errorText })
       return []
     }
+
+    // Successful response — reset failure counter
+    _authFailureCount = 0
 
     const data = await response.json()
     return data.messages || []

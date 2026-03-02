@@ -105,10 +105,10 @@ export function useSyncData({
     // Every setState call below is synchronous. React batches them and
     // re-renders once, giving the user instant data display (~0ms).
 
-    // Clear stale content cache FIRST so ordinal thumbnails don't flash
-    // old account's images before the new account's content loads in Phase 2.
-    contentCacheRef.current.clear()
-    bumpCacheVersion()
+    // NOTE: We do NOT clear contentCacheRef here. The cache is keyed by unique
+    // ordinal origin (txid_vout) so there's no cross-account contamination.
+    // Clearing forces re-fetch of all 621+ ordinal thumbnails on every switch,
+    // which makes the app feel slow. Content from any account is safe to keep.
 
     // Balance
     if (balanceResult.status === 'fulfilled') {
