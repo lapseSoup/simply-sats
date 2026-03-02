@@ -1,13 +1,29 @@
 /**
  * Marketplace operations
- * Listing and cancelling ordinal sales via js-1sat-ord OrdinalLock contracts
+ * Listing, cancelling, and purchasing ordinal sales via the Rust OrdinalLock contract
  *
- * STUB: @bsv/sdk and js-1sat-ord dependencies removed as part of migration to
- * Rust backend (Phase 4). All functions throw at runtime with clear messages.
+ * All transaction building and signing is performed in the Tauri backend so
+ * that private keys never enter the webview's JavaScript heap.
  */
 
+import { isTauri, tauriInvoke } from '../../utils/tauri'
 import type { UTXO } from './types'
-import { type Result } from '../../domain/types'
+import { type Result, ok, err } from '../../domain/types'
+
+/** Shape returned by the Rust BuiltTransactionResult (camelCase via serde). */
+interface BuiltTxResult {
+  rawTx: string
+  txid: string
+  fee: number
+  change: number
+  changeAddress: string
+  spentOutpoints: { txid: string; vout: number }[]
+}
+
+/** Map a UTXO to the shape expected by the Rust UtxoInput struct. */
+function toUtxoInput(u: UTXO) {
+  return { txid: u.txid, vout: u.vout, satoshis: u.satoshis, script: u.script ?? '' }
+}
 
 /**
  * List an ordinal for sale using an OrdinalLock smart contract.
@@ -20,18 +36,33 @@ import { type Result } from '../../domain/types'
  * @param payAddress - Address to receive payment when ordinal is purchased
  * @param ordAddress - Address to return ordinal to if listing is cancelled
  * @param priceSats - Listing price in satoshis
- * @returns Transaction ID of the listing
+ * @returns Result with the transaction ID on success
  */
 export async function listOrdinal(
-  _ordWif: string,
-  _ordinalUtxo: UTXO,
-  _paymentWif: string,
-  _paymentUtxos: UTXO[],
-  _payAddress: string,
-  _ordAddress: string,
-  _priceSats: number
+  ordWif: string,
+  ordinalUtxo: UTXO,
+  paymentWif: string,
+  paymentUtxos: UTXO[],
+  payAddress: string,
+  ordAddress: string,
+  priceSats: number,
 ): Promise<Result<string, string>> {
-  throw new Error('listOrdinal is not yet available — migrating to Rust implementation')
+  if (!isTauri()) return err('Marketplace requires Tauri runtime')
+
+  try {
+    const result = await tauriInvoke<BuiltTxResult>('create_ordinal_listing', {
+      ordWif,
+      ordinalUtxo: toUtxoInput(ordinalUtxo),
+      paymentWif,
+      paymentUtxos: paymentUtxos.map(toUtxoInput),
+      payAddress,
+      ordAddress,
+      priceSats,
+    })
+    return ok(result.txid)
+  } catch (e) {
+    return err(e instanceof Error ? e.message : 'Listing failed')
+  }
 }
 
 /**
@@ -45,18 +76,26 @@ export async function listOrdinal(
  * @returns Transaction ID of the cancellation
  */
 export async function cancelOrdinalListing(
-  _ordWif: string,
-  _listingUtxo: UTXO,
-  _paymentWif: string,
-  _paymentUtxos: UTXO[]
+  ordWif: string,
+  listingUtxo: UTXO,
+  paymentWif: string,
+  paymentUtxos: UTXO[],
 ): Promise<string> {
-  throw new Error('cancelOrdinalListing is not yet available — migrating to Rust implementation')
+  if (!isTauri()) throw new Error('Marketplace requires Tauri runtime')
+
+  const result = await tauriInvoke<BuiltTxResult>('cancel_ordinal_listing', {
+    ordWif,
+    listingUtxo: toUtxoInput(listingUtxo),
+    paymentWif,
+    paymentUtxos: paymentUtxos.map(toUtxoInput),
+  })
+  return result.txid
 }
 
 /**
  * Purchase a listed ordinal by satisfying the OrdinalLock contract.
  * The caller must supply the `payout` field (base64-encoded payment output
- * script) that was embedded in the listing transaction — this is the
+ * script) that was embedded in the listing transaction -- this is the
  * counterpart to the seller's `payAddress` and `price` encoded on-chain.
  *
  * @param params.paymentWif    - WIF private key for the funding address
@@ -67,7 +106,7 @@ export async function cancelOrdinalListing(
  * @param params.priceSats     - Expected price in satoshis (used to validate funding)
  * @returns Transaction ID of the purchase
  */
-export async function purchaseOrdinal(_params: {
+export async function purchaseOrdinal(params: {
   paymentWif: string
   paymentUtxos: UTXO[]
   ordAddress: string
@@ -75,5 +114,15 @@ export async function purchaseOrdinal(_params: {
   payout: string
   priceSats: number
 }): Promise<string> {
-  throw new Error('purchaseOrdinal is not yet available — migrating to Rust implementation')
+  if (!isTauri()) throw new Error('Marketplace requires Tauri runtime')
+
+  const result = await tauriInvoke<BuiltTxResult>('purchase_ordinal', {
+    paymentWif: params.paymentWif,
+    paymentUtxos: params.paymentUtxos.map(toUtxoInput),
+    ordAddress: params.ordAddress,
+    listingUtxo: toUtxoInput(params.listingUtxo),
+    payout: params.payout,
+    priceSats: params.priceSats,
+  })
+  return result.txid
 }

@@ -83,7 +83,7 @@ const P2PKH_INPUT_SIZE: u64 = 148;
 const P2PKH_OUTPUT_SIZE: u64 = 34;
 const TX_OVERHEAD: u64 = 10;
 
-fn calculate_tx_fee(num_inputs: usize, num_outputs: usize, fee_rate: f64) -> u64 {
+pub(crate) fn calculate_tx_fee(num_inputs: usize, num_outputs: usize, fee_rate: f64) -> u64 {
     let size = TX_OVERHEAD
         + (num_inputs as u64) * P2PKH_INPUT_SIZE
         + (num_outputs as u64) * P2PKH_OUTPUT_SIZE;
@@ -113,7 +113,7 @@ fn calculate_change_and_fee(
 // ---------------------------------------------------------------------------
 
 /// Add a P2PKH output to a transaction for the given address and satoshi amount.
-fn add_p2pkh_output(tx: &mut SdkTransaction, address: &str, satoshis: u64) -> Result<(), String> {
+pub(crate) fn add_p2pkh_output(tx: &mut SdkTransaction, address: &str, satoshis: u64) -> Result<(), String> {
     let addr = Address::from_string(address)
         .map_err(|e| format!("Invalid address '{}': {}", address, e))?;
     let locking_script = p2pkh::lock(&addr)
@@ -523,7 +523,7 @@ pub fn build_ordinal_transfer_tx(
 // ---------------------------------------------------------------------------
 
 /// Extract the 20-byte public key hash from a BSV address (base58check).
-fn pkh_from_address(address: &str) -> Result<[u8; 20], String> {
+pub(crate) fn pkh_from_address(address: &str) -> Result<[u8; 20], String> {
     let decoded = bs58::decode(address)
         .with_check(None)
         .into_vec()
@@ -542,7 +542,7 @@ fn pkh_from_address(address: &str) -> Result<[u8; 20], String> {
 /// - 0x01..0x4b: direct push (length byte = data length)
 /// - 0x4c (OP_PUSHDATA1): 1-byte length prefix
 /// - 0x4d (OP_PUSHDATA2): 2-byte little-endian length prefix
-fn push_data_bytes(data: &[u8]) -> Vec<u8> {
+pub(crate) fn push_data_bytes(data: &[u8]) -> Vec<u8> {
     let mut result = Vec::new();
     let len = data.len();
     if len == 0 {
