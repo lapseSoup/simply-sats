@@ -24,24 +24,24 @@ import { isTauri, tauriInvoke } from '../../utils/tauri'
  * @param tokenWif - Private key WIF for the token-holding address
  * @param tokenUtxos - Token UTXOs to spend
  * @param ticker - Token ticker (BSV20) or contract ID (BSV21)
- * @param _protocol - Token protocol (bsv20 or bsv21) — reserved for future inscription Tauri command
+ * @param protocol - Token protocol (bsv20 or bsv21)
  * @param amount - Amount to send (as string to handle bigint)
  * @param toAddress - Recipient address
  * @param fundingWif - Private key WIF for funding (for the fee)
  * @param fundingUtxos - UTXOs to use for paying the fee
- * @param _changeAddress - Address for change — reserved for future inscription Tauri command
+ * @param changeAddress - Address for BSV change output
  * @returns Transaction ID
  */
 export async function transferToken(
   tokenWif: string,
   tokenUtxos: TokenUTXO[],
   ticker: string,
-  _protocol: 'bsv20' | 'bsv21',
+  protocol: 'bsv20' | 'bsv21',
   amount: string,
   toAddress: string,
   fundingWif: string,
   fundingUtxos: UTXO[],
-  _changeAddress: string
+  changeAddress: string
 ): Promise<Result<{ txid: string }, string>> {
   // S-62: Validate recipient address before anything else — invalid address = permanent token loss
   if (!isValidBSVAddress(toAddress)) {
@@ -109,47 +109,30 @@ export async function transferToken(
       return err(`Insufficient BSV for fee (need ~${estimatedFee} sats)`)
     }
 
-    // Build extended UTXOs with per-UTXO WIF for multi-key signing
-    // Token inputs use tokenWif, funding inputs use fundingWif
-    const extendedUtxos = [
-      ...tokenInputsUsed.map(u => ({
+    // Build token transfer with proper inscription outputs via Rust backend
+    const txResult = await tauriInvoke<{ rawTx: string; txid: string; fee: number; change: number }>('build_token_transfer_tx', {
+      tokenWif,
+      tokenUtxos: tokenInputsUsed.map(u => ({
         txid: u.txid,
         vout: u.vout,
         satoshis: u.satoshis,
-        script: u.script ?? tokenFromScriptHex,
-        wif: tokenWif
+        script: u.script ?? tokenFromScriptHex
       })),
-      ...fundingToUse.map(u => ({
+      fundingWif,
+      fundingUtxos: fundingToUse.map(u => ({
         txid: u.txid,
         vout: u.vout,
         satoshis: u.satoshis,
-        script: u.script ?? fundingFromScriptHex,
-        wif: fundingWif
-      }))
-    ]
-
-    // Calculate totals
-    let totalInput = totalFunding
-    for (const utxo of tokenInputsUsed) {
-      totalInput += utxo.satoshis
-    }
-
-    const outputSats = 1 + (tokenChange > 0n ? 1 : 0)
-    const actualFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, numOutputs)
-    const bsvChange = totalInput - outputSats - actualFee
-
-    // TODO: When a dedicated `build_token_transfer_tx` Tauri command is available,
-    // use it to construct proper inscription outputs. For now, use build_multi_key_p2pkh_tx
-    // which creates standard P2PKH outputs (token transfer semantics require inscription
-    // outputs to be handled by a specialized builder).
-    const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_multi_key_p2pkh_tx', {
-      changeWif: fundingWif,
-      toAddress,
-      satoshis: outputSats,
-      selectedUtxos: extendedUtxos,
-      totalInput,
-      feeRate: 0.1
+        script: u.script ?? fundingFromScriptHex
+      })),
+      recipient: toAddress,
+      amount,
+      ticker,
+      protocol: protocol === 'bsv21' ? 'bsv-21' : 'bsv-20',
+      changeAddress
     })
+
+    const bsvChange = txResult.change
 
     // Broadcast the signed raw transaction
     const txid = await broadcastTransaction(txResult.rawTx)

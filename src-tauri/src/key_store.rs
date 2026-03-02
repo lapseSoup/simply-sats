@@ -457,6 +457,61 @@ pub async fn build_multi_output_p2pkh_tx_from_store(
     )
 }
 
+/// Build an inscription transaction using the wallet key from the store
+#[tauri::command]
+pub async fn build_inscription_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    content: Vec<u8>,
+    content_type: String,
+    dest_address: String,
+    funding_utxos: Vec<transaction::UtxoInput>,
+    fee_rate: f64,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    drop(store);
+    transaction::build_inscription_tx(
+        (*wif).clone(),
+        content,
+        content_type,
+        dest_address,
+        funding_utxos,
+        fee_rate,
+    )
+}
+
+/// Build a token transfer transaction using keys from the store
+#[tauri::command]
+pub async fn build_token_transfer_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    token_key_type: String,
+    token_utxos: Vec<transaction::UtxoInput>,
+    funding_utxos: Vec<transaction::UtxoInput>,
+    recipient: String,
+    amount: String,
+    ticker: String,
+    protocol: String,
+    change_address: String,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let token_wif = Zeroizing::new(store.get_wif(&token_key_type)?);
+    let funding_wif = Zeroizing::new(store.get_wif("wallet")?);
+    drop(store);
+    transaction::build_token_transfer_tx(
+        (*token_wif).clone(),
+        token_utxos,
+        (*funding_wif).clone(),
+        funding_utxos,
+        recipient,
+        amount,
+        ticker,
+        protocol,
+        change_address,
+    )
+}
+
 // ==================== BRC-42/43 Key Derivation Commands (from store) ====================
 
 /// Derive a BRC-42 child key using a key from the store

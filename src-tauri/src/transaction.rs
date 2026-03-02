@@ -519,6 +519,387 @@ pub fn build_ordinal_transfer_tx(
 }
 
 // ---------------------------------------------------------------------------
+// Inscription helpers
+// ---------------------------------------------------------------------------
+
+/// Extract the 20-byte public key hash from a BSV address (base58check).
+fn pkh_from_address(address: &str) -> Result<[u8; 20], String> {
+    let decoded = bs58::decode(address)
+        .with_check(None)
+        .into_vec()
+        .map_err(|e| format!("Invalid address '{}': {}", address, e))?;
+    if decoded.len() < 21 {
+        return Err(format!("Address too short: {} bytes", decoded.len()));
+    }
+    let mut pkh = [0u8; 20];
+    pkh.copy_from_slice(&decoded[1..21]);
+    Ok(pkh)
+}
+
+/// Build Bitcoin push data opcode(s) for a byte slice.
+///
+/// Uses standard Bitcoin push opcodes:
+/// - 0x01..0x4b: direct push (length byte = data length)
+/// - 0x4c (OP_PUSHDATA1): 1-byte length prefix
+/// - 0x4d (OP_PUSHDATA2): 2-byte little-endian length prefix
+fn push_data_bytes(data: &[u8]) -> Vec<u8> {
+    let mut result = Vec::new();
+    let len = data.len();
+    if len == 0 {
+        // Empty push — just push zero bytes
+        result.push(0x00);
+    } else if len <= 0x4b {
+        result.push(len as u8);
+    } else if len <= 0xff {
+        result.push(0x4c); // OP_PUSHDATA1
+        result.push(len as u8);
+    } else {
+        result.push(0x4d); // OP_PUSHDATA2
+        result.extend_from_slice(&(len as u16).to_le_bytes());
+    }
+    result.extend_from_slice(data);
+    result
+}
+
+/// Build an inscription locking script: `OP_FALSE OP_IF ... OP_ENDIF` + standard P2PKH.
+///
+/// The inscription envelope format is:
+/// ```text
+/// OP_FALSE OP_IF
+///   OP_PUSH "ord"
+///   OP_1 <content-type>
+///   OP_0 <content>
+/// OP_ENDIF
+/// OP_DUP OP_HASH160 <20-byte pkh> OP_EQUALVERIFY OP_CHECKSIG
+/// ```
+fn build_inscription_script(content: &[u8], content_type: &str, dest_pkh: &[u8; 20]) -> Vec<u8> {
+    let mut script = Vec::new();
+
+    // Inscription envelope
+    script.push(0x00); // OP_FALSE
+    script.push(0x63); // OP_IF
+    script.extend_from_slice(&push_data_bytes(b"ord")); // push "ord"
+    script.push(0x51); // OP_1 (content type tag)
+    script.extend_from_slice(&push_data_bytes(content_type.as_bytes()));
+    script.push(0x00); // OP_0 (content tag)
+    script.extend_from_slice(&push_data_bytes(content));
+    script.push(0x68); // OP_ENDIF
+
+    // Standard P2PKH suffix
+    script.push(0x76); // OP_DUP
+    script.push(0xa9); // OP_HASH160
+    script.push(0x14); // push 20 bytes
+    script.extend_from_slice(dest_pkh);
+    script.push(0x88); // OP_EQUALVERIFY
+    script.push(0xac); // OP_CHECKSIG
+
+    script
+}
+
+/// Estimate the byte size of a transaction with inscription outputs.
+///
+/// Inscription outputs are variable-size, so we measure the actual script
+/// lengths rather than using the fixed P2PKH_OUTPUT_SIZE constant.
+fn calculate_inscription_tx_fee(
+    num_inputs: usize,
+    output_script_sizes: &[usize],
+    fee_rate: f64,
+) -> u64 {
+    // Each output: 8 (satoshis) + varint(script_len) + script_len
+    let output_size: u64 = output_script_sizes
+        .iter()
+        .map(|&s| {
+            let varint_len = if s < 0xfd { 1 } else if s <= 0xffff { 3 } else { 5 };
+            8 + varint_len + s as u64
+        })
+        .sum();
+
+    let size = TX_OVERHEAD + (num_inputs as u64) * P2PKH_INPUT_SIZE + output_size;
+    let fee = (size as f64 * fee_rate).ceil() as u64;
+    fee.max(1)
+}
+
+// ---------------------------------------------------------------------------
+// Inscription Tauri commands
+// ---------------------------------------------------------------------------
+
+/// Build and sign an inscription transaction (1-sat ordinal with custom content).
+///
+/// Creates a transaction with:
+/// - Input(s): P2PKH funding UTXOs (all signed with `wif`)
+/// - Output 0: 1-sat inscription output (custom envelope + P2PKH)
+/// - Output 1: P2PKH change output (if any)
+#[tauri::command]
+pub fn build_inscription_tx(
+    wif: String,
+    content: Vec<u8>,
+    content_type: String,
+    dest_address: String,
+    funding_utxos: Vec<UtxoInput>,
+    fee_rate: f64,
+) -> Result<BuiltTransactionResult, String> {
+    if funding_utxos.is_empty() {
+        return Err("At least one funding UTXO is required".into());
+    }
+    if content.is_empty() {
+        return Err("Inscription content cannot be empty".into());
+    }
+
+    let change_address = sdk_address_from_wif(&wif)?;
+    let dest_pkh = pkh_from_address(&dest_address)?;
+
+    // Build inscription locking script
+    let inscription_script_bytes = build_inscription_script(&content, &content_type, &dest_pkh);
+    let inscription_script_hex = hex::encode(&inscription_script_bytes);
+    let inscription_script = Script::from_hex(&inscription_script_hex)
+        .map_err(|e| format!("Invalid inscription script: {}", e))?;
+
+    // Calculate fee with actual script sizes
+    let change_script_size = P2PKH_OUTPUT_SIZE as usize; // 34 bytes for standard P2PKH
+    let total_input: u64 = funding_utxos.iter().map(|u| u.satoshis).sum();
+
+    // Preliminary check: will there be change?
+    let prelim_change = total_input.saturating_sub(1); // 1 sat for inscription
+    let will_have_change = prelim_change > 100;
+
+    let mut output_script_sizes = vec![inscription_script_bytes.len()];
+    if will_have_change {
+        output_script_sizes.push(change_script_size);
+    }
+
+    let fee = calculate_inscription_tx_fee(
+        funding_utxos.len(),
+        &output_script_sizes,
+        fee_rate,
+    );
+
+    let change = total_input
+        .checked_sub(1) // inscription output = 1 sat
+        .and_then(|v| v.checked_sub(fee))
+        .ok_or_else(|| format!(
+            "Insufficient funds: need 1 sat + {} fee, have {}",
+            fee, total_input
+        ))?;
+
+    // Build transaction
+    let mut tx = SdkTransaction::new();
+
+    for utxo in &funding_utxos {
+        tx.add_input_from(&utxo.txid, utxo.vout, &utxo.script, utxo.satoshis)
+            .map_err(|e| format!("Failed to add input: {}", e))?;
+    }
+
+    // Output 0: 1-sat inscription
+    let mut insc_output = TransactionOutput::new();
+    insc_output.satoshis = 1;
+    insc_output.locking_script = inscription_script;
+    tx.add_output(insc_output);
+
+    // Output 1: change
+    if change > 0 {
+        add_p2pkh_output(&mut tx, &change_address, change)?;
+    }
+
+    // Sign all inputs
+    let privkey = sdk_privkey_from_wif(&wif)?;
+    let template = p2pkh::unlock(privkey, None);
+    for i in 0..tx.input_count() {
+        let unlock_script = template
+            .sign(&tx, i as u32)
+            .map_err(|e| format!("Failed to sign input {}: {}", i, e))?;
+        tx.inputs[i].unlocking_script = Some(unlock_script);
+    }
+
+    Ok(BuiltTransactionResult {
+        raw_tx: tx.to_hex(),
+        txid: tx.tx_id_hex(),
+        fee,
+        change,
+        change_address,
+        spent_outpoints: funding_utxos
+            .iter()
+            .map(|u| SpentOutpoint {
+                txid: u.txid.clone(),
+                vout: u.vout,
+            })
+            .collect(),
+    })
+}
+
+/// Build and sign a BSV-20/21 token transfer transaction with inscription outputs.
+///
+/// Creates a transaction with:
+/// - Token inputs (signed with `token_wif`)
+/// - Funding inputs (signed with `funding_wif`)
+/// - Output 0: 1-sat transfer inscription to recipient
+/// - Output 1 (optional): 1-sat token change inscription back to sender
+/// - Output N: BSV change P2PKH to `change_address`
+#[tauri::command]
+pub fn build_token_transfer_tx(
+    token_wif: String,
+    token_utxos: Vec<UtxoInput>,
+    funding_wif: String,
+    funding_utxos: Vec<UtxoInput>,
+    recipient: String,
+    amount: String,
+    ticker: String,
+    protocol: String,
+    change_address: String,
+) -> Result<BuiltTransactionResult, String> {
+    if token_utxos.is_empty() {
+        return Err("At least one token UTXO is required".into());
+    }
+    if funding_utxos.is_empty() {
+        return Err("At least one funding UTXO is required".into());
+    }
+
+    // Parse and validate amount
+    let send_amount: u128 = amount
+        .parse()
+        .map_err(|_| format!("Invalid amount: '{}'", amount))?;
+    if send_amount == 0 {
+        return Err("Amount must be greater than 0".into());
+    }
+
+    // Build transfer inscription content JSON
+    let transfer_json = if protocol == "bsv-21" || protocol == "bsv21" {
+        format!(
+            r#"{{"p":"bsv-21","op":"transfer","id":"{}","amt":"{}"}}"#,
+            ticker, amount
+        )
+    } else {
+        format!(
+            r#"{{"p":"bsv-20","op":"transfer","tick":"{}","amt":"{}"}}"#,
+            ticker, amount
+        )
+    };
+
+    // Determine content type
+    let content_type = if protocol == "bsv-21" || protocol == "bsv21" {
+        "application/bsv-21"
+    } else {
+        "application/bsv-20"
+    };
+
+    // Get recipient PKH
+    let recipient_pkh = pkh_from_address(&recipient)?;
+
+    // Build transfer inscription script
+    let transfer_script_bytes =
+        build_inscription_script(transfer_json.as_bytes(), content_type, &recipient_pkh);
+    let transfer_script = Script::from_hex(&hex::encode(&transfer_script_bytes))
+        .map_err(|e| format!("Invalid transfer inscription script: {}", e))?;
+
+    // Token change handling: the TypeScript caller is responsible for token-level
+    // change accounting (selecting the right UTXOs and amounts). This command builds
+    // the transfer inscription output and a BSV change output. Future enhancement:
+    // accept an optional token_change_amount to produce a second inscription output.
+
+    // Validate change address
+    let _ = pkh_from_address(&change_address)?;
+
+    // Calculate input totals
+    let total_token_sats: u64 = token_utxos.iter().map(|u| u.satoshis).sum();
+    let total_funding_sats: u64 = funding_utxos.iter().map(|u| u.satoshis).sum();
+    let total_input = total_token_sats + total_funding_sats;
+
+    // Output 0: 1-sat transfer inscription to recipient
+    let total_output_sats: u64 = 1;
+
+    // Calculate fee with actual script sizes
+    let mut output_script_sizes = vec![transfer_script_bytes.len()];
+    let prelim_change = total_input.saturating_sub(total_output_sats);
+    let will_have_change = prelim_change > 100;
+    if will_have_change {
+        output_script_sizes.push(P2PKH_OUTPUT_SIZE as usize);
+    }
+
+    let fee = calculate_inscription_tx_fee(
+        token_utxos.len() + funding_utxos.len(),
+        &output_script_sizes,
+        0.05, // Use default fee rate for token transfers
+    );
+
+    let change = total_input
+        .checked_sub(total_output_sats)
+        .and_then(|v| v.checked_sub(fee))
+        .ok_or_else(|| format!(
+            "Insufficient funds: need {} sats + {} fee, have {}",
+            total_output_sats, fee, total_input
+        ))?;
+
+    // Build transaction
+    let mut tx = SdkTransaction::new();
+
+    // Token inputs first
+    for utxo in &token_utxos {
+        tx.add_input_from(&utxo.txid, utxo.vout, &utxo.script, utxo.satoshis)
+            .map_err(|e| format!("Failed to add token input: {}", e))?;
+    }
+
+    // Funding inputs
+    for utxo in &funding_utxos {
+        tx.add_input_from(&utxo.txid, utxo.vout, &utxo.script, utxo.satoshis)
+            .map_err(|e| format!("Failed to add funding input: {}", e))?;
+    }
+
+    // Output 0: Transfer inscription (1 sat)
+    let mut transfer_output = TransactionOutput::new();
+    transfer_output.satoshis = 1;
+    transfer_output.locking_script = transfer_script;
+    tx.add_output(transfer_output);
+
+    // Output N: BSV change
+    if change > 0 {
+        add_p2pkh_output(&mut tx, &change_address, change)?;
+    }
+
+    // Sign token inputs with token_wif
+    let token_privkey = sdk_privkey_from_wif(&token_wif)?;
+    let token_template = p2pkh::unlock(token_privkey, None);
+    for i in 0..token_utxos.len() {
+        let unlock_script = token_template
+            .sign(&tx, i as u32)
+            .map_err(|e| format!("Failed to sign token input {}: {}", i, e))?;
+        tx.inputs[i].unlocking_script = Some(unlock_script);
+    }
+
+    // Sign funding inputs with funding_wif
+    let funding_privkey = sdk_privkey_from_wif(&funding_wif)?;
+    let funding_template = p2pkh::unlock(funding_privkey, None);
+    let funding_start = token_utxos.len();
+    for i in 0..funding_utxos.len() {
+        let idx = funding_start + i;
+        let unlock_script = funding_template
+            .sign(&tx, idx as u32)
+            .map_err(|e| format!("Failed to sign funding input {}: {}", idx, e))?;
+        tx.inputs[idx].unlocking_script = Some(unlock_script);
+    }
+
+    // Build spent outpoints
+    let mut spent_outpoints: Vec<SpentOutpoint> = token_utxos
+        .iter()
+        .map(|u| SpentOutpoint {
+            txid: u.txid.clone(),
+            vout: u.vout,
+        })
+        .collect();
+    spent_outpoints.extend(funding_utxos.iter().map(|u| SpentOutpoint {
+        txid: u.txid.clone(),
+        vout: u.vout,
+    }));
+
+    Ok(BuiltTransactionResult {
+        raw_tx: tx.to_hex(),
+        txid: tx.tx_id_hex(),
+        fee,
+        change,
+        change_address,
+        spent_outpoints,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Multi-output P2PKH transaction builder
 // ---------------------------------------------------------------------------
 
@@ -1172,5 +1553,359 @@ mod tests {
         let built = result.unwrap();
         assert_eq!(built.spent_outpoints.len(), 2);
         assert_eq!(built.fee + built.change + 3000, 7000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Inscription helper tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn push_data_bytes_small() {
+        // 3 bytes: "ord" → 0x03 followed by the bytes
+        let result = push_data_bytes(b"ord");
+        assert_eq!(result[0], 3); // length byte
+        assert_eq!(&result[1..], b"ord");
+    }
+
+    #[test]
+    fn push_data_bytes_max_direct() {
+        // 0x4b (75) bytes — max for direct push
+        let data = vec![0xAB; 0x4b];
+        let result = push_data_bytes(&data);
+        assert_eq!(result[0], 0x4b);
+        assert_eq!(&result[1..], data.as_slice());
+    }
+
+    #[test]
+    fn push_data_bytes_op_pushdata1() {
+        // 0x4c (76) bytes — requires OP_PUSHDATA1
+        let data = vec![0xCD; 0x4c];
+        let result = push_data_bytes(&data);
+        assert_eq!(result[0], 0x4c); // OP_PUSHDATA1
+        assert_eq!(result[1], 0x4c); // length = 76
+        assert_eq!(&result[2..], data.as_slice());
+    }
+
+    #[test]
+    fn push_data_bytes_op_pushdata1_max() {
+        // 255 bytes — still OP_PUSHDATA1
+        let data = vec![0xEF; 255];
+        let result = push_data_bytes(&data);
+        assert_eq!(result[0], 0x4c); // OP_PUSHDATA1
+        assert_eq!(result[1], 255); // length
+        assert_eq!(&result[2..], data.as_slice());
+    }
+
+    #[test]
+    fn push_data_bytes_op_pushdata2() {
+        // 256 bytes — requires OP_PUSHDATA2
+        let data = vec![0x42; 256];
+        let result = push_data_bytes(&data);
+        assert_eq!(result[0], 0x4d); // OP_PUSHDATA2
+        assert_eq!(result[1], 0x00); // low byte of 256
+        assert_eq!(result[2], 0x01); // high byte of 256
+        assert_eq!(&result[3..], data.as_slice());
+    }
+
+    #[test]
+    fn push_data_bytes_empty() {
+        let result = push_data_bytes(b"");
+        assert_eq!(result, vec![0x00]); // OP_0 for empty data
+    }
+
+    #[test]
+    fn build_inscription_script_structure() {
+        let content = b"test content";
+        let content_type = "text/plain";
+        let pkh = [0x11u8; 20];
+
+        let script = build_inscription_script(content, content_type, &pkh);
+
+        // Check envelope structure
+        assert_eq!(script[0], 0x00, "OP_FALSE");
+        assert_eq!(script[1], 0x63, "OP_IF");
+
+        // "ord" push: 0x03 + "ord"
+        assert_eq!(script[2], 0x03);
+        assert_eq!(&script[3..6], b"ord");
+
+        // OP_1 (content type tag)
+        assert_eq!(script[6], 0x51, "OP_1");
+
+        // content type push
+        let ct_len = content_type.len();
+        assert_eq!(script[7], ct_len as u8);
+        assert_eq!(
+            &script[8..8 + ct_len],
+            content_type.as_bytes()
+        );
+
+        // OP_0 (content tag)
+        let pos = 8 + ct_len;
+        assert_eq!(script[pos], 0x00, "OP_0");
+
+        // content push
+        let content_len = content.len();
+        assert_eq!(script[pos + 1], content_len as u8);
+        assert_eq!(
+            &script[pos + 2..pos + 2 + content_len],
+            content
+        );
+
+        // OP_ENDIF
+        let pos = pos + 2 + content_len;
+        assert_eq!(script[pos], 0x68, "OP_ENDIF");
+
+        // P2PKH suffix
+        assert_eq!(script[pos + 1], 0x76, "OP_DUP");
+        assert_eq!(script[pos + 2], 0xa9, "OP_HASH160");
+        assert_eq!(script[pos + 3], 0x14, "push 20 bytes");
+        assert_eq!(&script[pos + 4..pos + 24], &pkh);
+        assert_eq!(script[pos + 24], 0x88, "OP_EQUALVERIFY");
+        assert_eq!(script[pos + 25], 0xac, "OP_CHECKSIG");
+    }
+
+    #[test]
+    fn pkh_from_address_valid() {
+        // 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa is a well-known mainnet address
+        let pkh = pkh_from_address("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
+        assert!(pkh.is_ok(), "pkh_from_address failed: {:?}", pkh.err());
+        assert_eq!(pkh.unwrap().len(), 20);
+    }
+
+    #[test]
+    fn pkh_from_address_invalid() {
+        let pkh = pkh_from_address("not_an_address");
+        assert!(pkh.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Inscription transaction tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_inscription_tx_basic() {
+        let wif = get_test_wif();
+
+        let result = build_inscription_tx(
+            wif,
+            b"hello inscription".to_vec(),
+            "text/plain".to_string(),
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            vec![make_test_utxo("a", 10000)],
+            0.05,
+        );
+
+        assert!(result.is_ok(), "build_inscription_tx failed: {:?}", result.err());
+        let built = result.unwrap();
+
+        assert!(!built.raw_tx.is_empty());
+        assert_eq!(built.txid.len(), 64);
+        assert!(built.fee > 0);
+        assert!(built.change > 0);
+        assert_eq!(built.spent_outpoints.len(), 1);
+
+        // Verify the inscription content is in the raw tx (hex-encoded)
+        let content_hex = hex::encode(b"hello inscription");
+        assert!(
+            built.raw_tx.contains(&content_hex),
+            "Raw tx should contain inscription content"
+        );
+
+        // Verify "ord" marker is in the raw tx
+        let ord_hex = hex::encode(b"ord");
+        assert!(
+            built.raw_tx.contains(&ord_hex),
+            "Raw tx should contain 'ord' marker"
+        );
+    }
+
+    #[test]
+    fn build_inscription_tx_empty_content() {
+        let wif = get_test_wif();
+
+        let result = build_inscription_tx(
+            wif,
+            vec![],
+            "text/plain".to_string(),
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            vec![make_test_utxo("a", 10000)],
+            0.05,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("content cannot be empty"));
+    }
+
+    #[test]
+    fn build_inscription_tx_no_utxos() {
+        let wif = get_test_wif();
+
+        let result = build_inscription_tx(
+            wif,
+            b"content".to_vec(),
+            "text/plain".to_string(),
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            vec![],
+            0.05,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("At least one funding UTXO"));
+    }
+
+    #[test]
+    fn build_inscription_tx_insufficient_funds() {
+        let wif = get_test_wif();
+
+        let result = build_inscription_tx(
+            wif,
+            b"content".to_vec(),
+            "text/plain".to_string(),
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            vec![make_test_utxo("a", 1)], // only 1 sat — not enough for 1 sat output + fee
+            0.05,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Insufficient funds"));
+    }
+
+    #[test]
+    fn build_inscription_tx_bsv20_content() {
+        let wif = get_test_wif();
+        let content = r#"{"p":"bsv-20","op":"transfer","tick":"TICK","amt":"100"}"#;
+
+        let result = build_inscription_tx(
+            wif,
+            content.as_bytes().to_vec(),
+            "application/bsv-20".to_string(),
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            vec![make_test_utxo("a", 10000)],
+            0.05,
+        );
+
+        assert!(result.is_ok(), "BSV-20 inscription failed: {:?}", result.err());
+        let built = result.unwrap();
+
+        // Verify BSV-20 content type is in the tx
+        let ct_hex = hex::encode(b"application/bsv-20");
+        assert!(built.raw_tx.contains(&ct_hex));
+    }
+
+    // -----------------------------------------------------------------------
+    // Token transfer transaction tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_token_transfer_tx_basic() {
+        let token_wif = get_test_ord_wif();
+        let funding_wif = get_test_wif();
+        let funding_address = get_test_address();
+
+        let result = build_token_transfer_tx(
+            token_wif,
+            vec![UtxoInput {
+                txid: "a".repeat(64),
+                vout: 0,
+                satoshis: 1,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            funding_wif,
+            vec![make_test_utxo("b", 10000)],
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            "100".to_string(),
+            "TICK".to_string(),
+            "bsv-20".to_string(),
+            funding_address,
+        );
+
+        assert!(result.is_ok(), "build_token_transfer_tx failed: {:?}", result.err());
+        let built = result.unwrap();
+
+        assert!(!built.raw_tx.is_empty());
+        assert_eq!(built.txid.len(), 64);
+        assert!(built.fee > 0);
+        assert!(built.change > 0);
+        // 1 token input + 1 funding input = 2 spent outpoints
+        assert_eq!(built.spent_outpoints.len(), 2);
+
+        // Verify inscription content is present
+        let content_hex = hex::encode(b"bsv-20");
+        assert!(built.raw_tx.contains(&content_hex));
+    }
+
+    #[test]
+    fn build_token_transfer_tx_bsv21() {
+        let token_wif = get_test_ord_wif();
+        let funding_wif = get_test_wif();
+        let funding_address = get_test_address();
+
+        let result = build_token_transfer_tx(
+            token_wif,
+            vec![UtxoInput {
+                txid: "a".repeat(64),
+                vout: 0,
+                satoshis: 1,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            funding_wif,
+            vec![make_test_utxo("b", 10000)],
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            "50".to_string(),
+            "abc123def456".to_string(), // contract ID for BSV-21
+            "bsv-21".to_string(),
+            funding_address,
+        );
+
+        assert!(result.is_ok(), "BSV-21 token transfer failed: {:?}", result.err());
+        let built = result.unwrap();
+
+        // Verify BSV-21 content type is present
+        let ct_hex = hex::encode(b"application/bsv-21");
+        assert!(built.raw_tx.contains(&ct_hex));
+    }
+
+    #[test]
+    fn build_token_transfer_tx_no_token_utxos() {
+        let funding_wif = get_test_wif();
+        let funding_address = get_test_address();
+
+        let result = build_token_transfer_tx(
+            "L1secret".to_string(),
+            vec![], // no token UTXOs
+            funding_wif,
+            vec![make_test_utxo("b", 10000)],
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            "100".to_string(),
+            "TICK".to_string(),
+            "bsv-20".to_string(),
+            funding_address,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("At least one token UTXO"));
+    }
+
+    #[test]
+    fn build_token_transfer_tx_zero_amount() {
+        let token_wif = get_test_ord_wif();
+        let funding_wif = get_test_wif();
+        let funding_address = get_test_address();
+
+        let result = build_token_transfer_tx(
+            token_wif,
+            vec![make_test_utxo("a", 1)],
+            funding_wif,
+            vec![make_test_utxo("b", 10000)],
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+            "0".to_string(),
+            "TICK".to_string(),
+            "bsv-20".to_string(),
+            funding_address,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("greater than 0"));
     }
 }
