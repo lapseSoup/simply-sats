@@ -386,7 +386,8 @@ describe('useSyncData', () => {
       for (const [key, value] of contentMap) {
         expect(opts.contentCacheRef.current.get(key)).toEqual(value)
       }
-      expect(opts.bumpCacheVersion).toHaveBeenCalledTimes(1)
+      // bumpCacheVersion called twice: once in Phase 1 (clear stale cache) + once in Phase 2 (content loaded)
+      expect(opts.bumpCacheVersion).toHaveBeenCalledTimes(2)
     })
 
     it('does not set non-finite balance', async () => {

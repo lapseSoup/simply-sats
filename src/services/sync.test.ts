@@ -51,6 +51,7 @@ vi.mock('./config', () => ({
 import {
   BASKETS,
   getCurrentBlockHeight,
+  _resetBlockHeightCache,
   getBalanceFromDatabase,
   getSpendableUtxosFromDatabase,
   getOrdinalsFromDatabase,
@@ -88,6 +89,7 @@ describe('Sync Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetUtxoCounter()
+    _resetBlockHeightCache()
   })
 
   describe('BASKETS', () => {

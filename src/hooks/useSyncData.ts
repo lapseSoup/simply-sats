@@ -105,6 +105,11 @@ export function useSyncData({
     // Every setState call below is synchronous. React batches them and
     // re-renders once, giving the user instant data display (~0ms).
 
+    // Clear stale content cache FIRST so ordinal thumbnails don't flash
+    // old account's images before the new account's content loads in Phase 2.
+    contentCacheRef.current.clear()
+    bumpCacheVersion()
+
     // Balance
     if (balanceResult.status === 'fulfilled') {
       const [defaultBal, derivedBal] = balanceResult.value

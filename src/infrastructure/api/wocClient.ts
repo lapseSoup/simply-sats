@@ -117,9 +117,12 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
       // Don't retry if externally aborted
       if (externalSignal?.aborted) throw e
 
-      // Retry on network/timeout errors if we have attempts remaining
+      // Retry on network/timeout errors if we have attempts remaining.
+      // In Tauri, 429 responses lack CORS headers so fetch() throws a TypeError
+      // instead of returning a Response. Use the longer 429-style backoff (2s base)
+      // for ALL fetch failures to avoid hammering the server.
       if (attempt < WOC_MAX_RETRIES - 1) {
-        const delay = WOC_RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
+        const delay = 2000 * Math.pow(2, attempt)
         await new Promise(resolve => setTimeout(resolve, delay))
         return fetchWithTimeout(url, options, attempt + 1, externalSignal)
       }
@@ -344,10 +347,12 @@ export function createWocClient(config: Partial<WocConfig> = {}): WocClient {
 
     async getTransactionDetailsBatch(
       txids: string[],
-      concurrency = 5
+      concurrency = 2
     ): Promise<Map<string, WocTransaction>> {
       const results = new Map<string, WocTransaction>()
       for (let i = 0; i < txids.length; i += concurrency) {
+        // Inter-batch delay to stay within WoC rate limits
+        if (i > 0) await new Promise(resolve => setTimeout(resolve, 1500))
         const batch = txids.slice(i, i + concurrency)
         const settled = await Promise.allSettled(
           batch.map(async txid => {

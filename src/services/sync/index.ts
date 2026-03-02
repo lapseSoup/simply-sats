@@ -12,7 +12,7 @@ export { BASKETS } from '../../domain/types'
 export type { AddressInfo, SyncResult } from './types'
 
 // --- Address Sync ---
-export { syncAddress, getCurrentBlockHeight } from './addressSync'
+export { syncAddress, getCurrentBlockHeight, _resetBlockHeightCache } from './addressSync'
 
 // --- History Sync ---
 // (syncTransactionHistory and calculateTxAmount are internal — not exported from original)

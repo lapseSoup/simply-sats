@@ -165,7 +165,10 @@ export async function syncTransactionHistory(address: string, accountId?: number
     skipped: history.length - newHistory.length
   })
 
-  for (const txRef of newHistory) {
+  for (let _txIdx = 0; _txIdx < newHistory.length; _txIdx++) {
+    const txRef = newHistory[_txIdx]!
+    // Rate-limit: 1.5s between individual tx detail fetches to avoid WoC 429s
+    if (_txIdx > 0) await new Promise(resolve => setTimeout(resolve, 1500))
     // Get transaction details to calculate amount
     const txDetails = await wocClient.getTransactionDetails(txRef.tx_hash)
 

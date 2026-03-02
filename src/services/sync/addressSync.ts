@@ -80,10 +80,27 @@ export function isOurOutputMulti(
 }
 
 /**
- * Fetch current blockchain height using infrastructure layer
+ * Fetch current blockchain height using infrastructure layer.
+ * Cached for 60s to avoid redundant API calls (height changes ~every 10 min).
  */
+let _cachedBlockHeight = 0
+let _blockHeightCachedAt = 0
+const BLOCK_HEIGHT_CACHE_TTL = 60_000
+
+/** @internal Reset block height cache (for tests only) */
+export function _resetBlockHeightCache(): void { _cachedBlockHeight = 0; _blockHeightCachedAt = 0 }
+
 export async function getCurrentBlockHeight(): Promise<number> {
-  return getWocClient().getBlockHeight()
+  const now = Date.now()
+  if (_cachedBlockHeight > 0 && (now - _blockHeightCachedAt) < BLOCK_HEIGHT_CACHE_TTL) {
+    return _cachedBlockHeight
+  }
+  const height = await getWocClient().getBlockHeight()
+  if (height > 0) {
+    _cachedBlockHeight = height
+    _blockHeightCachedAt = now
+  }
+  return height
 }
 
 /**

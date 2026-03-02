@@ -330,7 +330,10 @@ async function resolvePendingTransactions(accountId?: number): Promise<void> {
 
     const wocClient = getWocClient()
 
-    for (const txid of pendingTxids) {
+    for (let _i = 0; _i < pendingTxids.length; _i++) {
+      const txid = pendingTxids[_i]!
+      // Rate-limit: 1.5s between requests to avoid WoC 429s
+      if (_i > 0) await new Promise(resolve => setTimeout(resolve, 1500))
       try {
         const detailResult = await wocClient.getTransactionDetailsSafe(txid)
         if (!detailResult.ok) {
