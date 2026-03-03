@@ -7,7 +7,7 @@
  * @module components/shared/AddressPicker
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { BookOpen } from 'lucide-react'
 import { getAddressBook, getRecentAddresses } from '../../infrastructure/database'
 import type { AddressBookEntry } from '../../infrastructure/database'
@@ -159,7 +159,8 @@ export function AddressPicker({ onSelect, accountId }: AddressPickerProps) {
   )
 }
 
-function AddressRow({
+// Q-78: Memoize list item to prevent re-renders when parent state changes
+const AddressRow = memo(function AddressRow({
   entry,
   onSelect,
 }: {
@@ -208,4 +209,4 @@ function AddressRow({
       </div>
     </div>
   )
-}
+})

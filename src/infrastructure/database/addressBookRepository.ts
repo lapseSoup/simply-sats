@@ -165,16 +165,18 @@ export async function deleteAddress(address: string, accountId: number): Promise
 }
 
 /**
- * Check if an address exists in the book
+ * Check if an address exists in the book.
+ * S-103: When accountId is provided, scopes query to that account to prevent cross-account leakage.
  */
-export async function addressExists(address: string): Promise<Result<boolean, DbError>> {
+export async function addressExists(address: string, accountId?: number): Promise<Result<boolean, DbError>> {
   const database = getDatabase()
 
   try {
-    const rows = await database.select<{ id: number }[]>(
-      'SELECT id FROM address_book WHERE address = $1',
-      [address]
-    )
+    const query = accountId !== undefined
+      ? 'SELECT id FROM address_book WHERE address = $1 AND account_id = $2'
+      : 'SELECT id FROM address_book WHERE address = $1'
+    const params = accountId !== undefined ? [address, accountId] : [address]
+    const rows = await database.select<{ id: number }[]>(query, params)
     return ok(rows.length > 0)
   } catch (e) {
     return err(new DbError(

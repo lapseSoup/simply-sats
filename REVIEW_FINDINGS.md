@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-03-02 (v22 / Review #22 — Full Codebase Review)
-**Full report:** `docs/reviews/2026-03-02-full-review-v22.md`
-**Rating:** 8.5 / 10 (all 366 issues resolved — 0 open items remaining)
-**Review #22 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 10 new issues: 1 high, 5 medium, 4 low. All 9 fixed in v22, 1 noted. 1791 tests passing.
+**Latest review:** 2026-03-03 (v23 / Review #23 — Full Codebase Review)
+**Full report:** `docs/reviews/2026-03-03-full-review-v23.md`
+**Rating:** 8.5 / 10 (all 376 issues resolved — 0 open items remaining)
+**Review #23 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 11 new issues: 2 high, 3 medium, 6 low. 10 fixed in v23, 1 false positive dropped (Q-81). 1803 tests passing.
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -37,6 +37,8 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-99 | ✅ Fixed (v23) | `brc100/outputs.ts:61` | `getLocksFromDB(currentHeight)` called without `accountId` in `resolveListOutputs()`. BRC-100 `listOutputs` with `basket: 'wrootz_locks'` returned locks from ALL accounts. **Fix:** Added `getActiveAccount()`, passed `activeAccountId` |
+| S-100 | ✅ Fixed (v23) | `brc100/listener.ts:138` | Same as S-99 — `getLocksFromDB(currentHeight)` in `listLocks` auto-response had no account scoping. **Fix:** Added `getActiveAccount()`, passed `activeAccount?.id` |
 | S-96 | ✅ Fixed (v22) | `brc100/handlers.ts:240-243` | Origin subdomain matching uses `hostname.endsWith('wrootz.com')` — matches `evilwrootz.com`. Comment said "exact hostname match" but check was permissive. **Fix:** Changed to `hostname === 'wrootz.com' \|\| hostname.endsWith('.wrootz.com')` |
 | S-85 | ✅ Fixed (v21) | `brc100/locks.ts:84-86`, `brc100/formatting.ts:43-46` | Lock and action builders pass WIF to non-`_from_store` Tauri commands. `getWifForOperation('wallet', ...)` pulls WIF into JS, then sends back to Rust via `build_p2pkh_tx`. `build_p2pkh_tx_from_store` exists at `key_store.rs:339` |
 | S-86 | ✅ Fixed (v21) | `brc100/validation.ts:147-159` | `getTaggedKeys` falls through to `default` case — auto-approved for trusted origins. Tagged keys are deterministic sub-identities from identity key. Should require explicit approval |
@@ -99,6 +101,9 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-101 | ✅ Fixed (v23) | `brc100/outputs.ts:119,170` | `getUTXOsByBasket()` and `getSpendableUTXOs()` in `discoverByIdentityKey`/`discoverByAttributes` had no account scoping — returned UTXOs from all accounts. **Fix:** Threaded `activeAccountId` through discover functions |
+| S-102 | ✅ Fixed (v23) | `brc100/locks.ts:40` | `getLocks()` export called `getLocksFromDB(currentHeight)` without accountId. **Fix:** Added `getActiveAccount()`, passed `activeAccount?.id` |
+| B-89 | ✅ Fixed (v23) | `restore.ts:115-117,140-157` | `catch (_e) { /* non-fatal */ }` on `invoke('store_keys')` — zero logging. Rust key store failure during restore had no diagnostic trail. **Fix:** Added `walletLogger.warn()` with error details |
 | S-97 | ✅ Fixed (v22) | `brc100/handlers.ts:521` | `request.origin` passed unvalidated to `deriveTaggedKeyFromStore` as domain. No length limit or format validation. **Fix:** Added origin type/length validation (max 256 chars) |
 | B-85 | ✅ Fixed (v22) | `lockReconciliation.ts:270` | `autoLabelLockTransactions(mergedLocks, accountId \|\| 1)` defaults to account 1 when accountId undefined. Inconsistent with line 269. **Fix:** Guard clause skipping labels when accountId missing |
 | B-86 | ✅ Fixed (v22) | `NetworkContext.tsx:103` | `scheduleNext(0)` runs unconditionally after price fetch, even when data fails validation. Backoff resets on malformed responses. **Fix:** Only reset on valid data; back off on invalid |
@@ -288,6 +293,11 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-103 | ✅ Fixed (v23) | `addressBookRepository.ts:170-178` | `addressExists()` queries all accounts without `account_id` filter. **Fix:** Added optional `accountId` parameter with conditional WHERE clause |
+| B-90 | ✅ Fixed (v23) | `restore.ts:193` | `.catch(() => {})` swallowed all account discovery errors after restore. **Fix:** Added `walletLogger.warn()` in catch block |
+| Q-78 | ✅ Fixed (v23) | `AddressPicker.tsx:162` | `AddressRow` rendered in list without `React.memo` — every parent state change re-rendered all rows. **Fix:** Wrapped with `memo()` |
+| Q-79 | ✅ Fixed (v23) | `domain/shared/base58.ts` | New 45-line module with no dedicated test file. **Fix:** Created `base58.test.ts` with 10 tests covering empty string, leading zeros, strict/lenient modes |
+| Q-80 | ✅ Fixed (v23) | `FeeEstimation.test.tsx` | No tests for rate clamping at `MIN_FEE_RATE`/`MAX_FEE_RATE` boundaries. **Fix:** Added 2 boundary tests |
 | S-98 | ✅ Fixed (v22) | `brc100/handlers.ts:154` | `parseInt` for unlock block has no safe integer bounds check. Values > 2^32 pass `Number.isFinite()`. **Fix:** Added `parsedBlock <= 0xFFFFFFFF` guard |
 | B-87 | ✅ Fixed (v22) | `UIContext.tsx:107-121` | `dismissToast` doesn't clear associated setTimeout. Orphaned timeouts cause unnecessary state updates. **Fix:** Changed Set to Map(id→timeoutId), clear on dismiss |
 | B-88 | ⚪ Noted (v22) | `WalletContext.tsx:398-419` | `syncInactiveAccountsBackground` fire-and-forget with no user-facing failure feedback. All sync failures silently logged |
@@ -400,19 +410,19 @@
 
 | Category | Total | ✅ Fixed/Verified/Accepted/Deferred | 🔴 Critical Open | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
 |----------|-------|-------------------------------------|-------------------|--------------|----------------|-------------|
-| Security | 100 | 100 | 0 | 0 | 0 | 0 |
-| Bugs | 88 | 88 | 0 | 0 | 0 | 0 |
+| Security | 105 | 105 | 0 | 0 | 0 | 0 |
+| Bugs | 90 | 90 | 0 | 0 | 0 | 0 |
 | Architecture | 47 | 47 | 0 | 0 | 0 | 0 |
-| Quality | 78 | 78 | 0 | 0 | 0 | 0 |
+| Quality | 81 | 81 | 0 | 0 | 0 | 0 |
 | UX/UI | 40 | 40 | 0 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 | 0 |
-| **Total** | **366** | **366** | **0** | **0** | **0** | **0** |
+| **Total** | **376** | **376** | **0** | **0** | **0** | **0** |
 
 ---
 
-## Remaining Open Items (as of Review #22)
+## Remaining Open Items (as of Review #23)
 
-**All 366 issues are now resolved.** No open items remain.
+**All 376 issues are now resolved.** No open items remain.
 
 - Fixed: code changes applied and verified with tests
 - Accepted: verified as correct design decisions or non-issues
@@ -427,6 +437,30 @@
 
 ### Moot
 - **S-3** — Session key rotation race (SENSITIVE_KEYS empty)
+
+---
+
+## Prioritized Remediation — Review #23
+### All 10 items resolved (10 fixed, 1 false positive dropped)
+
+### Security — Cross-Account BRC-100 Isolation (5)
+1. ✅ **S-99** `brc100/outputs.ts` — Added `getActiveAccount()` scoping to `resolveListOutputs()` lock queries. **Effort: quick**
+2. ✅ **S-100** `brc100/listener.ts` — Added account scoping to `listLocks` auto-response. **Effort: quick**
+3. ✅ **S-101** `brc100/outputs.ts` — Threaded `activeAccountId` through `discoverByIdentityKey` and `discoverByAttributes`. **Effort: quick**
+4. ✅ **S-102** `brc100/locks.ts` — Added account scoping to `getLocks()` export. **Effort: quick**
+5. ✅ **S-103** `addressBookRepository.ts` — Added optional `accountId` parameter to `addressExists()`. **Effort: quick**
+
+### Bugs (2)
+6. ✅ **B-89** `restore.ts` — Added `walletLogger.warn()` to silent `catch` blocks for Rust key store failures. **Effort: quick**
+7. ✅ **B-90** `restore.ts` — Added logging to swallowed account discovery errors. **Effort: quick**
+
+### Quality (3)
+8. ✅ **Q-78** `AddressPicker.tsx` — Wrapped `AddressRow` with `React.memo`. **Effort: quick**
+9. ✅ **Q-79** `base58.ts` — Created `base58.test.ts` with 10 tests. **Effort: quick**
+10. ✅ **Q-80** `FeeEstimation.test.tsx` — Added boundary tests for fee rate clamping. **Effort: quick**
+
+### Dropped (1)
+- **Q-81** `AddressPicker.test.tsx` — False positive: tests already use `waitFor()` correctly.
 
 ---
 

@@ -15,6 +15,7 @@ import type { Lock, UTXO } from '../database'
 import { BASKETS, getCurrentBlockHeight } from '../sync'
 import { lookupByTopic, TOPICS } from '../overlay'
 import { brc100Logger } from '../logger'
+import { getActiveAccount } from '../accounts'
 import type { DiscoveredOutput, ListedOutput, LockedOutput } from './types'
 
 /** Map a DB lock record to the canonical LockedOutput shape */
@@ -56,9 +57,12 @@ export async function resolveListOutputs(params: {
   const offset = params.offset || 0
 
   const currentHeight = await getCurrentBlockHeight()
+  // S-99: Scope lock queries to active account to prevent cross-account data leak
+  const activeAccount = await getActiveAccount()
+  const activeAccountId = activeAccount?.id
 
   if (basket === 'wrootz_locks' || basket === 'locks') {
-    const locks = await getLocksFromDB(currentHeight)
+    const locks = await getLocksFromDB(currentHeight, activeAccountId)
     const outputs = locks.map(lock => {
       const formatted = formatLockedOutput(lock, currentHeight)
       return {
@@ -79,7 +83,7 @@ export async function resolveListOutputs(params: {
   else if (basket === 'identity') dbBasket = BASKETS.IDENTITY
   else if (!basket || basket === 'default') dbBasket = BASKETS.DEFAULT
 
-  const utxosByBasketResult = await getUTXOsByBasket(dbBasket, !includeSpent)
+  const utxosByBasketResult = await getUTXOsByBasket(dbBasket, !includeSpent, activeAccountId)
   const utxos = utxosByBasketResult.ok ? utxosByBasketResult.value : []
   if (!utxosByBasketResult.ok) {
     brc100Logger.warn('Failed to query UTXOs by basket', { basket: dbBasket, error: utxosByBasketResult.error.message })
@@ -114,9 +118,13 @@ export async function discoverByIdentityKey(args: {
   outputs: DiscoveredOutput[]
   totalOutputs: number
 }> {
+  // S-101: Scope discover queries to active account
+  const activeAccount = await getActiveAccount()
+  const activeAccountId = activeAccount?.id
+
   // First check local database
   try {
-    const identityResult = await getUTXOsByBasket(BASKETS.IDENTITY, true)
+    const identityResult = await getUTXOsByBasket(BASKETS.IDENTITY, true, activeAccountId)
     const utxos = identityResult.ok ? identityResult.value : []
     const localOutputs = utxos.map(u => ({
       outpoint: `${u.txid}.${u.vout}`,
@@ -165,9 +173,13 @@ export async function discoverByAttributes(args: {
   outputs: DiscoveredOutput[]
   totalOutputs: number
 }> {
+  // S-101: Scope discover queries to active account
+  const activeAccount = await getActiveAccount()
+  const activeAccountId = activeAccount?.id
+
   // Search across all baskets for matching tags
   try {
-    const allUtxosResult = await getSpendableUTXOs()
+    const allUtxosResult = await getSpendableUTXOs(activeAccountId)
     const allUtxos = allUtxosResult.ok ? allUtxosResult.value : []
     const matchingUtxos = allUtxos.filter(u => {
       if (!u.tags) return false

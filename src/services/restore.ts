@@ -18,6 +18,7 @@ import { setWalletKeys } from './brc100'
 import { migrateToMultiAccount, getActiveAccount } from './accounts'
 import { discoverAccounts } from './accountDiscovery'
 import { setSessionPassword as setModuleSessionPassword } from './sessionPasswordStore'
+import { walletLogger } from './logger'
 
 // --- Types ---
 
@@ -114,7 +115,10 @@ export async function restoreWalletFromBackup(
     await migrateToMultiAccount({ ...keys, mnemonic: backup.wallet.mnemonic }, password)
     try {
       await invoke('store_keys', { mnemonic: backup.wallet.mnemonic, accountIndex: 0 })
-    } catch (_e) { /* non-fatal -- unlock will re-populate */ }
+    } catch (e) {
+      // B-89: Non-fatal but logged — unlock will re-populate Rust key store
+      walletLogger.warn('Failed to store keys in Rust key store during restore', { error: e instanceof Error ? e.message : String(e) })
+    }
     // Return keys with mnemonic cleared (mnemonic lives in Rust key store)
     const safeKeys = { ...keys, mnemonic: '' }
     setWalletKeys(safeKeys)
@@ -154,7 +158,10 @@ export async function restoreWalletFromBackup(
           mnemonic: null
         })
       }
-    } catch (_e) { /* non-fatal -- unlock will re-populate */ }
+    } catch (e) {
+      // B-89: Non-fatal but logged — unlock will re-populate Rust key store
+      walletLogger.warn('Failed to store keys in Rust key store during restore', { error: e instanceof Error ? e.message : String(e) })
+    }
     setWalletKeys(keys)
     setModuleSessionPassword(sessionPwd)
     return ok(keys)
@@ -190,7 +197,10 @@ export async function importBackupDatabase(
           callbacks.showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
         }
       })
-      .catch(() => {}) // Silent failure -- primary restore already succeeded
+      .catch((e) => {
+        // B-90: Log discovery failures — primary restore already succeeded
+        walletLogger.warn('Account discovery failed after restore', { error: e instanceof Error ? e.message : String(e) })
+      })
   }
 
   return stats

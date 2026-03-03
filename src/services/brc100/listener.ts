@@ -23,6 +23,7 @@ import { getRequestManager } from './RequestManager'
 import { getPendingRequests } from './actions'
 import { getWalletKeys } from './state'
 import { resolvePublicKey, resolveListOutputs, formatLockedOutput } from './outputs'
+import { getActiveAccount } from '../accounts'
 
 // Request types that require an active wallet to be loaded
 const WALLET_REQUIRED_TYPES = [
@@ -135,7 +136,9 @@ export async function setupHttpServerListener(): Promise<() => void> {
         if (request.type === 'listLocks' && keys) {
           try {
             const currentHeight = await getCurrentBlockHeight()
-            const locks = await getLocksFromDB(currentHeight)
+            // S-100: Scope lock queries to active account to prevent cross-account data leak
+            const activeAccount = await getActiveAccount()
+            const locks = await getLocksFromDB(currentHeight, activeAccount?.id)
 
             const lockOutputs: LockedOutput[] = locks.map(lock => formatLockedOutput(lock, currentHeight))
 

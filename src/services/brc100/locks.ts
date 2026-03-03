@@ -37,7 +37,9 @@ import { getActiveAccount } from '../accounts'
 export async function getLocks(): Promise<LockedOutput[]> {
   try {
     const currentHeight = await getCurrentBlockHeight()
-    const dbLocks = await getLocksFromDB(currentHeight)
+    // S-102: Scope lock queries to active account
+    const activeAccount = await getActiveAccount()
+    const dbLocks = await getLocksFromDB(currentHeight, activeAccount?.id)
 
     return dbLocks.map(lock => formatLockedOutput(lock, currentHeight))
   } catch (error) {

@@ -102,4 +102,60 @@ describe('FeeEstimation', () => {
     expect(screen.queryByRole('button', { name: /standard/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /fast/i })).not.toBeInTheDocument()
   })
+
+  // Q-80: Boundary tests for fee rate clamping
+  // MIN_FEE_RATE = 0.001, MAX_FEE_RATE = 1.0 (from domain/transaction/fees)
+  it('clamps custom rate to MIN_FEE_RATE when rate is below minimum', () => {
+    const mockOnFeeRateChange = vi.fn()
+
+    render(
+      <FeeEstimation
+        {...defaultProps}
+        onFeeRateChange={mockOnFeeRateChange}
+      />
+    )
+
+    // Open custom fee rate input
+    const customToggle = screen.getByText(/custom fee rate/i)
+    act(() => {
+      fireEvent.click(customToggle)
+    })
+
+    // Set a rate below minimum (MIN_FEE_RATE is 0.001)
+    const slider = screen.getByRole('slider')
+    act(() => {
+      fireEvent.change(slider, { target: { value: '0.0001' } })
+    })
+
+    // The callback should receive MIN_FEE_RATE (0.001), not the below-minimum value
+    expect(mockOnFeeRateChange).toHaveBeenLastCalledWith(0.001)
+  })
+
+  it('clamps custom rate to MAX_FEE_RATE when rate exceeds maximum', () => {
+    const mockOnFeeRateChange = vi.fn()
+
+    render(
+      <FeeEstimation
+        {...defaultProps}
+        onFeeRateChange={mockOnFeeRateChange}
+      />
+    )
+
+    // Open custom fee rate input
+    const customToggle = screen.getByText(/custom fee rate/i)
+    act(() => {
+      fireEvent.click(customToggle)
+    })
+
+    // Set a rate above maximum (MAX_FEE_RATE is 1.0)
+    const slider = screen.getByRole('slider')
+    act(() => {
+      fireEvent.change(slider, { target: { value: '999' } })
+    })
+
+    // The callback should receive MAX_FEE_RATE (1.0), not 999
+    expect(mockOnFeeRateChange).toHaveBeenCalled()
+    const lastCall = mockOnFeeRateChange.mock.calls[mockOnFeeRateChange.mock.calls.length - 1][0]
+    expect(lastCall).toBe(1.0)
+  })
 })
