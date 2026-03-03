@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
 **Latest review:** 2026-03-03 (v25 / Review #25 — Full Codebase Review)
 **Full report:** `docs/reviews/2026-03-03-full-review-v25.md`
-**Rating:** 8.4 / 10 (34 new issues found, 14 fixed — 1 high open, 8 medium open, 10 low open)
-**Review #25 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 34 new issues: 9 security (2H/5M/2L), 6 bugs (1H/3M/2L), 6 architecture (4M/2L), 13 quality (5M/8L). 1803 tests passing. **v25 Remediation: 14 high-priority issues fixed** — S-107, B-93, B-96 (critical), S-108/S-109/S-110/S-112, B-94/B-95, B-97 (security/bugs), Q-65/Q-69/Q-71/Q-73 (quality). Remaining: S-106 (createAction custom scripts), S-111 (mnemonic zeroing), A-49/A-50/A-51/A-54 (architecture).
+**Rating:** 8.4 / 10 (34 new issues found, 15 fixed — 0 high open, 8 medium open, 10 low open)
+**Review #25 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 34 new issues: 9 security (2H/5M/2L), 6 bugs (1H/3M/2L), 6 architecture (4M/2L), 13 quality (5M/8L). 1803 tests passing. **v25 Remediation: 14 high-priority issues fixed** — S-107, B-93, B-96 (critical), S-108/S-109/S-110/S-112, B-94/B-95, B-97 (security/bugs), Q-65/Q-69/Q-71/Q-73 (quality). Remaining: S-111 (mnemonic zeroing), A-49/A-50/A-51/A-54 (architecture). **S-106 fixed post-review** — new Rust `build_custom_output_tx` command + TS routing logic.
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -43,7 +43,7 @@
 | S-100 | ✅ Fixed (v23) | `brc100/listener.ts:138` | Same as S-99 — `getLocksFromDB(currentHeight)` in `listLocks` auto-response had no account scoping. **Fix:** Added `getActiveAccount()`, passed `activeAccount?.id` |
 | B-91 | ✅ Fixed (v24) | `LocksContext.tsx:82-84` | `addKnownUnlockedLock` only scheduled React state update — `knownUnlockedLocksRef` synced in useEffect (AFTER render). Unlike `resetKnownUnlockedLocks` (sync ref), detectLocks called immediately after unlock could re-add the lock. **Fix:** Synchronously update ref inside state updater |
 | B-92 | ✅ Fixed (v24) | `brc100/locks.ts:139` | `build_p2pkh_tx_from_store` received hardcoded `feeRate: 0.1` while JS-side `calculateTxFee()` used `getFeeRate()`. Fee disagreement between JS and Rust. **Fix:** Thread `getFeeRate()` from service layer to Tauri invoke |
-| S-106 | 🟠 Open-High | `brc100/formatting.ts:115-126` | `buildAndBroadcastAction` ignores custom `lockingScript` from BRC-100 `CreateActionRequest` outputs — passes `toAddress: fromAddress` to `build_p2pkh_tx_from_store`. Funds sent to self instead of custom scripts. DB records phantom outputs |
+| S-106 | ✅ Fixed (v25+) | `brc100/formatting.ts` now branches: P2PKH outputs use `build_multi_output_p2pkh_tx_from_store`, custom scripts use new `build_custom_output_tx_from_store`. New Rust `CustomOutput` struct + `build_custom_output_tx` function. 6 Rust tests + 4 TS tests. | `buildAndBroadcastAction` ignores custom `lockingScript` from BRC-100 `CreateActionRequest` outputs — passes `toAddress: fromAddress` to `build_p2pkh_tx_from_store`. Funds sent to self instead of custom scripts. DB records phantom outputs |
 | B-96 | ✅ Fixed (v25) | `App.tsx:352-356` re-reads getSessionPassword() after 10s delay, aborts if null | Background sync captures `sessionPwd` then waits 10s. If user locks wallet during delay, sync continues with decrypted keys after wallet is "locked" |
 | S-108 | ✅ Fixed (v25) | `rate_limiter.rs:167` uses subtle::ConstantTimeEq for HMAC comparison | HMAC comparison uses `String::eq` (early-return) instead of `subtle::ConstantTimeEq`. Local attacker could theoretically forge rate limit state to bypass unlock throttling |
 | S-109 | ✅ Fixed (v25) | `formatting.ts:74` changed `< 0` to `< 1` for satoshis validation | Zero-satoshi outputs allowed in createAction. Validation checks `< 0` but permits 0. Unspendable P2PKH outputs pollute UTXO set |
@@ -464,8 +464,8 @@
 
 **34 new issues found in Review #25.** 381 prior issues remain resolved.
 
-### Open — High (1)
-- **S-106** — `createAction` ignores custom locking scripts, sends funds to self
+### Open — High (0)
+_(All high-priority issues resolved)_
 
 ### Open — Medium (8)
 - **S-111** — Mnemonic cloned outside Zeroizing wrapper
@@ -519,7 +519,7 @@
 4. **S-112** `useWalletLock.ts:66-68` — Clamp timeout to `[1, MAX_AUTO_LOCK_MINUTES]` on read and write. **Effort: quick**
 
 ### High Priority (next sprint) — 7 items
-5. **S-106** `brc100/formatting.ts` — Implement custom output support in createAction (new Rust command) or document limitation. **Effort: major**
+5. ~~**S-106** `brc100/formatting.ts` — Fixed: new `build_custom_output_tx` Rust command + TS routing logic~~
 6. **S-108** `rate_limiter.rs:166` — Use `subtle::ConstantTimeEq` for HMAC comparison. **Effort: quick**
 7. **S-109** `brc100/formatting.ts:73` — Reject `satoshis: 0` for non-OP_RETURN outputs. **Effort: quick**
 8. **S-110** `builder.ts:486-504` — Remove zero-padding fallback, throw on short addresses. **Effort: quick**
