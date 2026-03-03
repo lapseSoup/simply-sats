@@ -163,9 +163,10 @@ export function SendModal({ onClose }: SendModalProps) {
     validateAddress(address)
   }, [validateAddress])
 
-  const handleFeeRateChange = (rate: number) => {
+  // Q-66: Wrap in useCallback to prevent unnecessary re-renders of FeeEstimation
+  const handleFeeRateChange = useCallback((rate: number) => {
     setFeeRateOverride(rate)
-  }
+  }, [])
 
   if (!wallet) return null
 
@@ -239,21 +240,14 @@ export function SendModal({ onClose }: SendModalProps) {
       const result = await handler()
 
       if (result.ok) {
+        // Q-65: Broadcast-succeeded-but-DB-failed now returns ok({ txid, warning })
+        // from useWalletSend.ts — no more fragile string matching needed here
         showToast(successToast)
         if (sentAddress) void recordSentAddress(sentAddress)
         onClose()
         void performSync()
       } else {
-        const errorMsg = result.error || 'Send failed'
-        if (errorMsg.includes('broadcast succeeded') || errorMsg.includes('BROADCAST_SUCCEEDED_DB_FAILED')) {
-          // TX is on-chain. Show clean success toast and silently sync to reconcile balance.
-          showToast(successToast)
-          if (sentAddress) void recordSentAddress(sentAddress)
-          onClose()
-          void performSync()
-        } else {
-          setSendError(errorMsg)
-        }
+        setSendError(result.error || 'Send failed')
       }
     } finally {
       setSending(false)

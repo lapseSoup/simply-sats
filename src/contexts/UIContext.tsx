@@ -82,13 +82,14 @@ export function UIProvider({ children }: UIProviderProps) {
   }, [])
 
   const [toasts, setToasts] = useState<ToastItem[]>([])
-  const toastTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  // B-83: Use Map(id → timeoutId) so dismissToast can clear the associated timeout
+  const toastTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   // Clear all pending toast timeouts on unmount
   useEffect(() => {
     const timeouts = toastTimeoutsRef.current
     return () => {
-      timeouts.forEach(id => clearTimeout(id))
+      timeouts.forEach(timeoutId => clearTimeout(timeoutId))
       timeouts.clear()
     }
   }, [])
@@ -105,6 +106,12 @@ export function UIProvider({ children }: UIProviderProps) {
   }, [])
 
   const dismissToast = useCallback((id: string) => {
+    // B-83: Clear the associated timeout to prevent orphaned state updates
+    const timeoutId = toastTimeoutsRef.current.get(id)
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      toastTimeoutsRef.current.delete(id)
+    }
     setToasts(prev => prev.filter(t => t.id !== id))
   }, [])
 
@@ -115,10 +122,10 @@ export function UIProvider({ children }: UIProviderProps) {
     // Errors and warnings persist longer (6s) so users can read them
     const duration = (type === 'error' || type === 'warning') ? 6000 : UI.TOAST_DURATION_MS
     const timeoutId = setTimeout(() => {
-      toastTimeoutsRef.current.delete(timeoutId)
+      toastTimeoutsRef.current.delete(id)
       setToasts(prev => prev.filter(t => t.id !== id))
     }, duration)
-    toastTimeoutsRef.current.add(timeoutId)
+    toastTimeoutsRef.current.set(id, timeoutId)
   }, [])
 
   const copyToClipboard = useCallback(async (text: string, feedback = 'Copied!') => {

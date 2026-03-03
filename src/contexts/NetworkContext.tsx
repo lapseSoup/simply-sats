@@ -99,8 +99,12 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
         if (!cancelled && data?.rate && typeof data.rate === 'number' && Number.isFinite(data.rate) && data.rate > 0) {
           setUsdPrice(data.rate)
           priceFailuresRef.current = 0
+          if (!cancelled) scheduleNext(0)
+        } else if (!cancelled) {
+          // B-82: Malformed response — back off instead of resetting to minimum delay
+          priceFailuresRef.current = Math.min(priceFailuresRef.current + 1, 5)
+          scheduleNext(priceFailuresRef.current)
         }
-        if (!cancelled) scheduleNext(0)
       } catch (e) {
         apiLogger.error('Failed to fetch USD price', e)
         if (!cancelled) {

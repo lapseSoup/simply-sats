@@ -149,10 +149,11 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         }
 
         // Parse unlock block from tags (S-14: guard against NaN from malformed tags)
+        // S-90: Bound to uint32 range — Bitcoin block heights are uint32
         const unlockTag = lockOutput.tags?.find(t => t.startsWith('unlock_'))
         const ordinalTag = lockOutput.tags?.find(t => t.startsWith('ordinal_'))
         const parsedBlock = unlockTag ? parseInt(unlockTag.replace('unlock_', ''), 10) : 0
-        const unlockBlock = Number.isFinite(parsedBlock) && parsedBlock > 0 ? parsedBlock : 0
+        const unlockBlock = Number.isFinite(parsedBlock) && parsedBlock > 0 && parsedBlock <= 0xFFFFFFFF ? parsedBlock : 0
         const ordinalOrigin = ordinalTag?.replace('ordinal_', '') || undefined
 
         if (unlockTag && unlockBlock === 0) {
@@ -236,10 +237,12 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
 
         // Determine basket based on app metadata or origin
         // Use wrootz_locks for wrootz app, otherwise default to 'locks'
-        // S-45: Exact hostname match instead of permissive substring
+        // S-45/S-88: Exact hostname match — endsWith('wrootz.com') would match evilwrootz.com
         const isWrootzApp = lockMetadata.app === 'wrootz' || (() => {
           try {
-            return request.origin ? new URL(request.origin).hostname.endsWith('wrootz.com') : false
+            if (!request.origin) return false
+            const hostname = new URL(request.origin).hostname
+            return hostname === 'wrootz.com' || hostname.endsWith('.wrootz.com')
           } catch { return false }
         })()
         const lockBasket = isWrootzApp ? 'wrootz_locks' : 'locks'
@@ -505,6 +508,13 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       const label = params.tag
       const keyIds = ['default']
 
+      // S-89: Validate and sanitize request.origin before using as domain in key derivation
+      const origin = request.origin
+      if (origin && (typeof origin !== 'string' || origin.length > 256)) {
+        setError(response, RPC_INVALID_PARAMS, 'origin must be a string of 256 chars or fewer')
+        break
+      }
+
       try {
         // S-84: Use deriveTaggedKeyFromStore so identity WIF never enters JS heap
         const derivedKeys: Array<{
@@ -518,7 +528,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
           const tag: DerivationTag = {
             label,
             id: keyId,
-            domain: request.origin
+            domain: origin
           }
 
           const derived = await deriveTaggedKeyFromStore('identity', tag)

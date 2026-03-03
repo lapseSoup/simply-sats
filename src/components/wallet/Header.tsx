@@ -28,10 +28,13 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
   const [accountBalances, setAccountBalances] = useState<Record<number, number>>({})
 
   // Fetch balances for all accounts
+  // A-42: Added isMounted guard to prevent stale state updates after unmount
   useEffect(() => {
+    let isMounted = true
     const fetchAccountBalances = async () => {
       const balances: Record<number, number> = {}
       for (const account of accounts) {
+        if (!isMounted) return
         if (account.id) {
           try {
             // Sum default + derived baskets for each account
@@ -45,12 +48,13 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
           }
         }
       }
-      setAccountBalances(balances)
+      if (isMounted) setAccountBalances(balances)
     }
 
     if (accounts.length > 0) {
       fetchAccountBalances()
     }
+    return () => { isMounted = false }
   // B-63: Use activeAccountId instead of balance to avoid re-fetching on every
   // balance change. Re-fetch only when accounts list changes or active account switches.
   }, [accounts, activeAccountId])

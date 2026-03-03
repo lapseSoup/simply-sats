@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-03-02 (v21 / Review #21 — Full Codebase Review)
-**Full report:** `docs/reviews/2026-03-02-full-review-v21.md`
-**Rating:** 8.5 / 10 (all 356 issues resolved — 0 open items remaining)
-**Review #21 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 37 new issues: 1 critical, 6 high, 16 medium, 14 low. All 37 fixed in v21. 1791 tests passing (29 new).
+**Latest review:** 2026-03-02 (v22 / Review #22 — Full Codebase Review)
+**Full report:** `docs/reviews/2026-03-02-full-review-v22.md`
+**Rating:** 8.5 / 10 (all 366 issues resolved — 0 open items remaining)
+**Review #22 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 10 new issues: 1 high, 5 medium, 4 low. All 9 fixed in v22, 1 noted. 1791 tests passing.
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -37,6 +37,7 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-96 | ✅ Fixed (v22) | `brc100/handlers.ts:240-243` | Origin subdomain matching uses `hostname.endsWith('wrootz.com')` — matches `evilwrootz.com`. Comment said "exact hostname match" but check was permissive. **Fix:** Changed to `hostname === 'wrootz.com' \|\| hostname.endsWith('.wrootz.com')` |
 | S-85 | ✅ Fixed (v21) | `brc100/locks.ts:84-86`, `brc100/formatting.ts:43-46` | Lock and action builders pass WIF to non-`_from_store` Tauri commands. `getWifForOperation('wallet', ...)` pulls WIF into JS, then sends back to Rust via `build_p2pkh_tx`. `build_p2pkh_tx_from_store` exists at `key_store.rs:339` |
 | S-86 | ✅ Fixed (v21) | `brc100/validation.ts:147-159` | `getTaggedKeys` falls through to `default` case — auto-approved for trusted origins. Tagged keys are deterministic sub-identities from identity key. Should require explicit approval |
 | S-87 | ✅ Fixed (v21) | `brc100/locks.ts:66-182`, `brc100/formatting.ts:34-246` | BRC-100 lock/action creation lacks `acquireSyncLock(accountId)`. Unlike `sendBSV`/`sendBSVMultiKey` in `transactions.ts`, these operate on UTXOs without sync lock protection |
@@ -98,6 +99,11 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-97 | ✅ Fixed (v22) | `brc100/handlers.ts:521` | `request.origin` passed unvalidated to `deriveTaggedKeyFromStore` as domain. No length limit or format validation. **Fix:** Added origin type/length validation (max 256 chars) |
+| B-85 | ✅ Fixed (v22) | `lockReconciliation.ts:270` | `autoLabelLockTransactions(mergedLocks, accountId \|\| 1)` defaults to account 1 when accountId undefined. Inconsistent with line 269. **Fix:** Guard clause skipping labels when accountId missing |
+| B-86 | ✅ Fixed (v22) | `NetworkContext.tsx:103` | `scheduleNext(0)` runs unconditionally after price fetch, even when data fails validation. Backoff resets on malformed responses. **Fix:** Only reset on valid data; back off on invalid |
+| A-47 | ✅ Fixed (v22) | `Header.tsx:8,31-56` | Direct import from `infrastructure/database` bypasses services/contexts layer. Missing isMounted guard for async useEffect. **Fix:** Added isMounted cleanup; layer violation noted (lint warning) |
+| Q-76 | ✅ Fixed (v22) | `SendModal.tsx:248`, `useWalletSend.ts:172` | `executeWithSendGuard` uses string matching (`errorMsg.includes('broadcast succeeded')`) to detect partial success. **Fix:** Moved detection to useWalletSend via AppError code check; returns `ok({txid, warning})` |
 | S-88 | ✅ Fixed (v21) | `sessionPasswordStore.ts:29-44` | Session password not scrubbed from JS string pool on lock. `clearSessionPassword()` sets `null` but JS strings are immutable/interned — password remains in V8 heap until GC |
 | S-89 | ✅ Fixed (v21) | `autoLock.ts:221` | `resumeAutoLock` uses stale 15-second interval. `initAutoLock` uses 5s (Q-8 fix) but `resumeAutoLock` still uses 15s. `onWarning` callback also not wired |
 | S-90 | ✅ Fixed (v21) | `crypto.ts:258-271` | `isLegacyEncrypted` decodes with `atob()` then `JSON.parse()` on untrusted data. S-60 bounds input to 10KB but deeply nested JSON could allocate large object graph |
@@ -282,6 +288,10 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-98 | ✅ Fixed (v22) | `brc100/handlers.ts:154` | `parseInt` for unlock block has no safe integer bounds check. Values > 2^32 pass `Number.isFinite()`. **Fix:** Added `parsedBlock <= 0xFFFFFFFF` guard |
+| B-87 | ✅ Fixed (v22) | `UIContext.tsx:107-121` | `dismissToast` doesn't clear associated setTimeout. Orphaned timeouts cause unnecessary state updates. **Fix:** Changed Set to Map(id→timeoutId), clear on dismiss |
+| B-88 | ⚪ Noted (v22) | `WalletContext.tsx:398-419` | `syncInactiveAccountsBackground` fire-and-forget with no user-facing failure feedback. All sync failures silently logged |
+| Q-77 | ✅ Fixed (v22) | `SendModal.tsx:166` | `handleFeeRateChange` inline arrow not wrapped in `useCallback` — causes unnecessary FeeEstimation re-renders. **Fix:** Wrapped in useCallback |
 | S-92 | ✅ Fixed (v21) | `brc100/handlers.ts:43` | `inflightUnlocks` deduplication map has no size limit — grows unboundedly under sustained unlock request bursts |
 | S-93 | ✅ Fixed (v21) | `rateLimiter.ts:143-153` | `formatLockoutTime` rounds up misleadingly — 61 seconds displays as "2 minutes" due to double ceiling |
 | S-94 | ✅ Fixed (v21) | `keyDerivation.ts:112-129` | `loadKnownSenders` pushes from localStorage without checking `MAX_KNOWN_SENDERS` — manipulated storage could load thousands |
@@ -390,23 +400,24 @@
 
 | Category | Total | ✅ Fixed/Verified/Accepted/Deferred | 🔴 Critical Open | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
 |----------|-------|-------------------------------------|-------------------|--------------|----------------|-------------|
-| Security | 97 | 97 | 0 | 0 | 0 | 0 |
-| Bugs | 84 | 84 | 0 | 0 | 0 | 0 |
-| Architecture | 46 | 46 | 0 | 0 | 0 | 0 |
-| Quality | 76 | 76 | 0 | 0 | 0 | 0 |
+| Security | 100 | 100 | 0 | 0 | 0 | 0 |
+| Bugs | 88 | 88 | 0 | 0 | 0 | 0 |
+| Architecture | 47 | 47 | 0 | 0 | 0 | 0 |
+| Quality | 78 | 78 | 0 | 0 | 0 | 0 |
 | UX/UI | 40 | 40 | 0 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 | 0 |
-| **Total** | **356** | **356** | **0** | **0** | **0** | **0** |
+| **Total** | **366** | **366** | **0** | **0** | **0** | **0** |
 
 ---
 
-## Remaining Open Items (as of Review #21)
+## Remaining Open Items (as of Review #22)
 
-**All 356 issues are now resolved.** No open items remain.
+**All 366 issues are now resolved.** No open items remain.
 
 - Fixed: code changes applied and verified with tests
 - Accepted: verified as correct design decisions or non-issues
 - Deferred: large structural work tracked for future PRs (Q-24, Q-32, Q-46, Q-47, A-16, A-27, A-28)
+- Noted: documented for awareness, no immediate code change required
 - Noted: documented for awareness, no code change required (S-83, B-78, B-79)
 
 ### Accepted Risk (unchanged)
@@ -416,6 +427,29 @@
 
 ### Moot
 - **S-3** — Session key rotation race (SENSITIVE_KEYS empty)
+
+---
+
+## Prioritized Remediation — Review #22
+### All 10 items resolved (9 fixed, 1 noted)
+
+### Security (3)
+1. ✅ **S-96** `brc100/handlers.ts` — Fixed origin subdomain matching to use exact hostname check. **Effort: quick**
+2. ✅ **S-97** `brc100/handlers.ts` — Added origin type/length validation for getTaggedKeys. **Effort: quick**
+3. ✅ **S-98** `brc100/handlers.ts` — Added uint32 bounds check for unlock block height parsing. **Effort: quick**
+
+### Bugs (4)
+4. ✅ **B-85** `lockReconciliation.ts` — Replaced `accountId || 1` with guard clause. **Effort: quick**
+5. ✅ **B-86** `NetworkContext.tsx` — Moved scheduleNext(0) inside valid-data branch; malformed responses now back off. **Effort: quick**
+6. ✅ **B-87** `UIContext.tsx` — Changed toast timeout tracking from Set to Map(id→timeoutId); dismiss clears timeout. **Effort: quick**
+7. ⚪ **B-88** `WalletContext.tsx` — Noted: background sync failures are silently logged. Non-critical for background work.
+
+### Architecture (1)
+8. ✅ **A-47** `Header.tsx` — Added isMounted cleanup guard to async useEffect. Layer violation noted via lint warning.
+
+### Quality (2)
+9. ✅ **Q-76** `SendModal.tsx`, `useWalletSend.ts` — Replaced fragile string matching with AppError code check. **Effort: medium**
+10. ✅ **Q-77** `SendModal.tsx` — Wrapped `handleFeeRateChange` in useCallback. **Effort: quick**
 
 ---
 

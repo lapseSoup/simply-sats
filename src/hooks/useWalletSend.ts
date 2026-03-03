@@ -26,6 +26,7 @@ import {
 import { audit } from '../services/auditLog'
 import { walletLogger } from '../services/logger'
 import { ok, err, type Result, type WalletResult } from '../domain/types'
+import { ErrorCodes, AppError } from '../services/errors'
 import type { RecipientOutput } from '../domain/transaction/builder'
 
 /**
@@ -169,6 +170,12 @@ export function useWalletSend({
 
       const sendResult = await sendBSVMultiKey(result.walletWif, address, amountSats, result.extendedUtxos, activeAccountId ?? undefined)
       if (!sendResult.ok) {
+        // Q-65: Use error code instead of fragile string matching for broadcast-succeeded-but-DB-failed
+        if (sendResult.error.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
+          const txid = (sendResult.error.context as Record<string, unknown>)?.txid as string || 'unknown'
+          walletLogger.warn('Broadcast succeeded but DB write failed — treating as success', { txid })
+          return ok({ txid, warning: sendResult.error.message })
+        }
         return err(sendResult.error.message)
       }
       const { txid } = sendResult.value
@@ -177,6 +184,11 @@ export function useWalletSend({
       audit.transactionSent(txid, amountSats, activeAccountId ?? undefined)
       return ok({ txid })
     } catch (e) {
+      // Q-65: Also handle thrown AppError with BROADCAST_SUCCEEDED_DB_FAILED code
+      if (e instanceof AppError && e.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
+        const txid = (e.context as Record<string, unknown>)?.txid as string || 'unknown'
+        return ok({ txid, warning: e.message })
+      }
       return err(e instanceof Error ? e.message : 'Send failed')
     } finally {
       derivedMap?.clear()
@@ -195,6 +207,11 @@ export function useWalletSend({
       const totalSent = recipients.reduce((sum, r) => sum + r.satoshis, 0)
       const sendResult = await sendBSVMultiOutput(result.walletWif, recipients, result.extendedUtxos, activeAccountId ?? undefined)
       if (!sendResult.ok) {
+        if (sendResult.error.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
+          const txid = (sendResult.error.context as Record<string, unknown>)?.txid as string || 'unknown'
+          walletLogger.warn('Multi-send broadcast succeeded but DB write failed — treating as success', { txid })
+          return ok({ txid, warning: sendResult.error.message })
+        }
         return err(sendResult.error.message)
       }
       const { txid } = sendResult.value
@@ -203,6 +220,10 @@ export function useWalletSend({
       audit.transactionSent(txid, totalSent, activeAccountId ?? undefined)
       return ok({ txid })
     } catch (e) {
+      if (e instanceof AppError && e.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
+        const txid = (e.context as Record<string, unknown>)?.txid as string || 'unknown'
+        return ok({ txid, warning: e.message })
+      }
       return err(e instanceof Error ? e.message : 'Multi-recipient send failed')
     } finally {
       derivedMap?.clear()
