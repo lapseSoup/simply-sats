@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-03-03 (v24 / Review #24 — Full Codebase Review)
-**Full report:** `docs/reviews/2026-03-03-full-review-v24.md`
-**Rating:** 8.5 / 10 (all 381 issues resolved — 0 open items remaining)
-**Review #24 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 5 new issues: 2 medium bugs, 1 medium architecture, 2 low quality. All 5 fixed in v24. 1 low quality noted (no fix needed). 1803 tests passing.
+**Latest review:** 2026-03-03 (v25 / Review #25 — Full Codebase Review)
+**Full report:** `docs/reviews/2026-03-03-full-review-v25.md`
+**Rating:** 8.4 / 10 (34 new issues found, 14 fixed — 1 high open, 8 medium open, 10 low open)
+**Review #25 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 34 new issues: 9 security (2H/5M/2L), 6 bugs (1H/3M/2L), 6 architecture (4M/2L), 13 quality (5M/8L). 1803 tests passing. **v25 Remediation: 14 high-priority issues fixed** — S-107, B-93, B-96 (critical), S-108/S-109/S-110/S-112, B-94/B-95, B-97 (security/bugs), Q-65/Q-69/Q-71/Q-73 (quality). Remaining: S-106 (createAction custom scripts), S-111 (mnemonic zeroing), A-49/A-50/A-51/A-54 (architecture).
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -30,6 +30,8 @@
 | B-25 | ✅ Fixed (v16) | `marketplace.ts:193` | `cancelOrdinalListing` calls `toOrdUtxo(listingUtxo)` without private key. **Fix:** Now passes `ordPk` to `toOrdUtxo()` |
 | B-26 | ✅ Fixed (v16) | `marketplace.ts:280` | `purchaseOrdinal` same issue — `toOrdUtxo(listingUtxo)` without key. **Fix:** Now passes `paymentPk` to `toOrdUtxo()` |
 | B-27 | ✅ Fixed (v16) | `useSyncData.ts:183-184` | `setOrdBalance(0)` and `setSyncError(null)` fire without `isCancelled` check. **Fix:** Added `if (isCancelled?.()) return` before final state setters |
+| S-107 | ✅ Fixed (v25) | `Cargo.toml:56` default=[], `tauri.conf.json:22` devtools:false, `package.json:13` tauri:dev --features devtools | DevTools enabled in production builds via `default = ["devtools"]`. Attacker with local access can inspect JS heap, extract WIFs via tauriInvoke, bypass approval modals |
+| B-93 | ✅ Fixed (v25) | `useWalletLock.ts:67-70` Number.isFinite guard + clamp to [1, MAX_AUTO_LOCK_MINUTES] | NaN from corrupted localStorage `auto_lock_minutes` silently disables auto-lock. `parseInt('abc')` → NaN, `NaN > 0` → false, `initAutoLock` never called |
 
 ---
 
@@ -41,6 +43,15 @@
 | S-100 | ✅ Fixed (v23) | `brc100/listener.ts:138` | Same as S-99 — `getLocksFromDB(currentHeight)` in `listLocks` auto-response had no account scoping. **Fix:** Added `getActiveAccount()`, passed `activeAccount?.id` |
 | B-91 | ✅ Fixed (v24) | `LocksContext.tsx:82-84` | `addKnownUnlockedLock` only scheduled React state update — `knownUnlockedLocksRef` synced in useEffect (AFTER render). Unlike `resetKnownUnlockedLocks` (sync ref), detectLocks called immediately after unlock could re-add the lock. **Fix:** Synchronously update ref inside state updater |
 | B-92 | ✅ Fixed (v24) | `brc100/locks.ts:139` | `build_p2pkh_tx_from_store` received hardcoded `feeRate: 0.1` while JS-side `calculateTxFee()` used `getFeeRate()`. Fee disagreement between JS and Rust. **Fix:** Thread `getFeeRate()` from service layer to Tauri invoke |
+| S-106 | 🟠 Open-High | `brc100/formatting.ts:115-126` | `buildAndBroadcastAction` ignores custom `lockingScript` from BRC-100 `CreateActionRequest` outputs — passes `toAddress: fromAddress` to `build_p2pkh_tx_from_store`. Funds sent to self instead of custom scripts. DB records phantom outputs |
+| B-96 | ✅ Fixed (v25) | `App.tsx:352-356` re-reads getSessionPassword() after 10s delay, aborts if null | Background sync captures `sessionPwd` then waits 10s. If user locks wallet during delay, sync continues with decrypted keys after wallet is "locked" |
+| S-108 | ✅ Fixed (v25) | `rate_limiter.rs:167` uses subtle::ConstantTimeEq for HMAC comparison | HMAC comparison uses `String::eq` (early-return) instead of `subtle::ConstantTimeEq`. Local attacker could theoretically forge rate limit state to bypass unlock throttling |
+| S-109 | ✅ Fixed (v25) | `formatting.ts:74` changed `< 0` to `< 1` for satoshis validation | Zero-satoshi outputs allowed in createAction. Validation checks `< 0` but permits 0. Unspendable P2PKH outputs pollute UTXO set |
+| S-110 | ✅ Fixed (v25) | `builder.ts:489-491` throws on decoded.length < 25, removed zero-padding fallback | `p2pkhLockingScriptHex` zero-pads addresses shorter than 21 bytes, creating locking scripts to unspendable addresses — burns funds |
+| S-111 | 🟡 Open-Medium | `key_store.rs:114,136` | Mnemonic `(*mnemonic).clone()` creates plain String copies outside `Zeroizing` wrapper. Mnemonic persists in freed heap memory |
+| S-112 | ✅ Fixed (v25) | `useWalletLock.ts:256-264` setter now clamps to [1, MAX_AUTO_LOCK_MINUTES] | Auto-lock timeout not validated against `MAX_AUTO_LOCK_MINUTES`. localStorage manipulation can disable auto-lock (set 0) or set extremely large values |
+| B-94 | ✅ Fixed (v25) | `transactions.ts:300,314` now passes accountId to getSpendableUtxosFromDatabase | `getAllSpendableUTXOs` ignores `accountId` for UTXO queries — returns UTXOs from ALL accounts. Public API, currently unused in production paths |
+| B-95 | ✅ Fixed (v25) | `useSyncData.ts:177` added Number.isFinite guard | `Number(cachedOrdBal)` without `Number.isFinite()` guard. Corrupted cache → "NaN BSV" display. API path has guard, DB path does not |
 | S-96 | ✅ Fixed (v22) | `brc100/handlers.ts:240-243` | Origin subdomain matching uses `hostname.endsWith('wrootz.com')` — matches `evilwrootz.com`. Comment said "exact hostname match" but check was permissive. **Fix:** Changed to `hostname === 'wrootz.com' \|\| hostname.endsWith('.wrootz.com')` |
 | S-85 | ✅ Fixed (v21) | `brc100/locks.ts:84-86`, `brc100/formatting.ts:43-46` | Lock and action builders pass WIF to non-`_from_store` Tauri commands. `getWifForOperation('wallet', ...)` pulls WIF into JS, then sends back to Rust via `build_p2pkh_tx`. `build_p2pkh_tx_from_store` exists at `key_store.rs:339` |
 | S-86 | ✅ Fixed (v21) | `brc100/validation.ts:147-159` | `getTaggedKeys` falls through to `default` case — auto-approved for trusted origins. Tagged keys are deterministic sub-identities from identity key. Should require explicit approval |
@@ -104,6 +115,17 @@
 | ID | Status | File | Issue |
 |----|--------|------|-------|
 | A-48 | ✅ Fixed (v24) | `eslint.config.js:9` | `globalIgnores` missing `.claude/worktrees` — ESLint scanned worktree build artifacts producing 101 false parsing errors. **Fix:** Added `.claude/worktrees` to globalIgnores array |
+| A-49 | 🟡 Open-Medium | Components, hooks, contexts, services (27 files) | 27 files bypass `PlatformAdapter`, importing `@tauri-apps/*` directly. Blocks Chrome extension parity |
+| A-50 | 🟡 Open-Medium | `sync/`, `wallet/` services | 4 circular dependency chains between sync and wallet modules. `lockCreation` ↔ `historySync` via barrel imports |
+| A-51 | 🟡 Open-Medium | `WalletStateContext.tsx`, `WalletContext.tsx` | `WalletStateContextType` bundles 25 fields — any change re-renders all consumers. Components needing only `activeAccountId` re-render on every balance update |
+| A-54 | 🟡 Open-Medium | `WalletContext.tsx:448` | `contentCacheSnapshot` creates full Map copy via `new Map(contentCacheRef.current)` on every `cacheVersion` bump. GC pressure with 600+ ordinals |
+| Q-65 | ✅ Fixed (v25) | extracted to `utils/timeFormatting.ts`, both LocksTab and LockDetailModal import from there | `formatTimeRemaining` duplicated identically in two files |
+| Q-68 | 🟡 Open-Medium | `backup.ts:241-325` | `clearDatabase()` has 11 sequential try/catch blocks for optional tables. Extract `safeClear(db, table)` helper |
+| Q-69 | ✅ Fixed (v25) | `OrdinalTransferModal.tsx:180-181` added aria-invalid, aria-describedby; error has id and role="alert" | Missing `aria-invalid`, `aria-describedby` on address input, `role="alert"` on error message |
+| Q-71 | ✅ Fixed (v25) | `SignMessageModal.tsx:44-46` now logs error via walletLogger.warn | Empty `catch {}` swallows verification errors. "Invalid signature" shown for Tauri communication failures too |
+| Q-72 | 🟡 Open-Medium | `ordinalContent.ts`, `ordinalCacheManager.ts`, `lockReconciliation.ts`, `backupReminder.ts`, `messageBox.ts` | 5 service modules with zero test coverage |
+| Q-73 | ✅ Fixed (v25) | `lockReconciliation.ts:270` changed `||` to `??` | `accountId \|\| undefined` converts 0 to undefined. Should be `accountId ?? undefined` |
+| Q-77 | 🟡 Open-Medium | Database repos (18+ sites) | `accountId ?? 1` default pattern masks bugs where callers forget to pass accountId. No warning logged |
 | S-101 | ✅ Fixed (v23) | `brc100/outputs.ts:119,170` | `getUTXOsByBasket()` and `getSpendableUTXOs()` in `discoverByIdentityKey`/`discoverByAttributes` had no account scoping — returned UTXOs from all accounts. **Fix:** Threaded `activeAccountId` through discover functions |
 | S-102 | ✅ Fixed (v23) | `brc100/locks.ts:40` | `getLocks()` export called `getLocksFromDB(currentHeight)` without accountId. **Fix:** Added `getActiveAccount()`, passed `activeAccount?.id` |
 | B-89 | ✅ Fixed (v23) | `restore.ts:115-117,140-157` | `catch (_e) { /* non-fatal */ }` on `invoke('store_keys')` — zero logging. Rust key store failure during restore had no diagnostic trail. **Fix:** Added `walletLogger.warn()` with error details |
@@ -299,6 +321,18 @@
 | Q-82 | ✅ Fixed (v24) | `usePlatform.ts:33` | `detectPlatform()` accesses `navigator.userAgent` without SSR guard (unlike `detectTouchScreen()`). Crashes in `@vitest-environment node` tests. **Fix:** Added `if (typeof navigator === 'undefined') return 'desktop'` |
 | Q-83 | ✅ Fixed (v24) | `OrdinalImage.tsx:103` | setState-in-effect ESLint warning. Intentional pattern — blob URL owned by module-level cache, not the effect. **Fix:** Added `eslint-disable` comment with justification |
 | Q-84 | ⚪ Noted (v24) | `SettingsModal.tsx:35` | Hard-coded `calc(100vh - 100px)` offset. Documented WebKit flex-scroll workaround with clear comment. No fix needed now |
+| S-113 | ⚪ Open-Low | `key_store.rs:143-178` | `store_keys_direct` accepts unvalidated WIFs from frontend. No verification that WIFs match provided addresses/pubkeys |
+| S-114 | ⚪ Open-Low | `secureStorage.ts:21-23` | `SENSITIVE_KEYS` set is empty — session-key encryption infrastructure is dead code |
+| B-97 | ✅ Fixed (v25) | `SettingsSecurity.tsx:241` added radix parameter to parseInt | `parseInt(e.target.value)` missing radix parameter in select handler |
+| B-98 | ⚪ Open-Low | `RequestManager.ts:36` | Cleanup interval leaks on re-instantiation. No singleton protection |
+| A-52 | ⚪ Open-Low | 11 components | Components query `infrastructure/database` and `infrastructure/api` directly, bypassing service layer |
+| A-53 | ⚪ Open-Low | `txRepository.ts`, `ordinalRepository.ts`, `utxoRepository.ts` | Unbounded `getAllTransactions`/`getAllUTXOs` queries — no pagination or LIMIT |
+| Q-66 | ⚪ Open-Low | `InscribeModal.tsx:26-29`, `ordinalCacheManager.ts:138-144` | Duplicated `formatBytes`/`formatCacheSize` functions |
+| Q-67 | ⚪ Open-Low | `LockModal.tsx:50-67`, `LocksTab.tsx:19-35` | Duplicated time-estimation logic between LockModal (blocks→duration) and LocksTab (seconds→duration) |
+| Q-70 | ⚪ Open-Low | `LockModal.tsx:192-214` | Missing `aria-describedby="lock-hint"` on lock-blocks input |
+| Q-74 | ⚪ Noted (v25) | `LockModal.tsx:35` | Early return before all computed values — borderline hook ordering concern. Not a violation |
+| Q-75 | ⚪ Open-Low | `useOrdinalCache.test.ts` | 22 `as any` casts for `bumpCacheVersion` mock. Properly type the mock to eliminate |
+| Q-76 | ⚪ Open-Low | Multiple modals | Inline `style={{ ... }}` scattered across modals instead of CSS classes |
 | S-103 | ✅ Fixed (v23) | `addressBookRepository.ts:170-178` | `addressExists()` queries all accounts without `account_id` filter. **Fix:** Added optional `accountId` parameter with conditional WHERE clause |
 | B-90 | ✅ Fixed (v23) | `restore.ts:193` | `.catch(() => {})` swallowed all account discovery errors after restore. **Fix:** Added `walletLogger.warn()` in catch block |
 | Q-78 | ✅ Fixed (v23) | `AddressPicker.tsx:162` | `AddressRow` rendered in list without `React.memo` — every parent state change re-rendered all rows. **Fix:** Wrapped with `memo()` |
@@ -416,25 +450,38 @@
 
 | Category | Total | ✅ Fixed/Verified/Accepted/Deferred | 🔴 Critical Open | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
 |----------|-------|-------------------------------------|-------------------|--------------|----------------|-------------|
-| Security | 105 | 105 | 0 | 0 | 0 | 0 |
-| Bugs | 92 | 92 | 0 | 0 | 0 | 0 |
-| Architecture | 48 | 48 | 0 | 0 | 0 | 0 |
-| Quality | 83 | 83 | 0 | 0 | 0 | 0 |
+| Security | 114 | 112 | 0 | 1 | 1 | 2 |
+| Bugs | 98 | 97 | 0 | 0 | 0 | 1 |
+| Architecture | 54 | 48 | 0 | 0 | 4 | 2 |
+| Quality | 96 | 87 | 0 | 0 | 3 | 5 |
 | UX/UI | 40 | 40 | 0 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 | 0 |
-| **Total** | **381** | **381** | **0** | **0** | **0** | **0** |
+| **Total** | **415** | **397** | **0** | **1** | **8** | **10** |
 
 ---
 
-## Remaining Open Items (as of Review #24)
+## Remaining Open Items (as of Review #25)
 
-**All 381 issues are now resolved.** No open items remain.
+**34 new issues found in Review #25.** 381 prior issues remain resolved.
 
-- Fixed: code changes applied and verified with tests
-- Accepted: verified as correct design decisions or non-issues
-- Deferred: large structural work tracked for future PRs (Q-24, Q-32, Q-46, Q-47, A-16, A-27, A-28)
-- Noted: documented for awareness, no immediate code change required
-- Noted: documented for awareness, no code change required (S-83, B-78, B-79)
+### Open — High (1)
+- **S-106** — `createAction` ignores custom locking scripts, sends funds to self
+
+### Open — Medium (8)
+- **S-111** — Mnemonic cloned outside Zeroizing wrapper
+- **A-49** — 27 files bypass PlatformAdapter
+- **A-50** — Circular dependencies between sync/ and wallet/
+- **A-51** — WalletStateContext bundles 25 fields
+- **A-54** — contentCacheSnapshot full Map copy on every bump
+- **Q-68** — 11 sequential try/catch in clearDatabase
+- **Q-72** — 5 service modules with zero test coverage
+- **Q-77** — `accountId ?? 1` default masks bugs
+
+### Open — Low (10)
+- S-113, S-114, B-98, A-52, A-53, Q-66, Q-67, Q-70, Q-75, Q-76
+
+### Noted (1)
+- **Q-74** — Early return before all computed values — borderline hook ordering concern
 
 ### Accepted Risk (unchanged)
 - **S-17** — `SENSITIVE_KEYS` empty in secureStorage
@@ -460,6 +507,41 @@
 4. ✅ **Q-82** `usePlatform.ts` — Added `typeof navigator === 'undefined'` SSR guard to `detectPlatform()`. **Effort: quick**
 5. ✅ **Q-83** `OrdinalImage.tsx` — Added `eslint-disable` with justification for intentional setState-in-effect. **Effort: quick**
 6. ⚪ **Q-84** `SettingsModal.tsx` — Noted: documented WebKit workaround, no change needed. **Effort: none**
+
+---
+
+## Prioritized Remediation — Review #25
+
+### Immediate (before next release) — 4 items
+1. **S-107** `Cargo.toml` + `tauri.conf.json` — Disable DevTools in production. Change `default = []`, gate behind `cfg(debug_assertions)`. **Effort: quick**
+2. **B-93** `useWalletLock.ts:68` — Add `Number.isFinite()` guard: `return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10`. **Effort: quick**
+3. **B-96** `App.tsx:348` — Re-check `getSessionPassword()` after 10s delay; abort if null. **Effort: quick**
+4. **S-112** `useWalletLock.ts:66-68` — Clamp timeout to `[1, MAX_AUTO_LOCK_MINUTES]` on read and write. **Effort: quick**
+
+### High Priority (next sprint) — 7 items
+5. **S-106** `brc100/formatting.ts` — Implement custom output support in createAction (new Rust command) or document limitation. **Effort: major**
+6. **S-108** `rate_limiter.rs:166` — Use `subtle::ConstantTimeEq` for HMAC comparison. **Effort: quick**
+7. **S-109** `brc100/formatting.ts:73` — Reject `satoshis: 0` for non-OP_RETURN outputs. **Effort: quick**
+8. **S-110** `builder.ts:486-504` — Remove zero-padding fallback, throw on short addresses. **Effort: quick**
+9. **S-111** `key_store.rs:114,136` — Wrap mnemonic clones in `Zeroizing`. Store as `Option<Zeroizing<String>>`. **Effort: medium**
+10. **B-94** `transactions.ts:300,314` — Pass `accountId` to `getSpendableUtxosFromDatabase()`. **Effort: quick**
+11. **B-95** `useSyncData.ts:177` — Add `Number.isFinite()` guard on cached ord balance. **Effort: quick**
+
+### Medium Priority (sprint after) — 11 items
+12. **A-49** — Route `@tauri-apps/*` imports through `PlatformAdapter` in 27 files. **Effort: major**
+13. **A-50** — Break circular dependencies: extract `sync/recording.ts`, move `parseTimelockScript` to `domain/`. **Effort: medium**
+14. **A-51** — Split `WalletStateContext` into focused contexts (Core, Data). **Effort: major**
+15. **A-54** — Replace Map copy with lazy snapshot or `useSyncExternalStore`. **Effort: medium**
+16. **Q-65** — Extract shared `formatTimeRemaining` to `utils/timeFormatting.ts`. **Effort: quick**
+17. **Q-68** — Refactor `clearDatabase()` with `safeClear(db, table)` helper. **Effort: quick**
+18. **Q-69** — Add ARIA attributes to OrdinalTransferModal form. **Effort: quick**
+19. **Q-71** — Log error in SignMessageModal verify catch block. **Effort: quick**
+20. **Q-72** — Add tests for 5 untested service modules. **Effort: medium**
+21. **Q-73** — Change `accountId || undefined` to `accountId ?? undefined`. **Effort: quick**
+22. **Q-77** — Add `walletLogger.warn` when `accountId ?? 1` default is used. **Effort: quick**
+
+### Low Priority — 12 items
+23-34. S-113, S-114, B-97, B-98, A-52, A-53, Q-66, Q-67, Q-70, Q-74, Q-75, Q-76
 
 ---
 

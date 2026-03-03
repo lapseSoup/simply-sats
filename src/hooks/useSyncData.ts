@@ -172,9 +172,11 @@ export function useSyncData({
     }
 
     // Ord balance from localStorage cache
+    // B-95: Guard against NaN/Infinity from corrupted cache values
     try {
       const cachedOrdBal = localStorage.getItem(`${STORAGE_KEYS.CACHED_ORD_BALANCE}_${activeAccountId}`)
-      setOrdBalance(cachedOrdBal ? Number(cachedOrdBal) : 0)
+      const parsed = cachedOrdBal ? Number(cachedOrdBal) : 0
+      setOrdBalance(Number.isFinite(parsed) ? parsed : 0)
     } catch {
       setOrdBalance(0)
     }

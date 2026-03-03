@@ -714,8 +714,8 @@ describe('Transaction Service', () => {
       const result = await getAllSpendableUTXOs(walletWif)
 
       expect(result).toEqual([])
-      expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('default')
-      expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('derived')
+      expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('default', undefined)
+      expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('derived', undefined)
     })
 
     it('should combine default and derived basket UTXOs', async () => {

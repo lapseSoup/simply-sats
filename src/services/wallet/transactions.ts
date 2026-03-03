@@ -296,8 +296,8 @@ export async function sendBSV(
 export async function getAllSpendableUTXOs(walletWif: string, accountId?: number, identityWif?: string): Promise<ExtendedUTXO[]> {
   const result: ExtendedUTXO[] = []
 
-  // Get UTXOs from default basket
-  const defaultUtxos = await getSpendableUtxosFromDatabase(BASKETS.DEFAULT)
+  // B-94: Pass accountId to scope UTXO queries to the correct account
+  const defaultUtxos = await getSpendableUtxosFromDatabase(BASKETS.DEFAULT, accountId)
 
   for (const u of defaultUtxos) {
     result.push({
@@ -311,7 +311,7 @@ export async function getAllSpendableUTXOs(walletWif: string, accountId?: number
   }
 
   // Get UTXOs from derived basket with their WIFs — scoped to current account
-  const derivedUtxos = await getSpendableUtxosFromDatabase(BASKETS.DERIVED)
+  const derivedUtxos = await getSpendableUtxosFromDatabase(BASKETS.DERIVED, accountId)
   const derivedAddresses = await getDerivedAddresses(accountId)
 
   // Build a map of derived address → WIF using re-derivation (S-19)

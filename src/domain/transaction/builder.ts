@@ -484,21 +484,14 @@ function bytesToHex(bytes: Uint8Array): string {
  * @returns Locking script as hex string (50 hex chars / 25 bytes)
  */
 export function p2pkhLockingScriptHex(address: string): string {
-  const decoded = base58Decode(address, false) // lenient: skip invalid chars for SDK compatibility
-  // Base58Check: [version(1)] [pubkeyHash(20)] [checksum(4)] = 25 bytes
-  // For short/invalid addresses, zero-pad the pubkey hash to 20 bytes
-  // to maintain backwards compatibility with the SDK's lenient behaviour.
-  let pubkeyHash: Uint8Array
-  if (decoded.length >= 21) {
-    // Normal case: extract 20-byte hash after version byte
-    pubkeyHash = decoded.slice(1, 21)
-  } else {
-    // Short address: use whatever bytes are available, zero-padded
-    const hash = new Uint8Array(20)
-    const available = decoded.slice(1)
-    hash.set(available.slice(0, 20))
-    pubkeyHash = hash
+  const decoded = base58Decode(address, false)
+  // S-110: Reject malformed addresses — Base58Check must decode to exactly 25 bytes
+  // [version(1)] [pubkeyHash(20)] [checksum(4)] = 25 bytes
+  if (decoded.length < 25) {
+    throw new Error(`Invalid address: decoded length ${decoded.length} < 25 bytes`)
   }
+  // Normal case: extract 20-byte hash after version byte
+  const pubkeyHash = decoded.slice(1, 21)
   // OP_DUP(76) OP_HASH160(a9) OP_PUSH20(14) <hash> OP_EQUALVERIFY(88) OP_CHECKSIG(ac)
   return '76a914' + bytesToHex(pubkeyHash) + '88ac'
 }

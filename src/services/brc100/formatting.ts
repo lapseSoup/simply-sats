@@ -70,8 +70,9 @@ export async function buildAndBroadcastAction(
 
   // SEC-3: Validate each output's satoshi value is a safe positive integer
   for (const output of actionRequest.outputs) {
-    if (!Number.isFinite(output.satoshis) || !Number.isInteger(output.satoshis) || output.satoshis < 0) {
-      return err(`Invalid output satoshi value: ${output.satoshis} (must be a non-negative integer)`)
+    // S-109: Reject zero-satoshi outputs — unspendable P2PKH outputs waste UTXO space
+    if (!Number.isFinite(output.satoshis) || !Number.isInteger(output.satoshis) || output.satoshis < 1) {
+      return err(`Invalid output satoshi value: ${output.satoshis} (must be a positive integer)`)
     }
   }
 

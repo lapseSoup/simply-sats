@@ -163,7 +163,9 @@ pub fn load_persisted_state(app: &tauri::AppHandle, key: &[u8]) -> RateLimitStat
             // Try new format (with HMAC)
             if let Ok(wrapper) = serde_json::from_value::<PersistedRateLimitState>(value.clone()) {
                 let expected_hmac = compute_state_hmac(&wrapper.state, key);
-                if wrapper.hmac == expected_hmac {
+                // S-108: Use constant-time comparison to prevent timing-based HMAC forgery
+                use subtle::ConstantTimeEq;
+                if wrapper.hmac.as_bytes().ct_eq(expected_hmac.as_bytes()).into() {
                     return wrapper.state;
                 }
                 log::warn!("[Security] Rate limit state HMAC mismatch — resetting to fresh state");

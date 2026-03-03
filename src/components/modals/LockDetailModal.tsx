@@ -3,27 +3,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { useUI } from '../../contexts/UIContext'
 import type { LockedUTXO } from '../../services/wallet'
 import { Modal } from '../shared/Modal'
-
-// Average BSV block time is ~10 minutes (600 seconds)
-const AVERAGE_BLOCK_TIME_SECONDS = 600
-
-function formatTimeRemaining(seconds: number): string {
-  if (seconds <= 0) return 'Ready!'
-
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-
-  if (days > 0) {
-    return `~${days}d ${hours}h`
-  } else if (hours > 0) {
-    return `~${hours}h ${minutes}m`
-  } else if (minutes > 0) {
-    return `~${minutes}m`
-  } else {
-    return '<1m'
-  }
-}
+import { formatTimeRemaining, AVERAGE_BLOCK_TIME_SECONDS } from '../../utils/timeFormatting'
 
 interface LockDetailModalProps {
   lock: LockedUTXO

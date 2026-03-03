@@ -3,6 +3,7 @@ import { Modal } from '../shared/Modal'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { tauriInvoke } from '../../utils/tauri'
+import { walletLogger } from '../../services/logger'
 
 interface SignMessageModalProps {
   onClose: () => void
@@ -41,7 +42,9 @@ export function SignMessageModal({ onClose }: SignMessageModalProps) {
         signatureHex: verifySignature,
       })
       setVerifyResult(valid)
-    } catch {
+    } catch (err) {
+      // Q-71: Log the actual error — don't silently swallow Tauri communication failures
+      walletLogger.warn('Signature verification failed', { error: String(err) })
       setVerifyResult(false)
     }
   }, [wallet, verifyMessage, verifySignature])

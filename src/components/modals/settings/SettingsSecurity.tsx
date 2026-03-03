@@ -238,7 +238,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
                     <div className="settings-row-value">
                       <select
                         value={autoLockMinutes}
-                        onChange={(e) => setAutoLockMinutes(parseInt(e.target.value))}
+                        onChange={(e) => setAutoLockMinutes(parseInt(e.target.value, 10))}
                         onClick={(e) => e.stopPropagation()}
                         aria-label="Auto-lock timeout"
                         style={{

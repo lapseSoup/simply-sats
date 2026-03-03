@@ -53,8 +53,9 @@ bsv-sdk = { git = "https://github.com/Bittoku/bsv-sdk-rust", rev = "4f2f9ce2016d
 ripemd = "0.1.3"  # Only used in adapter byte-comparison tests
 
 [features]
-default = ["devtools"]
-# Enable devtools feature for development
+default = []
+# S-107: DevTools only in debug builds — never ship to production.
+# Use `cargo build --features devtools` or `npm run tauri:dev` (which sets debug profile) for development.
 devtools = ["tauri/devtools"]
 
 [profile.release]

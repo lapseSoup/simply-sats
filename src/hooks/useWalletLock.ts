@@ -10,7 +10,6 @@ import type { Account } from '../services/accounts'
 import { getAllAccounts, getActiveAccount } from '../services/accounts'
 import {
   initAutoLock,
-  stopAutoLock,
   resetInactivityTimer,
   setInactivityLimit,
   minutesToMs
@@ -65,7 +64,12 @@ export function useWalletLock({
   const [isLocked, setIsLocked] = useState(false)
   const [autoLockMinutes, setAutoLockMinutesState] = useState<number>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.AUTO_LOCK_MINUTES)
-    return saved ? parseInt(saved, 10) : 10
+    if (!saved) return SECURITY.DEFAULT_AUTO_LOCK_MINUTES
+    const parsed = parseInt(saved, 10)
+    // B-93: Guard against NaN from corrupted localStorage
+    // S-112: Clamp to valid range [1, MAX_AUTO_LOCK_MINUTES]
+    if (!Number.isFinite(parsed) || parsed < 1) return SECURITY.DEFAULT_AUTO_LOCK_MINUTES
+    return Math.min(parsed, SECURITY.MAX_AUTO_LOCK_MINUTES)
   })
 
   // Session password — ref holds the actual value (invisible to React DevTools),
@@ -252,15 +256,15 @@ export function useWalletLock({
     }
   }, [activeAccount, getKeysForAccount, refreshAccounts, storeKeysInRust, setWalletState, setSessionPassword, preloadDataFromDB])
 
-  // Set auto-lock timeout
+  // Set auto-lock timeout (S-112: validate and clamp to safe bounds)
   const setAutoLockMinutes = useCallback((minutes: number) => {
-    setAutoLockMinutesState(minutes)
-    localStorage.setItem(STORAGE_KEYS.AUTO_LOCK_MINUTES, String(minutes))
-    if (minutes > 0) {
-      setInactivityLimit(minutesToMs(minutes))
-    } else {
-      stopAutoLock()
-    }
+    const clamped = Math.max(1, Math.min(
+      Number.isFinite(minutes) ? minutes : SECURITY.DEFAULT_AUTO_LOCK_MINUTES,
+      SECURITY.MAX_AUTO_LOCK_MINUTES
+    ))
+    setAutoLockMinutesState(clamped)
+    localStorage.setItem(STORAGE_KEYS.AUTO_LOCK_MINUTES, String(clamped))
+    setInactivityLimit(minutesToMs(clamped))
   }, [])
 
   return {

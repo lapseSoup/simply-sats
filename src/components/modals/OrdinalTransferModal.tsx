@@ -178,6 +178,8 @@ export function OrdinalTransferModal({
             placeholder="Enter BSV address"
             disabled={loading}
             autoFocus
+            aria-invalid={!!error}
+            aria-describedby={error ? 'transfer-error' : undefined}
           />
         </div>
 
@@ -188,7 +190,7 @@ export function OrdinalTransferModal({
           <span className="fee-rate">({feeRateKB} sat/KB)</span>
         </div>
 
-        {error && <p className="error-message">{error}</p>}
+        {error && <p id="transfer-error" className="error-message" role="alert">{error}</p>}
 
         {/* Actions */}
         <div className="button-row">

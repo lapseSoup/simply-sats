@@ -267,7 +267,7 @@ export async function reconcileLocks(
   // Persist and label in parallel (both are best-effort)
   // B-81: Guard against undefined accountId — skip labeling rather than defaulting to account 1
   await Promise.all([
-    persistLocks(mergedLocks, accountId || undefined),
+    persistLocks(mergedLocks, accountId ?? undefined),
     accountId ? autoLabelLockTransactions(mergedLocks, accountId) : Promise.resolve()
   ])
 

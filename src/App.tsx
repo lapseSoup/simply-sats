@@ -345,11 +345,16 @@ export function WalletApp() {
       // overwhelming WoC with concurrent requests from multiple accounts.
       const otherAccounts = accountsRef.current.filter(a => a.id !== activeAccountId)
       if (otherAccounts.length > 0 && !discoveryParams) {
-        const sessionPwd = getSessionPassword()
         ;(async () => {
           // Wait for active account sync to settle before syncing other accounts
           await new Promise(resolve => setTimeout(resolve, 10_000))
           if (cancelled) return // B-68: Check after initial delay
+          // B-96: Re-read session password after delay — it may have been cleared by lockWallet()
+          const sessionPwd = getSessionPassword()
+          if (sessionPwd === null) {
+            logger.info('Background sync skipped — wallet was locked during delay')
+            return
+          }
           for (const account of otherAccounts) {
             if (cancelled) break  // B-41: Stop syncing inactive accounts if superseded
             try {
