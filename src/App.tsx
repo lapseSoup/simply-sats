@@ -31,7 +31,8 @@ const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'search']
 // TODO(A-42): This component has 12 useRefs as stale closure workarounds.
 // checkSync (~230 lines) should be extracted to a custom hook (useCheckSync).
 // See docs/reviews/2026-03-02-full-review-v21.md for details.
-function WalletApp() {
+/** Exported for use by the Chrome extension popup (which wraps its own providers) */
+export function WalletApp() {
   // App.tsx is the top-level orchestrator and legitimately needs both wallet state
   // and actions for lifecycle management, routing, and modal control. useWallet()
   // is the intentional exception; all other components use useWalletState/useWalletActions.
