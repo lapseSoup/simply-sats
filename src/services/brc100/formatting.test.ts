@@ -113,7 +113,6 @@ const mockKeys: WalletKeys = {
   ordAddress: '1OrdAddr',
   ordPubKey: '02' + 'bb'.repeat(32),
   ordWif: 'L1test' + 'b'.repeat(46),
-  identityKey: '02' + 'cc'.repeat(32),
   identityPubKey: '02' + 'cc'.repeat(32),
   identityAddress: '1IdAddr',
   identityWif: 'L1test' + 'c'.repeat(46),
