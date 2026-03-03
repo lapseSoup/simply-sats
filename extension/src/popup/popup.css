@@ -1,0 +1,74 @@
+/* Extension popup styles — imports shared base styles + popup-specific overrides */
+@import '../../../src/index.css';
+
+/* Force popup dimensions */
+html, body, #root {
+  width: 400px;
+  height: 600px;
+  min-height: 600px;
+  max-height: 600px;
+  overflow: hidden;
+}
+
+/* Scrollable content area within the fixed popup */
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Make the main content area scrollable */
+.app-content,
+.wallet-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Modals should fill the popup instead of overlaying */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+
+.modal-content {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  border-radius: 0 !important;
+}
+
+/* Extension-specific error page */
+.extension-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-primary, #e4e4e7);
+  background: var(--bg-primary, #09090b);
+}
+
+.extension-error h2 {
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.extension-error p {
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-secondary, #a1a1aa);
+}
+
+.extension-error button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent, #f7931a);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}

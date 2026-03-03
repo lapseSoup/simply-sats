@@ -11,6 +11,7 @@ import {
   ModalProvider
 } from './contexts'
 import { ScreenReaderAnnounceProvider, ErrorBoundary } from './components/shared'
+import { PlatformProvider } from './platform/PlatformProvider'
 
 interface AppProvidersProps {
   children: ReactNode
@@ -32,6 +33,7 @@ interface AppProvidersProps {
  * - WalletProvider: Core wallet, aggregates all contexts for backward compatibility
  *
  * WARNING: Do not reorder NetworkProvider and UIProvider — UIProvider depends on NetworkProvider.
+ * PlatformProvider MUST be outermost — all other providers may use the platform adapter.
  *
  * Each provider is wrapped in its own ErrorBoundary so a crash in one provider
  * doesn't bring down the entire application. Inner providers show targeted
@@ -40,6 +42,7 @@ interface AppProvidersProps {
 export function AppProviders({ children }: AppProvidersProps) {
   return (
     <ErrorBoundary context="AppProviders">
+      <PlatformProvider>
       <ScreenReaderAnnounceProvider>
         <ErrorBoundary context="NetworkProvider">
           <NetworkProvider>
@@ -79,6 +82,7 @@ export function AppProviders({ children }: AppProvidersProps) {
           </NetworkProvider>
         </ErrorBoundary>
       </ScreenReaderAnnounceProvider>
+      </PlatformProvider>
     </ErrorBoundary>
   )
 }
