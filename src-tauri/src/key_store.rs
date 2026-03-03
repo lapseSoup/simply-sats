@@ -458,6 +458,29 @@ pub async fn build_multi_output_p2pkh_tx_from_store(
     )
 }
 
+/// Build a custom-output transaction using the wallet key from the store.
+/// Used by BRC-100 createAction for outputs with arbitrary locking scripts.
+#[tauri::command]
+pub async fn build_custom_output_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    outputs: Vec<transaction::CustomOutput>,
+    selected_utxos: Vec<transaction::UtxoInput>,
+    total_input: u64,
+    fee_rate: f64,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    drop(store);
+    transaction::build_custom_output_tx(
+        (*wif).clone(),
+        outputs,
+        selected_utxos,
+        total_input,
+        fee_rate,
+    )
+}
+
 /// Build an inscription transaction using the wallet key from the store
 #[tauri::command]
 pub async fn build_inscription_tx_from_store(

@@ -771,6 +771,7 @@ pub fn run() {
             key_store::build_lock_tx_from_store,
             key_store::build_unlock_tx_from_store,
             key_store::build_multi_output_p2pkh_tx_from_store,
+            key_store::build_custom_output_tx_from_store,
             key_store::build_inscription_tx_from_store,
             key_store::build_token_transfer_tx_from_store,
             key_store::get_wif_for_operation,
