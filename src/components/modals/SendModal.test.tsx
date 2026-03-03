@@ -58,6 +58,8 @@ vi.mock('../../domain/transaction/fees', () => ({
   calculateTxFee: vi.fn().mockReturnValue(100),
   calculateMaxSend: vi.fn().mockReturnValue({ maxSats: 99900, fee: 100, numInputs: 2 }),
   DEFAULT_FEE_RATE: 0.1,
+  MIN_FEE_RATE: 0.001,
+  MAX_FEE_RATE: 1.0,
   P2PKH_INPUT_SIZE: 148,
   P2PKH_OUTPUT_SIZE: 34,
   TX_OVERHEAD: 10,

@@ -1630,45 +1630,116 @@ textarea.form-input {
   font-weight: 600;
 }
 
-/* Send Advanced Section */
-.send-advanced {
-  margin-top: var(--space-3);
+/* Send Accordion (replaces <details>) */
+.send-accordion {
+  margin-top: var(--space-4);
   border-top: 1px solid var(--border);
   padding-top: var(--space-3);
 }
 
-.send-advanced-toggle {
-  font-size: var(--type-caption-size);
+.send-accordion-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-2) 0;
+  background: none;
+  border: none;
   color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  padding: var(--space-1) 0;
-  list-style: none;
   user-select: none;
+  font-family: var(--font-sans);
 }
 
-.send-advanced-toggle::-webkit-details-marker {
-  display: none;
+.send-accordion-toggle:hover {
+  color: var(--text-primary);
 }
 
-.send-advanced-toggle::before {
-  content: '▶ ';
-  font-size: 10px;
-  margin-right: var(--space-1);
+.send-accordion-chevron {
+  transition: transform 250ms ease;
+  flex-shrink: 0;
 }
 
-.send-advanced[open] .send-advanced-toggle::before {
-  content: '▼ ';
+.send-accordion-chevron.open {
+  transform: rotate(90deg);
 }
 
-.send-advanced-content {
+.send-accordion-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 300ms ease-out;
+}
+
+.send-accordion-content.open {
+  grid-template-rows: 1fr;
+}
+
+.send-accordion-inner {
+  overflow: hidden;
+  padding-top: 0;
+  transition: padding-top 300ms ease-out;
+}
+
+.send-accordion-content.open .send-accordion-inner {
   padding-top: var(--space-3);
 }
 
+/* Fee rate input */
+.send-fee-group {
+  margin-top: var(--space-4);
+}
+
+.input-with-suffix {
+  position: relative;
+}
+
+.input-with-suffix .form-input {
+  padding-right: 72px;
+}
+
+.input-suffix {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.send-fee-input {
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+/* Address input with icons inside */
+.input-with-icons {
+  position: relative;
+}
+
+.input-with-icons .form-input.input-has-icons {
+  padding-right: 56px;
+}
+
+.input-icons-right {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+/* Transaction details (inside accordion) */
 .send-tx-details {
-  background: var(--bg-secondary);
   border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-2);
+  padding: var(--space-2) 0;
+  margin-top: var(--space-2);
 }
 
 .send-tx-row {
@@ -1685,22 +1756,6 @@ textarea.form-input {
 }
 
 /* Send modal extracted styles */
-.send-modal-address-row {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-}
-
-.send-modal-address-wrap {
-  flex: 1;
-}
-
-.send-modal-address-actions {
-  display: flex;
-  gap: 2px;
-  padding-top: 6px;
-}
-
 .send-modal-icon-btn {
   background: none;
   border: none;
@@ -1788,9 +1843,16 @@ textarea.form-input {
   border: none;
   color: var(--text-tertiary);
   cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px;
+  border-radius: 4px;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.send-modal-remove-btn:hover {
+  color: var(--error);
 }
 
 .send-modal-recipient-error {
@@ -3727,10 +3789,13 @@ textarea.form-input {
 .copy-toast {
   position: fixed;
   bottom: var(--space-6);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
   background: rgba(34, 34, 46, 0.85);
   backdrop-filter: blur(12px);
@@ -3771,11 +3836,11 @@ textarea.form-input {
 @keyframes toastIn {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(10px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
 }
 

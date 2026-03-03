@@ -1,13 +1,12 @@
 import { useState, useMemo, useRef, useCallback } from 'react'
-import { AlertTriangle, Crosshair, Settings, ScanLine } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Crosshair, Settings, ScanLine, X } from 'lucide-react'
 import { useWalletState, useWalletActions, useAccounts } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../domain/transaction/fees'
+import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD, MIN_FEE_RATE, MAX_FEE_RATE } from '../../domain/transaction/fees'
 import { useAddressValidation } from '../../hooks/useAddressValidation'
 import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } from '../shared/ConfirmationModal'
-import { FeeEstimation } from '../shared/FeeEstimation'
 import { AddressPicker } from '../shared/AddressPicker'
 import { CoinControlModal } from './CoinControlModal'
 import { QRScannerModal } from './QRScannerModal'
@@ -49,8 +48,13 @@ export function SendModal({ onClose }: SendModalProps) {
   const [showQRScanner, setShowQRScanner] = useState(false)
   const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
 
-  // Fee rate override (per-transaction, does not persist to settings)
-  const [feeRateOverride, setFeeRateOverride] = useState<number | null>(null)
+  // Fee rate input in sats/KB (user-facing unit)
+  const [feeRateDisplay, setFeeRateDisplay] = useState(() =>
+    String(feeRateKB > 0 ? feeRateKB : 50)
+  )
+
+  // Advanced accordion state
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   // Multi-recipient mode
   const [multiRecipient, setMultiRecipient] = useState(false)
@@ -83,8 +87,12 @@ export function SendModal({ onClose }: SendModalProps) {
     return recipients.reduce((sum, r) => sum + parseAmountToSatoshis(r.amount, displayInSats), 0)
   }, [multiRecipient, recipients, displayInSats])
 
-  // Use fee rate override if set, otherwise from settings (convert from sats/KB to sats/byte), fallback to 0.05 sat/byte
-  const feeRate = feeRateOverride ?? (feeRateKB > 0 ? feeRateKB / 1000 : 0.05)
+  // Derive fee rate from display input (sats/KB → sats/byte), clamped to valid range
+  const defaultFeeRateKB = feeRateKB > 0 ? feeRateKB : 50
+  const parsedFeeRateKB = parseFloat(feeRateDisplay)
+  const feeRate = Math.max(MIN_FEE_RATE, Math.min(MAX_FEE_RATE,
+    (parsedFeeRateKB > 0 ? parsedFeeRateKB : defaultFeeRateKB) / 1000
+  ))
   const effectiveFeeRateKB = feeRate * 1000
 
   // Parse amount based on display mode (sats or BSV)
@@ -162,11 +170,6 @@ export function SendModal({ onClose }: SendModalProps) {
     setSendAddress(address)
     validateAddress(address)
   }, [validateAddress])
-
-  // Q-66: Wrap in useCallback to prevent unnecessary re-renders of FeeEstimation
-  const handleFeeRateChange = useCallback((rate: number) => {
-    setFeeRateOverride(rate)
-  }, [])
 
   if (!wallet) return null
 
@@ -323,27 +326,25 @@ export function SendModal({ onClose }: SendModalProps) {
       )}
     <Modal onClose={onClose} title="Send BSV" className="send-modal">
       <div className="modal-content compact">
-          {/* Address field with QR + address book buttons */}
+          {/* Address field with icons inside input */}
           <div className="form-group">
             <label className="form-label" htmlFor="send-address">To</label>
-            <div className="send-modal-address-row">
-              <div className="send-modal-address-wrap">
-                <input
-                  id="send-address"
-                  type="text"
-                  className={`form-input mono ${addressError ? 'input-error' : ''}`}
-                  placeholder="Enter BSV address"
-                  value={sendAddress}
-                  onChange={e => {
-                    setSendAddress(e.target.value)
-                    validateAddress(e.target.value)
-                  }}
-                  autoComplete="off"
-                  aria-invalid={!!addressError}
-                  aria-describedby={addressError ? 'address-error' : undefined}
-                />
-              </div>
-              <div className="send-modal-address-actions">
+            <div className="input-with-icons">
+              <input
+                id="send-address"
+                type="text"
+                className={`form-input mono input-has-icons ${addressError ? 'input-error' : ''}`}
+                placeholder="Enter BSV address"
+                value={sendAddress}
+                onChange={e => {
+                  setSendAddress(e.target.value)
+                  validateAddress(e.target.value)
+                }}
+                autoComplete="off"
+                aria-invalid={!!addressError}
+                aria-describedby={addressError ? 'address-error' : undefined}
+              />
+              <div className="input-icons-right">
                 <AddressPicker
                   onSelect={handleAddressSelect}
                   accountId={activeAccountId ?? 1}
@@ -415,7 +416,7 @@ export function SendModal({ onClose }: SendModalProps) {
                   <span>{sendSats.toLocaleString()} sats <span className="send-modal-tertiary">(${formatUSD(sendSats)})</span></span>
                 </div>
                 <div className="send-summary-row">
-                  <span>Fee <span className="send-modal-fee-hint">({effectiveFeeRateKB} sats/KB{feeRateOverride !== null ? ' · custom' : ''})</span></span>
+                  <span>Fee <span className="send-modal-fee-hint">({effectiveFeeRateKB} sats/KB)</span></span>
                   <span>{fee} sats <span className="send-modal-tertiary">(${formatUSD(fee)})</span></span>
                 </div>
                 <div className="send-summary-row total">
@@ -426,141 +427,166 @@ export function SendModal({ onClose }: SendModalProps) {
             )}
           </div>
 
-          {/* Advanced options */}
-          <details className="send-advanced">
-            <summary className="send-advanced-toggle">Advanced Options</summary>
-            <div className="send-advanced-content">
-              {/* Multiple recipients toggle */}
-              {!multiRecipient ? (
-                <button
-                  type="button"
-                  className="btn btn-ghost send-modal-advanced-btn"
-                  onClick={() => setMultiRecipient(true)}
-                >
-                  + Multiple recipients
-                </button>
-              ) : (
-                <div className="form-group send-modal-no-mt">
-                  <div className="send-modal-recipients-header">
-                    <label className="form-label send-modal-recipients-label">Recipients</label>
-                    <button
-                      type="button"
-                      className="send-modal-link-btn"
-                      onClick={() => { setMultiRecipient(false); setRecipients([{ id: 0, address: '', amount: '' }]); setNextRecipientId(1) }}
-                    >
-                      - Single recipient
-                    </button>
-                  </div>
-                  {recipients.map((r) => (
-                    <div key={r.id} className="send-modal-recipient-row">
-                      <div className="send-modal-recipient-inputs">
-                        <input
-                          type="text"
-                          className={`form-input mono send-modal-recipient-address ${recipientErrors[r.id] ? 'input-error' : ''}`}
-                          placeholder="BSV address"
-                          value={r.address}
-                          onChange={e => {
-                            setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, address: e.target.value } : x))
-                            validateRecipientAddress(r.id, e.target.value)
-                          }}
-                          autoComplete="off"
-                          aria-invalid={!!recipientErrors[r.id]}
-                          aria-describedby={recipientErrors[r.id] ? `recipient-${r.id}-error` : undefined}
-                        />
-                        <input
-                          type="number"
-                          className={`form-input send-modal-recipient-amount ${recipientErrors[r.id] ? 'input-error' : ''}`}
-                          placeholder={displayInSats ? '0' : '0.00000000'}
-                          step={displayInSats ? '1' : '0.00000001'}
-                          min="0"
-                          value={r.amount}
-                          onChange={e => {
-                            setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, amount: e.target.value } : x))
-                          }}
-                          autoComplete="off"
-                          aria-invalid={!!recipientErrors[r.id]}
-                          aria-describedby={recipientErrors[r.id] ? `recipient-${r.id}-error` : undefined}
-                        />
-                        {recipients.length > 1 && (
-                          <button
-                            type="button"
-                            className="send-modal-remove-btn"
-                            onClick={() => {
-                              setRecipients(prev => prev.filter(x => x.id !== r.id))
-                              setRecipientErrors(prev => { const next = { ...prev }; delete next[r.id]; return next })
-                            }}
-                            aria-label="Remove recipient"
-                          >
-                            -
-                          </button>
-                        )}
-                      </div>
-                      {recipientErrors[r.id] && (
-                        <div id={`recipient-${r.id}-error`} className="form-error send-modal-recipient-error" role="alert">{recipientErrors[r.id]}</div>
-                      )}
-                    </div>
-                  ))}
+          {/* Fee rate input — promoted to main form */}
+          <div className="form-group send-fee-group">
+            <label className="form-label" htmlFor="send-fee-rate">Network Fee</label>
+            <div className="input-with-suffix">
+              <input
+                id="send-fee-rate"
+                type="number"
+                className="form-input send-fee-input"
+                value={feeRateDisplay}
+                onChange={e => setFeeRateDisplay(e.target.value)}
+                step="1"
+                min={Math.ceil(MIN_FEE_RATE * 1000)}
+                max={Math.floor(MAX_FEE_RATE * 1000)}
+                autoComplete="off"
+              />
+              <span className="input-suffix">sats/KB</span>
+            </div>
+            {fee > 0 && (
+              <div className="form-hint">
+                {fee} sats (${formatUSD(fee)})
+              </div>
+            )}
+          </div>
+
+          {/* Advanced options accordion */}
+          <div className="send-accordion">
+            <button
+              type="button"
+              className="send-accordion-toggle"
+              onClick={() => setAdvancedOpen(!advancedOpen)}
+              aria-expanded={advancedOpen}
+            >
+              <span>Advanced</span>
+              <ChevronRight size={14} className={`send-accordion-chevron ${advancedOpen ? 'open' : ''}`} />
+            </button>
+            <div className={`send-accordion-content ${advancedOpen ? 'open' : ''}`}>
+              <div className="send-accordion-inner">
+                {/* Multiple recipients */}
+                {!multiRecipient ? (
                   <button
                     type="button"
-                    className="btn btn-ghost send-modal-advanced-btn-sm"
-                    onClick={() => {
-                      setRecipients(r => [...r, { id: nextRecipientId, address: '', amount: '' }])
-                      setNextRecipientId(n => n + 1)
-                    }}
+                    className="btn btn-ghost send-modal-advanced-btn"
+                    onClick={() => setMultiRecipient(true)}
                   >
-                    + Add recipient
+                    + Multiple recipients
                   </button>
-                </div>
-              )}
+                ) : (
+                  <div className="form-group send-modal-no-mt">
+                    <div className="send-modal-recipients-header">
+                      <label className="form-label send-modal-recipients-label">Recipients</label>
+                      <button
+                        type="button"
+                        className="send-modal-link-btn"
+                        onClick={() => { setMultiRecipient(false); setRecipients([{ id: 0, address: '', amount: '' }]); setNextRecipientId(1) }}
+                      >
+                        Single recipient
+                      </button>
+                    </div>
+                    {recipients.map((r) => (
+                      <div key={r.id} className="send-modal-recipient-row">
+                        <div className="send-modal-recipient-inputs">
+                          <input
+                            type="text"
+                            className={`form-input mono send-modal-recipient-address ${recipientErrors[r.id] ? 'input-error' : ''}`}
+                            placeholder="BSV address"
+                            value={r.address}
+                            onChange={e => {
+                              setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, address: e.target.value } : x))
+                              validateRecipientAddress(r.id, e.target.value)
+                            }}
+                            autoComplete="off"
+                            aria-invalid={!!recipientErrors[r.id]}
+                            aria-describedby={recipientErrors[r.id] ? `recipient-${r.id}-error` : undefined}
+                          />
+                          <input
+                            type="number"
+                            className={`form-input send-modal-recipient-amount ${recipientErrors[r.id] ? 'input-error' : ''}`}
+                            placeholder={displayInSats ? '0' : '0.00000000'}
+                            step={displayInSats ? '1' : '0.00000001'}
+                            min="0"
+                            value={r.amount}
+                            onChange={e => {
+                              setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, amount: e.target.value } : x))
+                            }}
+                            autoComplete="off"
+                            aria-invalid={!!recipientErrors[r.id]}
+                            aria-describedby={recipientErrors[r.id] ? `recipient-${r.id}-error` : undefined}
+                          />
+                          {recipients.length > 1 && (
+                            <button
+                              type="button"
+                              className="send-modal-remove-btn"
+                              onClick={() => {
+                                setRecipients(prev => prev.filter(x => x.id !== r.id))
+                                setRecipientErrors(prev => { const next = { ...prev }; delete next[r.id]; return next })
+                              }}
+                              aria-label="Remove recipient"
+                            >
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+                        {recipientErrors[r.id] && (
+                          <div id={`recipient-${r.id}-error`} className="form-error send-modal-recipient-error" role="alert">{recipientErrors[r.id]}</div>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="btn btn-ghost send-modal-advanced-btn-sm"
+                      onClick={() => {
+                        setRecipients(r => [...r, { id: nextRecipientId, address: '', amount: '' }])
+                        setNextRecipientId(n => n + 1)
+                      }}
+                    >
+                      + Add recipient
+                    </button>
+                  </div>
+                )}
 
-              {/* Fee Rate selector */}
-              <FeeEstimation
-                inputCount={sendSats > 0 ? inputCount : 1}
-                outputCount={sendSats > 0 ? outputCount : 2}
-                currentFee={fee}
-                onFeeRateChange={handleFeeRateChange}
-                compact={true}
-              />
-
-              {/* Coin Control */}
-              <button
-                type="button"
-                className="btn btn-ghost send-modal-advanced-btn-mt"
-                onClick={() => setShowCoinControl(true)}
-              >
-                {selectedUtxos
-                  ? <><Crosshair size={14} strokeWidth={1.75} /> Using {selectedUtxos.length} selected UTXOs</>
-                  : <><Settings size={14} strokeWidth={1.75} /> Coin Control</>}
-              </button>
-              {selectedUtxos && (
+                {/* Coin Control */}
                 <button
                   type="button"
-                  onClick={() => setSelectedUtxos(null)}
-                  className="send-modal-clear-btn"
+                  className="btn btn-ghost send-modal-advanced-btn-mt"
+                  onClick={() => setShowCoinControl(true)}
                 >
-                  Clear selection (use automatic)
+                  {selectedUtxos
+                    ? <><Crosshair size={14} strokeWidth={1.75} /> Using {selectedUtxos.length} selected UTXOs</>
+                    : <><Settings size={14} strokeWidth={1.75} /> Coin Control</>}
                 </button>
-              )}
+                {selectedUtxos && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUtxos(null)}
+                    className="send-modal-clear-btn"
+                  >
+                    Clear selection (use automatic)
+                  </button>
+                )}
 
-              {/* Transaction details */}
-              {sendSats > 0 && (
-                <div className="send-tx-details send-modal-tx-details">
-                  <div className="send-tx-row">
-                    <span>Est. Size</span>
-                    <span>{txSize} bytes</span>
+                {/* Transaction details */}
+                {sendSats > 0 && (
+                  <div className="send-tx-details send-modal-tx-details">
+                    <div className="send-tx-row">
+                      <span>Est. Size</span>
+                      <span>{txSize} bytes</span>
+                    </div>
+                    <div className="send-tx-row">
+                      <span>Inputs</span>
+                      <span>{inputCount}</span>
+                    </div>
+                    <div className="send-tx-row">
+                      <span>Outputs</span>
+                      <span>{outputCount}</span>
+                    </div>
                   </div>
-                  <div className="send-tx-row">
-                    <span>Inputs</span>
-                    <span>{inputCount}</span>
-                  </div>
-                  <div className="send-tx-row">
-                    <span>Outputs</span>
-                    <span>{outputCount}</span>
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </details>
+          </div>
 
           {sendError && (
             <div className="warning error compact" role="alert">
