@@ -20,25 +20,26 @@ window.addEventListener('message', (event) => {
   if (event.source !== window) return
   if (event.data?.target !== 'simply-sats-content') return
 
-  // Forward to service worker
+  // Forward to service worker and relay response back to page
   chrome.runtime.sendMessage(
-    { type: 'DAPP_REQUEST', payload: event.data.payload, origin: window.location.origin },
-    (response) => {
-      // Forward response back to page
-      window.postMessage(
-        { target: 'simply-sats-inpage', payload: response },
-        '*'
-      )
-    }
-  )
+    { type: 'DAPP_REQUEST', payload: event.data.payload, origin: window.location.origin }
+  ).then((response: unknown) => {
+    window.postMessage(
+      { target: 'simply-sats-inpage', payload: response },
+      '*'
+    )
+  }).catch(() => {
+    // Service worker unavailable
+  })
 })
 
 // Listen for messages from service worker (e.g., wallet locked notification)
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message: { type: string }, _sender, _sendResponse) => {
   if (message.type === 'WALLET_EVENT') {
     window.postMessage(
       { target: 'simply-sats-inpage', payload: message },
       '*'
     )
   }
+  return undefined
 })

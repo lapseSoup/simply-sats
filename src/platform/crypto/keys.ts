@@ -12,9 +12,9 @@
 
 import { HDKey } from '@scure/bip32'
 import { base58check } from '@scure/base'
-import { sha256 } from '@noble/hashes/sha256'
-import { ripemd160 } from '@noble/hashes/ripemd160'
-import * as secp256k1 from '@noble/secp256k1'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { ripemd160 } from '@noble/hashes/legacy.js'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 import bip39 from 'bip39'
 import type { WalletKeys, KeyPair } from '../../domain/types'
 

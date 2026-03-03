@@ -55,6 +55,7 @@
     "@types/sql.js": "^1.4.9",
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.0.18",
+    "chrome-types": "^0.1.420",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

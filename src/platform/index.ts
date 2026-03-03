@@ -36,7 +36,8 @@ export function detectPlatform(): PlatformType {
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
     return 'tauri'
   }
-  if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (typeof globalThis !== 'undefined' && (globalThis as any).chrome?.runtime?.id) {
     return 'chrome-extension'
   }
   return 'browser'

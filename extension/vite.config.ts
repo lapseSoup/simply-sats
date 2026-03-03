@@ -23,7 +23,9 @@ export default defineConfig({
     alias: {
       // Allow extension to import from the main app's src/
       '@shared': resolve(__dirname, '../src'),
-    }
+    },
+    // Resolve packages from parent node_modules (shared crypto deps)
+    modules: [resolve(__dirname, '../node_modules'), 'node_modules'],
   },
   build: {
     outDir: resolve(__dirname, 'dist'),

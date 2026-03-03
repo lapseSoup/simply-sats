@@ -10,6 +10,21 @@
  * @module platform/chrome
  */
 
+// Minimal chrome types for storage API — avoids depending on chrome-types
+// in the root tsconfig while keeping full type safety.
+declare const chrome: {
+  storage: {
+    local: {
+      set(items: Record<string, unknown>, callback: () => void): void
+      get(keys: string[], callback: (result: Record<string, unknown>) => void): void
+      remove(key: string, callback: () => void): void
+    }
+  }
+  runtime: {
+    lastError?: { message?: string }
+  }
+}
+
 import type {
   PlatformAdapter,
   DerivedKeyResult,

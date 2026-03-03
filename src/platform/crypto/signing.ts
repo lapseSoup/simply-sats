@@ -7,9 +7,82 @@
  * @module platform/crypto/signing
  */
 
-import * as secp256k1 from '@noble/secp256k1'
-import { sha256 } from '@noble/hashes/sha256'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { sha256 } from '@noble/hashes/sha2.js'
 import { wifToPrivateKey, privateKeyToPublicKey, bytesToHex, hexToBytes } from './keys'
+
+// ============================================
+// DER Encoding/Decoding
+// ============================================
+
+/** Encode a 64-byte compact signature (r||s) as DER. */
+function compactToDER(compact: Uint8Array): Uint8Array {
+  const r = compact.slice(0, 32)
+  const s = compact.slice(32, 64)
+
+  function encodeInteger(bytes: Uint8Array): Uint8Array {
+    let start = 0
+    while (start < bytes.length - 1 && bytes[start] === 0) start++
+    const trimmed = bytes.slice(start)
+    if (trimmed[0]! >= 0x80) {
+      const padded = new Uint8Array(trimmed.length + 1)
+      padded[0] = 0x00
+      padded.set(trimmed, 1)
+      return padded
+    }
+    return trimmed
+  }
+
+  const rEnc = encodeInteger(r)
+  const sEnc = encodeInteger(s)
+  const totalLen = 2 + rEnc.length + 2 + sEnc.length
+  const der = new Uint8Array(2 + totalLen)
+  let offset = 0
+  der[offset++] = 0x30
+  der[offset++] = totalLen
+  der[offset++] = 0x02
+  der[offset++] = rEnc.length
+  der.set(rEnc, offset); offset += rEnc.length
+  der[offset++] = 0x02
+  der[offset++] = sEnc.length
+  der.set(sEnc, offset)
+  return der
+}
+
+/** Decode a DER signature to 64-byte compact (r||s). */
+function derToCompact(der: Uint8Array): Uint8Array {
+  if (der[0] !== 0x30) throw new Error('Invalid DER signature')
+  let offset = 2
+  if (der[offset] !== 0x02) throw new Error('Invalid DER: expected integer tag for r')
+  offset++
+  const rLen = der[offset]!
+  offset++
+  const rBytes = der.slice(offset, offset + rLen)
+  offset += rLen
+
+  if (der[offset] !== 0x02) throw new Error('Invalid DER: expected integer tag for s')
+  offset++
+  const sLen = der[offset]!
+  offset++
+  const sBytes = der.slice(offset, offset + sLen)
+
+  // Pad or trim to exactly 32 bytes each
+  function to32Bytes(bytes: Uint8Array): Uint8Array {
+    if (bytes.length === 32) return bytes
+    if (bytes.length === 33 && bytes[0] === 0x00) return bytes.slice(1)
+    if (bytes.length < 32) {
+      const padded = new Uint8Array(32)
+      padded.set(bytes, 32 - bytes.length)
+      return padded
+    }
+    return bytes.slice(bytes.length - 32)
+  }
+
+  const compact = new Uint8Array(64)
+  compact.set(to32Bytes(rBytes), 0)
+  compact.set(to32Bytes(sBytes), 32)
+  return compact
+}
 
 // ============================================
 // Message Signing
@@ -26,8 +99,8 @@ export function signMessage(wif: string, message: string): string {
   const privKey = wifToPrivateKey(wif)
   const messageBytes = new TextEncoder().encode(message)
   const hash = sha256(messageBytes)
-  const sig = secp256k1.sign(hash, privKey, { lowS: true })
-  return bytesToHex(sig.toDERRawBytes())
+  const compact = secp256k1.sign(hash, privKey, { lowS: true })
+  return bytesToHex(compactToDER(compact))
 }
 
 /**
@@ -41,8 +114,8 @@ export function signData(wif: string, dataHex: string): string {
   const privKey = wifToPrivateKey(wif)
   const dataBytes = hexToBytes(dataHex)
   const hash = sha256(dataBytes)
-  const sig = secp256k1.sign(hash, privKey, { lowS: true })
-  return bytesToHex(sig.toDERRawBytes())
+  const compact = secp256k1.sign(hash, privKey, { lowS: true })
+  return bytesToHex(compactToDER(compact))
 }
 
 // ============================================
@@ -67,8 +140,8 @@ export function verifyMessageSignature(
   try {
     const messageBytes = new TextEncoder().encode(message)
     const hash = sha256(messageBytes)
-    const sig = secp256k1.Signature.fromDER(hexToBytes(signatureHex))
-    return secp256k1.verify(sig, hash, hexToBytes(publicKeyHex))
+    const compact = derToCompact(hexToBytes(signatureHex))
+    return secp256k1.verify(compact, hash, hexToBytes(publicKeyHex))
   } catch {
     return false
   }
@@ -92,8 +165,8 @@ export function verifyDataSignature(
   try {
     const dataBytes = hexToBytes(dataHex)
     const hash = sha256(dataBytes)
-    const sig = secp256k1.Signature.fromDER(hexToBytes(signatureHex))
-    return secp256k1.verify(sig, hash, hexToBytes(publicKeyHex))
+    const compact = derToCompact(hexToBytes(signatureHex))
+    return secp256k1.verify(compact, hash, hexToBytes(publicKeyHex))
   } catch {
     return false
   }
@@ -124,7 +197,7 @@ export async function eciesEncrypt(
   // Import key for AES-256-GCM
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
-    sharedKey,
+    sharedKey.buffer as ArrayBuffer,
     { name: 'AES-GCM' },
     false,
     ['encrypt']
@@ -186,7 +259,7 @@ export async function eciesDecrypt(
   // Import key for AES-256-GCM
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
-    sharedKey,
+    sharedKey.buffer as ArrayBuffer,
     { name: 'AES-GCM' },
     false,
     ['decrypt']

@@ -24,7 +24,7 @@ type MessageHandler = (
   message: ExtensionMessage,
   sender: chrome.runtime.MessageSender,
   sendResponse: (response: unknown) => void
-) => boolean | void
+) => boolean | undefined
 
 interface ExtensionMessage {
   type: string

@@ -9,9 +9,9 @@
  * @module platform/crypto/brc42
  */
 
-import * as secp256k1 from '@noble/secp256k1'
-import { sha256 } from '@noble/hashes/sha256'
-import { hmac } from '@noble/hashes/hmac'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { hmac } from '@noble/hashes/hmac.js'
 import {
   wifToPrivateKey,
   privateKeyToWif,

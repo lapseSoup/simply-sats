@@ -9,10 +9,9 @@
  * @module platform/crypto/transaction
  */
 
-import * as secp256k1 from '@noble/secp256k1'
-import { sha256 } from '@noble/hashes/sha256'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
+import { sha256 as sha256Hash } from '@noble/hashes/sha2.js'
 import { base58check } from '@scure/base'
-import { sha256 as sha256Hash } from '@noble/hashes/sha256'
 import {
   wifToPrivateKey,
   privateKeyToPublicKey,
@@ -214,11 +213,51 @@ function computeSighash(
 // ============================================
 
 /**
+ * Encode a 64-byte compact signature (r||s) as DER format.
+ *
+ * DER: 0x30 [total-len] 0x02 [r-len] [r-bytes] 0x02 [s-len] [s-bytes]
+ * Integers are signed, so prepend 0x00 if high bit is set.
+ */
+function compactToDER(compact: Uint8Array): Uint8Array {
+  const r = compact.slice(0, 32)
+  const s = compact.slice(32, 64)
+
+  // Strip leading zeros but ensure positive (prepend 0x00 if high bit set)
+  function encodeInteger(bytes: Uint8Array): Uint8Array {
+    let start = 0
+    while (start < bytes.length - 1 && bytes[start] === 0) start++
+    const trimmed = bytes.slice(start)
+    if (trimmed[0]! >= 0x80) {
+      const padded = new Uint8Array(trimmed.length + 1)
+      padded[0] = 0x00
+      padded.set(trimmed, 1)
+      return padded
+    }
+    return trimmed
+  }
+
+  const rEnc = encodeInteger(r)
+  const sEnc = encodeInteger(s)
+  const totalLen = 2 + rEnc.length + 2 + sEnc.length
+  const der = new Uint8Array(2 + totalLen)
+  let offset = 0
+  der[offset++] = 0x30 // SEQUENCE tag
+  der[offset++] = totalLen
+  der[offset++] = 0x02 // INTEGER tag
+  der[offset++] = rEnc.length
+  der.set(rEnc, offset); offset += rEnc.length
+  der[offset++] = 0x02 // INTEGER tag
+  der[offset++] = sEnc.length
+  der.set(sEnc, offset)
+  return der
+}
+
+/**
  * Sign a sighash with a private key, returning DER-encoded signature.
  */
 function signHash(privKey: Uint8Array, hash: Uint8Array): Uint8Array {
-  const sig = secp256k1.sign(hash, privKey, { lowS: true })
-  return sig.toDERRawBytes()
+  const compact = secp256k1.sign(hash, privKey, { lowS: true })
+  return compactToDER(compact)
 }
 
 // ============================================
