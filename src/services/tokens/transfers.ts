@@ -194,8 +194,8 @@ export async function sendToken(
   try {
     // Fetch token UTXOs from both addresses
     const [walletTokenUtxos, ordTokenUtxos] = await Promise.all([
-      getTokenUtxosForSend(walletAddress, protocol === 'bsv21' ? ticker : ticker, protocol),
-      getTokenUtxosForSend(ordAddress, protocol === 'bsv21' ? ticker : ticker, protocol)
+      getTokenUtxosForSend(walletAddress, ticker, protocol),
+      getTokenUtxosForSend(ordAddress, ticker, protocol)
     ])
 
     // Combine and sort by amount (largest first for efficient selection)

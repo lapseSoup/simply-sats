@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
-import type { Ordinal, LockedUTXO } from '../services/wallet'
+import type { Ordinal, LockedUTXO } from '../domain/types'
 
 // ---- Types (moved from AppModals.tsx) ----
 
@@ -22,9 +22,12 @@ export type AccountModalMode = 'create' | 'import' | 'manage'
 // ---- Context shape ----
 
 interface ModalContextType {
-  // State
+  // --- UI State (modal visibility) ---
   modal: Modal
   accountModalMode: AccountModalMode
+
+  // --- Domain State (selected entities & workflow data) ---
+  // TODO(A-44): Extract into dedicated contexts in future refactor
   ordinalToTransfer: Ordinal | null
   ordinalToList: Ordinal | null
   selectedOrdinal: Ordinal | null
@@ -32,7 +35,7 @@ interface ModalContextType {
   unlockConfirm: LockedUTXO | 'all' | null
   unlocking: string | null
 
-  // Actions
+  // --- Actions ---
   openModal: (modal: Modal) => void
   closeModal: () => void
   openAccountModal: (mode: AccountModalMode) => void
@@ -65,8 +68,15 @@ interface ModalProviderProps {
 }
 
 export function ModalProvider({ children }: ModalProviderProps) {
+  // --- UI State (modal visibility & mode) ---
   const [modal, setModal] = useState<Modal>(null)
   const [accountModalMode, setAccountModalMode] = useState<AccountModalMode>('manage')
+
+  // --- Domain State (selected entities & workflow state) ---
+  // TODO(A-44): These hold domain data (ordinals, mnemonic, lock state) that
+  // should eventually be extracted into dedicated contexts (e.g. OrdinalSelectionContext,
+  // WalletSetupContext) so ModalContext only tracks which modal is open. Keeping them
+  // here for now to avoid a large cross-cutting refactor.
   const [ordinalToTransfer, setOrdinalToTransfer] = useState<Ordinal | null>(null)
   const [ordinalToList, setOrdinalToList] = useState<Ordinal | null>(null)
   const [selectedOrdinal, setSelectedOrdinal] = useState<Ordinal | null>(null)

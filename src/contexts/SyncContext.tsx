@@ -11,7 +11,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode, type MutableRefObject } from 'react'
-import type { WalletKeys, UTXO, Ordinal, LockedUTXO } from '../services/wallet'
+import type { WalletKeys, UTXO, Ordinal, LockedUTXO } from '../domain/types'
 import { useNetwork } from './NetworkContext'
 
 // Extracted hooks

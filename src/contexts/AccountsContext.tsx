@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
-import type { WalletKeys } from '../services/wallet'
+import type { WalletKeys } from '../domain/types'
 import { restoreWallet } from '../services/wallet'
 import { deriveWalletKeysForAccount } from '../domain/wallet'
 import {

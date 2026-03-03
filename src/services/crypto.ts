@@ -261,6 +261,8 @@ export function isLegacyEncrypted(data: string): boolean {
   try {
     // Try to decode as base64
     const decoded = atob(data)
+    // S-90: Fast early-exit before expensive JSON.parse on attacker-controlled data
+    if (!decoded.startsWith('{"mnemonic"')) return false
     // Try to parse as JSON
     const parsed = JSON.parse(decoded)
     // Check if it has wallet key properties

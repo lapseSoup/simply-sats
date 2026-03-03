@@ -8,7 +8,7 @@
 
 import { brc100Logger as _brc100Logger } from '../logger'
 import type { WalletKeys, LockedUTXO } from '../wallet'
-import { lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV, getWifForOperation } from '../wallet'
+import { lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV } from '../wallet'
 import {
   getSpendableUTXOs,
   getLocks as getLocksFromDB,
@@ -36,11 +36,13 @@ import { toWalletUtxo } from '../../domain/types'
 import { resolvePublicKey } from './outputs'
 import { createLockTransaction } from './locks'
 import { buildAndBroadcastAction } from './formatting'
-import { deriveTaggedKey, type DerivationTag } from '../keyDerivation'
+import { deriveTaggedKeyFromStore, type DerivationTag } from '../keyDerivation'
 import { isValidPublicKey } from '../../domain/wallet/validation'
 
 // A3: In-flight unlock operations — prevents double-spend from concurrent calls
 const inflightUnlocks = new Map<string, Promise<void>>()
+// S-92: Maximum concurrent in-flight unlocks to prevent unbounded memory growth
+const MAX_INFLIGHT_UNLOCKS = 100
 
 // S-63: Maximum payload sizes for BRC-100 byte array parameters
 const MAX_SIGNATURE_DATA_SIZE = 10 * 1024       // 10KB for signature data
@@ -295,6 +297,12 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
         break
       }
 
+      // S-92: Prevent unbounded memory growth from inflight unlock map
+      if (inflightUnlocks.size >= MAX_INFLIGHT_UNLOCKS) {
+        setError(response, RPC_INTERNAL_ERROR, 'Too many concurrent unlock operations — please wait and retry')
+        break
+      }
+
       const unlockOperation = (async () => {
         // S-29: Scope to active account to prevent cross-account fund leaks
         const activeAccount = await getActiveAccount()
@@ -498,7 +506,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       const keyIds = ['default']
 
       try {
-        const identityWif = await getWifForOperation('identity', 'getTaggedKeys', keys)
+        // S-84: Use deriveTaggedKeyFromStore so identity WIF never enters JS heap
         const derivedKeys: Array<{
           keyId: string
           publicKey: string
@@ -513,7 +521,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
             domain: request.origin
           }
 
-          const derived = await deriveTaggedKey(identityWif, tag)
+          const derived = await deriveTaggedKeyFromStore('identity', tag)
           derivedKeys.push({
             keyId,
             publicKey: derived.publicKey,

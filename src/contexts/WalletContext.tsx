@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
-import type { WalletKeys, LockedUTXO } from '../services/wallet'
+import type { WalletKeys, LockedUTXO } from '../domain/types'
 import {
   getFeeRatePerKB,
   setFeeRateFromKB

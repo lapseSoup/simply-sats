@@ -128,11 +128,11 @@ describe('updateAddressLabel', () => {
   it('updates the label for the given address', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    const result = await updateAddressLabel('1Addr1', 'New Label')
+    const result = await updateAddressLabel('1Addr1', 'New Label', 1)
     expect(result.ok).toBe(true)
     expect(mockDb.execute).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE address_book SET label'),
-      ['New Label', '1Addr1']
+      ['New Label', '1Addr1', 1]
     )
   })
 })
@@ -143,11 +143,11 @@ describe('deleteAddress', () => {
   it('deletes the entry for the given address', async () => {
     mockDb.execute.mockResolvedValueOnce({ lastInsertId: 0, rowsAffected: 1 })
 
-    const result = await deleteAddress('1Addr1')
+    const result = await deleteAddress('1Addr1', 1)
     expect(result.ok).toBe(true)
     expect(mockDb.execute).toHaveBeenCalledWith(
-      'DELETE FROM address_book WHERE address = $1',
-      ['1Addr1']
+      'DELETE FROM address_book WHERE address = $1 AND account_id = $2',
+      ['1Addr1', 1]
     )
   })
 })

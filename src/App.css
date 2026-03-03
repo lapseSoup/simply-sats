@@ -1684,6 +1684,138 @@ textarea.form-input {
   color: var(--text-secondary);
 }
 
+/* Send modal extracted styles */
+.send-modal-address-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.send-modal-address-wrap {
+  flex: 1;
+}
+
+.send-modal-address-actions {
+  display: flex;
+  gap: 2px;
+  padding-top: 6px;
+}
+
+.send-modal-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  border-radius: 4px;
+}
+
+.send-modal-amount-hint {
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
+.send-modal-tertiary {
+  color: var(--text-tertiary);
+}
+
+.send-modal-fee-hint {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.send-modal-advanced-btn {
+  width: 100%;
+  font-size: 12px;
+  padding: 8px 12px;
+}
+
+.send-modal-advanced-btn-sm {
+  width: 100%;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.send-modal-advanced-btn-mt {
+  width: 100%;
+  font-size: 12px;
+  padding: 8px 12px;
+  margin-top: 8px;
+}
+
+.send-modal-recipients-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.send-modal-recipients-label {
+  margin: 0;
+}
+
+.send-modal-link-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.send-modal-recipient-row {
+  margin-bottom: 6px;
+}
+
+.send-modal-recipient-inputs {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.send-modal-recipient-address {
+  flex: 2;
+}
+
+.send-modal-recipient-amount {
+  flex: 1;
+}
+
+.send-modal-remove-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding-top: 8px;
+}
+
+.send-modal-recipient-error {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.send-modal-clear-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.send-modal-tx-details {
+  margin-top: 8px;
+}
+
+.send-modal-no-mt {
+  margin-top: 0;
+}
+
 /* Buttons */
 .btn {
   width: 100%;

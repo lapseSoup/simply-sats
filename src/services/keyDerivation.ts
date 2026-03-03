@@ -116,6 +116,7 @@ export function loadKnownSenders(): void {
       const senders = JSON.parse(saved)
       if (!Array.isArray(senders)) return
       for (const s of senders) {
+        if (KNOWN_SENDER_PUBKEYS.length >= MAX_KNOWN_SENDERS) break
         if (typeof s === 'string' && /^(02|03)[0-9a-fA-F]{64}$/.test(s)) {
           if (!KNOWN_SENDER_PUBKEYS.includes(s)) {
             KNOWN_SENDER_PUBKEYS.push(s)

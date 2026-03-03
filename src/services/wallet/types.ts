@@ -1,29 +1,17 @@
 /**
  * Wallet type definitions
  * Extracted from wallet.ts for modularity
+ *
+ * Core types (WalletKeys, UTXO, ExtendedUTXO, Ordinal, LockedUTXO) are
+ * canonical in domain/types.ts and re-exported here for backward compatibility.
  */
+
+// Re-export canonical domain types
+export type { WalletKeys, UTXO, ExtendedUTXO, Ordinal, LockedUTXO } from '../../domain/types'
+import type { WalletKeys } from '../../domain/types'
 
 // Wallet type - simplified to just BRC-100/Yours standard
 export type WalletType = 'yours'
-
-export interface WalletKeys {
-  mnemonic: string
-  walletType: WalletType
-  /** @deprecated Use getWifForOperation() — WIF should not live in JS state in production. */
-  walletWif: string
-  walletAddress: string
-  walletPubKey: string
-  /** @deprecated Use getWifForOperation() — WIF should not live in JS state in production. */
-  ordWif: string
-  ordAddress: string
-  ordPubKey: string
-  /** @deprecated Use getWifForOperation() — WIF should not live in JS state in production. */
-  identityWif: string
-  identityAddress: string
-  identityPubKey: string
-  /** BIP-44 account index used for key derivation. Added to eliminate WIF transit over IPC. */
-  accountIndex?: number
-}
 
 /**
  * Unprotected wallet data — plaintext keys stored in OS keychain.
@@ -97,19 +85,6 @@ export interface PublicWalletKeys {
   ordPubKey: string
   identityAddress: string
   identityPubKey: string
-}
-
-export interface UTXO {
-  txid: string
-  vout: number
-  satoshis: number
-  script: string
-}
-
-// Extended UTXO type that includes WIF for multi-key spending
-export interface ExtendedUTXO extends UTXO {
-  wif: string
-  address: string
 }
 
 // WhatsOnChain API response types
@@ -190,17 +165,6 @@ export interface OneSatWalletBackup {
   mnemonic?: string   // Optional mnemonic
 }
 
-// 1Sat Ordinals types
-export interface Ordinal {
-  origin: string
-  txid: string
-  vout: number
-  satoshis: number
-  contentType?: string
-  content?: string
-  blockHeight?: number
-}
-
 // Ordinal details from GorillaPool API
 export interface OrdinalDetails {
   origin?: string
@@ -230,16 +194,3 @@ export interface OrdinalDetails {
   spend?: string // Spending txid if this ordinal has been spent
 }
 
-// Locked UTXO type
-export interface LockedUTXO {
-  txid: string
-  vout: number
-  satoshis: number
-  lockingScript: string
-  unlockBlock: number
-  publicKeyHex: string
-  createdAt: number
-  lockBlock?: number
-  /** Block height where tx was confirmed (from API, not stored in DB) */
-  confirmationBlock?: number
-}

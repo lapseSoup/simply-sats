@@ -11,6 +11,7 @@
  */
 
 import * as bip39 from 'bip39'
+import { base58Decode } from '../shared/base58'
 
 /**
  * Result of mnemonic validation.
@@ -92,8 +93,6 @@ export function validateMnemonic(mnemonic: string): MnemonicValidationResult {
   }
 }
 
-// Base58 alphabet — excludes visually ambiguous chars (0, O, I, l)
-const BASE58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 const BASE58_REGEX = /^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$/
 
 /**
@@ -144,31 +143,6 @@ export function isValidBSVAddress(address: string): boolean {
   } catch {
     return false
   }
-}
-
-/** Decode a Base58 string to bytes */
-function base58Decode(str: string): Uint8Array {
-  const bytes: number[] = [0]
-  for (const char of str) {
-    const value = BASE58_CHARS.indexOf(char)
-    if (value < 0) throw new Error('Invalid Base58 character')
-    let carry = value
-    for (let j = 0; j < bytes.length; j++) {
-      carry += bytes[j]! * 58
-      bytes[j] = carry & 0xff
-      carry >>= 8
-    }
-    while (carry > 0) {
-      bytes.push(carry & 0xff)
-      carry >>= 8
-    }
-  }
-  // Leading '1's = leading zero bytes
-  for (const char of str) {
-    if (char !== '1') break
-    bytes.push(0)
-  }
-  return new Uint8Array(bytes.reverse())
 }
 
 /** Double SHA-256 using pure-JS (no dependencies) */
@@ -298,5 +272,5 @@ export function isValidTxid(txid: string): boolean {
  * ```
  */
 export function isValidSatoshiAmount(amount: number): boolean {
-  return Number.isInteger(amount) && amount > 0 && amount <= 21_000_000_00_000_000
+  return Number.isInteger(amount) && amount > 0 && amount <= 2_100_000_000_000_000
 }

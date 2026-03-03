@@ -137,9 +137,11 @@ export async function handleBRC100Request(
 
       // S-30: createAction, lockBSV, unlockBSV always require user approval
       // (even with autoApprove flag) because they move funds
+      // S-86: getTaggedKeys also requires explicit approval — derives identity-scoped keys
       case 'createAction':
       case 'lockBSV':
-      case 'unlockBSV': {
+      case 'unlockBSV':
+      case 'getTaggedKeys': {
         return queueApprovalRequest(request, pendingRequests, requestManager)
       }
 

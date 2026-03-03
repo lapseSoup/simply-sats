@@ -11,7 +11,7 @@
 import { broadcastTransaction as infraBroadcast } from '../wallet/transactions'
 import { brc100Logger } from '../logger'
 import type { WalletKeys } from '../wallet'
-import { getUTXOs, calculateTxFee, getWifForOperation } from '../wallet'
+import { getUTXOs, calculateTxFee } from '../wallet'
 import {
   addUTXO,
   addLock,
@@ -30,6 +30,8 @@ import { type Result, ok, err } from '../../domain/types'
 import { selectCoins } from '../../domain/transaction/coinSelection'
 import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
+import { acquireSyncLock } from '../cancellation'
+import { getActiveAccount } from '../accounts'
 
 // Lock management - now uses database
 export async function getLocks(): Promise<LockedOutput[]> {
@@ -80,11 +82,14 @@ export async function createLockTransaction(
     return err('Lock transaction building requires Tauri runtime')
   }
 
+  // S-87: Acquire sync lock to prevent concurrent sync from modifying UTXOs during lock creation
+  const activeAccount = await getActiveAccount()
+  const accountId = activeAccount?.id ?? 1
+  const releaseLock = await acquireSyncLock(accountId)
+
   try {
-    const walletWif = await getWifForOperation('wallet', 'createLockTransaction', keys)
-    // Derive address from WIF via Tauri
-    const keyInfo = await tauriInvoke<{ address: string }>('keys_from_wif', { wif: walletWif })
-    const fromAddress = keyInfo.address
+    // S-85: Use keys.walletAddress directly instead of pulling WIF into JS heap
+    const fromAddress = keys.walletAddress
 
     // Get UTXOs
     const utxos = await getUTXOs(fromAddress)
@@ -118,9 +123,8 @@ export async function createLockTransaction(
       return err(`Insufficient funds (need ${fee} sats for fee)`)
     }
 
-    // Build and sign the transaction via Tauri
-    const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_p2pkh_tx', {
-      wif: walletWif,
+    // S-85: Build and sign the transaction via Tauri using key store (WIF stays in Rust)
+    const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_p2pkh_tx_from_store', {
       toAddress: fromAddress,
       satoshis,
       selectedUtxos: inputsToUse.map(u => ({
@@ -178,5 +182,7 @@ export async function createLockTransaction(
     return ok({ txid, unlockBlock })
   } catch (e) {
     return err(e instanceof Error ? e.message : String(e))
+  } finally {
+    releaseLock()
   }
 }

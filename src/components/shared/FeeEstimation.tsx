@@ -9,7 +9,7 @@
  * @module components/shared/FeeEstimation
  */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import {
   DEFAULT_FEE_RATE,
@@ -74,6 +74,7 @@ export function FeeEstimation({
   const [selectedTier, setSelectedTier] = useState<FeeTier>('Standard')
   const [customRate, setCustomRate] = useState(DEFAULT_FEE_RATE)
   const [showCustom, setShowCustom] = useState(false)
+  const isFirstRender = useRef(true)
 
   // Calculate transaction size
   const txSize = useMemo(() => {
@@ -87,8 +88,12 @@ export function FeeEstimation({
     return FEE_TIERS.find(t => t.label === selectedTier)?.rate || DEFAULT_FEE_RATE
   }, [selectedTier, showCustom, customRate])
 
-  // Notify parent of rate changes
+  // Notify parent of rate changes (skip initial mount to avoid re-render during first render)
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
     onFeeRateChange?.(currentRate)
   }, [currentRate, onFeeRateChange])
 

@@ -12,6 +12,7 @@
 import type { UTXO, ExtendedUTXO } from '../types'
 import { calculateTxFee } from './fees'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
+import { base58Decode } from '../shared/base58'
 
 // ============================================
 // Types
@@ -460,38 +461,6 @@ export async function buildMultiOutputP2PKHTx(
   }
 }
 
-// Base58 alphabet for address decoding
-const BASE58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-
-/**
- * Decode a Base58 string to bytes.
- * Used internally by p2pkhLockingScriptHex to extract the pubkey hash.
- * Non-Base58 characters are silently skipped to maintain backwards
- * compatibility with the SDK's lenient behaviour.
- */
-function base58Decode(str: string): Uint8Array {
-  const bytes: number[] = [0]
-  for (const char of str) {
-    const value = BASE58_CHARS.indexOf(char)
-    if (value < 0) continue // skip invalid chars (spaces, etc.)
-    let carry = value
-    for (let j = 0; j < bytes.length; j++) {
-      carry += bytes[j]! * 58
-      bytes[j] = carry & 0xff
-      carry >>= 8
-    }
-    while (carry > 0) {
-      bytes.push(carry & 0xff)
-      carry >>= 8
-    }
-  }
-  // Leading '1's = leading zero bytes
-  for (const char of str) {
-    if (char !== '1') break
-    bytes.push(0)
-  }
-  return new Uint8Array(bytes.reverse())
-}
 
 /**
  * Convert a byte array to hex string.
@@ -515,7 +484,7 @@ function bytesToHex(bytes: Uint8Array): string {
  * @returns Locking script as hex string (50 hex chars / 25 bytes)
  */
 export function p2pkhLockingScriptHex(address: string): string {
-  const decoded = base58Decode(address)
+  const decoded = base58Decode(address, false) // lenient: skip invalid chars for SDK compatibility
   // Base58Check: [version(1)] [pubkeyHash(20)] [checksum(4)] = 25 bytes
   // For short/invalid addresses, zero-pad the pubkey hash to 20 bytes
   // to maintain backwards compatibility with the SDK's lenient behaviour.

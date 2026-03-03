@@ -28,6 +28,9 @@ import { switchJustCompleted } from './hooks/useAccountSwitching'
 // Tab order for keyboard navigation
 const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'search']
 
+// TODO(A-42): This component has 12 useRefs as stale closure workarounds.
+// checkSync (~230 lines) should be extracted to a custom hook (useCheckSync).
+// See docs/reviews/2026-03-02-full-review-v21.md for details.
 function WalletApp() {
   // App.tsx is the top-level orchestrator and legitimately needs both wallet state
   // and actions for lifecycle management, routing, and modal control. useWallet()
@@ -124,39 +127,48 @@ function WalletApp() {
   // Putting any of these in the dep array caused an infinite sync loop:
   //   wallet changes → new performSync → new actionsValue → new consumePendingDiscovery
   //   → effect re-fires → sync starts again → repeat.
+  // Ref mirror: avoids stale closure in checkSync — fetchDataFromDB rebuilds on wallet/account changes
   const fetchDataFromDBRef = useRef(fetchDataFromDB)
   useEffect(() => { fetchDataFromDBRef.current = fetchDataFromDB }, [fetchDataFromDB])
+  // Ref mirror: avoids stale closure in checkSync — fetchData rebuilds on wallet/account changes
   const fetchDataRef = useRef(fetchData)
   useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
+  // Ref mirror: avoids stale closure in checkSync — performSync rebuilds on wallet/account changes
   const performSyncRef = useRef(performSync)
   useEffect(() => { performSyncRef.current = performSync }, [performSync])
+  // Ref mirror: avoids stale closure in checkSync — refreshTokens rebuilds on wallet changes
   const refreshTokensRef = useRef(refreshTokens)
   useEffect(() => { refreshTokensRef.current = refreshTokens }, [refreshTokens])
+  // Ref mirror: avoids stale closure in checkSync — consumePendingDiscovery rebuilds via actionsValue
   const consumePendingDiscoveryRef = useRef(consumePendingDiscovery)
   useEffect(() => { consumePendingDiscoveryRef.current = consumePendingDiscovery }, [consumePendingDiscovery])
+  // Ref mirror: avoids stale closure in checkSync — peekPendingDiscovery rebuilds via actionsValue
   const peekPendingDiscoveryRef = useRef(peekPendingDiscovery)
   useEffect(() => { peekPendingDiscoveryRef.current = peekPendingDiscovery }, [peekPendingDiscovery])
+  // Ref mirror: avoids stale closure in checkSync — clearPendingDiscovery rebuilds via actionsValue
   const clearPendingDiscoveryRef = useRef(clearPendingDiscovery)
   useEffect(() => { clearPendingDiscoveryRef.current = clearPendingDiscovery }, [clearPendingDiscovery])
+  // Ref mirror: avoids stale closure in checkSync — refreshAccounts rebuilds via actionsValue
   const refreshAccountsRef = useRef(refreshAccounts)
   useEffect(() => { refreshAccountsRef.current = refreshAccounts }, [refreshAccounts])
-  // setSyncPhase arrives via NetworkContext's useMemo, which recreates whenever
+  // Ref mirror: setSyncPhase arrives via NetworkContext's useMemo, which recreates whenever
   // syncPhase/networkInfo/syncing/usdPrice change. Keeping it in the effect deps
   // caused an infinite loop: setSyncPhase('syncing') → syncPhase changes →
   // useMemo recreates → new setSyncPhase reference → effect re-fires → repeat.
   const setSyncPhaseRef = useRef(setSyncPhase)
   useEffect(() => { setSyncPhaseRef.current = setSyncPhase }, [setSyncPhase])
-  // showToast arrives via UIContext's useMemo, which includes `toasts` in its deps.
+  // Ref mirror: showToast arrives via UIContext's useMemo, which includes `toasts` in its deps.
   // Every time a toast is displayed, toasts changes → useMemo recreates → new
   // showToast reference → effect re-fires → sync starts again → repeat.
   // Calling showToast('Wallet ready ✓') inside the effect was the trigger.
   const showToastRef = useRef(showToast)
   useEffect(() => { showToastRef.current = showToast }, [showToast])
-  // walletRef lets checkSync always read the latest wallet without depending on it.
+  // Ref mirror: walletRef lets checkSync always read the latest wallet without depending on it.
   // This prevents the effect from firing when setWallet() is called during a switch
   // (which would cause a mismatched newWallet+oldAccountId pair).
   const walletRef = useRef(wallet)
   useEffect(() => { walletRef.current = wallet }, [wallet])
+  // Ref mirror: avoids stale closure in checkSync — accounts array rebuilds on every account change
   const accountsRef = useRef(accounts)
   useEffect(() => { accountsRef.current = accounts }, [accounts])
 
@@ -414,6 +426,7 @@ function WalletApp() {
             const newAccounts = allAccounts.filter(a => a.id !== capturedAccountId)
             ;(async () => {
               for (const account of newAccounts) {
+                if (cancelled) break  // B-82: Stop syncing discovered accounts if superseded
                 try {
                   const keys = await getAccountKeys(account, sessionPwd)
                   if (!keys) continue

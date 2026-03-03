@@ -106,15 +106,15 @@ pub async fn store_keys(
     mnemonic: String,
     account_index: Option<u32>,
 ) -> Result<PublicWalletKeys, String> {
+    // Immediately wrap the IPC-received mnemonic in Zeroizing so it gets cleared on drop
+    let mnemonic = Zeroizing::new(mnemonic);
+
     // Derive full keys using existing key_derivation module
-    // Use Zeroizing wrapper for the mnemonic clone to ensure it's cleared after derivation
-    let mnemonic_for_derive = Zeroizing::new(mnemonic.clone());
     let full_keys = if let Some(idx) = account_index {
-        key_derivation::derive_wallet_keys_for_account((*mnemonic_for_derive).clone(), idx)?
+        key_derivation::derive_wallet_keys_for_account((*mnemonic).clone(), idx)?
     } else {
-        key_derivation::derive_wallet_keys((*mnemonic_for_derive).clone())?
+        key_derivation::derive_wallet_keys((*mnemonic).clone())?
     };
-    drop(mnemonic_for_derive);
 
     let pub_keys = PublicWalletKeys {
         wallet_type: full_keys.wallet_type.clone(),
@@ -133,7 +133,7 @@ pub async fn store_keys(
     store.wallet_wif = Some(full_keys.wallet_wif);
     store.ord_wif = Some(full_keys.ord_wif);
     store.identity_wif = Some(full_keys.identity_wif);
-    store.mnemonic = Some(mnemonic);
+    store.mnemonic = Some((*mnemonic).clone());
     store.pub_keys = Some(pub_keys.clone());
 
     log::info!("Keys stored in Rust key store (account_index: {:?})", account_index);

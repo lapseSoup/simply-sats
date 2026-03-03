@@ -173,6 +173,7 @@ function AddressRow({
   return (
     <div
       role="option"
+      aria-selected={false}
       tabIndex={0}
       className="address-picker-row"
       onClick={handleClick}

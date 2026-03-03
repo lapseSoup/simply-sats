@@ -126,15 +126,15 @@ export async function saveAddress(address: string, label: string, accountId: num
 }
 
 /**
- * Update an address label
+ * Update an address label (scoped to account)
  */
-export async function updateAddressLabel(address: string, label: string): Promise<Result<void, DbError>> {
+export async function updateAddressLabel(address: string, label: string, accountId: number): Promise<Result<void, DbError>> {
   const database = getDatabase()
 
   try {
     await database.execute(
-      'UPDATE address_book SET label = $1 WHERE address = $2',
-      [label, address]
+      'UPDATE address_book SET label = $1 WHERE address = $2 AND account_id = $3',
+      [label, address, accountId]
     )
     return ok(undefined)
   } catch (e) {
@@ -147,13 +147,13 @@ export async function updateAddressLabel(address: string, label: string): Promis
 }
 
 /**
- * Delete an address from the book
+ * Delete an address from the book (scoped to account)
  */
-export async function deleteAddress(address: string): Promise<Result<void, DbError>> {
+export async function deleteAddress(address: string, accountId: number): Promise<Result<void, DbError>> {
   const database = getDatabase()
 
   try {
-    await database.execute('DELETE FROM address_book WHERE address = $1', [address])
+    await database.execute('DELETE FROM address_book WHERE address = $1 AND account_id = $2', [address, accountId])
     return ok(undefined)
   } catch (e) {
     return err(new DbError(

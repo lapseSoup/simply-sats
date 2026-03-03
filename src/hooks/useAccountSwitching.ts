@@ -288,6 +288,9 @@ export function useAccountSwitching({
       pendingSwitchRef.current = null
       if (pendingId !== null && pendingId !== accountId) {
         walletLogger.info('Executing queued account switch', { from: accountId, to: pendingId })
+        // Note: recursive call uses current closure's accounts snapshot (B-84).
+        // This is safe because accountsSwitchAccount performs its own DB lookup,
+        // so stale accounts in the closure don't affect correctness.
         // Fire-and-forget — the next switch will set switchingRef itself
         switchAccount(pendingId).catch(e => walletLogger.error('Queued switch failed', e))
       }

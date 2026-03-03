@@ -10,7 +10,7 @@
 
 import { brc100Logger } from '../logger'
 import type { WalletKeys } from '../wallet'
-import { getUTXOs, calculateTxFee, getWifForOperation } from '../wallet'
+import { getUTXOs, calculateTxFee } from '../wallet'
 import {
   addUTXO,
   markUTXOSpent,
@@ -28,6 +28,8 @@ import { isInscriptionTransaction } from './utils'
 import { type Result, ok, err } from '../../domain/types'
 import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
+import { acquireSyncLock } from '../cancellation'
+import { getActiveAccount } from '../accounts'
 
 // Build and broadcast a transaction from createAction request
 // Transaction building requires the Tauri runtime (Rust backend).
@@ -39,11 +41,14 @@ export async function buildAndBroadcastAction(
     return err('BRC-100 action transaction building requires Tauri runtime')
   }
 
+  // S-87: Acquire sync lock to prevent concurrent sync from modifying UTXOs during action
+  const activeAccount = await getActiveAccount()
+  const accountId = activeAccount?.id ?? 1
+  const releaseLock = await acquireSyncLock(accountId)
+
   try {
-  const walletWif = await getWifForOperation('wallet', 'buildAndBroadcastAction', keys)
-  // Derive address from WIF via Tauri
-  const keyInfo = await tauriInvoke<{ address: string }>('keys_from_wif', { wif: walletWif })
-  const fromAddress = keyInfo.address
+  // S-85: Use keys.walletAddress directly instead of pulling WIF into JS heap
+  const fromAddress = keys.walletAddress
   const fromScriptHex = p2pkhLockingScriptHex(fromAddress)
 
   // Check if this is an inscription
@@ -106,9 +111,8 @@ export async function buildAndBroadcastAction(
     return err(`Insufficient funds (need ${fee} sats for fee)`)
   }
 
-  // Build and sign the transaction via Tauri
-  const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_p2pkh_tx', {
-    wif: walletWif,
+  // S-85: Build and sign the transaction via Tauri using key store (WIF stays in Rust)
+  const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_p2pkh_tx_from_store', {
     toAddress: fromAddress,
     satoshis: totalOutput,
     selectedUtxos: inputsToUse.map(u => ({
@@ -242,5 +246,7 @@ export async function buildAndBroadcastAction(
   return ok({ txid })
   } catch (e) {
     return err(e instanceof Error ? e.message : String(e))
+  } finally {
+    releaseLock()
   }
 }

@@ -6,7 +6,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode, type SetStateAction, type MutableRefObject } from 'react'
-import type { WalletKeys, LockedUTXO } from '../services/wallet'
+import type { WalletKeys, LockedUTXO } from '../domain/types'
 import { getUTXOsFromDB, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
 import { ok, err, type WalletResult } from '../domain/types'
 import { useNetwork } from './NetworkContext'
@@ -123,11 +123,12 @@ export function LocksProvider({ children }: LocksProviderProps) {
       // Guard: prevent duplicate lock if same amount + unlockBlock was created recently
       const DEDUP_WINDOW_MS = 30_000 // 30 seconds
       const now = Date.now()
-      const recentDuplicate = locksRef.current.find(l =>
-        l.satoshis === amountSats &&
-        l.unlockBlock === unlockBlock &&
-        (now - l.createdAt) < DEDUP_WINDOW_MS
-      )
+      const recentDuplicate = locksRef.current.find(l => {
+        const elapsed = now - l.createdAt
+        return l.satoshis === amountSats &&
+          l.unlockBlock === unlockBlock &&
+          elapsed >= 0 && elapsed < DEDUP_WINDOW_MS  // B-83: ignore future createdAt (clock skew)
+      })
       if (recentDuplicate) {
         walletLogger.warn('Duplicate lock prevented', { amountSats, unlockBlock, existingTxid: recentDuplicate.txid })
         return err('A lock with this amount and duration was just created')

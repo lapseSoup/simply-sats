@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useCallback } from 'react'
 import { AlertTriangle, Crosshair, Settings, ScanLine } from 'lucide-react'
 import { useWalletState, useWalletActions, useAccounts } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../adapters/walletAdapter'
+import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD } from '../../domain/transaction/fees'
 import { useAddressValidation } from '../../hooks/useAddressValidation'
 import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { Modal } from '../shared/Modal'
@@ -16,6 +16,17 @@ import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { toWalletUtxo } from '../../domain/types'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 import type { RecipientOutput } from '../../domain/transaction/builder'
+
+/**
+ * Parse a user-entered amount string to satoshis based on display mode.
+ * Returns 0 for NaN or negative values.
+ */
+function parseAmountToSatoshis(value: string, inSats: boolean): number {
+  const parsed = inSats
+    ? Math.round(parseFloat(value || '0'))
+    : btcToSatoshis(parseFloat(value || '0'))
+  return Number.isNaN(parsed) || parsed < 0 ? 0 : parsed
+}
 
 interface SendModalProps {
   onClose: () => void
@@ -69,12 +80,7 @@ export function SendModal({ onClose }: SendModalProps) {
   // Multi-recipient total sats (for confirmation threshold checks)
   const multiTotalSats = useMemo(() => {
     if (!multiRecipient) return 0
-    return recipients.reduce((sum, r) => {
-      const raw = displayInSats
-        ? Math.round(parseFloat(r.amount || '0'))
-        : btcToSatoshis(parseFloat(r.amount || '0'))
-      return sum + (Number.isNaN(raw) ? 0 : raw)
-    }, 0)
+    return recipients.reduce((sum, r) => sum + parseAmountToSatoshis(r.amount, displayInSats), 0)
   }, [multiRecipient, recipients, displayInSats])
 
   // Use fee rate override if set, otherwise from settings (convert from sats/KB to sats/byte), fallback to 0.05 sat/byte
@@ -82,11 +88,8 @@ export function SendModal({ onClose }: SendModalProps) {
   const effectiveFeeRateKB = feeRate * 1000
 
   // Parse amount based on display mode (sats or BSV)
-  const rawSendSats = displayInSats
-    ? Math.round(parseFloat(sendAmount || '0'))
-    : btcToSatoshis(parseFloat(sendAmount || '0'))
-  const sendSats = Number.isNaN(rawSendSats) ? 0 : rawSendSats
-  const amountError = sendAmount !== '' && (Number.isNaN(rawSendSats) || rawSendSats < 0) ? 'Enter a valid amount' : ''
+  const sendSats = parseAmountToSatoshis(sendAmount, displayInSats)
+  const amountError = sendAmount !== '' && sendSats <= 0 && sendAmount !== '0' ? 'Enter a valid amount' : ''
   const availableSats = balance
 
   // Use coin-controlled UTXOs when selected, otherwise full UTXO set
@@ -160,9 +163,9 @@ export function SendModal({ onClose }: SendModalProps) {
     validateAddress(address)
   }, [validateAddress])
 
-  const handleFeeRateChange = useCallback((rate: number) => {
+  const handleFeeRateChange = (rate: number) => {
     setFeeRateOverride(rate)
-  }, [])
+  }
 
   if (!wallet) return null
 
@@ -193,18 +196,20 @@ export function SendModal({ onClose }: SendModalProps) {
     // Validate all recipient addresses and amounts before proceeding
     const errors: Record<number, string> = {}
     for (const r of recipients) {
-      if (!r.address) continue
-      if (!isValidBSVAddress(r.address)) {
+      if (!r.address && !r.amount) continue
+      if (r.address && !isValidBSVAddress(r.address)) {
         errors[r.id] = 'Invalid BSV address'
       }
-    }
-    for (const r of recipients) {
-      if (!r.amount) continue
-      const parsed = displayInSats
-        ? Math.round(parseFloat(r.amount))
-        : btcToSatoshis(parseFloat(r.amount))
-      if (Number.isNaN(parsed) || parsed <= 0) {
-        errors[r.id] = errors[r.id] || 'Enter a valid amount'
+      if (r.address && !r.amount) {
+        errors[r.id] = errors[r.id] || 'Amount is required'
+      } else if (r.amount) {
+        const parsed = parseAmountToSatoshis(r.amount, displayInSats)
+        if (parsed <= 0) {
+          errors[r.id] = errors[r.id] || 'Enter a valid amount'
+        }
+      }
+      if (!r.address && r.amount) {
+        errors[r.id] = errors[r.id] || 'Address is required'
       }
     }
     if (Object.keys(errors).length > 0) {
@@ -268,12 +273,7 @@ export function SendModal({ onClose }: SendModalProps) {
 
     const parsedRecipients: RecipientOutput[] = recipients.map(r => ({
       address: r.address,
-      satoshis: (() => {
-        const raw = displayInSats
-          ? Math.round(parseFloat(r.amount || '0'))
-          : btcToSatoshis(parseFloat(r.amount || '0'))
-        return Number.isNaN(raw) ? 0 : raw
-      })()
+      satoshis: parseAmountToSatoshis(r.amount, displayInSats)
     }))
     const totalSat = parsedRecipients.reduce((sum, r) => sum + r.satoshis, 0)
 
@@ -332,8 +332,8 @@ export function SendModal({ onClose }: SendModalProps) {
           {/* Address field with QR + address book buttons */}
           <div className="form-group">
             <label className="form-label" htmlFor="send-address">To</label>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
+            <div className="send-modal-address-row">
+              <div className="send-modal-address-wrap">
                 <input
                   id="send-address"
                   type="text"
@@ -349,7 +349,7 @@ export function SendModal({ onClose }: SendModalProps) {
                   aria-describedby={addressError ? 'address-error' : undefined}
                 />
               </div>
-              <div style={{ display: 'flex', gap: '2px', paddingTop: '6px' }}>
+              <div className="send-modal-address-actions">
                 <AddressPicker
                   onSelect={handleAddressSelect}
                   accountId={activeAccountId ?? 1}
@@ -358,17 +358,7 @@ export function SendModal({ onClose }: SendModalProps) {
                   type="button"
                   onClick={() => setShowQRScanner(true)}
                   aria-label="Scan QR code"
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--text-secondary)',
-                    borderRadius: '4px',
-                  }}
+                  className="send-modal-icon-btn"
                 >
                   <ScanLine size={16} />
                 </button>
@@ -405,7 +395,7 @@ export function SendModal({ onClose }: SendModalProps) {
               </button>
             </div>
             {sendSats > 0 && (
-              <div className="form-hint" style={{ marginTop: '4px', color: 'var(--text-secondary)' }}>
+              <div className="form-hint send-modal-amount-hint">
                 {displayInSats
                   ? <>{sendSats.toLocaleString()} sats &middot; </>
                   : <>{satoshisToBtc(sendSats).toFixed(8)} BSV &middot; </>
@@ -422,21 +412,21 @@ export function SendModal({ onClose }: SendModalProps) {
           <div className="send-summary compact">
             <div className="send-summary-row">
               <span>Balance</span>
-              <span>{availableSats.toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(availableSats)})</span></span>
+              <span>{availableSats.toLocaleString()} sats <span className="send-modal-tertiary">(${formatUSD(availableSats)})</span></span>
             </div>
             {sendSats > 0 && (
               <>
                 <div className="send-summary-row">
                   <span>Send</span>
-                  <span>{sendSats.toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats)})</span></span>
+                  <span>{sendSats.toLocaleString()} sats <span className="send-modal-tertiary">(${formatUSD(sendSats)})</span></span>
                 </div>
                 <div className="send-summary-row">
-                  <span>Fee <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>({effectiveFeeRateKB} sats/KB{feeRateOverride !== null ? ' · custom' : ''})</span></span>
-                  <span>{fee} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(fee)})</span></span>
+                  <span>Fee <span className="send-modal-fee-hint">({effectiveFeeRateKB} sats/KB{feeRateOverride !== null ? ' · custom' : ''})</span></span>
+                  <span>{fee} sats <span className="send-modal-tertiary">(${formatUSD(fee)})</span></span>
                 </div>
                 <div className="send-summary-row total">
                   <span>Total</span>
-                  <span>{(sendSats + fee).toLocaleString()} sats <span style={{ color: 'var(--text-tertiary)' }}>(${formatUSD(sendSats + fee)})</span></span>
+                  <span>{(sendSats + fee).toLocaleString()} sats <span className="send-modal-tertiary">(${formatUSD(sendSats + fee)})</span></span>
                 </div>
               </>
             )}
@@ -450,43 +440,42 @@ export function SendModal({ onClose }: SendModalProps) {
               {!multiRecipient ? (
                 <button
                   type="button"
-                  className="btn btn-ghost"
-                  style={{ width: '100%', fontSize: 12, padding: '8px 12px' }}
+                  className="btn btn-ghost send-modal-advanced-btn"
                   onClick={() => setMultiRecipient(true)}
                 >
                   + Multiple recipients
                 </button>
               ) : (
-                <div className="form-group" style={{ marginTop: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <label className="form-label" style={{ margin: 0 }}>Recipients</label>
+                <div className="form-group send-modal-no-mt">
+                  <div className="send-modal-recipients-header">
+                    <label className="form-label send-modal-recipients-label">Recipients</label>
                     <button
                       type="button"
-                      style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', fontSize: 11, cursor: 'pointer' }}
+                      className="send-modal-link-btn"
                       onClick={() => { setMultiRecipient(false); setRecipients([{ id: 0, address: '', amount: '' }]); setNextRecipientId(1) }}
                     >
                       - Single recipient
                     </button>
                   </div>
                   {recipients.map((r) => (
-                    <div key={r.id} style={{ marginBottom: 6 }}>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <div key={r.id} className="send-modal-recipient-row">
+                      <div className="send-modal-recipient-inputs">
                         <input
                           type="text"
-                          className={`form-input mono ${recipientErrors[r.id] ? 'input-error' : ''}`}
+                          className={`form-input mono send-modal-recipient-address ${recipientErrors[r.id] ? 'input-error' : ''}`}
                           placeholder="BSV address"
                           value={r.address}
                           onChange={e => {
                             setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, address: e.target.value } : x))
                             validateRecipientAddress(r.id, e.target.value)
                           }}
-                          style={{ flex: 2 }}
                           autoComplete="off"
                           aria-invalid={!!recipientErrors[r.id]}
+                          aria-describedby={recipientErrors[r.id] ? `recipient-${r.id}-error` : undefined}
                         />
                         <input
                           type="number"
-                          className="form-input"
+                          className={`form-input send-modal-recipient-amount ${recipientErrors[r.id] ? 'input-error' : ''}`}
                           placeholder={displayInSats ? '0' : '0.00000000'}
                           step={displayInSats ? '1' : '0.00000001'}
                           min="0"
@@ -494,13 +483,14 @@ export function SendModal({ onClose }: SendModalProps) {
                           onChange={e => {
                             setRecipients(prev => prev.map(x => x.id === r.id ? { ...x, amount: e.target.value } : x))
                           }}
-                          style={{ flex: 1 }}
                           autoComplete="off"
+                          aria-invalid={!!recipientErrors[r.id]}
+                          aria-describedby={recipientErrors[r.id] ? `recipient-${r.id}-error` : undefined}
                         />
                         {recipients.length > 1 && (
                           <button
                             type="button"
-                            style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 18, lineHeight: 1, paddingTop: 8 }}
+                            className="send-modal-remove-btn"
                             onClick={() => {
                               setRecipients(prev => prev.filter(x => x.id !== r.id))
                               setRecipientErrors(prev => { const next = { ...prev }; delete next[r.id]; return next })
@@ -512,14 +502,13 @@ export function SendModal({ onClose }: SendModalProps) {
                         )}
                       </div>
                       {recipientErrors[r.id] && (
-                        <div className="form-error" role="alert" style={{ fontSize: 11, marginTop: 2 }}>{recipientErrors[r.id]}</div>
+                        <div id={`recipient-${r.id}-error`} className="form-error send-modal-recipient-error" role="alert">{recipientErrors[r.id]}</div>
                       )}
                     </div>
                   ))}
                   <button
                     type="button"
-                    className="btn btn-ghost"
-                    style={{ fontSize: 12, padding: '4px 8px', width: '100%' }}
+                    className="btn btn-ghost send-modal-advanced-btn-sm"
                     onClick={() => {
                       setRecipients(r => [...r, { id: nextRecipientId, address: '', amount: '' }])
                       setNextRecipientId(n => n + 1)
@@ -542,9 +531,8 @@ export function SendModal({ onClose }: SendModalProps) {
               {/* Coin Control */}
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn btn-ghost send-modal-advanced-btn-mt"
                 onClick={() => setShowCoinControl(true)}
-                style={{ width: '100%', fontSize: 12, padding: '8px 12px', marginTop: 8 }}
               >
                 {selectedUtxos
                   ? <><Crosshair size={14} strokeWidth={1.75} /> Using {selectedUtxos.length} selected UTXOs</>
@@ -554,15 +542,7 @@ export function SendModal({ onClose }: SendModalProps) {
                 <button
                   type="button"
                   onClick={() => setSelectedUtxos(null)}
-                  style={{
-                    width: '100%',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-tertiary)',
-                    fontSize: 11,
-                    cursor: 'pointer',
-                    marginTop: 4
-                  }}
+                  className="send-modal-clear-btn"
                 >
                   Clear selection (use automatic)
                 </button>
@@ -570,7 +550,7 @@ export function SendModal({ onClose }: SendModalProps) {
 
               {/* Transaction details */}
               {sendSats > 0 && (
-                <div className="send-tx-details" style={{ marginTop: 8 }}>
+                <div className="send-tx-details send-modal-tx-details">
                   <div className="send-tx-row">
                     <span>Est. Size</span>
                     <span>{txSize} bytes</span>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { HardDrive, ChevronRight } from 'lucide-react'
 import { useUI } from '../../../contexts/UIContext'
+// TODO(A-45): Deep import — expose cache management via wallet barrel or context hook
 import { getCacheStats, resizeOrdinalCache, clearImageCache, clearAllContentCache, formatCacheSize } from '../../../services/wallet/ordinalCacheManager'
 import { handleKeyDown } from './settingsKeyDown'
 

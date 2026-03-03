@@ -491,7 +491,8 @@ export class SimplySats {
    */
   async encrypt(options: { data: string; pubKey?: string; nonce?: string }): Promise<{ encryptedData: string }> {
     const nonce = options.nonce ?? (await this.getNonce())
-    return this.request<{ encryptedData: string }>('encrypt', { ...options, nonce })
+    const { nonce: _, ...params } = options
+    return this.request<{ encryptedData: string }>('encrypt', params, nonce)
   }
 
   /**
@@ -505,7 +506,8 @@ export class SimplySats {
    */
   async decrypt(options: { encryptedData: string; pubKey?: string; nonce?: string }): Promise<{ data: string }> {
     const nonce = options.nonce ?? (await this.getNonce())
-    return this.request<{ data: string }>('decrypt', { ...options, nonce })
+    const { nonce: _, ...params } = options
+    return this.request<{ data: string }>('decrypt', params, nonce)
   }
 
   // ==================== Convenience Methods ====================

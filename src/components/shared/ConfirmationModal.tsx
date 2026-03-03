@@ -194,7 +194,7 @@ export function ConfirmationModal({
   )
 }
 
-// Re-export threshold constants from config for convenience
-import { CONFIRMATION_THRESHOLDS } from '../../services/config'
-export const SEND_CONFIRMATION_THRESHOLD = CONFIRMATION_THRESHOLDS.sendConfirmation
-export const HIGH_VALUE_THRESHOLD = CONFIRMATION_THRESHOLDS.highValue
+// Re-export threshold constants from centralized config for convenience
+import { TRANSACTION } from '../../config'
+export const SEND_CONFIRMATION_THRESHOLD = TRANSACTION.MEDIUM_VALUE_THRESHOLD
+export const HIGH_VALUE_THRESHOLD = TRANSACTION.HIGH_VALUE_THRESHOLD

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
+// TODO(A-45): Deep service imports — expose via context hook or barrel when available
 import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../../services/keyDerivation'
 import { checkForPayments, getPaymentNotifications } from '../../../services/messageBox'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'

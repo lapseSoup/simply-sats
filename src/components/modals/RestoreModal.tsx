@@ -1,20 +1,16 @@
 import { useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-import { open } from '@tauri-apps/plugin-dialog'
-import { readTextFile } from '@tauri-apps/plugin-fs'
 import { useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { SECURITY } from '../../config'
 import { Modal } from '../shared/Modal'
 import { PasswordInput } from '../shared/PasswordInput'
 import { MnemonicInput } from '../forms/MnemonicInput'
-import { restoreWallet, importFromJSON, saveWallet, saveWalletUnprotected } from '../../services/wallet'
-import { importDatabase, type DatabaseBackup } from '../../infrastructure/database'
 import { decrypt, type EncryptedData } from '../../services/crypto'
-import { setWalletKeys } from '../../services/brc100'
-import { migrateToMultiAccount, getActiveAccount } from '../../services/accounts'
-import { discoverAccounts } from '../../services/accountDiscovery'
-import { setSessionPassword as setModuleSessionPassword } from '../../services/sessionPasswordStore'
+import {
+  openAndParseBackupFile,
+  restoreWalletFromBackup,
+  importBackupDatabase
+} from '../../services/restore'
 
 interface RestoreModalProps {
   onClose: () => void
@@ -112,142 +108,49 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   const handleRestoreFromFullBackup = async () => {
     if (!validatePasswordFields()) return
     try {
-      const filePath = await open({
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-        multiple: false
-      })
-
-      if (!filePath || Array.isArray(filePath)) return
-
-      const json = await readTextFile(filePath)
-      const raw = JSON.parse(json)
       const pwd = skipPassword ? null : password
 
-      let backup
-      if (raw.format === 'simply-sats-backup-encrypted' && raw.encrypted) {
-        // Encrypted backup — need a password to decrypt
-        if (!pwd) {
-          showToast('This backup file is encrypted. Please enter a password above to decrypt it.', 'error')
-          setSkipPassword(false)
-          return
+      // Step 1: Open and parse backup file (handles decryption)
+      const parseResult = await openAndParseBackupFile(pwd)
+      if (!parseResult.ok) {
+        switch (parseResult.error) {
+          case 'cancelled': return
+          case 'encrypted-needs-password':
+            showToast('This backup file is encrypted. Please enter a password above to decrypt it.', 'error')
+            setSkipPassword(false)
+            return
+          case 'decrypt-failed':
+            showToast('Failed to decrypt backup — wrong password?', 'error')
+            return
+          case 'invalid-format':
+            showToast('Invalid backup format. This should be a Simply Sats full backup file.', 'error')
+            return
+          default:
+            showToast(parseResult.error, 'error')
+            return
         }
-        try {
-          const decrypted = await decrypt(raw.encrypted as EncryptedData, pwd)
-          backup = JSON.parse(decrypted)
-        } catch {
-          showToast('Failed to decrypt backup — wrong password?', 'error')
-          return
-        }
-      } else {
-        backup = raw
       }
+      const { backup } = parseResult.value
 
-      if (backup.format !== 'simply-sats-full' || !backup.wallet) {
-        showToast('Invalid backup format. This should be a Simply Sats full backup file.', 'error')
+      // Step 2: Restore wallet keys
+      const keysResult = await restoreWalletFromBackup(backup, pwd)
+      if (!keysResult.ok) {
+        showToast(keysResult.error, 'error')
         return
       }
-
+      const keys = keysResult.value
       const sessionPwd = pwd ?? ''
+      setWallet(keys)
+      setSessionPassword(sessionPwd)
 
-      // Restore wallet from backup with password
-      if (backup.wallet.mnemonic) {
-        const restoreResult = await restoreWallet(backup.wallet.mnemonic)
-        if (!restoreResult.ok) {
-          showToast('Failed to restore wallet: ' + restoreResult.error.message, 'error')
-          return
-        }
-        const keys = restoreResult.value
-        if (pwd !== null) {
-          const saveResult = await saveWallet(keys, pwd)
-          if (!saveResult.ok) {
-            showToast('Failed to save wallet: ' + saveResult.error, 'error')
-            return
-          }
-        } else {
-          await saveWalletUnprotected(keys)
-        }
-        // Create account in database for persistence across app restarts
-        await migrateToMultiAccount({ ...keys, mnemonic: backup.wallet.mnemonic }, pwd)
-        // Populate the Rust key store so WIF operations work immediately after restore
-        try {
-          await invoke('store_keys', { mnemonic: backup.wallet.mnemonic, accountIndex: 0 })
-        } catch (_e) { /* non-fatal — unlock will re-populate */ }
-        // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
-        setWallet({ ...keys, mnemonic: '' })
-        setWalletKeys(keys)
-        setSessionPassword(sessionPwd)
-        setModuleSessionPassword(sessionPwd)
-      } else if (backup.wallet.keys) {
-        const importResult = await importFromJSON(JSON.stringify(backup.wallet.keys))
-        if (!importResult.ok) {
-          showToast('Failed to import wallet: ' + importResult.error.message, 'error')
-          return
-        }
-        const keys = importResult.value
-        if (pwd !== null) {
-          const saveResult2 = await saveWallet(keys, pwd)
-          if (!saveResult2.ok) {
-            showToast('Failed to save wallet: ' + saveResult2.error, 'error')
-            return
-          }
-        } else {
-          await saveWalletUnprotected(keys)
-        }
-        // Create account in database for persistence across app restarts
-        await migrateToMultiAccount(keys, pwd)
-        // Populate the Rust key store so WIF operations work immediately after restore
-        try {
-          if (keys.mnemonic) {
-            await invoke('store_keys', { mnemonic: keys.mnemonic, accountIndex: keys.accountIndex ?? 0 })
-          } else {
-            await invoke('store_keys_direct', {
-              walletWif: keys.walletWif,
-              ordWif: keys.ordWif,
-              identityWif: keys.identityWif,
-              walletAddress: keys.walletAddress,
-              walletPubKey: keys.walletPubKey,
-              ordAddress: keys.ordAddress,
-              ordPubKey: keys.ordPubKey,
-              identityAddress: keys.identityAddress,
-              identityPubKey: keys.identityPubKey,
-              mnemonic: null
-            })
-          }
-        } catch (_e) { /* non-fatal — unlock will re-populate */ }
-        setWallet(keys)
-        setWalletKeys(keys)
-        setSessionPassword(sessionPwd)
-        setModuleSessionPassword(sessionPwd)
-      } else {
-        showToast('Backup does not contain wallet keys.', 'error')
-        return
-      }
+      // Step 3: Import database and discover accounts
+      const stats = await importBackupDatabase(backup, pwd, { refreshAccounts, showToast })
 
-      // Import database if present
-      if (backup.database) {
-        await importDatabase(backup.database as DatabaseBackup)
-      }
-
-      showToast(`Wallet restored! ${backup.database?.utxos?.length || 0} UTXOs, ${backup.database?.transactions?.length || 0} transactions`)
-
-      // Trigger sync to update balances
+      showToast(`Wallet restored! ${stats.utxoCount} UTXOs, ${stats.txCount} transactions`)
       performSync(false)
       onSuccess()
-
-      // Discover additional accounts if mnemonic is available (non-blocking)
-      if (backup.wallet.mnemonic) {
-        const activeAfterRestore = await getActiveAccount()
-        discoverAccounts(backup.wallet.mnemonic, pwd, activeAfterRestore?.id)
-          .then(async (found) => {
-            if (found > 0) {
-              await refreshAccounts()
-              showToast(`Discovered ${found} additional account${found > 1 ? 's' : ''}`)
-            }
-          })
-          .catch(() => {}) // Silent failure — primary restore already succeeded
-      }
-    } catch (err) {
-      showToast('Import failed: ' + (err instanceof Error ? err.message : 'Invalid file'), 'error')
+    } catch (restoreErr) {
+      showToast('Import failed: ' + (restoreErr instanceof Error ? restoreErr.message : 'Invalid file'), 'error')
     }
   }
 

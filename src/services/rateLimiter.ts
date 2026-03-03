@@ -143,11 +143,15 @@ export async function getRemainingAttempts(): Promise<number> {
 export function formatLockoutTime(ms: number): string {
   if (ms <= 0) return ''
 
-  const seconds = Math.ceil(ms / 1000)
-  if (seconds < 60) {
-    return `${seconds} second${seconds !== 1 ? 's' : ''}`
+  const totalSeconds = Math.ceil(ms / 1000)
+  if (totalSeconds < 60) {
+    return `${totalSeconds} second${totalSeconds !== 1 ? 's' : ''}`
   }
 
-  const minutes = Math.ceil(seconds / 60)
-  return `${minutes} minute${minutes !== 1 ? 's' : ''}`
+  const minutes = Math.floor(totalSeconds / 60)
+  const remainingSeconds = totalSeconds % 60
+  const minutePart = `${minutes} minute${minutes !== 1 ? 's' : ''}`
+  if (remainingSeconds === 0) return minutePart
+  const secondPart = `${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`
+  return `${minutePart} ${secondPart}`
 }

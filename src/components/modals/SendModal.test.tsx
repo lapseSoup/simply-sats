@@ -52,11 +52,12 @@ vi.mock('../../contexts/UIContext', () => ({
   })
 }))
 
-// Mock the wallet adapter (SendModal imports from adapters/walletAdapter, not services/wallet)
-vi.mock('../../adapters/walletAdapter', () => ({
+// Mock the domain transaction fees (SendModal imports from domain/transaction/fees)
+vi.mock('../../domain/transaction/fees', () => ({
   calculateExactFee: vi.fn().mockReturnValue({ fee: 100, inputCount: 2, outputCount: 2, totalInput: 100000, canSend: true }),
   calculateTxFee: vi.fn().mockReturnValue(100),
   calculateMaxSend: vi.fn().mockReturnValue({ maxSats: 99900, fee: 100, numInputs: 2 }),
+  DEFAULT_FEE_RATE: 0.1,
   P2PKH_INPUT_SIZE: 148,
   P2PKH_OUTPUT_SIZE: 34,
   TX_OVERHEAD: 10,
