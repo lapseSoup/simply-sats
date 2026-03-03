@@ -112,19 +112,48 @@ export async function buildAndBroadcastAction(
     return err(`Insufficient funds (need ${fee} sats for fee)`)
   }
 
-  // S-85: Build and sign the transaction via Tauri using key store (WIF stays in Rust)
-  const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_p2pkh_tx_from_store', {
-    toAddress: fromAddress,
-    satoshis: totalOutput,
-    selectedUtxos: inputsToUse.map(u => ({
-      txid: u.txid,
-      vout: u.vout,
-      satoshis: u.satoshis,
-      script: u.script ?? fromScriptHex
-    })),
-    totalInput,
-    feeRate: 0.1
-  })
+  // S-106: Build transaction with correct output scripts.
+  // If all outputs are standard P2PKH to our own address, use the optimized P2PKH builder.
+  // Otherwise, use the custom-output builder that respects arbitrary locking scripts.
+  const allOwnP2PKH = actionRequest.outputs.every(
+    o => o.lockingScript === fromScriptHex
+  )
+
+  let txResult: { rawTx: string; txid: string }
+
+  if (allOwnP2PKH) {
+    // Optimized path: all outputs are P2PKH to wallet — use multi-output P2PKH builder
+    txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_multi_output_p2pkh_tx_from_store', {
+      outputs: actionRequest.outputs.map(o => ({
+        address: fromAddress,
+        satoshis: o.satoshis,
+      })),
+      selectedUtxos: inputsToUse.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script ?? fromScriptHex,
+      })),
+      totalInput,
+      feeRate: 0.1,
+    })
+  } else {
+    // Custom output path: outputs have arbitrary locking scripts (BRC-100 apps)
+    txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_custom_output_tx_from_store', {
+      outputs: actionRequest.outputs.map(o => ({
+        satoshis: o.satoshis,
+        lockingScriptHex: o.lockingScript,
+      })),
+      selectedUtxos: inputsToUse.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script ?? fromScriptHex,
+      })),
+      totalInput,
+      feeRate: 0.1,
+    })
+  }
 
   const rawTx = txResult.rawTx
 
