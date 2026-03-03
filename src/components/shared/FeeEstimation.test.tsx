@@ -155,7 +155,7 @@ describe('FeeEstimation', () => {
 
     // The callback should receive MAX_FEE_RATE (1.0), not 999
     expect(mockOnFeeRateChange).toHaveBeenCalled()
-    const lastCall = mockOnFeeRateChange.mock.calls[mockOnFeeRateChange.mock.calls.length - 1][0]
-    expect(lastCall).toBe(1.0)
+    const lastCall = mockOnFeeRateChange.mock.calls[mockOnFeeRateChange.mock.calls.length - 1]!
+    expect(lastCall[0]).toBe(1.0)
   })
 })
