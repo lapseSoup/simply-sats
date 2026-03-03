@@ -2025,4 +2025,167 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("greater than 0"));
     }
+
+    #[test]
+    fn build_custom_output_tx_single_p2pkh() {
+        let wif = get_test_wif();
+        let address = get_test_address();
+
+        // Build a standard P2PKH locking script for the destination
+        let dest_script = "76a914".to_string() + &"11".repeat(20) + "88ac"; // 25-byte P2PKH
+
+        let result = build_custom_output_tx(
+            wif,
+            vec![CustomOutput {
+                satoshis: 5000,
+                locking_script_hex: dest_script,
+            }],
+            vec![UtxoInput {
+                txid: "a".repeat(64),
+                vout: 0,
+                satoshis: 10000,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            10000,
+            0.1,
+        );
+
+        assert!(result.is_ok(), "build_custom_output_tx failed: {:?}", result.err());
+        let built = result.unwrap();
+        assert!(!built.raw_tx.is_empty());
+        assert_eq!(built.txid.len(), 64);
+        assert!(built.fee > 0);
+        assert!(built.change > 0);
+        assert_eq!(built.change_address, address);
+        assert_eq!(built.spent_outpoints.len(), 1);
+    }
+
+    #[test]
+    fn build_custom_output_tx_multi_mixed_scripts() {
+        let wif = get_test_wif();
+
+        // P2PKH output
+        let p2pkh_script = "76a914".to_string() + &"22".repeat(20) + "88ac";
+        // OP_RETURN output (OP_FALSE OP_RETURN <data>)
+        let op_return_script = "006a".to_string() + &"ff".repeat(10);
+
+        let result = build_custom_output_tx(
+            wif,
+            vec![
+                CustomOutput { satoshis: 3000, locking_script_hex: p2pkh_script },
+                CustomOutput { satoshis: 0, locking_script_hex: op_return_script },
+            ],
+            vec![UtxoInput {
+                txid: "b".repeat(64),
+                vout: 0,
+                satoshis: 10000,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            10000,
+            0.1,
+        );
+
+        assert!(result.is_ok(), "multi mixed failed: {:?}", result.err());
+        let built = result.unwrap();
+        assert!(!built.raw_tx.is_empty());
+        assert!(built.fee > 0);
+        // Change = 10000 - 3000 - 0 - fee
+        assert!(built.change > 0);
+    }
+
+    #[test]
+    fn build_custom_output_tx_empty_outputs_error() {
+        let wif = get_test_wif();
+
+        let result = build_custom_output_tx(
+            wif,
+            vec![],
+            vec![UtxoInput {
+                txid: "c".repeat(64),
+                vout: 0,
+                satoshis: 10000,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            10000,
+            0.1,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("At least one output"));
+    }
+
+    #[test]
+    fn build_custom_output_tx_invalid_hex_error() {
+        let wif = get_test_wif();
+
+        let result = build_custom_output_tx(
+            wif,
+            vec![CustomOutput {
+                satoshis: 5000,
+                locking_script_hex: "ZZZZ_not_hex".to_string(),
+            }],
+            vec![UtxoInput {
+                txid: "d".repeat(64),
+                vout: 0,
+                satoshis: 10000,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            10000,
+            0.1,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid locking script hex"));
+    }
+
+    #[test]
+    fn build_custom_output_tx_insufficient_funds() {
+        let wif = get_test_wif();
+
+        let result = build_custom_output_tx(
+            wif,
+            vec![CustomOutput {
+                satoshis: 100000,
+                locking_script_hex: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            vec![UtxoInput {
+                txid: "e".repeat(64),
+                vout: 0,
+                satoshis: 1000,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            1000,
+            0.1,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Insufficient funds"));
+    }
+
+    #[test]
+    fn build_custom_output_tx_no_change() {
+        let wif = get_test_wif();
+
+        // Use an amount that leaves very little for change (less than fee threshold)
+        let script = "76a914".to_string() + &"00".repeat(20) + "88ac";
+        let result = build_custom_output_tx(
+            wif,
+            vec![CustomOutput {
+                satoshis: 9950,
+                locking_script_hex: script,
+            }],
+            vec![UtxoInput {
+                txid: "f".repeat(64),
+                vout: 0,
+                satoshis: 10000,
+                script: "76a914".to_string() + &"00".repeat(20) + "88ac",
+            }],
+            10000,
+            0.1,
+        );
+
+        assert!(result.is_ok(), "no-change failed: {:?}", result.err());
+        let built = result.unwrap();
+        assert!(built.fee > 0);
+    }
 }
