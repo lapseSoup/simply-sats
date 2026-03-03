@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useRef, useEffect, memo, useCallback, useMemo, type ReactNode, type CSSProperties } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
 import { useWalletState, useSyncContext, useNetwork } from '../../contexts'
@@ -116,6 +116,61 @@ const TransactionItem = memo(function TransactionItem({
     </div>
   )
 })
+
+// ── Data passed to the virtualized row component via react-window's rowProps ──
+interface ActivityRowData {
+  txHistory: TxHistoryItem[]
+  getTxTypeAndIcon: (tx: { tx_hash: string; amount?: number; description?: string }) => { type: string; icon: ReactNode }
+  getOrdinalProps: (tx: TxHistoryItem) => {
+    ordinalOrigin?: string
+    ordinalContentType?: string
+    ordinalCachedContent?: { contentData?: Uint8Array; contentText?: string; contentType?: string }
+  }
+  handleTxClick: (tx: TxHistoryItem) => void
+  formatUSD: (sats: number) => string
+  displayInSats: boolean
+  formatBSVShort: (sats: number) => string
+  currentHeight: number
+}
+
+/**
+ * Module-level row component for react-window.
+ *
+ * CRITICAL: This MUST be defined outside the ActivityTab render function so its reference
+ * is stable across renders. react-window v2 wraps rowComponent with:
+ *   useMemo(() => memo(rowComponent), [rowComponent])
+ * If rowComponent changes reference (e.g. inline function), React treats it as a NEW
+ * component type → unmounts ALL visible rows → DOM destroyed → OrdinalImage remounts →
+ * CSS opacity transition replays → visible thumbnail flicker.
+ *
+ * Data flows through rowProps (which react-window passes as props). When rowProps change,
+ * react-window recreates elements but React sees the SAME component type → UPDATE (not
+ * unmount/remount) → no DOM destruction → no flicker.
+ */
+function ActivityRow({
+  index, style,
+  txHistory, getTxTypeAndIcon, getOrdinalProps, handleTxClick,
+  formatUSD, displayInSats, formatBSVShort, currentHeight
+}: { index: number; style: CSSProperties; ariaAttributes?: Record<string, unknown> } & ActivityRowData) {
+  const tx = txHistory[index]!
+  const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
+  const ordinalProps = getOrdinalProps(tx)
+  return (
+    <div style={{ ...style, paddingBottom: 12 }}>
+      <TransactionItem
+        tx={tx}
+        txType={txType}
+        txIcon={txIcon}
+        onClick={() => handleTxClick(tx)}
+        formatUSD={formatUSD}
+        displayInSats={displayInSats}
+        formatBSVShort={formatBSVShort}
+        currentHeight={currentHeight}
+        {...ordinalProps}
+      />
+    </div>
+  )
+}
 
 export const ActivityTab = memo(function ActivityTab() {
   const { txHistory, locks, loading, activeAccountId, ordinals, contentCacheSnapshot } = useWalletState()
@@ -318,32 +373,16 @@ export const ActivityTab = memo(function ActivityTab() {
     return (
       <>
         <div ref={containerRef} className="tx-list-virtual-container" role="list" aria-label="Transaction history" style={{ height: containerHeight }}>
-          <List
+          <List<ActivityRowData>
             rowCount={txHistory.length}
             rowHeight={TX_ITEM_HEIGHT}
-            rowProps={{}}
+            rowProps={{
+              txHistory, getTxTypeAndIcon, getOrdinalProps, handleTxClick,
+              formatUSD, displayInSats, formatBSVShort, currentHeight
+            }}
             overscanCount={5}
             style={{ height: containerHeight }}
-            rowComponent={({ index, style }) => {
-              const tx = txHistory[index]!
-              const { type: txType, icon: txIcon } = getTxTypeAndIcon(tx)
-              const ordinalProps = getOrdinalProps(tx)
-              return (
-                <div style={{ ...style, paddingBottom: 12 }}>
-                  <TransactionItem
-                    tx={tx}
-                    txType={txType}
-                    txIcon={txIcon}
-                    onClick={() => handleTxClick(tx)}
-                    formatUSD={formatUSD}
-                    displayInSats={displayInSats}
-                    formatBSVShort={formatBSVShort}
-                    currentHeight={currentHeight}
-                    {...ordinalProps}
-                  />
-                </div>
-              )
-            }}
+            rowComponent={ActivityRow}
           />
         </div>
 

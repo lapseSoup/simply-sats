@@ -34,8 +34,9 @@ export const OrdinalImage = memo(function OrdinalImage({
 }: OrdinalImageProps) {
   // If we already have a cached blob URL, start as 'loaded' to avoid the loading
   // shimmer flash (opacity: 0 → 1 transition) on every re-render/remount.
+  const hasCachedBlob = !!(origin && blobUrlCache.has(origin))
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(
-    () => (origin && blobUrlCache.has(origin)) ? 'loaded' : 'loading'
+    () => hasCachedBlob ? 'loaded' : 'loading'
   )
   const url = getOrdinalContentUrl(origin)
 
@@ -99,9 +100,13 @@ export const OrdinalImage = memo(function OrdinalImage({
           }
           blobUrlCache.set(origin, blobUrl)
         }
+        // Q-83: Intentional setState in effect — blob URL is owned by the module-level
+        // blobUrlCache (not this effect), so there's no cleanup function. The setState
+        // syncs React state with the cache for the current render cycle.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCachedImageUrl(blobUrl)
-        // No cleanup return — blob URL is owned by the module cache, not this effect
       } catch {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCachedImageUrl(undefined)
       }
     } else if (!origin || !blobUrlCache.has(origin)) {

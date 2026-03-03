@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-03-03 (v23 / Review #23 — Full Codebase Review)
-**Full report:** `docs/reviews/2026-03-03-full-review-v23.md`
-**Rating:** 8.5 / 10 (all 376 issues resolved — 0 open items remaining)
-**Review #23 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 11 new issues: 2 high, 3 medium, 6 low. 10 fixed in v23, 1 false positive dropped (Q-81). 1803 tests passing.
+**Latest review:** 2026-03-03 (v24 / Review #24 — Full Codebase Review)
+**Full report:** `docs/reviews/2026-03-03-full-review-v24.md`
+**Rating:** 8.5 / 10 (all 381 issues resolved — 0 open items remaining)
+**Review #24 summary:** Full 4-phase review (Security, Bugs, Architecture, Quality). Found 5 new issues: 2 medium bugs, 1 medium architecture, 2 low quality. All 5 fixed in v24. 1 low quality noted (no fix needed). 1803 tests passing.
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -39,6 +39,8 @@
 |----|--------|------|-------|
 | S-99 | ✅ Fixed (v23) | `brc100/outputs.ts:61` | `getLocksFromDB(currentHeight)` called without `accountId` in `resolveListOutputs()`. BRC-100 `listOutputs` with `basket: 'wrootz_locks'` returned locks from ALL accounts. **Fix:** Added `getActiveAccount()`, passed `activeAccountId` |
 | S-100 | ✅ Fixed (v23) | `brc100/listener.ts:138` | Same as S-99 — `getLocksFromDB(currentHeight)` in `listLocks` auto-response had no account scoping. **Fix:** Added `getActiveAccount()`, passed `activeAccount?.id` |
+| B-91 | ✅ Fixed (v24) | `LocksContext.tsx:82-84` | `addKnownUnlockedLock` only scheduled React state update — `knownUnlockedLocksRef` synced in useEffect (AFTER render). Unlike `resetKnownUnlockedLocks` (sync ref), detectLocks called immediately after unlock could re-add the lock. **Fix:** Synchronously update ref inside state updater |
+| B-92 | ✅ Fixed (v24) | `brc100/locks.ts:139` | `build_p2pkh_tx_from_store` received hardcoded `feeRate: 0.1` while JS-side `calculateTxFee()` used `getFeeRate()`. Fee disagreement between JS and Rust. **Fix:** Thread `getFeeRate()` from service layer to Tauri invoke |
 | S-96 | ✅ Fixed (v22) | `brc100/handlers.ts:240-243` | Origin subdomain matching uses `hostname.endsWith('wrootz.com')` — matches `evilwrootz.com`. Comment said "exact hostname match" but check was permissive. **Fix:** Changed to `hostname === 'wrootz.com' \|\| hostname.endsWith('.wrootz.com')` |
 | S-85 | ✅ Fixed (v21) | `brc100/locks.ts:84-86`, `brc100/formatting.ts:43-46` | Lock and action builders pass WIF to non-`_from_store` Tauri commands. `getWifForOperation('wallet', ...)` pulls WIF into JS, then sends back to Rust via `build_p2pkh_tx`. `build_p2pkh_tx_from_store` exists at `key_store.rs:339` |
 | S-86 | ✅ Fixed (v21) | `brc100/validation.ts:147-159` | `getTaggedKeys` falls through to `default` case — auto-approved for trusted origins. Tagged keys are deterministic sub-identities from identity key. Should require explicit approval |
@@ -101,6 +103,7 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| A-48 | ✅ Fixed (v24) | `eslint.config.js:9` | `globalIgnores` missing `.claude/worktrees` — ESLint scanned worktree build artifacts producing 101 false parsing errors. **Fix:** Added `.claude/worktrees` to globalIgnores array |
 | S-101 | ✅ Fixed (v23) | `brc100/outputs.ts:119,170` | `getUTXOsByBasket()` and `getSpendableUTXOs()` in `discoverByIdentityKey`/`discoverByAttributes` had no account scoping — returned UTXOs from all accounts. **Fix:** Threaded `activeAccountId` through discover functions |
 | S-102 | ✅ Fixed (v23) | `brc100/locks.ts:40` | `getLocks()` export called `getLocksFromDB(currentHeight)` without accountId. **Fix:** Added `getActiveAccount()`, passed `activeAccount?.id` |
 | B-89 | ✅ Fixed (v23) | `restore.ts:115-117,140-157` | `catch (_e) { /* non-fatal */ }` on `invoke('store_keys')` — zero logging. Rust key store failure during restore had no diagnostic trail. **Fix:** Added `walletLogger.warn()` with error details |
@@ -293,6 +296,9 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| Q-82 | ✅ Fixed (v24) | `usePlatform.ts:33` | `detectPlatform()` accesses `navigator.userAgent` without SSR guard (unlike `detectTouchScreen()`). Crashes in `@vitest-environment node` tests. **Fix:** Added `if (typeof navigator === 'undefined') return 'desktop'` |
+| Q-83 | ✅ Fixed (v24) | `OrdinalImage.tsx:103` | setState-in-effect ESLint warning. Intentional pattern — blob URL owned by module-level cache, not the effect. **Fix:** Added `eslint-disable` comment with justification |
+| Q-84 | ⚪ Noted (v24) | `SettingsModal.tsx:35` | Hard-coded `calc(100vh - 100px)` offset. Documented WebKit flex-scroll workaround with clear comment. No fix needed now |
 | S-103 | ✅ Fixed (v23) | `addressBookRepository.ts:170-178` | `addressExists()` queries all accounts without `account_id` filter. **Fix:** Added optional `accountId` parameter with conditional WHERE clause |
 | B-90 | ✅ Fixed (v23) | `restore.ts:193` | `.catch(() => {})` swallowed all account discovery errors after restore. **Fix:** Added `walletLogger.warn()` in catch block |
 | Q-78 | ✅ Fixed (v23) | `AddressPicker.tsx:162` | `AddressRow` rendered in list without `React.memo` — every parent state change re-rendered all rows. **Fix:** Wrapped with `memo()` |
@@ -411,18 +417,18 @@
 | Category | Total | ✅ Fixed/Verified/Accepted/Deferred | 🔴 Critical Open | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
 |----------|-------|-------------------------------------|-------------------|--------------|----------------|-------------|
 | Security | 105 | 105 | 0 | 0 | 0 | 0 |
-| Bugs | 90 | 90 | 0 | 0 | 0 | 0 |
-| Architecture | 47 | 47 | 0 | 0 | 0 | 0 |
-| Quality | 81 | 81 | 0 | 0 | 0 | 0 |
+| Bugs | 92 | 92 | 0 | 0 | 0 | 0 |
+| Architecture | 48 | 48 | 0 | 0 | 0 | 0 |
+| Quality | 83 | 83 | 0 | 0 | 0 | 0 |
 | UX/UI | 40 | 40 | 0 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 | 0 |
-| **Total** | **376** | **376** | **0** | **0** | **0** | **0** |
+| **Total** | **381** | **381** | **0** | **0** | **0** | **0** |
 
 ---
 
-## Remaining Open Items (as of Review #23)
+## Remaining Open Items (as of Review #24)
 
-**All 376 issues are now resolved.** No open items remain.
+**All 381 issues are now resolved.** No open items remain.
 
 - Fixed: code changes applied and verified with tests
 - Accepted: verified as correct design decisions or non-issues
@@ -437,6 +443,23 @@
 
 ### Moot
 - **S-3** — Session key rotation race (SENSITIVE_KEYS empty)
+
+---
+
+## Prioritized Remediation — Review #24
+### All 5 items resolved (5 fixed, 1 noted)
+
+### Bugs (2)
+1. ✅ **B-91** `LocksContext.tsx` — Synchronously update `knownUnlockedLocksRef` inside `addKnownUnlockedLock` state updater, matching `resetKnownUnlockedLocks` pattern. **Effort: quick**
+2. ✅ **B-92** `brc100/locks.ts` — Thread `getFeeRate()` from service layer to `build_p2pkh_tx_from_store` Tauri invoke instead of hardcoded 0.1. **Effort: quick**
+
+### Architecture (1)
+3. ✅ **A-48** `eslint.config.js` — Added `.claude/worktrees` to `globalIgnores` array. Eliminated 101 false parsing errors. **Effort: quick**
+
+### Quality (3)
+4. ✅ **Q-82** `usePlatform.ts` — Added `typeof navigator === 'undefined'` SSR guard to `detectPlatform()`. **Effort: quick**
+5. ✅ **Q-83** `OrdinalImage.tsx` — Added `eslint-disable` with justification for intentional setState-in-effect. **Effort: quick**
+6. ⚪ **Q-84** `SettingsModal.tsx` — Noted: documented WebKit workaround, no change needed. **Effort: none**
 
 ---
 

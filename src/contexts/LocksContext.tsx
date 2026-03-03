@@ -79,8 +79,14 @@ export function LocksProvider({ children }: LocksProviderProps) {
   }, [knownUnlockedLocks])
 
   // Add a lock key to known unlocked set
+  // B-91: Synchronously update ref so detectLocks (called immediately after unlock)
+  // sees the new key before React re-renders. Matches resetKnownUnlockedLocks pattern.
   const addKnownUnlockedLock = useCallback((key: string) => {
-    setKnownUnlockedLocks(prev => new Set([...prev, key]))
+    setKnownUnlockedLocks(prev => {
+      const next = new Set([...prev, key])
+      knownUnlockedLocksRef.current = next
+      return next
+    })
   }, [])
 
   // Clear known unlocked locks on account switch to prevent cross-account contamination

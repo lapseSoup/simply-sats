@@ -125,6 +125,11 @@ export async function createLockTransaction(
       return err(`Insufficient funds (need ${fee} sats for fee)`)
     }
 
+    // B-92: Use the same fee rate as JS-side calculateTxFee (which calls getFeeRate())
+    // to keep Rust-side and JS-side fee calculations consistent.
+    const { getFeeRate } = await import('../wallet/fees')
+    const feeRate = getFeeRate()
+
     // S-85: Build and sign the transaction via Tauri using key store (WIF stays in Rust)
     const txResult = await tauriInvoke<{ rawTx: string; txid: string }>('build_p2pkh_tx_from_store', {
       toAddress: fromAddress,
@@ -136,7 +141,7 @@ export async function createLockTransaction(
         script: u.script ?? sourceLockingScriptHex
       })),
       totalInput,
-      feeRate: 0.1
+      feeRate
     })
 
     const txid = txResult.txid
