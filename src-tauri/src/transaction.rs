@@ -911,6 +911,15 @@ pub struct OutputDescriptor {
     pub satoshis: u64,
 }
 
+/// Output descriptor for custom-script transactions (BRC-100 createAction).
+/// Each output specifies an exact locking script as hex — not limited to P2PKH.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomOutput {
+    pub satoshis: u64,
+    pub locking_script_hex: String,
+}
+
 /// Build and sign a single-key transaction with multiple P2PKH outputs.
 ///
 /// All inputs are signed with the same key. A change output is appended
@@ -959,6 +968,114 @@ pub fn build_multi_output_p2pkh_tx(
     }
 
     // Add change output
+    if change > 0 {
+        add_p2pkh_output(&mut tx, &from_address, change)?;
+    }
+
+    // Sign all inputs with the same key
+    let privkey = sdk_privkey_from_wif(&wif)?;
+    let template = p2pkh::unlock(privkey, None);
+    for i in 0..tx.input_count() {
+        let unlock_script = template
+            .sign(&tx, i as u32)
+            .map_err(|e| format!("Failed to sign input {}: {}", i, e))?;
+        tx.inputs[i].unlocking_script = Some(unlock_script);
+    }
+
+    Ok(BuiltTransactionResult {
+        raw_tx: tx.to_hex(),
+        txid: tx.tx_id_hex(),
+        fee,
+        change,
+        change_address: from_address,
+        spent_outpoints: selected_utxos
+            .iter()
+            .map(|u| SpentOutpoint {
+                txid: u.txid.clone(),
+                vout: u.vout,
+            })
+            .collect(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Custom-output transaction builder (BRC-100 createAction)
+// ---------------------------------------------------------------------------
+
+/// Build and sign a transaction with arbitrary locking scripts.
+///
+/// Unlike `build_multi_output_p2pkh_tx` which only supports P2PKH outputs,
+/// this function accepts raw locking script hex for each output. Used by
+/// BRC-100 `createAction` where apps specify custom output scripts.
+///
+/// All inputs are signed with the same key. A P2PKH change output is appended
+/// after the specified outputs if there are leftover funds.
+pub fn build_custom_output_tx(
+    wif: String,
+    outputs: Vec<CustomOutput>,
+    selected_utxos: Vec<UtxoInput>,
+    total_input: u64,
+    fee_rate: f64,
+) -> Result<BuiltTransactionResult, String> {
+    if outputs.is_empty() {
+        return Err("At least one output is required".into());
+    }
+
+    let from_address = sdk_address_from_wif(&wif)?;
+
+    // Decode and validate all locking scripts upfront
+    let mut decoded_scripts: Vec<Script> = Vec::with_capacity(outputs.len());
+    let mut output_script_sizes: Vec<usize> = Vec::with_capacity(outputs.len() + 1);
+
+    for (i, out) in outputs.iter().enumerate() {
+        let script = Script::from_hex(&out.locking_script_hex)
+            .map_err(|e| format!("Invalid locking script hex at output {}: {}", i, e))?;
+        let script_len = out.locking_script_hex.len() / 2; // hex -> bytes
+        output_script_sizes.push(script_len);
+        decoded_scripts.push(script);
+    }
+
+    let total_output: u64 = outputs.iter().map(|o| o.satoshis).sum();
+
+    // Preliminary check: will there be change?
+    let prelim_change = total_input.saturating_sub(total_output);
+    let will_have_change = prelim_change > 100;
+    if will_have_change {
+        output_script_sizes.push(P2PKH_OUTPUT_SIZE as usize); // 34 bytes for change
+    }
+
+    // Calculate fee with actual script sizes (not fixed P2PKH assumption)
+    let fee = calculate_inscription_tx_fee(
+        selected_utxos.len(),
+        &output_script_sizes,
+        fee_rate,
+    );
+
+    let change = total_input
+        .checked_sub(total_output)
+        .and_then(|v| v.checked_sub(fee))
+        .ok_or_else(|| format!(
+            "Insufficient funds: need {} + {} fee, have {}",
+            total_output, fee, total_input
+        ))?;
+
+    // Build transaction
+    let mut tx = SdkTransaction::new();
+
+    for utxo in &selected_utxos {
+        tx.add_input_from(&utxo.txid, utxo.vout, &utxo.script, utxo.satoshis)
+            .map_err(|e| format!("Failed to add input: {}", e))?;
+    }
+
+    // Add all specified outputs with exact locking scripts
+    for (i, script) in decoded_scripts.into_iter().enumerate() {
+        let mut output = TransactionOutput::new();
+        output.satoshis = outputs[i].satoshis;
+        output.locking_script = script;
+        tx.add_output(output);
+    }
+
+    // Add P2PKH change output
     if change > 0 {
         add_p2pkh_output(&mut tx, &from_address, change)?;
     }
