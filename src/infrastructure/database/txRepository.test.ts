@@ -174,7 +174,7 @@ describe('getAllTransactions', () => {
     await getAllTransactions(5)
     const call = mockDb.select.mock.calls[0]!
     expect(call[0]).toContain('account_id = $1')
-    expect(call[1]).toEqual([5])
+    expect(call[1]).toEqual([5, 200])
   })
 
   it('handles null optional fields as undefined', async () => {
@@ -197,9 +197,9 @@ describe('getAllTransactions', () => {
 
     await getAllTransactions()
     const call = mockDb.select.mock.calls[0]!
-    // No WHERE clause and no LIMIT params when no accountId
+    // No WHERE clause but LIMIT param is included
     expect(call[0]).not.toContain('account_id')
-    expect(call[1]).toEqual([])
+    expect(call[1]).toEqual([200])
   })
 })
 

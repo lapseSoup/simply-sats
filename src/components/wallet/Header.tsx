@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Settings } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { useNetwork } from '../../contexts/NetworkContext'
+import { useSyncStatus } from '../../contexts/NetworkContext'
 import { SimplySatsLogo } from '../shared/SimplySatsLogo'
 import { AccountSwitcher } from './AccountSwitcher'
 import { getBalanceFromDB } from '../../infrastructure/database'
@@ -19,7 +19,7 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
   const { wallet, networkInfo, syncing, accounts, activeAccountId } = useWalletState()
   const { performSync, fetchData, switchAccount } = useWalletActions()
   const { formatBSVShort, showToast } = useUI()
-  const { syncPhase } = useNetwork()
+  const { syncPhase } = useSyncStatus()
 
   // Track manual sync separately for button animation
   const [manualSyncing, setManualSyncing] = useState(false)

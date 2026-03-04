@@ -8,7 +8,7 @@
  */
 
 import { useState, useCallback } from 'react'
-import { open } from '@tauri-apps/plugin-dialog'
+import { openFileDialog } from '../../utils/dialog'
 import { CircleCheck } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { useWalletState, useWalletActions } from '../../contexts'
@@ -71,12 +71,11 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
 
   const handleSelectFile = useCallback(async () => {
     try {
-      const filePath = await open({
-        multiple: false
+      const filePath = await openFileDialog({
         // Don't set directory at all - let it default to file selection
       })
 
-      if (!filePath || Array.isArray(filePath)) return
+      if (!filePath) return
 
       // Validate file extension
       if (!filePath.toLowerCase().endsWith('.db')) {
@@ -94,12 +93,11 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
 
   const handleSelectFolder = useCallback(async () => {
     try {
-      const folderPath = await open({
+      const folderPath = await openFileDialog({
         directory: true,
-        multiple: false
       })
 
-      if (!folderPath || Array.isArray(folderPath)) return
+      if (!folderPath) return
 
       setSelectedPath(folderPath)
       setError('')

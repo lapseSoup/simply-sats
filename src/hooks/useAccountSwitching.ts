@@ -18,7 +18,7 @@ import {
   cancelSync
 } from '../services/sync'
 import { walletLogger } from '../services/logger'
-import { invoke } from '@tauri-apps/api/core'
+import { tauriInvoke } from '../utils/tauri'
 import { getSessionPassword, clearSessionPassword, NO_PASSWORD } from '../services/sessionPasswordStore'
 
 // Diagnostic: last failure reason (visible to UI for debugging)
@@ -103,7 +103,7 @@ async function deriveKeysFromRust(account: Account): Promise<WalletKeys | null> 
     const accountIndex = account.derivationIndex ?? ((account.id ?? 1) - 1)
     _lastSwitchDiag = `Rust: calling switch_account_from_store idx=${accountIndex}...`
 
-    const pubKeys = await invoke<PublicWalletKeys>('switch_account_from_store', { accountIndex })
+    const pubKeys = await tauriInvoke<PublicWalletKeys>('switch_account_from_store', { accountIndex })
     const keys = pubKeysToWalletKeys(pubKeys, accountIndex)
 
     _lastSwitchDiag = `Rust: OK addr=${keys.walletAddress?.substring(0, 8)}`
@@ -233,10 +233,7 @@ export function useAccountSwitching({
 
         // Rotate session token for new account
         try {
-          await Promise.race([
-            invoke('rotate_session_for_account', { accountId }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('rotate_session timed out')), 5000))
-          ])
+          await tauriInvoke('rotate_session_for_account', { accountId }, 5000)
         } catch (e) {
           walletLogger.warn('Failed to rotate session for account', { accountId, error: String(e) })
         }

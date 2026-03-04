@@ -1,5 +1,5 @@
 import { Unlock, Sparkles } from 'lucide-react'
-import { openUrl } from '@tauri-apps/plugin-opener'
+import { openExternalUrl } from '../../utils/opener'
 import { useUI } from '../../contexts/UIContext'
 import type { LockedUTXO } from '../../services/wallet'
 import { Modal } from '../shared/Modal'
@@ -29,7 +29,7 @@ export function LockDetailModal({
   const estimatedSeconds = blocksRemaining * AVERAGE_BLOCK_TIME_SECONDS
 
   const openOnWoC = () => {
-    openUrl(`https://whatsonchain.com/tx/${lock.txid}`)
+    openExternalUrl(`https://whatsonchain.com/tx/${lock.txid}`)
   }
 
   return (

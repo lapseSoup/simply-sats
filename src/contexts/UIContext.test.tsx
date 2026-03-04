@@ -10,6 +10,10 @@ vi.mock('./NetworkContext', () => ({
     networkInfo: null,
     syncing: false,
     setSyncing: vi.fn()
+  })),
+  useNetworkInfo: vi.fn(() => ({
+    usdPrice: 100,
+    networkInfo: null
   }))
 }))
 

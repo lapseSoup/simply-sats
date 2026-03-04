@@ -1,7 +1,10 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
-import type { Ordinal, LockedUTXO } from '../domain/types'
+import type { Ordinal } from '../domain/types'
+import { useOrdinalSelection } from './OrdinalSelectionContext'
+import { useWalletSetup } from './WalletSetupContext'
+import { useLockWorkflow } from './LockWorkflowContext'
 
-// ---- Types (moved from AppModals.tsx) ----
+// ---- Types ----
 
 export type Modal =
   | 'send'
@@ -19,72 +22,121 @@ export type Modal =
 
 export type AccountModalMode = 'create' | 'import' | 'manage'
 
-// ---- Context shape ----
+// ---- Slim ModalContext (UI-only: which modal is open) ----
 
 interface ModalContextType {
-  // --- UI State (modal visibility) ---
   modal: Modal
   accountModalMode: AccountModalMode
-
-  // --- Domain State (selected entities & workflow data) ---
-  // TODO(A-44): Extract into dedicated contexts in future refactor
-  ordinalToTransfer: Ordinal | null
-  ordinalToList: Ordinal | null
-  selectedOrdinal: Ordinal | null
-  newMnemonic: string | null
-  unlockConfirm: LockedUTXO | 'all' | null
-  unlocking: string | null
-
-  // --- Actions ---
   openModal: (modal: Modal) => void
   closeModal: () => void
   openAccountModal: (mode: AccountModalMode) => void
-  selectOrdinal: (ordinal: Ordinal) => void
-  startTransferOrdinal: (ordinal: Ordinal) => void
-  startListOrdinal: (ordinal: Ordinal) => void
-  completeTransfer: () => void
-  completeList: () => void
-  setNewMnemonic: (mnemonic: string | null) => void
-  confirmMnemonic: () => void
-  startUnlock: (lock: LockedUTXO) => void
-  startUnlockAll: () => void
-  cancelUnlock: () => void
-  setUnlocking: (txid: string | null) => void
 }
 
 const ModalContext = createContext<ModalContextType | null>(null)
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function useModal() {
+export function useModalContext() {
   const context = useContext(ModalContext)
   if (!context) {
-    throw new Error('useModal must be used within a ModalProvider')
+    throw new Error('useModalContext must be used within a ModalProvider')
   }
   return context
 }
+
+// ---- Combined hook for backward compatibility ----
+// Merges ModalContext + OrdinalSelectionContext + WalletSetupContext + LockWorkflowContext
+// so existing consumers don't need to change their imports.
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useModal() {
+  const modalCtx = useModalContext()
+  const ordinalCtx = useOrdinalSelection()
+  const walletSetupCtx = useWalletSetup()
+  const lockCtx = useLockWorkflow()
+
+  // Compound actions that set domain state AND open/close the modal.
+  // These preserve the original behavior where e.g. selectOrdinal both
+  // sets the selected ordinal and opens the 'ordinal' modal.
+  const selectOrdinal = useCallback((ordinal: Ordinal) => {
+    ordinalCtx.selectOrdinal(ordinal)
+    modalCtx.openModal('ordinal')
+  }, [ordinalCtx, modalCtx])
+
+  const startTransferOrdinal = useCallback((ordinal: Ordinal) => {
+    ordinalCtx.startTransferOrdinal(ordinal)
+    modalCtx.openModal('transfer-ordinal')
+  }, [ordinalCtx, modalCtx])
+
+  const startListOrdinal = useCallback((ordinal: Ordinal) => {
+    ordinalCtx.startListOrdinal(ordinal)
+    modalCtx.openModal('list-ordinal')
+  }, [ordinalCtx, modalCtx])
+
+  const completeTransfer = useCallback(() => {
+    ordinalCtx.completeTransfer()
+    modalCtx.closeModal()
+  }, [ordinalCtx, modalCtx])
+
+  const completeList = useCallback(() => {
+    ordinalCtx.completeList()
+    modalCtx.closeModal()
+  }, [ordinalCtx, modalCtx])
+
+  const confirmMnemonic = useCallback(() => {
+    walletSetupCtx.confirmMnemonic()
+    modalCtx.closeModal()
+  }, [walletSetupCtx, modalCtx])
+
+  return useMemo(() => ({
+    // ModalContext (UI state)
+    modal: modalCtx.modal,
+    accountModalMode: modalCtx.accountModalMode,
+    openModal: modalCtx.openModal,
+    closeModal: modalCtx.closeModal,
+    openAccountModal: modalCtx.openAccountModal,
+    // OrdinalSelectionContext (compound actions)
+    selectedOrdinal: ordinalCtx.selectedOrdinal,
+    ordinalToTransfer: ordinalCtx.ordinalToTransfer,
+    ordinalToList: ordinalCtx.ordinalToList,
+    selectOrdinal,
+    startTransferOrdinal,
+    startListOrdinal,
+    completeTransfer,
+    completeList,
+    // WalletSetupContext
+    newMnemonic: walletSetupCtx.newMnemonic,
+    setNewMnemonic: walletSetupCtx.setNewMnemonic,
+    confirmMnemonic,
+    // LockWorkflowContext
+    unlockConfirm: lockCtx.unlockConfirm,
+    unlocking: lockCtx.unlocking,
+    startUnlock: lockCtx.startUnlock,
+    startUnlockAll: lockCtx.startUnlockAll,
+    cancelUnlock: lockCtx.cancelUnlock,
+    setUnlocking: lockCtx.setUnlocking,
+  }), [
+    modalCtx.modal, modalCtx.accountModalMode, modalCtx.openModal,
+    modalCtx.closeModal, modalCtx.openAccountModal,
+    ordinalCtx.selectedOrdinal, ordinalCtx.ordinalToTransfer,
+    ordinalCtx.ordinalToList,
+    selectOrdinal, startTransferOrdinal, startListOrdinal,
+    completeTransfer, completeList,
+    walletSetupCtx.newMnemonic, walletSetupCtx.setNewMnemonic,
+    confirmMnemonic,
+    lockCtx.unlockConfirm, lockCtx.unlocking, lockCtx.startUnlock,
+    lockCtx.startUnlockAll, lockCtx.cancelUnlock, lockCtx.setUnlocking,
+  ])
+}
+
+// ---- Slim ModalProvider ----
 
 interface ModalProviderProps {
   children: ReactNode
 }
 
 export function ModalProvider({ children }: ModalProviderProps) {
-  // --- UI State (modal visibility & mode) ---
   const [modal, setModal] = useState<Modal>(null)
   const [accountModalMode, setAccountModalMode] = useState<AccountModalMode>('manage')
-
-  // --- Domain State (selected entities & workflow state) ---
-  // TODO(A-44): These hold domain data (ordinals, mnemonic, lock state) that
-  // should eventually be extracted into dedicated contexts (e.g. OrdinalSelectionContext,
-  // WalletSetupContext) so ModalContext only tracks which modal is open. Keeping them
-  // here for now to avoid a large cross-cutting refactor.
-  const [ordinalToTransfer, setOrdinalToTransfer] = useState<Ordinal | null>(null)
-  const [ordinalToList, setOrdinalToList] = useState<Ordinal | null>(null)
-  const [selectedOrdinal, setSelectedOrdinal] = useState<Ordinal | null>(null)
-  const [newMnemonic, setNewMnemonicState] = useState<string | null>(null)
-  const [unlockConfirm, setUnlockConfirm] = useState<LockedUTXO | 'all' | null>(null)
-  const [unlocking, setUnlockingState] = useState<string | null>(null)
-
-  // ---- Actions ----
 
   const openModal = useCallback((m: Modal) => {
     setModal(m)
@@ -99,104 +151,18 @@ export function ModalProvider({ children }: ModalProviderProps) {
     setModal('account')
   }, [])
 
-  const selectOrdinal = useCallback((ordinal: Ordinal) => {
-    setSelectedOrdinal(ordinal)
-    setModal('ordinal')
-  }, [])
-
-  const startTransferOrdinal = useCallback((ordinal: Ordinal) => {
-    setOrdinalToTransfer(ordinal)
-    setModal('transfer-ordinal')
-  }, [])
-
-  const startListOrdinal = useCallback((ordinal: Ordinal) => {
-    setOrdinalToList(ordinal)
-    setModal('list-ordinal')
-  }, [])
-
-  const completeTransfer = useCallback(() => {
-    setOrdinalToTransfer(null)
-    setModal(null)
-  }, [])
-
-  const completeList = useCallback(() => {
-    setOrdinalToList(null)
-    setModal(null)
-  }, [])
-
-  const setNewMnemonic = useCallback((mnemonic: string | null) => {
-    setNewMnemonicState(mnemonic)
-  }, [])
-
-  const confirmMnemonic = useCallback(() => {
-    setNewMnemonicState(null)
-    setModal(null)
-  }, [])
-
-  const startUnlock = useCallback((lock: LockedUTXO) => {
-    setUnlockConfirm(lock)
-  }, [])
-
-  const startUnlockAll = useCallback(() => {
-    setUnlockConfirm('all')
-  }, [])
-
-  const cancelUnlock = useCallback(() => {
-    setUnlockConfirm(null)
-  }, [])
-
-  const setUnlocking = useCallback((txid: string | null) => {
-    setUnlockingState(txid)
-  }, [])
-
   const value = useMemo<ModalContextType>(() => ({
-    // State
     modal,
     accountModalMode,
-    ordinalToTransfer,
-    ordinalToList,
-    selectedOrdinal,
-    newMnemonic,
-    unlockConfirm,
-    unlocking,
-    // Actions
     openModal,
     closeModal,
     openAccountModal,
-    selectOrdinal,
-    startTransferOrdinal,
-    startListOrdinal,
-    completeTransfer,
-    completeList,
-    setNewMnemonic,
-    confirmMnemonic,
-    startUnlock,
-    startUnlockAll,
-    cancelUnlock,
-    setUnlocking,
   }), [
     modal,
     accountModalMode,
-    ordinalToTransfer,
-    ordinalToList,
-    selectedOrdinal,
-    newMnemonic,
-    unlockConfirm,
-    unlocking,
     openModal,
     closeModal,
     openAccountModal,
-    selectOrdinal,
-    startTransferOrdinal,
-    startListOrdinal,
-    completeTransfer,
-    completeList,
-    setNewMnemonic,
-    confirmMnemonic,
-    startUnlock,
-    startUnlockAll,
-    cancelUnlock,
-    setUnlocking,
   ])
 
   return (

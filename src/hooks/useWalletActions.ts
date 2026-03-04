@@ -14,7 +14,7 @@ import {
   saveWalletUnprotected,
   clearWallet
 } from '../services/wallet'
-import { invoke } from '@tauri-apps/api/core'
+import { tauriInvoke } from '../utils/tauri'
 import type { Account } from '../services/accounts'
 import {
   getActiveAccount,
@@ -207,7 +207,7 @@ export function useWalletActions({
           await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
         } else {
           // Legacy JSON imports may not include a mnemonic; seed Rust store directly.
-          await invoke('store_keys_direct', {
+          await tauriInvoke('store_keys_direct', {
             walletWif: keys.walletWif,
             ordWif: keys.ordWif,
             identityWif: keys.identityWif,
@@ -259,7 +259,7 @@ export function useWalletActions({
     }
 
     try {
-      await invoke('clear_keys')
+      await tauriInvoke('clear_keys')
     } catch (e) {
       walletLogger.warn('Failed to clear Rust key store during delete', { error: String(e) })
     }

@@ -35,6 +35,8 @@ const CHECK_INTERVAL_MS = 5_000
 interface AutoLockState {
   lastActiveTime: number
   isEnabled: boolean
+  /** B-107: Tracks pause state separately from isEnabled so resume works correctly */
+  isPaused: boolean
   inactivityLimit: number
   checkInterval: ReturnType<typeof setInterval> | null
   eventCleanup: (() => void) | null
@@ -45,6 +47,7 @@ interface AutoLockState {
 const state: AutoLockState = {
   lastActiveTime: Date.now(),
   isEnabled: false,
+  isPaused: false,
   inactivityLimit: DEFAULT_INACTIVITY_LIMIT,
   checkInterval: null,
   eventCleanup: null,
@@ -75,6 +78,7 @@ export function initAutoLock(
   stopAutoLock()
 
   state.isEnabled = true
+  state.isPaused = false
   state.inactivityLimit = inactivityLimitMs
   state.lastActiveTime = Date.now()
   state.warningFired = false
@@ -131,6 +135,7 @@ export function initAutoLock(
  */
 export function stopAutoLock(): void {
   state.isEnabled = false
+  state.isPaused = false
 
   if (state.checkInterval) {
     clearInterval(state.checkInterval)
@@ -156,14 +161,21 @@ export function resetInactivityTimer(): void {
  * Check if auto-lock is enabled
  */
 export function isAutoLockEnabled(): boolean {
-  return state.isEnabled
+  return state.isEnabled && !state.isPaused
+}
+
+/**
+ * Check if auto-lock is currently paused
+ */
+export function isAutoLockPaused(): boolean {
+  return state.isPaused
 }
 
 /**
  * Get time remaining until auto-lock (in milliseconds)
  */
 export function getTimeUntilLock(): number {
-  if (!state.isEnabled) return -1
+  if (!state.isEnabled || state.isPaused) return -1
 
   const elapsed = Date.now() - state.lastActiveTime
   const remaining = state.inactivityLimit - elapsed
@@ -190,6 +202,7 @@ export function getInactivityLimit(): number {
  * Pause auto-lock temporarily (useful during modals or sensitive operations)
  */
 export function pauseAutoLock(): void {
+  state.isPaused = true
   if (state.checkInterval) {
     clearInterval(state.checkInterval)
     state.checkInterval = null
@@ -203,6 +216,7 @@ export function pauseAutoLock(): void {
 export function resumeAutoLock(onLock: () => void | Promise<void>, onWarning?: () => void): void {
   if (!state.isEnabled || state.checkInterval) return
 
+  state.isPaused = false
   state.lastActiveTime = Date.now() // Reset timer on resume
   state.warningFired = false
 

@@ -2,12 +2,12 @@ import { memo } from 'react'
 import { Lock } from 'lucide-react'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { useNetwork } from '../../contexts/NetworkContext'
+import { useSyncStatus } from '../../contexts/NetworkContext'
 
 function BalanceDisplayComponent() {
   const { balance, ordBalance, locks } = useWalletState()
   const { displayInSats, toggleDisplayUnit, formatBSVShort, formatUSD } = useUI()
-  const { syncing } = useNetwork()
+  const { syncing } = useSyncStatus()
 
   const totalBalance = balance + ordBalance
   const lockedBalance = locks.reduce((sum, l) => sum + l.satoshis, 0)

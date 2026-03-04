@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, memo, useCallback, useMemo, type ReactNode, type CSSProperties } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Lock, Unlock, Circle } from 'lucide-react'
 import { List } from 'react-window'
-import { useWalletState, useSyncContext, useNetwork } from '../../contexts'
+import { useWalletState, useSyncContext, useNetworkInfo } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
@@ -176,7 +176,7 @@ export const ActivityTab = memo(function ActivityTab() {
   const { txHistory, locks, loading, activeAccountId, ordinals, contentCacheSnapshot } = useWalletState()
   const { fetchOrdinalContentIfMissing } = useSyncContext()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
-  const { networkInfo } = useNetwork()
+  const { networkInfo } = useNetworkInfo()
   const currentHeight = networkInfo?.blockHeight ?? 0
 
   // Sync is handled by App.tsx checkSync effect — no duplicate sync here

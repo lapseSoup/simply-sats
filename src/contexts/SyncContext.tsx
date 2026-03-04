@@ -12,7 +12,7 @@
 
 import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode, type MutableRefObject } from 'react'
 import type { WalletKeys, UTXO, Ordinal, LockedUTXO } from '../domain/types'
-import { useNetwork } from './NetworkContext'
+import { useSyncStatus } from './NetworkContext'
 
 // Extracted hooks
 import { useSyncData } from '../hooks/useSyncData'
@@ -114,7 +114,7 @@ interface SyncProviderProps {
 }
 
 export function SyncProvider({ children }: SyncProviderProps) {
-  const { setSyncing } = useNetwork()
+  const { setSyncing } = useSyncStatus()
 
   // Sync-related state
   const [utxos, setUtxos] = useState<UTXO[]>([])

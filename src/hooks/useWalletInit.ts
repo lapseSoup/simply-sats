@@ -23,7 +23,7 @@ import {
   getActiveAccount,
   migrateToMultiAccount
 } from '../services/accounts'
-import { invoke } from '@tauri-apps/api/core'
+import { tauriInvoke } from '../utils/tauri'
 import {
   migrateToSecureStorage
 } from '../services/secureStorage'
@@ -183,7 +183,7 @@ export function useWalletInit({
                   await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
                   lap('storeKeysInRust (for account switch)')
                   try {
-                    const pubKeys = await invoke<PublicWalletKeys>('switch_account_from_store', { accountIndex: targetIndex })
+                    const pubKeys = await tauriInvoke<PublicWalletKeys>('switch_account_from_store', { accountIndex: targetIndex })
                     walletKeys = {
                       mnemonic: '',
                       walletType: pubKeys.walletType as 'yours',

@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useUI } from '../../contexts/UIContext'
-import { openUrl } from '@tauri-apps/plugin-opener'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { currentMonitor } from '@tauri-apps/api/window'
+import { openExternalUrl } from '../../utils/opener'
+import { openViewerWindow } from '../../utils/window'
 import { ExternalLink } from 'lucide-react'
 import { getTransactionByTxid } from '../../infrastructure/database'
 import { useWalletState } from '../../contexts'
@@ -97,15 +96,14 @@ export function TransactionDetailModal({
     const label = `ordinal-${resolvedOrigin.slice(0, 12).replace(/[^a-zA-Z0-9-_]/g, '_')}`
     const imageUrl = `https://ordinals.gorillapool.io/content/${resolvedOrigin}`
     const viewerUrl = `${window.location.origin}/ordinal-viewer.html?src=${encodeURIComponent(imageUrl)}`
-    let width = 800, height = 800
-    try {
-      const monitor = await currentMonitor()
-      if (monitor) {
-        width = Math.min(width, Math.floor(monitor.size.width / monitor.scaleFactor * 0.9))
-        height = Math.min(height, Math.floor(monitor.size.height / monitor.scaleFactor * 0.9))
-      }
-    } catch { /* use defaults */ }
-    new WebviewWindow(label, { url: viewerUrl, title: `Ordinal ${resolvedOrigin.slice(0, 8)}...`, width, height, resizable: true })
+
+    await openViewerWindow({
+      label,
+      url: viewerUrl,
+      title: `Ordinal ${resolvedOrigin.slice(0, 8)}...`,
+      width: 800,
+      height: 800,
+    })
   }, [effectiveOrdinalOrigin])
 
   // Labels via hook (handles loading, optimistic updates, suggestions)
@@ -160,7 +158,7 @@ export function TransactionDetailModal({
   }, [transaction.tx_hash, transaction.amount, transaction.description, activeAccountId])
 
   const openOnWoC = () => {
-    openUrl(`https://whatsonchain.com/tx/${transaction.tx_hash}`)
+    openExternalUrl(`https://whatsonchain.com/tx/${transaction.tx_hash}`)
   }
 
   const handleAddLabel = async (label: string) => {

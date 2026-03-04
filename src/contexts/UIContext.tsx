@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react'
-import { useNetwork } from './NetworkContext'
+import { useNetworkInfo } from './NetworkContext'
 import { uiLogger } from '../services/logger'
 import { UI } from '../config'
 import { satoshisToBtc } from '../utils/satoshiConversion'
@@ -53,10 +53,10 @@ interface UIProviderProps {
  * Provides UI state: display units, toasts, clipboard, theme, and BSV/USD formatters.
  *
  * @requires NetworkProvider — must be an ancestor in the React tree.
- *   UIProvider calls useNetwork() internally for USD price formatting.
+ *   UIProvider calls useNetworkInfo() internally for USD price formatting.
  */
 export function UIProvider({ children }: UIProviderProps) {
-  const { usdPrice } = useNetwork()
+  const { usdPrice } = useNetworkInfo()
 
   const [displayInSats, setDisplayInSats] = useState<boolean>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.DISPLAY_SATS)

@@ -27,7 +27,7 @@ const {
   mockClearDatabase,
   mockClearAllSimplySatsStorage,
   mockStopAutoLock,
-  mockInvoke,
+  mockTauriInvoke,
   mockRefreshAccounts,
   mockGetActiveAccount,
   mockSetWallet,
@@ -53,7 +53,7 @@ const {
   mockClearDatabase: vi.fn(),
   mockClearAllSimplySatsStorage: vi.fn(),
   mockStopAutoLock: vi.fn(),
-  mockInvoke: vi.fn(),
+  mockTauriInvoke: vi.fn(),
   mockRefreshAccounts: vi.fn(),
   mockGetActiveAccount: vi.fn(),
   mockSetWallet: vi.fn(),
@@ -86,7 +86,7 @@ vi.mock('../services/accounts', () => ({
   getActiveAccount: (...args: unknown[]) => mockGetActiveAccount(...args),
 }))
 
-vi.mock('../services/database', () => ({
+vi.mock('../infrastructure/database', () => ({
   clearDatabase: (...args: unknown[]) => mockClearDatabase(...args),
 }))
 
@@ -99,8 +99,9 @@ vi.mock('../services/autoLock', () => ({
   initAutoLock: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: (...args: unknown[]) => mockInvoke(...args),
+vi.mock('../utils/tauri', () => ({
+  isTauri: vi.fn().mockReturnValue(true),
+  tauriInvoke: (...args: unknown[]) => mockTauriInvoke(...args),
 }))
 
 vi.mock('../services/auditLog', () => ({
@@ -192,7 +193,7 @@ beforeEach(() => {
   mockClearDatabase.mockResolvedValue(undefined)
   mockClearAllSimplySatsStorage.mockReturnValue(undefined)
   mockStopAutoLock.mockReturnValue(undefined)
-  mockInvoke.mockResolvedValue(undefined)
+  mockTauriInvoke.mockResolvedValue(undefined)
   mockGetActiveAccount.mockResolvedValue({ id: 1 })
   mockStoreKeysInRust.mockResolvedValue(undefined)
 })
@@ -369,7 +370,7 @@ describe('handleImportJSON', () => {
 
     expect(result).toBe(true)
     expect(mockStoreKeysInRust).not.toHaveBeenCalled()
-    expect(mockInvoke).toHaveBeenCalledWith('store_keys_direct', expect.objectContaining({
+    expect(mockTauriInvoke).toHaveBeenCalledWith('store_keys_direct', expect.objectContaining({
       walletWif: testKeys.walletWif,
       ordWif: testKeys.ordWif,
       identityWif: testKeys.identityWif,
@@ -444,6 +445,6 @@ describe('handleDeleteWallet', () => {
 
     await handleDeleteWallet()
 
-    expect(mockInvoke).toHaveBeenCalledWith('clear_keys')
+    expect(mockTauriInvoke.mock.calls.some(call => call[0] === 'clear_keys')).toBe(true)
   })
 })

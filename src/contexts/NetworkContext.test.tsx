@@ -46,7 +46,7 @@ describe('NetworkContext', () => {
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
       expect(() => {
         renderHook(() => useNetwork())
-      }).toThrow('useNetwork must be used within a NetworkProvider')
+      }).toThrow('must be used within a NetworkProvider')
       spy.mockRestore()
     })
   })

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
-import { save } from '@tauri-apps/plugin-dialog'
-import { writeTextFile } from '@tauri-apps/plugin-fs'
-import { invoke } from '@tauri-apps/api/core'
+import { saveFileDialog } from '../../../utils/dialog'
+import { writeFile } from '../../../utils/fs'
+import { tauriInvoke } from '../../../utils/tauri'
 import {
   Lock,
   FileText,
@@ -78,7 +78,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       const identityWif = await getWifForOperation('identity', 'exportKeys', wallet)
       const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet)
       const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet)
-      const mnemonic = await invoke<string | null>('get_mnemonic_once')
+      const mnemonic = await tauriInvoke<string | null>('get_mnemonic_once')
 
       const keyData = {
         format: 'simply-sats',
@@ -96,12 +96,12 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
         version: 1,
         encrypted
       }
-      const filePath = await save({
+      const filePath = await saveFileDialog({
         defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
         filters: [{ name: 'JSON', extensions: ['json'] }]
       })
       if (filePath) {
-        await writeTextFile(filePath, JSON.stringify(encryptedExport, null, 2))
+        await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))
         showToast('Encrypted keys saved to file!')
       }
     } catch (err) {
@@ -119,7 +119,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
     setShowMnemonicWarning(false)
     try {
       // Fetch mnemonic once from Rust key store (auto-clears after retrieval)
-      const mnemonic = await invoke<string | null>('get_mnemonic_once')
+      const mnemonic = await tauriInvoke<string | null>('get_mnemonic_once')
       if (mnemonic) {
         setMnemonicToShow(mnemonic)
       } else {
@@ -182,7 +182,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       const identityWif = await getWifForOperation('identity', 'exportKeys', wallet!)
       const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet!)
       const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet!)
-      const mnemonic = await invoke<string | null>('get_mnemonic_once')
+      const mnemonic = await tauriInvoke<string | null>('get_mnemonic_once')
 
       const keyData = {
         format: 'simply-sats',
@@ -200,12 +200,12 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
         version: 1,
         encrypted
       }
-      const filePath = await save({
+      const filePath = await saveFileDialog({
         defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
         filters: [{ name: 'JSON', extensions: ['json'] }]
       })
       if (filePath) {
-        await writeTextFile(filePath, JSON.stringify(encryptedExport, null, 2))
+        await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))
         showToast('Keys exported! Remember the password you used.')
       }
     } catch (err) {

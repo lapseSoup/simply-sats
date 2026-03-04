@@ -9,7 +9,7 @@ import { createContext, useContext, useState, useCallback, useMemo, useRef, useE
 import type { WalletKeys, LockedUTXO } from '../domain/types'
 import { getUTXOsFromDB, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
 import { ok, err, type WalletResult } from '../domain/types'
-import { useNetwork } from './NetworkContext'
+import { useNetworkInfo } from './NetworkContext'
 import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
 
@@ -64,7 +64,7 @@ interface LocksProviderProps {
 }
 
 export function LocksProvider({ children }: LocksProviderProps) {
-  const { networkInfo } = useNetwork()
+  const { networkInfo } = useNetworkInfo()
 
   // Lock state
   const [locks, setLocks] = useState<LockedUTXO[]>([])

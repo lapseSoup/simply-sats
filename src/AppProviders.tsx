@@ -10,6 +10,9 @@ import {
   ConnectedAppsProvider,
   ModalProvider
 } from './contexts'
+import { OrdinalSelectionProvider } from './contexts/OrdinalSelectionContext'
+import { WalletSetupProvider } from './contexts/WalletSetupContext'
+import { LockWorkflowProvider } from './contexts/LockWorkflowContext'
 import { ScreenReaderAnnounceProvider, ErrorBoundary } from './components/shared'
 import { PlatformProvider } from './platform/PlatformProvider'
 
@@ -58,15 +61,21 @@ export function AppProviders({ children }: AppProvidersProps) {
                               <SyncProvider>
                                 <ErrorBoundary context="LocksProvider">
                                   <LocksProvider>
-                                    <ErrorBoundary context="ModalProvider">
-                                      <ModalProvider>
-                                        <ErrorBoundary context="WalletProvider">
-                                          <WalletProvider>
-                                            {children}
-                                          </WalletProvider>
-                                        </ErrorBoundary>
-                                      </ModalProvider>
-                                    </ErrorBoundary>
+                                    <OrdinalSelectionProvider>
+                                    <WalletSetupProvider>
+                                    <LockWorkflowProvider>
+                                      <ErrorBoundary context="ModalProvider">
+                                        <ModalProvider>
+                                          <ErrorBoundary context="WalletProvider">
+                                            <WalletProvider>
+                                              {children}
+                                            </WalletProvider>
+                                          </ErrorBoundary>
+                                        </ModalProvider>
+                                      </ErrorBoundary>
+                                    </LockWorkflowProvider>
+                                    </WalletSetupProvider>
+                                    </OrdinalSelectionProvider>
                                   </LocksProvider>
                                 </ErrorBoundary>
                               </SyncProvider>

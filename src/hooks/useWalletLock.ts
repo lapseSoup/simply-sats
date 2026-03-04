@@ -23,7 +23,7 @@ import {
 import { setWalletKeys } from '../services/brc100'
 import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
-import { invoke } from '@tauri-apps/api/core'
+import { tauriInvoke } from '../utils/tauri'
 import { STORAGE_KEYS, storage } from '../infrastructure/storage/localStorage'
 import { setSessionPassword as setModuleSessionPassword, clearSessionPassword, NO_PASSWORD } from '../services/sessionPasswordStore'
 import { hasPassword } from '../services/wallet/storage'
@@ -108,7 +108,7 @@ export function useWalletLock({
     clearSessionKey()
     storage.clearPrivacySensitive()
     try {
-      await invoke('clear_keys')
+      await tauriInvoke('clear_keys')
     } catch (e) {
       walletLogger.warn('Failed to clear Rust key store', { error: String(e) })
     }
@@ -218,10 +218,7 @@ export function useWalletLock({
         resetInactivityTimer()
         await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? 0)
         try {
-          await Promise.race([
-            invoke('rotate_session_for_account', { accountId: account.id }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('rotate_session timed out')), 5000))
-          ])
+          await tauriInvoke('rotate_session_for_account', { accountId: account.id }, 5000)
         } catch (e) {
           walletLogger.warn('Failed to rotate session on unlock', { error: String(e) })
         }

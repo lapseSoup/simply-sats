@@ -4,8 +4,9 @@ import { renderHook, act } from '@testing-library/react'
 
 // --- Mocks (must be before imports) ---
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('../utils/tauri', () => ({
+  isTauri: vi.fn().mockReturnValue(true),
+  tauriInvoke: vi.fn(),
 }))
 
 vi.mock('../services/accounts', () => ({
@@ -45,7 +46,7 @@ import {
   switchJustCompleted,
   getLastSwitchDiag,
 } from './useAccountSwitching'
-import { invoke } from '@tauri-apps/api/core'
+import { tauriInvoke } from '../utils/tauri'
 import { switchAccount as switchAccountDb, getActiveAccount } from '../services/accounts'
 import { discoverAccounts } from '../services/accountDiscovery'
 import { cancelSync } from '../services/sync'
@@ -53,7 +54,7 @@ import { getSessionPassword, clearSessionPassword } from '../services/sessionPas
 import type { Account } from '../services/accounts'
 import type { WalletKeys, PublicWalletKeys } from '../services/wallet'
 
-const mockedInvoke = vi.mocked(invoke)
+const mockedTauriInvoke = vi.mocked(tauriInvoke)
 const mockedSwitchAccountDb = vi.mocked(switchAccountDb)
 const mockedGetActiveAccount = vi.mocked(getActiveAccount)
 const mockedGetSessionPassword = vi.mocked(getSessionPassword)
@@ -135,8 +136,8 @@ function makeOptions(overrides: Partial<Parameters<typeof useAccountSwitching>[0
 describe('useAccountSwitching', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Default: Rust invoke succeeds
-    mockedInvoke.mockResolvedValue(makePublicWalletKeys())
+    // Default: tauriInvoke succeeds
+    mockedTauriInvoke.mockResolvedValue(makePublicWalletKeys())
     mockedSwitchAccountDb.mockResolvedValue(true)
     mockedGetSessionPassword.mockReturnValue('testpassword')
   })
@@ -156,7 +157,7 @@ describe('useAccountSwitching', () => {
       })
 
       expect(success).toBe(true)
-      expect(mockedInvoke).toHaveBeenCalledWith('switch_account_from_store', { accountIndex: 1 })
+      expect(mockedTauriInvoke).toHaveBeenCalledWith('switch_account_from_store', { accountIndex: 1 })
       expect(mockedSwitchAccountDb).toHaveBeenCalledWith(2)
       expect(opts.setWallet).toHaveBeenCalledTimes(1)
       // Wallet keys should have mnemonic cleared
@@ -263,12 +264,12 @@ describe('useAccountSwitching', () => {
         await result.current.switchAccount(2)
       })
 
-      expect(mockedInvoke).toHaveBeenCalledWith('rotate_session_for_account', { accountId: 2 })
+      expect(mockedTauriInvoke).toHaveBeenCalledWith('rotate_session_for_account', { accountId: 2 }, 5000)
     })
 
     it('handles rotate_session_for_account timeout gracefully', async () => {
       // First call is switch_account_from_store (succeeds), second is rotate_session (times out)
-      mockedInvoke
+      mockedTauriInvoke
         .mockResolvedValueOnce(makePublicWalletKeys())
         .mockRejectedValueOnce(new Error('rotate_session timed out'))
       const opts = makeOptions()
@@ -287,8 +288,8 @@ describe('useAccountSwitching', () => {
 
   describe('switchAccount — password fallback path', () => {
     beforeEach(() => {
-      // Rust invoke fails — triggers fallback
-      mockedInvoke.mockRejectedValue(new Error('No mnemonic in store'))
+      // tauriInvoke fails — triggers fallback
+      mockedTauriInvoke.mockRejectedValue(new Error('No mnemonic in store'))
     })
 
     it('falls back to password-based switch when Rust derivation fails', async () => {
@@ -357,7 +358,7 @@ describe('useAccountSwitching', () => {
     it('queues a switch when one is already in progress', async () => {
       // Make the first switch slow so we can queue a second
       let resolveFirst: (v: PublicWalletKeys) => void
-      mockedInvoke.mockImplementationOnce(
+      mockedTauriInvoke.mockImplementationOnce(
         () => new Promise<PublicWalletKeys>((resolve) => { resolveFirst = resolve })
       )
 
@@ -381,7 +382,7 @@ describe('useAccountSwitching', () => {
       expect(secondResult).toBe(false)
 
       // Now resolve the first switch
-      mockedInvoke.mockResolvedValue(makePublicWalletKeys())
+      mockedTauriInvoke.mockResolvedValue(makePublicWalletKeys())
       resolveFirst!(makePublicWalletKeys())
       await firstPromise
 
@@ -650,7 +651,7 @@ describe('useAccountSwitching', () => {
       const remainingAccount = makeAccount({ id: 1 })
       mockedGetActiveAccount.mockResolvedValue(remainingAccount)
       const rustKeys = makePublicWalletKeys({ walletAddress: '1RemainingAddr' })
-      mockedInvoke.mockResolvedValue(rustKeys)
+      mockedTauriInvoke.mockResolvedValue(rustKeys)
 
       const opts = makeOptions({
         accountsDeleteAccount: vi.fn().mockResolvedValue(true),
@@ -663,14 +664,14 @@ describe('useAccountSwitching', () => {
       })
 
       // Should have invoked Rust to derive keys for the remaining account
-      expect(mockedInvoke).toHaveBeenCalledWith('switch_account_from_store', { accountIndex: 0 })
+      expect(mockedTauriInvoke).toHaveBeenCalledWith('switch_account_from_store', { accountIndex: 0 })
       expect(opts.setWallet).toHaveBeenCalled()
     })
 
     it('falls back to password derivation after delete when Rust fails', async () => {
       const remainingAccount = makeAccount({ id: 1 })
       mockedGetActiveAccount.mockResolvedValue(remainingAccount)
-      mockedInvoke.mockRejectedValue(new Error('no mnemonic'))
+      mockedTauriInvoke.mockRejectedValue(new Error('no mnemonic'))
       const fallbackKeys = makeWalletKeys()
       const opts = makeOptions({
         accountsDeleteAccount: vi.fn().mockResolvedValue(true),

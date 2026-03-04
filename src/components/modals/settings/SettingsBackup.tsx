@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
-import { save, open } from '@tauri-apps/plugin-dialog'
-import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs'
-import { invoke } from '@tauri-apps/api/core'
+import { saveFileDialog, openFileDialog } from '../../../utils/dialog'
+import { writeFile, readFile } from '../../../utils/fs'
+import { tauriInvoke } from '../../../utils/tauri'
 import {
   Save,
   Download,
@@ -42,7 +42,7 @@ export function SettingsBackup() {
       const identityWif = await getWifForOperation('identity', operationName, wallet!)
       const walletWif = await getWifForOperation('wallet', operationName, wallet!)
       const ordWif = await getWifForOperation('ordinals', operationName, wallet!)
-      const mnemonic = await invoke<string | null>('get_mnemonic_once')
+      const mnemonic = await tauriInvoke<string | null>('get_mnemonic_once')
 
       const fullBackup = {
         format: 'simply-sats-full',
@@ -64,12 +64,12 @@ export function SettingsBackup() {
       }
       const backupJson = JSON.stringify(encryptedBackup, null, 2)
       const suffix = type === 'full' ? 'full' : 'essential'
-      const filePath = await save({
+      const filePath = await saveFileDialog({
         defaultPath: `simply-sats-backup-${suffix}-${new Date().toISOString().split('T')[0]}.json`,
         filters: [{ name: 'JSON', extensions: ['json'] }]
       })
       if (filePath) {
-        await writeTextFile(filePath, backupJson)
+        await writeFile(filePath, backupJson)
         showToast(type === 'full' ? 'Full backup saved!' : 'Essential backup saved!')
       }
     } catch (err) {
@@ -119,12 +119,11 @@ export function SettingsBackup() {
 
   const handleImportBackup = useCallback(async () => {
     try {
-      const filePath = await open({
+      const filePath = await openFileDialog({
         filters: [{ name: 'JSON', extensions: ['json'] }],
-        multiple: false
       })
-      if (!filePath || Array.isArray(filePath)) return
-      const json = await readTextFile(filePath)
+      if (!filePath) return
+      const json = await readFile(filePath)
       const raw = JSON.parse(json)
 
       let backup

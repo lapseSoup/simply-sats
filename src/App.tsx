@@ -1,36 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { AlertCircle, X } from 'lucide-react'
 import './App.css'
 
 import { useWallet, useUI, useModal } from './contexts'
-import { useNetwork } from './contexts/NetworkContext'
-import { isOk } from './domain/types'
-import { logger } from './services/logger'
+import { useSyncStatus } from './contexts/NetworkContext'
 import { Toast, PaymentAlert, SkipLink, ErrorBoundary, SimplySatsLogo } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
 import { Header, BalanceDisplay, QuickActions } from './components/wallet'
 import { RestoreModal, MnemonicModal, LockScreenModal, BackupVerificationModal } from './components/modals'
-import { FEATURES, SECURITY } from './config'
+import { FEATURES } from './config'
 import { OnboardingFlow } from './components/onboarding'
 import { AppProviders } from './AppProviders'
 import { AppModals } from './AppModals'
 import { AppTabNav, AppTabContent, type Tab } from './AppTabs'
-
-import type { PaymentNotification } from './services/messageBox'
-import { loadNotifications, startPaymentListenerFromWif, resetMessageBoxAuth } from './services/messageBox'
-import { needsInitialSync, syncWallet, getLastSyncTimeForAccount } from './services/sync'
-import { discoverAccounts } from './services/accountDiscovery'
-import { getAccountKeys } from './services/accounts'
-import { getSessionPassword } from './services/sessionPasswordStore'
-import { switchJustCompleted } from './hooks/useAccountSwitching'
-// import { needsBackupReminder } from './services/backupReminder'  // Disabled: reminder too aggressive
+import { useCheckSync } from './hooks/useCheckSync'
+import { usePaymentListener } from './hooks/usePaymentListener'
+import { useMnemonicAutoClear } from './hooks/useMnemonicAutoClear'
+import { useUnlockHandler } from './hooks/useUnlockHandler'
+import { logger } from './services/logger'
 
 // Tab order for keyboard navigation
 const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'search']
 
-// TODO(A-42): This component has 12 useRefs as stale closure workarounds.
-// checkSync (~230 lines) should be extracted to a custom hook (useCheckSync).
-// See docs/reviews/2026-03-02-full-review-v21.md for details.
 /** Exported for use by the Chrome extension popup (which wraps its own providers) */
 export function WalletApp() {
   // App.tsx is the top-level orchestrator and legitimately needs both wallet state
@@ -67,7 +58,7 @@ export function WalletApp() {
   } = useWallet()
 
   const { copyFeedback, toasts, showToast, dismissToast } = useUI()
-  const { setSyncPhase } = useNetwork()
+  const { setSyncPhase } = useSyncStatus()
   const {
     modal, openModal, closeModal,
     openAccountModal,
@@ -79,9 +70,6 @@ export function WalletApp() {
 
   // UI State
   const [activeTab, setActiveTab] = useState<Tab>('activity')
-
-  // Payment alert state
-  const [newPaymentAlert, setNewPaymentAlert] = useState<PaymentNotification | null>(null)
 
   // Backup reminder state
   const [showBackupReminder, setShowBackupReminder] = useState(false)
@@ -116,365 +104,45 @@ export function WalletApp() {
     enabled: true
   })
 
-  // Keep refs for all callbacks used inside checkSync so the effect itself only
-  // depends on [wallet, activeAccountId] — the two values that actually signal
-  // "a new account is ready to sync". Every other function either:
-  //   (a) has a dep on wallet/activeAccountId (performSync, fetchData, refreshTokens)
-  //       and therefore gets a new identity on every restore/switch, or
-  //   (b) arrives through the actionsValue useMemo in WalletContext, which recreates
-  //       whenever performSync/fetchData change, giving consumePendingDiscovery and
-  //       refreshAccounts new object references even though their underlying logic
-  //       is stable.
-  // Putting any of these in the dep array caused an infinite sync loop:
-  //   wallet changes → new performSync → new actionsValue → new consumePendingDiscovery
-  //   → effect re-fires → sync starts again → repeat.
-  // Ref mirror: avoids stale closure in checkSync — fetchDataFromDB rebuilds on wallet/account changes
-  const fetchDataFromDBRef = useRef(fetchDataFromDB)
-  useEffect(() => { fetchDataFromDBRef.current = fetchDataFromDB }, [fetchDataFromDB])
-  // Ref mirror: avoids stale closure in checkSync — fetchData rebuilds on wallet/account changes
-  const fetchDataRef = useRef(fetchData)
-  useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
-  // Ref mirror: avoids stale closure in checkSync — performSync rebuilds on wallet/account changes
-  const performSyncRef = useRef(performSync)
-  useEffect(() => { performSyncRef.current = performSync }, [performSync])
-  // Ref mirror: avoids stale closure in checkSync — refreshTokens rebuilds on wallet changes
-  const refreshTokensRef = useRef(refreshTokens)
-  useEffect(() => { refreshTokensRef.current = refreshTokens }, [refreshTokens])
-  // Ref mirror: avoids stale closure in checkSync — consumePendingDiscovery rebuilds via actionsValue
-  const consumePendingDiscoveryRef = useRef(consumePendingDiscovery)
-  useEffect(() => { consumePendingDiscoveryRef.current = consumePendingDiscovery }, [consumePendingDiscovery])
-  // Ref mirror: avoids stale closure in checkSync — peekPendingDiscovery rebuilds via actionsValue
-  const peekPendingDiscoveryRef = useRef(peekPendingDiscovery)
-  useEffect(() => { peekPendingDiscoveryRef.current = peekPendingDiscovery }, [peekPendingDiscovery])
-  // Ref mirror: avoids stale closure in checkSync — clearPendingDiscovery rebuilds via actionsValue
-  const clearPendingDiscoveryRef = useRef(clearPendingDiscovery)
-  useEffect(() => { clearPendingDiscoveryRef.current = clearPendingDiscovery }, [clearPendingDiscovery])
-  // Ref mirror: avoids stale closure in checkSync — refreshAccounts rebuilds via actionsValue
-  const refreshAccountsRef = useRef(refreshAccounts)
-  useEffect(() => { refreshAccountsRef.current = refreshAccounts }, [refreshAccounts])
-  // Ref mirror: setSyncPhase arrives via NetworkContext's useMemo, which recreates whenever
-  // syncPhase/networkInfo/syncing/usdPrice change. Keeping it in the effect deps
-  // caused an infinite loop: setSyncPhase('syncing') → syncPhase changes →
-  // useMemo recreates → new setSyncPhase reference → effect re-fires → repeat.
-  const setSyncPhaseRef = useRef(setSyncPhase)
-  useEffect(() => { setSyncPhaseRef.current = setSyncPhase }, [setSyncPhase])
-  // Ref mirror: showToast arrives via UIContext's useMemo, which includes `toasts` in its deps.
-  // Every time a toast is displayed, toasts changes → useMemo recreates → new
-  // showToast reference → effect re-fires → sync starts again → repeat.
-  // Calling showToast('Wallet ready ✓') inside the effect was the trigger.
-  const showToastRef = useRef(showToast)
-  useEffect(() => { showToastRef.current = showToast }, [showToast])
-  // Ref mirror: walletRef lets checkSync always read the latest wallet without depending on it.
-  // This prevents the effect from firing when setWallet() is called during a switch
-  // (which would cause a mismatched newWallet+oldAccountId pair).
-  const walletRef = useRef(wallet)
-  useEffect(() => { walletRef.current = wallet }, [wallet])
-  // Ref mirror: avoids stale closure in checkSync — accounts array rebuilds on every account change
-  const accountsRef = useRef(accounts)
-  useEffect(() => { accountsRef.current = accounts }, [accounts])
+  // ── Extracted hooks ────────────────────────────────────────────────────
 
-  // MessageBox listener for payments
-  useEffect(() => {
-    if (!wallet) return
+  // Auto-sync pipeline: initial sync, background sync, account discovery
+  useCheckSync({
+    wallet,
+    activeAccountId,
+    accounts,
+    fetchDataFromDB,
+    fetchData,
+    performSync,
+    refreshTokens,
+    consumePendingDiscovery,
+    peekPendingDiscovery,
+    clearPendingDiscovery,
+    refreshAccounts,
+    setSyncPhase,
+    showToast,
+  })
 
-    // Reset auth failure counter on account switch — new identity key may succeed
-    resetMessageBoxAuth()
-    loadNotifications()
+  // MessageBox payment listener
+  const { newPaymentAlert, dismissPaymentAlert } = usePaymentListener({
+    wallet,
+    fetchData,
+    showToast,
+  })
 
-    const handleNewPayment = (payment: PaymentNotification) => {
-      logger.info('New payment received', { txid: payment.txid, amount: payment.amount })
-      setNewPaymentAlert(payment)
-      showToastRef.current(`Received ${payment.amount?.toLocaleString() || 'unknown'} sats!`)
-      fetchDataRef.current()
-      setTimeout(() => setNewPaymentAlert(null), 5000)
-    }
+  // Auto-clear mnemonic from memory after security timeout
+  useMnemonicAutoClear(newMnemonic, setNewMnemonic)
 
-    const setupListener = async () => {
-      const { getWifForOperation } = await import('./services/wallet')
-      const identityWif = await getWifForOperation('identity', 'paymentListener', wallet)
-      return startPaymentListenerFromWif(identityWif, handleNewPayment)
-    }
-
-    let stopListener: (() => void) | undefined
-    setupListener()
-      .then(stop => { stopListener = stop })
-      .catch(err => logger.error('Failed to start payment listener', err))
-
-    return () => {
-      stopListener?.()
-    }
-  }, [wallet])
-
-  // Coerce wallet to boolean: true when loaded, false when null.
-  // Using this in deps instead of `wallet` directly prevents the effect from firing
-  // on every account switch (where wallet identity changes but stays non-null).
-  // It DOES fire on restore/create (null → non-null) and delete (non-null → null).
-  const hasWallet = !!wallet
-
-  // Auto-sync on wallet load or account change.
-  // Depends on [activeAccountId, hasWallet] — NOT the wallet object itself.
-  // - hasWallet fires the effect on initial restore/create (wallet null → non-null)
-  // - activeAccountId fires on account switches
-  // During account switches, wallet identity changes (Account1Keys → Account2Keys)
-  // but hasWallet stays true, so the effect doesn't re-fire from wallet alone.
-  // This avoids the mismatched (newWallet, oldAccountId) pair that caused wrong data.
-  useEffect(() => {
-    const currentWallet = walletRef.current
-    if (!currentWallet || activeAccountId === null) return
-
-    let cancelled = false
-
-    const checkSync = async () => {
-      // Read the latest wallet from ref (always current, no stale closure)
-      const w = walletRef.current
-      if (!w) return
-
-      const discoveryParams = peekPendingDiscoveryRef.current()
-      const isPostSwitch = switchJustCompleted()
-      logger.info('checkSync starting', {
-        hasDiscoveryParams: !!discoveryParams,
-        walletAddress: w.walletAddress?.substring(0, 12),
-        activeAccountId,
-        isPostSwitch,
-        accountCount: accountsRef.current.length
-      })
-
-      let needsSync = false
-
-      try {
-        // If a switch just completed, useAccountSwitching already loaded all DB
-        // data with the correct keys+accountId. Skip the DB preload here.
-        if (!isPostSwitch) {
-          await fetchDataFromDBRef.current()
-        }
-
-        needsSync = await needsInitialSync([
-          w.walletAddress,
-          w.ordAddress,
-          w.identityAddress
-        ], activeAccountId ?? undefined)
-
-        if (needsSync && !isPostSwitch) {
-          // First-ever sync for this account: must block — no cached data to show
-          logger.info('Initial sync needed, starting...', { accountId: activeAccountId })
-          setSyncPhaseRef.current('syncing')
-          await performSyncRef.current(true)
-          setSyncPhaseRef.current('loading')
-          await fetchDataRef.current()
-          showToastRef.current('Wallet ready ✓', 'success')
-        } else if (needsSync && isPostSwitch) {
-          // Account was just switched to but has never been synced (e.g. discovered
-          // account). Do a background sync — DB data was already loaded by the switch.
-          logger.info('Post-switch initial sync (background)', { accountId: activeAccountId })
-          ;(async () => {
-            try {
-              if (cancelled) return
-              await performSyncRef.current(false, false, true)
-              if (cancelled) return
-              await fetchDataRef.current()
-            } catch (e) {
-              logger.warn('Post-switch background sync failed', { error: String(e) })
-            } finally {
-              setSyncPhaseRef.current(null)
-            }
-          })()
-        } else {
-          // Already-synced account — always fetch API data (ordinals, balances),
-          // and background-sync from blockchain if data is stale.
-          const SYNC_COOLDOWN_MS = 5 * 60 * 1000
-          const lastSyncTime = await getLastSyncTimeForAccount(activeAccountId!)
-          const isStale = (Date.now() - lastSyncTime) > SYNC_COOLDOWN_MS
-
-          if (isStale) {
-            logger.info('Account data stale, background-syncing', { accountId: activeAccountId, lastSyncTime })
-            ;(async () => {
-              try {
-                if (cancelled) return
-                await performSyncRef.current(false, false, true)
-                if (cancelled) return
-                await fetchDataRef.current()
-              } catch (e) {
-                logger.warn('Background sync after switch failed', { error: String(e) })
-              } finally {
-                setSyncPhaseRef.current(null)
-              }
-            })()
-          } else {
-            // Data is fresh from blockchain perspective, but still need to load API
-            // data (ordinals, ord balance) that isn't cached in the DB.
-            logger.info('Account data fresh, loading API data', { accountId: activeAccountId, lastSyncTime })
-            ;(async () => {
-              try {
-                if (cancelled) return
-                await fetchDataRef.current()
-              } catch (e) {
-                logger.warn('Fresh account API fetch failed', { error: String(e) })
-              }
-            })()
-          }
-        }
-      } catch (e) {
-        logger.error('Auto-sync pipeline failed', e)
-        setSyncPhaseRef.current(null) // B-40: Clear sync phase on error
-      } finally {
-        // Clear sync phase for the initial-sync (blocking) path.
-        // Background sync manages its own phase in its own finally block.
-        if (needsSync) {
-          setSyncPhaseRef.current(null)
-        }
-      }
-
-      // Bail out if this invocation was superseded by a newer one
-      if (cancelled) {
-        logger.info('checkSync cancelled after sync pipeline (superseded by newer invocation)')
-        return
-      }
-
-      // Sync token balances as part of initial load
-      try {
-        await refreshTokensRef.current()
-      } catch (e) {
-        logger.error('Token refresh during auto-sync failed', e)
-      }
-
-      // Background-sync all inactive accounts so their data is fresh when switched to.
-      // Skip when discovery is pending — background sync holds the DB lock and would
-      // race with discoverAccounts' createAccount calls, causing "database is locked" errors.
-      // Fire-and-forget: failures are logged but don't affect the active account.
-      // Delay start by 10s to let the active account's sync finish first and avoid
-      // overwhelming WoC with concurrent requests from multiple accounts.
-      const otherAccounts = accountsRef.current.filter(a => a.id !== activeAccountId)
-      if (otherAccounts.length > 0 && !discoveryParams) {
-        ;(async () => {
-          // Wait for active account sync to settle before syncing other accounts
-          await new Promise(resolve => setTimeout(resolve, 10_000))
-          if (cancelled) return // B-68: Check after initial delay
-          // B-96: Re-read session password after delay — it may have been cleared by lockWallet()
-          const sessionPwd = getSessionPassword()
-          if (sessionPwd === null) {
-            logger.info('Background sync skipped — wallet was locked during delay')
-            return
-          }
-          for (const account of otherAccounts) {
-            if (cancelled) break  // B-41: Stop syncing inactive accounts if superseded
-            try {
-              const keys = await getAccountKeys(account, sessionPwd)
-              if (!keys) continue
-              logger.info('Background-syncing account', { accountId: account.id, name: account.name })
-              await syncWallet(
-                keys.walletAddress,
-                keys.ordAddress,
-                keys.identityAddress,
-                account.id ?? undefined,
-                keys.walletPubKey
-              )
-              // Refresh accounts after EACH account sync so Header picks up
-              // the new balance immediately (instead of waiting for all accounts).
-              try { await refreshAccountsRef.current() } catch { /* non-critical */ }
-            } catch (e) {
-              logger.warn('Background sync failed for account', { accountId: account.id, error: String(e) })
-            }
-            // Inter-account cooldown — give WoC rate limits time to recover
-            if (!cancelled) await new Promise(resolve => setTimeout(resolve, 3_000))
-          }
-        })()
-      }
-
-      // Bail out if this invocation was superseded by a newer one
-      if (cancelled) {
-        logger.info('checkSync cancelled before discovery (superseded by newer invocation)')
-        return
-      }
-
-      // Run account discovery AFTER primary sync to avoid race conditions
-      // (discoverAccounts changes activeAccountId which would discard fetchData results if concurrent)
-      //
-      // NOTE: Discovery is NOT gated on needsSync — these are orthogonal concerns.
-      // pendingDiscoveryRef is a one-shot signal set only during handleRestoreWallet.
-      // If Account 1 was previously synced (needsSync = false), additional accounts on
-      // the blockchain still need to be discovered.
-      //
-      // We peek first, then clear only when we're about to run discovery.
-      // This ensures a cancelled invocation doesn't destroy the params.
-      if (discoveryParams) {
-        // B-47: Check cancellation before clearing params to prevent data loss
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        if (cancelled) {
-          logger.info('checkSync cancelled during pre-discovery cooldown')
-          return
-        }
-        // Now safe to clear — we're committed to running discovery
-        clearPendingDiscoveryRef.current()
-        logger.info('Account discovery starting', {
-          excludeAccountId: discoveryParams.excludeAccountId
-        })
-        showToastRef.current('Scanning for additional accounts...')
-        try {
-          const found = await discoverAccounts(
-            discoveryParams.mnemonic,
-            discoveryParams.password,
-            discoveryParams.excludeAccountId
-          )
-          logger.info('Account discovery complete', { found })
-          if (found > 0) {
-            await refreshAccountsRef.current()
-            showToastRef.current(`Discovered ${found} additional account${found > 1 ? 's' : ''}`, 'success')
-
-            // Background-sync discovered accounts so their balances appear in the
-            // account switcher. Discovery creates accounts with deferred sync, so
-            // they have 0 UTXOs until explicitly synced. Fire-and-forget.
-            // Read fresh account list from DB (accountsRef.current may not have
-            // the newly discovered accounts yet — React state update is async).
-            const sessionPwd = getSessionPassword()
-            const { getAllAccounts: fetchAllAccounts } = await import('./services/accounts')
-            const allAccounts = await fetchAllAccounts()
-            const capturedAccountId = activeAccountId // B-49: Capture before async loop
-            const newAccounts = allAccounts.filter(a => a.id !== capturedAccountId)
-            ;(async () => {
-              for (const account of newAccounts) {
-                if (cancelled) break  // B-82: Stop syncing discovered accounts if superseded
-                try {
-                  const keys = await getAccountKeys(account, sessionPwd)
-                  if (!keys) continue
-                  logger.info('Post-discovery sync for account', { accountId: account.id, name: account.name })
-                  await syncWallet(
-                    keys.walletAddress,
-                    keys.ordAddress,
-                    keys.identityAddress,
-                    account.id ?? undefined,
-                    keys.walletPubKey
-                  )
-                  // Refresh after each so balances appear incrementally in switcher
-                  try { await refreshAccountsRef.current() } catch { /* non-critical */ }
-                } catch (e) {
-                  logger.warn('Post-discovery sync failed for account', { accountId: account.id, error: String(e) })
-                }
-              }
-            })()
-          } else {
-            showToastRef.current('No additional accounts found')
-          }
-        } catch (e) {
-          logger.error('Account discovery failed', e)
-          showToastRef.current('Account discovery failed', 'error')
-        }
-      }
-    }
-
-    checkSync().catch(err => logger.error('Auto-sync check failed', err))
-
-    return () => { cancelled = true }
-  }, [activeAccountId, hasWallet])
-
-  // Auto-clear mnemonic from memory after timeout (security)
-  useEffect(() => {
-    if (!newMnemonic) return
-    const timer = setTimeout(() => {
-      setNewMnemonic(null)
-      logger.info('Mnemonic auto-cleared from memory after timeout')
-    }, SECURITY.MNEMONIC_AUTO_CLEAR_MS)
-    return () => clearTimeout(timer)
-  }, [newMnemonic, setNewMnemonic])
+  // Lock unlock confirmation logic
+  const { unlockableLocks, handleConfirmUnlock } = useUnlockHandler({
+    locks,
+    networkInfo,
+    unlockConfirm,
+    handleUnlock,
+    showToast,
+    setUnlocking,
+    cancelUnlock,
+  })
 
   // Backup reminder disabled — too aggressive for current UX
   // Users verify their recovery phrase once during onboarding; periodic re-verification is overkill
@@ -487,7 +155,7 @@ export function WalletApp() {
   //   }
   // }, [wallet, isLocked])
 
-  // Handlers
+  // ── Handlers ───────────────────────────────────────────────────────────
 
   const handleAccountCreate = useCallback(async (name: string): Promise<boolean> => {
     return await createNewAccount(name)
@@ -496,39 +164,6 @@ export function WalletApp() {
   const handleAccountImport = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
     return importAccount(name, mnemonic)
   }, [importAccount])
-
-  const getUnlockableLocks = useCallback(() => {
-    const currentHeight = networkInfo?.blockHeight || 0
-    return locks.filter(lock => currentHeight >= lock.unlockBlock)
-  }, [networkInfo?.blockHeight, locks])
-
-  const handleConfirmUnlock = useCallback(async () => {
-    if (!unlockConfirm) return
-
-    const locksToUnlock = unlockConfirm === 'all' ? getUnlockableLocks() : [unlockConfirm]
-    let succeeded = 0
-    let failed = 0
-
-    for (const lock of locksToUnlock) {
-      setUnlocking(lock.txid)
-      const result = await handleUnlock(lock)
-      if (isOk(result)) {
-        succeeded++
-        showToast(`Unlocked ${lock.satoshis.toLocaleString()} sats!`)
-      } else {
-        failed++
-        showToast(result.error || 'Unlock failed', 'error')
-        // B-45: Short-circuit on first network error to avoid wasting time
-        if (locksToUnlock.length > 1) break
-      }
-    }
-
-    setUnlocking(null)
-    // B-45: Only close modal if at least one unlock succeeded
-    if (succeeded > 0 || failed === 0) {
-      cancelUnlock()
-    }
-  }, [unlockConfirm, getUnlockableLocks, handleUnlock, showToast, setUnlocking, cancelUnlock])
 
   const handleBrc100Approve = useCallback(() => {
     handleApproveBRC100()
@@ -539,6 +174,8 @@ export function WalletApp() {
     handleRejectBRC100()
     closeModal()
   }, [handleRejectBRC100, closeModal])
+
+  // ── Render ─────────────────────────────────────────────────────────────
 
   // Loading screen
   if (loading) {
@@ -730,7 +367,7 @@ export function WalletApp() {
         onImportAccount={handleAccountImport}
         onDeleteAccount={deleteAccount}
         onRenameAccount={renameAccount}
-        unlockableLocks={getUnlockableLocks()}
+        unlockableLocks={unlockableLocks}
         onConfirmUnlock={handleConfirmUnlock}
       />
 
@@ -738,7 +375,7 @@ export function WalletApp() {
 
       <PaymentAlert
         payment={newPaymentAlert}
-        onDismiss={() => setNewPaymentAlert(null)}
+        onDismiss={dismissPaymentAlert}
       />
     </div>
   )

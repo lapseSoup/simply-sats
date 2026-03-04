@@ -16,7 +16,7 @@ import { reconcileLocks } from '../services/wallet/lockReconciliation'
 import type { WalletResult } from '../domain/types'
 import { useTokens } from './TokensContext'
 import { walletLogger } from '../services/logger'
-import { invoke } from '@tauri-apps/api/core'
+import { tauriInvoke } from '../utils/tauri'
 
 // Extracted hooks
 import { useWalletLock, initAutoLock, minutesToMs } from '../hooks/useWalletLock'
@@ -141,10 +141,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Store keys in Rust key store (mnemonic + index only — no WIFs cross IPC)
   const storeKeysInRust = useCallback(async (mnemonic: string, accountIndex: number) => {
     try {
-      await Promise.race([
-        invoke('store_keys', { mnemonic, accountIndex }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('store_keys timed out after 10s')), 10000))
-      ])
+      await tauriInvoke('store_keys', { mnemonic, accountIndex }, 10000)
     } catch (e) {
       walletLogger.warn('Failed to store keys in Rust key store', { error: String(e) })
     }

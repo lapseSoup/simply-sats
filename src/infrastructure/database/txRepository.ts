@@ -131,21 +131,28 @@ export async function upsertTransaction(tx: Omit<Transaction, 'id'>, accountId?:
   }
 }
 
+const DEFAULT_TX_LIMIT = 200
+
 /**
  * Get all transactions from database for a specific account
  * Orders pending (unconfirmed) transactions first, then by block height descending
  * @param accountId - Account ID to filter by (optional)
+ * @param options - Optional pagination: { limit, offset }. Default limit is 200.
  */
-export async function getAllTransactions(accountId?: number): Promise<Result<Transaction[], DbError>> {
+export async function getAllTransactions(
+  accountId?: number,
+  options?: { limit?: number; offset?: number }
+): Promise<Result<Transaction[], DbError>> {
   try {
     const database = getDatabase()
 
     let query = `SELECT * FROM transactions`
     const params: SqlParams = []
+    let paramIndex = 1
 
     // Filter by account ID if provided (check for both undefined AND null)
     if (accountId !== undefined && accountId !== null) {
-      query += ` WHERE account_id = $1`
+      query += ` WHERE account_id = $${paramIndex++}`
       params.push(accountId)
     }
 
@@ -153,6 +160,16 @@ export async function getAllTransactions(accountId?: number): Promise<Result<Tra
          CASE WHEN block_height IS NULL THEN 0 ELSE 1 END,
          block_height DESC,
          created_at DESC`
+
+    // Pagination
+    const limit = options?.limit ?? DEFAULT_TX_LIMIT
+    query += ` LIMIT $${paramIndex++}`
+    params.push(limit)
+
+    if (options?.offset) {
+      query += ` OFFSET $${paramIndex++}`
+      params.push(options.offset)
+    }
 
     // Order: pending transactions first (NULL block_height), then confirmed by height DESC
     const rows = await database.select<TransactionRow[]>(query, params)
@@ -170,6 +187,30 @@ export async function getAllTransactions(accountId?: number): Promise<Result<Tra
     })))
   } catch (e) {
     return err(new DbError(`getAllTransactions failed: ${e instanceof Error ? e.message : String(e)}`, 'QUERY_FAILED', e))
+  }
+}
+
+/**
+ * Get the total count of transactions for an account.
+ * Lightweight alternative to getAllTransactions when you only need to check "any exist?".
+ * @param accountId - Account ID to filter by (optional)
+ */
+export async function getTransactionCount(accountId?: number): Promise<Result<number, DbError>> {
+  try {
+    const database = getDatabase()
+
+    let query = `SELECT COUNT(*) as cnt FROM transactions`
+    const params: SqlParams = []
+
+    if (accountId !== undefined && accountId !== null) {
+      query += ` WHERE account_id = $1`
+      params.push(accountId)
+    }
+
+    const rows = await database.select<{ cnt: number }[]>(query, params)
+    return ok(rows[0]?.cnt ?? 0)
+  } catch (e) {
+    return err(new DbError(`getTransactionCount failed: ${e instanceof Error ? e.message : String(e)}`, 'QUERY_FAILED', e))
   }
 }
 
