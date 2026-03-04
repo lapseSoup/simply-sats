@@ -77,8 +77,8 @@ export function initAutoLock(
   // Clean up any existing listeners
   stopAutoLock()
 
-  state.isEnabled = true
   state.isPaused = false
+  state.isEnabled = true
   state.inactivityLimit = inactivityLimitMs
   state.lastActiveTime = Date.now()
   state.warningFired = false

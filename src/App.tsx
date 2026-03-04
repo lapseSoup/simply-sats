@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react'
 import { AlertCircle, X } from 'lucide-react'
 import './App.css'
 
-import { useWallet, useUI, useModal } from './contexts'
+import { useWallet, useUI, useModalContext, useOrdinalSelection, useWalletSetup, useLockWorkflow } from './contexts'
+import type { Ordinal } from './domain/types'
 import { useSyncStatus } from './contexts/NetworkContext'
 import { Toast, PaymentAlert, SkipLink, ErrorBoundary, SimplySatsLogo } from './components/shared'
 import { useKeyboardNav, useBrc100Handler } from './hooks'
@@ -18,6 +19,7 @@ import { usePaymentListener } from './hooks/usePaymentListener'
 import { useMnemonicAutoClear } from './hooks/useMnemonicAutoClear'
 import { useUnlockHandler } from './hooks/useUnlockHandler'
 import { logger } from './services/logger'
+import { tauriInvoke } from './utils/tauri'
 
 // Tab order for keyboard navigation
 const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'search']
@@ -59,14 +61,36 @@ export function WalletApp() {
 
   const { copyFeedback, toasts, showToast, dismissToast } = useUI()
   const { setSyncPhase } = useSyncStatus()
-  const {
-    modal, openModal, closeModal,
-    openAccountModal,
-    selectOrdinal, startTransferOrdinal,
-    newMnemonic, setNewMnemonic, confirmMnemonic,
-    unlockConfirm, unlocking, setUnlocking,
-    startUnlock, startUnlockAll, cancelUnlock
-  } = useModal()
+
+  // Granular context hooks (A-64: avoid merged useModal() to prevent needless re-renders)
+  const { modal, openModal, closeModal: rawCloseModal, openAccountModal } = useModalContext()
+  const ordinalCtx = useOrdinalSelection()
+  const { newMnemonic, setNewMnemonic, confirmMnemonic: rawConfirmMnemonic } = useWalletSetup()
+  const { unlockConfirm, unlocking, setUnlocking, startUnlock, startUnlockAll, cancelUnlock } = useLockWorkflow()
+
+  // Compound actions: set domain state AND open/close modal together
+  const selectOrdinal = useCallback((ordinal: Ordinal) => {
+    ordinalCtx.selectOrdinal(ordinal)
+    openModal('ordinal')
+  }, [ordinalCtx, openModal])
+
+  const startTransferOrdinal = useCallback((ordinal: Ordinal) => {
+    ordinalCtx.startTransferOrdinal(ordinal)
+    openModal('transfer-ordinal')
+  }, [ordinalCtx, openModal])
+
+  // B-104/B-111: Clear ordinal state when closing any modal
+  const closeModal = useCallback(() => {
+    rawCloseModal()
+    ordinalCtx.clearSelectedOrdinal()
+    ordinalCtx.completeTransfer()
+    ordinalCtx.completeList()
+  }, [rawCloseModal, ordinalCtx])
+
+  const confirmMnemonic = useCallback(() => {
+    rawConfirmMnemonic()
+    rawCloseModal()
+  }, [rawConfirmMnemonic, rawCloseModal])
 
   // UI State
   const [activeTab, setActiveTab] = useState<Tab>('activity')
@@ -264,10 +288,8 @@ export function WalletApp() {
           <button
             className="backup-reminder-btn"
             onClick={async () => {
-              // Fetch mnemonic from Rust key store on-demand
-              const { invoke } = await import('@tauri-apps/api/core')
               try {
-                const mnemonic = await invoke<string | null>('get_mnemonic_once')
+                const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
                 if (mnemonic) {
                   setNewMnemonic(mnemonic)
                   openModal('mnemonic')

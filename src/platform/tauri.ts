@@ -282,6 +282,11 @@ export class TauriAdapter implements PlatformAdapter {
     return invoke<string>('get_mnemonic_once')
   }
 
+  async getMnemonic(): Promise<string> {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return invoke<string>('get_mnemonic')
+  }
+
   async clearKeys(): Promise<void> {
     const { invoke } = await import('@tauri-apps/api/core')
     await invoke('clear_keys')

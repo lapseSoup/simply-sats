@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, memo, useCallback, type CSSProperties } from 'react'
 import { Search, LayoutGrid, List as ListIcon, ChevronRight, PenLine } from 'lucide-react'
 import { List } from 'react-window'
 import { useWalletState, useSyncContext } from '../../contexts'
@@ -296,6 +296,41 @@ export const OrdinalsTab = memo(function OrdinalsTab({ onSelectOrdinal, onTransf
   )
 })
 
+// ── Data passed to the virtualized row component via react-window's rowProps ──
+interface OrdinalRowData {
+  ordinals: Ordinal[]
+  onSelect: (ordinal: Ordinal) => void
+}
+
+/**
+ * Module-level row component for react-window (B-110 fix).
+ *
+ * CRITICAL: This MUST be defined outside VirtualizedOrdinalList so its reference
+ * is stable across renders. react-window v2 wraps rowComponent with:
+ *   useMemo(() => memo(rowComponent), [rowComponent])
+ * If rowComponent changes reference (e.g. inline arrow function), React treats it as a NEW
+ * component type → unmounts ALL visible rows → DOM destroyed → remount → flicker.
+ *
+ * Data flows through rowProps (which react-window spreads as props). When rowProps change,
+ * react-window recreates elements but React sees the SAME component type → UPDATE (not
+ * unmount/remount) → no DOM destruction → no flicker.
+ */
+function OrdinalVirtualRow({
+  index, style, ordinals, onSelect
+}: {
+  index: number
+  style: CSSProperties
+} & OrdinalRowData) {
+  return (
+    <div style={{ ...style, paddingBottom: 8 }}>
+      <OrdinalListItem
+        ordinal={ordinals[index]!}
+        onSelect={onSelect}
+      />
+    </div>
+  )
+}
+
 interface VirtualizedOrdinalListProps {
   ordinals: Ordinal[]
   onSelect: (ordinal: Ordinal) => void
@@ -319,20 +354,13 @@ function VirtualizedOrdinalList({ ordinals, onSelect }: VirtualizedOrdinalListPr
 
   return (
     <div ref={containerRef} className="ordinals-list-virtual-container" role="list" aria-label="Ordinals collection">
-      <List
+      <List<OrdinalRowData>
         rowCount={ordinals.length}
         rowHeight={ORDINAL_LIST_ITEM_HEIGHT}
-        rowProps={{}}
+        rowProps={{ ordinals, onSelect }}
         overscanCount={5}
         style={{ height: containerHeight }}
-        rowComponent={({ index, style }) => (
-          <div style={{ ...style, paddingBottom: 8 }}>
-            <OrdinalListItem
-              ordinal={ordinals[index]!}
-              onSelect={onSelect}
-            />
-          </div>
-        )}
+        rowComponent={OrdinalVirtualRow}
       />
     </div>
   )

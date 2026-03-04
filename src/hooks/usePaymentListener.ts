@@ -6,12 +6,13 @@
  * resets auth on account switch, and manages the payment alert state.
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import type { WalletKeys } from '../services/wallet'
 import type { PaymentNotification } from '../services/messageBox'
-import { loadNotifications, startPaymentListenerFromWif, resetMessageBoxAuth } from '../services/messageBox'
+import { loadNotifications, startPaymentListenerFromStore, resetMessageBoxAuth } from '../services/messageBox'
 import { logger } from '../services/logger'
 import type { ToastType } from '../contexts/UIContext'
+import { useLatestRef } from './useLatestRef'
 
 interface UsePaymentListenerOptions {
   wallet: WalletKeys | null
@@ -36,11 +37,8 @@ export function usePaymentListener({
   const [newPaymentAlert, setNewPaymentAlert] = useState<PaymentNotification | null>(null)
 
   // Ref mirrors to avoid stale closures without adding unstable deps
-  const fetchDataRef = useRef(fetchData)
-  useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
-
-  const showToastRef = useRef(showToast)
-  useEffect(() => { showToastRef.current = showToast }, [showToast])
+  const fetchDataRef = useLatestRef(fetchData)
+  const showToastRef = useLatestRef(showToast)
 
   useEffect(() => {
     if (!wallet) return
@@ -53,24 +51,18 @@ export function usePaymentListener({
       logger.info('New payment received', { txid: payment.txid, amount: payment.amount })
       setNewPaymentAlert(payment)
       showToastRef.current(`Received ${payment.amount?.toLocaleString() || 'unknown'} sats!`)
-      fetchDataRef.current()
+      fetchDataRef.current().catch(err => logger.error('Failed to refresh data after payment', err))
       setTimeout(() => setNewPaymentAlert(null), 5000)
     }
 
-    const setupListener = async () => {
-      const { getWifForOperation } = await import('../services/wallet')
-      const identityWif = await getWifForOperation('identity', 'paymentListener', wallet)
-      return startPaymentListenerFromWif(identityWif, handleNewPayment)
-    }
-
-    let stopListener: (() => void) | undefined
-    setupListener()
-      .then(stop => { stopListener = stop })
-      .catch(err => logger.error('Failed to start payment listener', err))
+    // S-121: Use store-based listener — identity WIF never enters JS heap.
+    // The public key is already available in the wallet object.
+    const stopListener = startPaymentListenerFromStore(wallet.identityPubKey, handleNewPayment)
 
     return () => {
-      stopListener?.()
+      stopListener()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- *Ref values are stable refs from useLatestRef
   }, [wallet])
 
   const dismissPaymentAlert = () => setNewPaymentAlert(null)

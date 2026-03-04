@@ -17,6 +17,10 @@ import { isTauri } from './tauri'
  * - In browser / extension: falls back to `window.open`.
  */
 export async function openExternalUrl(url: string): Promise<void> {
+  // Q-100: Only allow safe URL schemes to prevent opening javascript:, data:, file: etc.
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error(`Blocked URL with disallowed scheme: ${url.split(':')[0]}`)
+  }
   if (isTauri()) {
     const { openUrl } = await import('@tauri-apps/plugin-opener')
     await openUrl(url)

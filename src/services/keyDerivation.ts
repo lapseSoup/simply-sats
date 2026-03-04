@@ -91,22 +91,24 @@ export async function deriveSenderAddress(
 /**
  * Known BRC-100 wallet public keys that might send to us.
  * Discovered from transaction metadata or app connections.
+ * Q-90: Uses Set for O(1) lookups and natural deduplication.
  */
-const KNOWN_SENDER_PUBKEYS: string[] = []
+const KNOWN_SENDER_PUBKEYS = new Set<string>()
 
 const MAX_KNOWN_SENDERS = 100
+const PUBKEY_PATTERN = /^(02|03)[0-9a-fA-F]{64}$/
 
-export function addKnownSender(pubKeyHex: string): void {
-  if (!/^(02|03)[0-9a-fA-F]{64}$/.test(pubKeyHex)) return
-  if (KNOWN_SENDER_PUBKEYS.length >= MAX_KNOWN_SENDERS) return
-  if (!KNOWN_SENDER_PUBKEYS.includes(pubKeyHex)) {
-    KNOWN_SENDER_PUBKEYS.push(pubKeyHex)
-    try {
-      localStorage.setItem(STORAGE_KEYS.KNOWN_SENDERS, JSON.stringify(KNOWN_SENDER_PUBKEYS))
-    } catch (_e) {
-      // Ignore storage errors
-    }
+export function addKnownSender(pubKeyHex: string): boolean {
+  if (!PUBKEY_PATTERN.test(pubKeyHex)) return false
+  if (KNOWN_SENDER_PUBKEYS.size >= MAX_KNOWN_SENDERS) return false
+  if (KNOWN_SENDER_PUBKEYS.has(pubKeyHex)) return false
+  KNOWN_SENDER_PUBKEYS.add(pubKeyHex)
+  try {
+    localStorage.setItem(STORAGE_KEYS.KNOWN_SENDERS, JSON.stringify([...KNOWN_SENDER_PUBKEYS]))
+  } catch (_e) {
+    // Ignore storage errors
   }
+  return true
 }
 
 export function loadKnownSenders(): void {
@@ -116,11 +118,9 @@ export function loadKnownSenders(): void {
       const senders = JSON.parse(saved)
       if (!Array.isArray(senders)) return
       for (const s of senders) {
-        if (KNOWN_SENDER_PUBKEYS.length >= MAX_KNOWN_SENDERS) break
-        if (typeof s === 'string' && /^(02|03)[0-9a-fA-F]{64}$/.test(s)) {
-          if (!KNOWN_SENDER_PUBKEYS.includes(s)) {
-            KNOWN_SENDER_PUBKEYS.push(s)
-          }
+        if (KNOWN_SENDER_PUBKEYS.size >= MAX_KNOWN_SENDERS) break
+        if (typeof s === 'string' && PUBKEY_PATTERN.test(s)) {
+          KNOWN_SENDER_PUBKEYS.add(s)
         }
       }
     }
@@ -211,7 +211,7 @@ export function getCommonInvoiceNumbers(): string[] {
  */
 export async function getDerivedAddressesFromKeys(
   receiverWif: string,
-  senderPubKeys: string[] = KNOWN_SENDER_PUBKEYS,
+  senderPubKeys: string[] = [...KNOWN_SENDER_PUBKEYS],
   invoiceNumbers: string[] = COMMON_INVOICE_NUMBERS
 ): Promise<DerivedAddressResult[]> {
   if (senderPubKeys.length === 0) return []
@@ -231,7 +231,7 @@ export async function getDerivedAddressesFromKeys(
  */
 export async function getDerivedAddressesFromStore(
   keyType: string,
-  senderPubKeys: string[] = KNOWN_SENDER_PUBKEYS,
+  senderPubKeys: string[] = [...KNOWN_SENDER_PUBKEYS],
   invoiceNumbers: string[] = COMMON_INVOICE_NUMBERS
 ): Promise<DerivedAddressResult[]> {
   if (senderPubKeys.length === 0) return []

@@ -66,6 +66,11 @@ interface LocksProviderProps {
 export function LocksProvider({ children }: LocksProviderProps) {
   const { networkInfo } = useNetworkInfo()
 
+  // B-100: Use ref to avoid stale closure in handleLock/handleUnlock callbacks.
+  // Without this, callbacks captured before networkInfo loads return "Could not get block height".
+  const networkInfoRef = useRef(networkInfo)
+  useEffect(() => { networkInfoRef.current = networkInfo }, [networkInfo])
+
   // Lock state
   const [locks, setLocks] = useState<LockedUTXO[]>([])
   const locksRef = useRef(locks)
@@ -120,7 +125,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     activeAccountId: number | null,
     onComplete: () => Promise<void>
   ): Promise<WalletResult> => {
-    const currentHeight = networkInfo?.blockHeight
+    const currentHeight = networkInfoRef.current?.blockHeight
     if (!currentHeight) return err('Could not get block height')
 
     try {
@@ -157,7 +162,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Lock failed')
     }
-  }, [networkInfo])
+  }, [])
 
   // Unlock a time-locked UTXO
   const handleUnlock = useCallback(async (
@@ -166,7 +171,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
     activeAccountId: number | null,
     onComplete: () => Promise<void>
   ): Promise<WalletResult> => {
-    const currentHeight = networkInfo?.blockHeight
+    const currentHeight = networkInfoRef.current?.blockHeight
     if (!currentHeight) return err('Could not get block height')
 
     try {
@@ -197,7 +202,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
       walletLogger.error('Unlock threw unexpected exception', { error: String(e), type: typeof e })
       return err(errorMsg || 'Unlock failed')
     }
-  }, [networkInfo, addKnownUnlockedLock])
+  }, [addKnownUnlockedLock])
 
   const value: LocksContextType = useMemo(() => ({
     locks,

@@ -61,8 +61,11 @@ export function AppProviders({ children }: AppProvidersProps) {
                               <SyncProvider>
                                 <ErrorBoundary context="LocksProvider">
                                   <LocksProvider>
+                                    <ErrorBoundary context="OrdinalSelectionProvider">
                                     <OrdinalSelectionProvider>
+                                    <ErrorBoundary context="WalletSetupProvider">
                                     <WalletSetupProvider>
+                                    <ErrorBoundary context="LockWorkflowProvider">
                                     <LockWorkflowProvider>
                                       <ErrorBoundary context="ModalProvider">
                                         <ModalProvider>
@@ -74,8 +77,11 @@ export function AppProviders({ children }: AppProvidersProps) {
                                         </ModalProvider>
                                       </ErrorBoundary>
                                     </LockWorkflowProvider>
+                                    </ErrorBoundary>
                                     </WalletSetupProvider>
+                                    </ErrorBoundary>
                                     </OrdinalSelectionProvider>
+                                    </ErrorBoundary>
                                   </LocksProvider>
                                 </ErrorBoundary>
                               </SyncProvider>

@@ -5,6 +5,7 @@ import { useUI } from '../../contexts/UIContext'
 import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../infrastructure/database'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 import { EmptyState, NoSearchResultsEmpty } from '../shared/EmptyState'
+import { TransactionItemRow } from '../shared/TransactionItemRow'
 
 type SearchResult = {
   tx_hash: string
@@ -15,7 +16,7 @@ type SearchResult = {
 
 export const SearchTab = memo(function SearchTab() {
   const { activeAccountId } = useWalletState()
-  const { formatUSD } = useUI()
+  const { formatUSD, displayInSats, formatBSVShort } = useUI()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -153,14 +154,14 @@ export const SearchTab = memo(function SearchTab() {
   }, [highlightedIndex])
 
   const getTxIcon = (amount?: number) => {
-    if (amount && amount > 0) return <ArrowDownLeft size={14} strokeWidth={1.75} />
-    if (amount && amount < 0) return <ArrowUpRight size={14} strokeWidth={1.75} />
+    if (amount != null && amount > 0) return <ArrowDownLeft size={14} strokeWidth={1.75} />
+    if (amount != null && amount < 0) return <ArrowUpRight size={14} strokeWidth={1.75} />
     return <Circle size={14} strokeWidth={1.75} />
   }
 
   const getTxType = (amount?: number) => {
-    if (amount && amount > 0) return 'Received'
-    if (amount && amount < 0) return 'Sent'
+    if (amount != null && amount > 0) return 'Received'
+    if (amount != null && amount < 0) return 'Sent'
     return 'Transaction'
   }
 
@@ -215,13 +216,23 @@ export const SearchTab = memo(function SearchTab() {
             role="combobox"
             aria-expanded={showSuggestions && filteredLabels.length > 0}
             aria-autocomplete="list"
+            aria-controls="search-suggestions-listbox"
+            aria-activedescendant={highlightedIndex >= 0 ? `search-suggestion-${highlightedIndex}` : undefined}
           />
           {showSuggestions && filteredLabels.length > 0 && (
-            <div className="search-suggestions" ref={suggestionsRef}>
+            <div
+              id="search-suggestions-listbox"
+              className="search-suggestions"
+              ref={suggestionsRef}
+              role="listbox"
+            >
               {filteredLabels.map((label, index) => (
                 <button
                   key={label}
+                  id={`search-suggestion-${index}`}
                   className={`search-suggestion-item${index === highlightedIndex ? ' highlighted' : ''}`}
+                  role="option"
+                  aria-selected={index === highlightedIndex}
                   onMouseDown={e => {
                     e.preventDefault()
                     selectLabel(label)
@@ -255,38 +266,17 @@ export const SearchTab = memo(function SearchTab() {
         {results.length > 0 && (
           <div className="tx-list" role="list" aria-label="Search results">
             {results.map(tx => (
-              <div
+              <TransactionItemRow
                 key={tx.tx_hash}
-                className="tx-item"
+                tx={tx}
+                txType={getTxType(tx.amount)}
+                txIcon={getTxIcon(tx.amount)}
                 onClick={() => setSelectedTx(tx)}
-                role="listitem"
-                tabIndex={0}
-                onKeyDown={e => e.key === 'Enter' && setSelectedTx(tx)}
-                style={{ cursor: 'pointer' }}
-              >
-                <div className="tx-icon" aria-hidden="true">{getTxIcon(tx.amount)}</div>
-                <div className="tx-info">
-                  <div className="tx-type">{getTxType(tx.amount)}</div>
-                  <div className="tx-meta">
-                    <span className="tx-hash" title={tx.tx_hash}>{tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}</span>
-                    {tx.height > 0 && <span>• Block {tx.height.toLocaleString()}</span>}
-                  </div>
-                </div>
-                <div className="tx-amount">
-                  {tx.amount ? (
-                    <>
-                      <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
-                        {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats
-                      </div>
-                      <div className="tx-amount-usd" style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                        ${formatUSD(Math.abs(tx.amount))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="tx-amount-value">View &rarr;</div>
-                  )}
-                </div>
-              </div>
+                formatUSD={formatUSD}
+                displayInSats={displayInSats}
+                formatBSVShort={formatBSVShort}
+                currentHeight={0}
+              />
             ))}
           </div>
         )}

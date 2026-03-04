@@ -266,6 +266,11 @@ export class ChromeAdapter implements PlatformAdapter {
     return mnemonic
   }
 
+  async getMnemonic(): Promise<string> {
+    if (!keyStore.mnemonic) throw new Error('No mnemonic loaded')
+    return keyStore.mnemonic
+  }
+
   async clearKeys(): Promise<void> {
     keyStore.mnemonic = null
     keyStore.walletWif = null

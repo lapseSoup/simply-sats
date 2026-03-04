@@ -123,6 +123,40 @@ async function createAuthHeaders(
 }
 
 /**
+ * Create authentication headers using the Rust key store (S-121).
+ * The identity WIF never leaves Rust memory — signing is done via
+ * `sign_data_from_store` and the public key is passed in directly.
+ */
+async function createAuthHeadersFromStore(
+  identityPubKey: string,
+  method: string,
+  path: string,
+  body?: string
+): Promise<Record<string, string>> {
+  const timestamp = Date.now().toString()
+  const nonceBytes = crypto.getRandomValues(new Uint8Array(16))
+  const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  const messageToSign = `${method}${path}${timestamp}${nonce}${body || ''}`
+
+  const messageHashHex = await tauriInvoke<string>('sha256_hash', { data: messageToSign })
+
+  // S-121: Use store-based signing — WIF never enters JS heap
+  const signatureDerHex = await tauriInvoke<string>('sign_data_from_store', {
+    data: Array.from(hexToBytes(messageHashHex)),
+    keyType: 'identity'
+  })
+
+  return {
+    'Content-Type': 'application/json',
+    'x-bsv-auth-pubkey': identityPubKey,
+    'x-bsv-auth-timestamp': timestamp,
+    'x-bsv-auth-nonce': nonce,
+    'x-bsv-auth-signature': signatureDerHex
+  }
+}
+
+/**
  * List messages from our payment inbox
  */
 export async function listPaymentMessages(identityWif: string): Promise<PaymentMessage[]> {
@@ -302,6 +336,165 @@ export function addManualNotification(notification: PaymentNotification): void {
 export function clearNotifications(): void {
   paymentNotifications = []
   saveNotifications()
+}
+
+// ==================== Store-Based Variants (S-121) ====================
+// These functions use the Rust key store for signing, so the identity WIF
+// never enters the JavaScript heap. They accept identityPubKey instead of WIF.
+
+/**
+ * List messages from our payment inbox using store-based auth (S-121).
+ */
+export async function listPaymentMessagesFromStore(identityPubKey: string): Promise<PaymentMessage[]> {
+  if (_authFailureCount >= AUTH_FAILURE_MAX_SUPPRESS) {
+    if (Date.now() - _lastAuthFailureTime > AUTH_FAILURE_RESET_MS) {
+      _authFailureCount = 0
+    } else {
+      return []
+    }
+  }
+
+  const path = `/api/v1/message/${PAYMENT_INBOX}`
+
+  try {
+    const headers = await createAuthHeadersFromStore(identityPubKey, 'GET', path)
+
+    const response = await fetch(`${MESSAGEBOX_HOST}${path}`, {
+      method: 'GET',
+      headers
+    })
+
+    if (!response.ok) {
+      if (response.status === 404) return []
+      if (response.status === 401) {
+        _authFailureCount++
+        _lastAuthFailureTime = Date.now()
+        if (_authFailureCount === 1) {
+          messageLogger.warn('MessageBox auth failed — will suppress further attempts', { status: 401 })
+        }
+        return []
+      }
+      const errorText = await response.text()
+      messageLogger.error('MessageBox error', undefined, { status: response.status, errorText })
+      return []
+    }
+
+    _authFailureCount = 0
+    const data = await response.json()
+    return data.messages || []
+  } catch (error) {
+    messageLogger.error('Failed to list payment messages', error)
+    return []
+  }
+}
+
+/**
+ * Acknowledge messages using store-based auth (S-121).
+ */
+export async function acknowledgeMessagesFromStore(
+  identityPubKey: string,
+  messageIds: string[]
+): Promise<boolean> {
+  if (messageIds.length === 0) return true
+
+  const path = `/api/v1/message/acknowledge`
+  const body = JSON.stringify({ messageIds })
+
+  try {
+    const headers = await createAuthHeadersFromStore(identityPubKey, 'POST', path, body)
+
+    const response = await fetch(`${MESSAGEBOX_HOST}${path}`, {
+      method: 'POST',
+      headers,
+      body
+    })
+
+    return response.ok
+  } catch (error) {
+    messageLogger.error('Failed to acknowledge messages', error)
+    return false
+  }
+}
+
+/**
+ * Check for new payment messages using store-based auth (S-121).
+ */
+export async function checkForPaymentsFromStore(identityPubKey: string): Promise<PaymentNotification[]> {
+  messageLogger.info('Checking MessageBox for payment notifications (store-based)')
+
+  const messages = await listPaymentMessagesFromStore(identityPubKey)
+  messageLogger.info('Found messages in payment inbox', { count: messages.length })
+
+  const newNotifications: PaymentNotification[] = []
+  const processedIds: string[] = []
+
+  for (const msg of messages) {
+    const notification = parsePaymentMessage(msg)
+    if (notification) {
+      const exists = paymentNotifications.some(
+        n => n.txid === notification.txid && n.vout === notification.vout
+      )
+
+      if (!exists) {
+        paymentNotifications.push(notification)
+        newNotifications.push(notification)
+        messageLogger.info('New payment notification', { txid: notification.txid, vout: notification.vout, amount: notification.amount })
+      }
+
+      processedIds.push(msg.messageId)
+    }
+  }
+
+  if (processedIds.length > 0) {
+    await acknowledgeMessagesFromStore(identityPubKey, processedIds)
+    saveNotifications()
+  }
+
+  return newNotifications
+}
+
+/**
+ * Start periodic checking for payment messages using the Rust key store (S-121).
+ * The identity WIF never enters the JavaScript heap — only the public key
+ * is passed in, and all signing is delegated to `sign_data_from_store`.
+ */
+export function startPaymentListenerFromStore(
+  identityPubKey: string,
+  onNewPayment?: (notification: PaymentNotification) => void,
+  intervalMs = 30000
+): () => void {
+  if (isListening) {
+    messageLogger.debug('Payment listener already running')
+    return () => {}
+  }
+
+  isListening = true
+  messageLogger.info('Starting payment message listener (store-based)')
+
+  checkForPaymentsFromStore(identityPubKey).then(newPayments => {
+    for (const payment of newPayments) {
+      onNewPayment?.(payment)
+    }
+  }).catch(e => {
+    messageLogger.error('Initial payment check failed', e)
+  })
+
+  const intervalId = setInterval(async () => {
+    try {
+      const newPayments = await checkForPaymentsFromStore(identityPubKey)
+      for (const payment of newPayments) {
+        onNewPayment?.(payment)
+      }
+    } catch (e) {
+      messageLogger.error('Payment check failed', e)
+    }
+  }, intervalMs)
+
+  return () => {
+    clearInterval(intervalId)
+    isListening = false
+    messageLogger.info('Payment listener stopped')
+  }
 }
 
 /**

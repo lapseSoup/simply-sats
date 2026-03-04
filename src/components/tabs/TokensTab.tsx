@@ -24,7 +24,8 @@ const TokenCard = memo(function TokenCard({
   onSend: (balance: TokenBalance) => void
 }) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
       onSend(balance)
     }
   }, [onSend, balance])
@@ -34,6 +35,7 @@ const TokenCard = memo(function TokenCard({
       className="token-card"
       tabIndex={0}
       role="button"
+      onClick={() => onSend(balance)}
       onKeyDown={handleKeyDown}
       aria-label={`${balance.token.ticker} — ${formatTokenAmount(balance.total, balance.token.decimals)}`}
     >

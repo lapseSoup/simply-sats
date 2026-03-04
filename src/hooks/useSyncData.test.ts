@@ -684,12 +684,12 @@ describe('useSyncData', () => {
       expect(firstCall[0]).toEqual(dbOrdinals)
     })
 
-    it('does NOT overwrite state with DB ordinals when ordinalsRef is non-empty', async () => {
+    it('B-107: always shows DB ordinals immediately even when ordinalsRef is non-empty', async () => {
       const dbOrdinals = [{ origin: 'db-ord', txid: 'tx', vout: 0, satoshis: 1 }]
       mockedGetOrdinalsFromDatabase.mockResolvedValue(dbOrdinals as never)
       mockedGetOrdinals.mockResolvedValue([makeOrdinal({ origin: 'api-ord' })])
       const opts = makeOptions()
-      // ordinalsRef already has data (not a cold start)
+      // ordinalsRef already has data (e.g. from previous account or cache)
       opts.ordinalsRef.current = [makeOrdinal()]
       const { result } = renderHook(() => useSyncData(opts))
 
@@ -697,10 +697,13 @@ describe('useSyncData', () => {
         await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
       })
 
-      // First call should be API ordinals, NOT DB ordinals
+      // B-107: First call should be DB ordinals (shown immediately before API),
+      // second call should be API ordinals (final authoritative set)
+      expect(opts.setOrdinalsWithRef).toHaveBeenCalledTimes(2)
       const firstCall = opts.setOrdinalsWithRef.mock.calls[0]!
-      const ordinals = firstCall[0] as Ordinal[]
-      expect(ordinals[0]!.origin).toBe('api-ord')
+      expect((firstCall[0] as Ordinal[])[0]!.origin).toBe('db-ord')
+      const secondCall = opts.setOrdinalsWithRef.mock.calls[1]!
+      expect((secondCall[0] as Ordinal[])[0]!.origin).toBe('api-ord')
     })
 
     it('handles complete API failure with error message', async () => {

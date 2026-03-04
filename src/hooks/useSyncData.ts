@@ -37,7 +37,6 @@ interface UseSyncDataOptions {
   setSyncError: (error: string | null) => void
   bumpCacheVersion: () => void
   contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>
-  ordinalsRef: MutableRefObject<Ordinal[]>
 }
 
 interface UseSyncDataReturn {
@@ -65,7 +64,6 @@ export function useSyncData({
   setSyncError,
   bumpCacheVersion,
   contentCacheRef,
-  ordinalsRef
 }: UseSyncDataOptions): UseSyncDataReturn {
 
   // Load all data from local DB only -- no API calls. Completes fast for instant switching.
@@ -148,7 +146,10 @@ export function useSyncData({
       syncLogger.warn('fetchDataFromDB: locks read failed', { error: String(locksResult.reason) })
     }
 
-    // Ordinals from cache — set the list immediately, content previews load in Phase 2
+    // Ordinals from cache — set the list immediately, content previews load in Phase 2.
+    // B-107: ALWAYS set ordinals in Phase 1 (even to []) to prevent stale data from a
+    // previous account persisting. If ordinal_cache is empty, fall back to UTXOs table
+    // SYNCHRONOUSLY (not fire-and-forget) so ordinals appear instantly on startup/switch.
     const cachedOrdinals = ordinalsResult.status === 'fulfilled' ? ordinalsResult.value : []
     if (cachedOrdinals.length > 0) {
       const ordinals: Ordinal[] = cachedOrdinals.map(cached => ({
@@ -162,6 +163,29 @@ export function useSyncData({
       setOrdinalsWithRef(ordinals)
     } else if (ordinalsResult.status === 'rejected') {
       syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(ordinalsResult.reason) })
+      // Still try DB fallback even on cache read failure
+      try {
+        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
+        if (!isCancelled?.()) setOrdinalsWithRef(dbOrdinals)
+      } catch (e) {
+        syncLogger.warn('fetchDataFromDB: ordinals DB fallback also failed', { error: String(e) })
+        if (!isCancelled?.()) setOrdinalsWithRef([])
+      }
+    } else {
+      // Cache was empty (fulfilled but 0 results) — fall back to UTXOs table immediately.
+      // This handles first startup / restored wallets where ordinal_cache hasn't been
+      // populated yet but UTXOs table has ordinal-basket entries from blockchain sync.
+      try {
+        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
+        if (!isCancelled?.()) {
+          setOrdinalsWithRef(dbOrdinals)
+          syncLogger.debug('fetchDataFromDB: used UTXOs-table ordinals fallback', { count: dbOrdinals.length })
+        }
+      } catch (e) {
+        syncLogger.warn('fetchDataFromDB: ordinals DB fallback failed', { error: String(e) })
+        // Set empty to clear any stale ordinals from previous account
+        if (!isCancelled?.()) setOrdinalsWithRef([])
+      }
     }
 
     // UTXOs
@@ -229,20 +253,10 @@ export function useSyncData({
       })()
     }
 
-    // Ordinals empty-cache fallback + content preview loading
+    // Content preview loading (ordinal list fallback moved to Phase 1 — B-107)
     if (ordinalsResult.status === 'fulfilled') {
       ;(async () => {
         try {
-          // If cache was empty, fall back to UTXOs table
-          if (cachedOrdinals.length === 0) {
-            try {
-              const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
-              if (!isCancelled?.()) setOrdinalsWithRef(dbOrdinals)
-            } catch (e) {
-              syncLogger.warn('fetchDataFromDB: ordinals fallback read failed', { error: String(e) })
-            }
-          }
-
           // Load content previews in a single batch query
           const allOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
           if (isCancelled?.()) return
@@ -377,11 +391,13 @@ export function useSyncData({
         // Guard: if account switched during async DB call, discard results
         if (checkCancelled()) return
 
-        // Display DB ordinals immediately (before slow API calls) -- but ONLY on cold
-        // start (when state is currently empty). If ordinals are already in state
-        // (e.g. from an optimistic removal after a transfer), don't overwrite them
-        // with potentially stale DB data before the API results arrive.
-        if (dbOrdinals.length > 0 && ordinalsRef.current.length === 0) {
+        // B-107: Always display DB ordinals as the initial set before slow API calls.
+        // Previously guarded by `ordinalsRef.current.length === 0` to avoid overwriting
+        // optimistic state (e.g. after a transfer), but that guard also blocked ordinals
+        // from appearing on startup/switch when fetchDataFromDB had already populated
+        // state from cache. The API results at line ~451 will replace these regardless,
+        // so any brief re-flash of a transferred ordinal is acceptable vs. showing nothing.
+        if (dbOrdinals.length > 0) {
           setOrdinalsWithRef(dbOrdinals)
         }
 
@@ -515,7 +531,7 @@ export function useSyncData({
       }
       syncLogger.error('Failed to fetch data', error)
     }
-  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, bumpCacheVersion, contentCacheRef, ordinalsRef])
+  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, bumpCacheVersion, contentCacheRef])
 
   return { fetchDataFromDB, fetchData }
 }

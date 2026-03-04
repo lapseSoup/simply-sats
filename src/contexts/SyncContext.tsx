@@ -168,7 +168,6 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setSyncError,
     bumpCacheVersion,
     contentCacheRef,
-    ordinalsRef
   })
 
   const { performSync } = useSyncOrchestration({

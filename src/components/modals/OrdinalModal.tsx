@@ -75,7 +75,7 @@ export function OrdinalModal({ ordinal, onClose, onTransfer, onList, onBuy }: Or
             role="button"
             tabIndex={0}
             onClick={() => handleCopyValue(ordinal.origin, 'Origin')}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCopyValue(ordinal.origin, 'Origin') }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCopyValue(ordinal.origin, 'Origin') } }}
             aria-label="Copy origin"
           >
             <span className="ordinal-info-label">Origin</span>
@@ -89,7 +89,7 @@ export function OrdinalModal({ ordinal, onClose, onTransfer, onList, onBuy }: Or
             role="button"
             tabIndex={0}
             onClick={() => handleCopyValue(`${ordinal.txid}:${ordinal.vout}`, 'Outpoint')}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCopyValue(`${ordinal.txid}:${ordinal.vout}`, 'Outpoint') }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCopyValue(`${ordinal.txid}:${ordinal.vout}`, 'Outpoint') } }}
             aria-label="Copy outpoint"
           >
             <span className="ordinal-info-label">Outpoint</span>

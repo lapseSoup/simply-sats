@@ -13,7 +13,7 @@
  * 5. Account discovery (post-restore)
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import type { WalletKeys } from '../services/wallet'
 import type { Account } from '../services/accounts'
 import type { SyncPhase } from '../contexts/NetworkContext'
@@ -21,9 +21,10 @@ import type { ToastType } from '../contexts/UIContext'
 import { logger } from '../services/logger'
 import { needsInitialSync, syncWallet, getLastSyncTimeForAccount } from '../services/sync'
 import { discoverAccounts } from '../services/accountDiscovery'
-import { getAccountKeys } from '../services/accounts'
+import { getAccountKeys, getAllAccounts } from '../services/accounts'
 import { getSessionPassword } from '../services/sessionPasswordStore'
 import { switchJustCompleted } from './useAccountSwitching'
+import { useLatestRef } from './useLatestRef'
 
 interface DiscoveryParams {
   mnemonic: string
@@ -63,7 +64,7 @@ export function useCheckSync({
   fetchData,
   performSync,
   refreshTokens,
-  consumePendingDiscovery,
+  consumePendingDiscovery: _consumePendingDiscovery,
   peekPendingDiscovery,
   clearPendingDiscovery,
   refreshAccounts,
@@ -82,41 +83,17 @@ export function useCheckSync({
   //       references even though their underlying logic is stable.
   // Putting any of these in the dep array caused an infinite sync loop.
 
-  const fetchDataFromDBRef = useRef(fetchDataFromDB)
-  useEffect(() => { fetchDataFromDBRef.current = fetchDataFromDB }, [fetchDataFromDB])
-
-  const fetchDataRef = useRef(fetchData)
-  useEffect(() => { fetchDataRef.current = fetchData }, [fetchData])
-
-  const performSyncRef = useRef(performSync)
-  useEffect(() => { performSyncRef.current = performSync }, [performSync])
-
-  const refreshTokensRef = useRef(refreshTokens)
-  useEffect(() => { refreshTokensRef.current = refreshTokens }, [refreshTokens])
-
-  const consumePendingDiscoveryRef = useRef(consumePendingDiscovery)
-  useEffect(() => { consumePendingDiscoveryRef.current = consumePendingDiscovery }, [consumePendingDiscovery])
-
-  const peekPendingDiscoveryRef = useRef(peekPendingDiscovery)
-  useEffect(() => { peekPendingDiscoveryRef.current = peekPendingDiscovery }, [peekPendingDiscovery])
-
-  const clearPendingDiscoveryRef = useRef(clearPendingDiscovery)
-  useEffect(() => { clearPendingDiscoveryRef.current = clearPendingDiscovery }, [clearPendingDiscovery])
-
-  const refreshAccountsRef = useRef(refreshAccounts)
-  useEffect(() => { refreshAccountsRef.current = refreshAccounts }, [refreshAccounts])
-
-  const setSyncPhaseRef = useRef(setSyncPhase)
-  useEffect(() => { setSyncPhaseRef.current = setSyncPhase }, [setSyncPhase])
-
-  const showToastRef = useRef(showToast)
-  useEffect(() => { showToastRef.current = showToast }, [showToast])
-
-  const walletRef = useRef(wallet)
-  useEffect(() => { walletRef.current = wallet }, [wallet])
-
-  const accountsRef = useRef(accounts)
-  useEffect(() => { accountsRef.current = accounts }, [accounts])
+  const fetchDataFromDBRef = useLatestRef(fetchDataFromDB)
+  const fetchDataRef = useLatestRef(fetchData)
+  const performSyncRef = useLatestRef(performSync)
+  const refreshTokensRef = useLatestRef(refreshTokens)
+  const peekPendingDiscoveryRef = useLatestRef(peekPendingDiscovery)
+  const clearPendingDiscoveryRef = useLatestRef(clearPendingDiscovery)
+  const refreshAccountsRef = useLatestRef(refreshAccounts)
+  const setSyncPhaseRef = useLatestRef(setSyncPhase)
+  const showToastRef = useLatestRef(showToast)
+  const walletRef = useLatestRef(wallet)
+  const accountsRef = useLatestRef(accounts)
 
   // ── hasWallet flag ───────────────────────────────────────────────────
   // Coerce wallet to boolean: true when loaded, false when null.
@@ -334,8 +311,7 @@ export function useCheckSync({
             // account switcher. Discovery creates accounts with deferred sync, so
             // they have 0 UTXOs until explicitly synced. Fire-and-forget.
             const sessionPwd = getSessionPassword()
-            const { getAllAccounts: fetchAllAccounts } = await import('../services/accounts')
-            const allAccounts = await fetchAllAccounts()
+            const allAccounts = await getAllAccounts()
             const capturedAccountId = activeAccountId // B-49: Capture before async loop
             const newAccounts = allAccounts.filter(a => a.id !== capturedAccountId)
             ;(async () => {
@@ -372,5 +348,6 @@ export function useCheckSync({
     checkSync().catch(err => logger.error('Auto-sync check failed', err))
 
     return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- all *Ref values are stable refs from useLatestRef
   }, [activeAccountId, hasWallet])
 }

@@ -47,6 +47,18 @@ export function useModalContext() {
 // Merges ModalContext + OrdinalSelectionContext + WalletSetupContext + LockWorkflowContext
 // so existing consumers don't need to change their imports.
 
+/**
+ * @deprecated Use the granular hooks instead to avoid unnecessary re-renders:
+ * - `useModalContext()` for modal open/close state
+ * - `useOrdinalSelection()` for ordinal selection/transfer/list state
+ * - `useWalletSetup()` for mnemonic/setup state
+ * - `useLockWorkflow()` for unlock/lock workflow state
+ *
+ * This hook merges 4 contexts into a single 22-field object, which means
+ * any change to any sub-context will re-render all useModal() consumers.
+ * Compound actions (e.g. selectOrdinal + openModal) should be composed
+ * at the call site using useCallback.
+ */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useModal() {
   const modalCtx = useModalContext()
@@ -87,12 +99,21 @@ export function useModal() {
     modalCtx.closeModal()
   }, [walletSetupCtx, modalCtx])
 
+  // B-104: Clear selectedOrdinal when closing any modal to prevent stale state
+  // B-111: Also clear ordinalToTransfer/ordinalToList to prevent stale references
+  const closeModal = useCallback(() => {
+    modalCtx.closeModal()
+    ordinalCtx.clearSelectedOrdinal()
+    ordinalCtx.completeTransfer()
+    ordinalCtx.completeList()
+  }, [modalCtx, ordinalCtx])
+
   return useMemo(() => ({
     // ModalContext (UI state)
     modal: modalCtx.modal,
     accountModalMode: modalCtx.accountModalMode,
     openModal: modalCtx.openModal,
-    closeModal: modalCtx.closeModal,
+    closeModal,
     openAccountModal: modalCtx.openAccountModal,
     // OrdinalSelectionContext (compound actions)
     selectedOrdinal: ordinalCtx.selectedOrdinal,
@@ -116,7 +137,7 @@ export function useModal() {
     setUnlocking: lockCtx.setUnlocking,
   }), [
     modalCtx.modal, modalCtx.accountModalMode, modalCtx.openModal,
-    modalCtx.closeModal, modalCtx.openAccountModal,
+    closeModal, modalCtx.openAccountModal,
     ordinalCtx.selectedOrdinal, ordinalCtx.ordinalToTransfer,
     ordinalCtx.ordinalToList,
     selectOrdinal, startTransferOrdinal, startListOrdinal,

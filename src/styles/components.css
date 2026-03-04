@@ -110,6 +110,11 @@
 .tx-amount-value.outgoing,
 .tx-amount-value.negative { color: var(--text-primary); }
 
+.tx-amount-usd {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
 /* ==================== ORDINALS TAB (Enhanced) ==================== */
 
 .ordinals-tab {

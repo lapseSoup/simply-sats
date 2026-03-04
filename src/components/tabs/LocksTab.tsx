@@ -20,7 +20,7 @@ export const LocksTab = memo(function LocksTab({ onLock, onUnlock, onUnlockAll, 
   const { formatUSD } = useUI()
   const [selectedLock, setSelectedLock] = useState<LockedUTXO | null>(null)
 
-  const currentHeight = networkInfo?.blockHeight || 0
+  const currentHeight = networkInfo?.blockHeight ?? 0
 
   // Memoize lock categorization
   const { unlockableLocks, lockedLocks } = useMemo(() => {
@@ -147,7 +147,7 @@ const LockItem = memo(function LockItem({ lock, currentHeight, isUnlockable, isU
       tabIndex={0}
       aria-label={`${lock.satoshis.toLocaleString()} sats locked until block ${lock.unlockBlock.toLocaleString()}`}
       onClick={() => onClick(lock)}
-      onKeyDown={(e) => e.key === 'Enter' && onClick(lock)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(lock) } }}
       style={{ cursor: 'pointer' }}
     >
       <div className="lock-card-main">

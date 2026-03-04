@@ -74,6 +74,7 @@ export function getPendingRequests() {
       requestManager.add(id, value.request, value.resolve, value.reject)
     },
     delete: (id: string) => requestManager.remove(id),
+    get size() { return requestManager.getAll().length },
     values: () => {
       const all = requestManager.getAll()
       return all.map(request => ({ request }))

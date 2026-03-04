@@ -31,7 +31,7 @@ function BalanceDisplayComponent() {
             onClick={toggleDisplayUnit}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && toggleDisplayUnit()}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDisplayUnit() } }}
             aria-label={`Balance: ${displayInSats ? totalBalance.toLocaleString() + ' sats' : formatBSVShort(totalBalance) + ' BSV'}. Click to toggle display unit.`}
           >
             {displayInSats ? (

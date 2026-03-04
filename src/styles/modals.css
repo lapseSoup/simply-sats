@@ -2435,6 +2435,45 @@
   text-align: center;
 }
 
+.qr-permission-text {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.qr-permission-subtext {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.qr-upload-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 16px;
+}
+
+.qr-upload-label {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.qr-upload-sublabel {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.qr-upload-icon {
+  color: var(--text-tertiary);
+}
+
+.qr-warning-icon {
+  color: var(--accent);
+}
+
 /* ============================================================
    Address Picker
    ============================================================ */

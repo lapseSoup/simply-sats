@@ -42,7 +42,7 @@ export function SettingsBackup() {
       const identityWif = await getWifForOperation('identity', operationName, wallet!)
       const walletWif = await getWifForOperation('wallet', operationName, wallet!)
       const ordWif = await getWifForOperation('ordinals', operationName, wallet!)
-      const mnemonic = await tauriInvoke<string | null>('get_mnemonic_once')
+      const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
 
       const fullBackup = {
         format: 'simply-sats-full',

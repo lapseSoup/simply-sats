@@ -78,7 +78,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       const identityWif = await getWifForOperation('identity', 'exportKeys', wallet)
       const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet)
       const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet)
-      const mnemonic = await tauriInvoke<string | null>('get_mnemonic_once')
+      const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
 
       const keyData = {
         format: 'simply-sats',
@@ -118,8 +118,8 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
   const executeShowMnemonic = useCallback(async () => {
     setShowMnemonicWarning(false)
     try {
-      // Fetch mnemonic once from Rust key store (auto-clears after retrieval)
-      const mnemonic = await tauriInvoke<string | null>('get_mnemonic_once')
+      // Fetch mnemonic from Rust key store (remains available until wallet lock)
+      const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
       if (mnemonic) {
         setMnemonicToShow(mnemonic)
       } else {
@@ -182,7 +182,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       const identityWif = await getWifForOperation('identity', 'exportKeys', wallet!)
       const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet!)
       const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet!)
-      const mnemonic = await tauriInvoke<string | null>('get_mnemonic_once')
+      const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
 
       const keyData = {
         format: 'simply-sats',

@@ -57,6 +57,10 @@ import {
   deriveKeyFromNotification,
   startPaymentListener,
   startPaymentListenerFromWif,
+  listPaymentMessagesFromStore,
+  acknowledgeMessagesFromStore,
+  checkForPaymentsFromStore,
+  startPaymentListenerFromStore,
 } from './messageBox'
 import type { PaymentNotification } from './messageBox'
 
@@ -106,6 +110,7 @@ function setupAuthMocks() {
   mockTauriInvoke.mockImplementation(async (cmd: string) => {
     if (cmd === 'sha256_hash') return MOCK_HASH
     if (cmd === 'sign_data') return MOCK_SIGNATURE
+    if (cmd === 'sign_data_from_store') return MOCK_SIGNATURE
     if (cmd === 'keys_from_wif') return { wif: MOCK_WIF, address: '1MockAddr', pubKey: MOCK_PUB_KEY }
     if (cmd === 'derive_child_key') return { wif: 'L1derived', address: '1Derived', pubKey: MOCK_PUB_KEY }
     throw new Error(`Unexpected Tauri command: ${cmd}`)
@@ -856,6 +861,198 @@ describe('MessageBox Service', () => {
 
       expect(typeof cleanup).toBe('function')
       cleanup()
+    })
+  })
+
+  // =========================================================================
+  // Store-Based Variants (S-121) — WIF never enters JS heap
+  // =========================================================================
+
+  describe('listPaymentMessagesFromStore', () => {
+    it('should use sign_data_from_store instead of sign_data', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      )
+
+      await listPaymentMessagesFromStore(MOCK_PUB_KEY)
+
+      // Should call sign_data_from_store with keyType 'identity', NOT sign_data with wif
+      const signCalls = mockTauriInvoke.mock.calls.filter(
+        (c: unknown[]) => c[0] === 'sign_data_from_store'
+      )
+      expect(signCalls.length).toBeGreaterThanOrEqual(1)
+      expect(signCalls[0]![1]).toEqual(expect.objectContaining({ keyType: 'identity' }))
+
+      // Should NOT call keys_from_wif (pubkey is passed directly)
+      const wifCalls = mockTauriInvoke.mock.calls.filter(
+        (c: unknown[]) => c[0] === 'keys_from_wif'
+      )
+      expect(wifCalls).toHaveLength(0)
+    })
+
+    it('should include provided pubkey in auth headers', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      )
+
+      await listPaymentMessagesFromStore(MOCK_PUB_KEY)
+
+      const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0]!
+      const options = fetchCall[1] as RequestInit
+      const headers = options.headers as Record<string, string>
+      expect(headers['x-bsv-auth-pubkey']).toBe(MOCK_PUB_KEY)
+    })
+
+    it('should return messages on success', async () => {
+      const messages = [makePaymentMessage()]
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response(JSON.stringify({ messages }), { status: 200 })
+      )
+
+      const result = await listPaymentMessagesFromStore(MOCK_PUB_KEY)
+      expect(result).toEqual(messages)
+    })
+
+    it('should suppress repeated 401 failures', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response('', { status: 401 })
+      )
+
+      for (let i = 0; i < 10; i++) {
+        await listPaymentMessagesFromStore(MOCK_PUB_KEY)
+      }
+
+      vi.mocked(globalThis.fetch).mockClear()
+      const result = await listPaymentMessagesFromStore(MOCK_PUB_KEY)
+      expect(result).toEqual([])
+      expect(globalThis.fetch).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('acknowledgeMessagesFromStore', () => {
+    it('should return true for empty message IDs', async () => {
+      const result = await acknowledgeMessagesFromStore(MOCK_PUB_KEY, [])
+      expect(result).toBe(true)
+      expect(globalThis.fetch).not.toHaveBeenCalled()
+    })
+
+    it('should POST message IDs using store-based auth', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response('', { status: 200 })
+      )
+
+      const result = await acknowledgeMessagesFromStore(MOCK_PUB_KEY, ['msg-1', 'msg-2'])
+      expect(result).toBe(true)
+
+      const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0]!
+      const options = fetchCall[1] as RequestInit
+      const headers = options.headers as Record<string, string>
+      expect(headers['x-bsv-auth-pubkey']).toBe(MOCK_PUB_KEY)
+    })
+  })
+
+  describe('checkForPaymentsFromStore', () => {
+    it('should process payments using store-based auth', async () => {
+      const messages = [makePaymentMessage()]
+      vi.mocked(globalThis.fetch)
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ messages }), { status: 200 })
+        )
+        .mockResolvedValueOnce(
+          new Response('', { status: 200 })
+        )
+
+      const result = await checkForPaymentsFromStore(MOCK_PUB_KEY)
+
+      expect(result).toHaveLength(1)
+      expect(result[0]!.txid).toBe('tx-abc')
+
+      // Verify no WIF-based commands were used
+      const wifCalls = mockTauriInvoke.mock.calls.filter(
+        (c: unknown[]) => c[0] === 'sign_data' || c[0] === 'keys_from_wif'
+      )
+      expect(wifCalls).toHaveLength(0)
+    })
+  })
+
+  describe('startPaymentListenerFromStore', () => {
+    it('should return a cleanup function', () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      )
+
+      const cleanup = startPaymentListenerFromStore(MOCK_PUB_KEY)
+      expect(typeof cleanup).toBe('function')
+      cleanup()
+    })
+
+    it('should call onNewPayment for payments found on initial check', async () => {
+      const messages = [makePaymentMessage()]
+      vi.mocked(globalThis.fetch)
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ messages }), { status: 200 })
+        )
+        .mockResolvedValueOnce(new Response('', { status: 200 }))
+
+      const onNewPayment = vi.fn()
+      const cleanup = startPaymentListenerFromStore(MOCK_PUB_KEY, onNewPayment)
+
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(onNewPayment).toHaveBeenCalledWith(
+        expect.objectContaining({ txid: 'tx-abc' })
+      )
+
+      cleanup()
+    })
+
+    it('should never invoke sign_data or keys_from_wif (no WIF in JS)', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      )
+
+      const cleanup = startPaymentListenerFromStore(MOCK_PUB_KEY)
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Verify only store-based commands were used
+      const wifCommands = mockTauriInvoke.mock.calls.filter(
+        (c: unknown[]) => c[0] === 'sign_data' || c[0] === 'keys_from_wif'
+      )
+      expect(wifCommands).toHaveLength(0)
+
+      cleanup()
+    })
+
+    it('should check periodically at specified interval', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      )
+
+      const cleanup = startPaymentListenerFromStore(MOCK_PUB_KEY, undefined, 5000)
+      await vi.advanceTimersByTimeAsync(0)
+
+      vi.mocked(globalThis.fetch).mockClear()
+      await vi.advanceTimersByTimeAsync(5000)
+
+      expect(globalThis.fetch).toHaveBeenCalled()
+
+      cleanup()
+    })
+
+    it('should stop checking after cleanup is called', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        new Response(JSON.stringify({ messages: [] }), { status: 200 })
+      )
+
+      const cleanup = startPaymentListenerFromStore(MOCK_PUB_KEY, undefined, 1000)
+      await vi.advanceTimersByTimeAsync(0)
+
+      cleanup()
+
+      vi.mocked(globalThis.fetch).mockClear()
+      await vi.advanceTimersByTimeAsync(5000)
+
+      expect(globalThis.fetch).not.toHaveBeenCalled()
     })
   })
 })

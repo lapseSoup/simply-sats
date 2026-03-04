@@ -49,9 +49,9 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
     // Strip bitcoin: or bsv: URI prefix if present
     let address = decodedText.trim()
     if (address.toLowerCase().startsWith('bitcoin:')) {
-      address = address.slice(8).split('?')[0]!
+      address = address.slice(8).split('?')[0] ?? address
     } else if (address.toLowerCase().startsWith('bsv:')) {
-      address = address.slice(4).split('?')[0]!
+      address = address.slice(4).split('?')[0] ?? address
     }
 
     if (isValidBSVAddress(address)) {
@@ -223,17 +223,16 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
           <div>
             {cameraPermissionDenied ? (
               <div className="qr-permission-denied">
-                <AlertTriangle size={32} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
-                <div style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: 500 }}>
+                <AlertTriangle size={32} strokeWidth={1.5} className="qr-warning-icon" />
+                <div className="qr-permission-text">
                   Camera Access Denied
                 </div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: 1.5 }}>
+                <div className="qr-permission-subtext">
                   Camera permission was denied. Please allow camera access in your system settings, or use the Upload Image tab to scan a QR code from a saved image.
                 </div>
                 <button
                   type="button"
-                  className="btn btn-ghost"
-                  style={{ fontSize: '12px' }}
+                  className="btn btn-ghost qr-permission-subtext"
                   onClick={() => handleTabSwitch('upload')}
                 >
                   <Upload size={14} strokeWidth={1.75} />
@@ -247,7 +246,7 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
                   className="qr-scanner-container"
                 />
                 {scanning && (
-                  <div className="qr-scanner-hint" style={{ fontSize: '12px' }}>
+                  <div className="qr-scanner-hint">
                     Starting camera...
                   </div>
                 )}
@@ -261,15 +260,7 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
 
         {/* Upload tab */}
         {activeTab === 'upload' && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '16px',
-              padding: '20px 16px',
-            }}
-          >
+          <div className="qr-upload-container">
             <div
               className="qr-upload-area"
               onClick={handleUploadClick}
@@ -282,11 +273,11 @@ export function QRScannerModal({ onScan, onClose }: QRScannerModalProps) {
                 }
               }}
             >
-              <Upload size={28} strokeWidth={1.5} style={{ color: 'var(--text-tertiary)' }} />
-              <div style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: 500 }}>
+              <Upload size={28} strokeWidth={1.5} className="qr-upload-icon" />
+              <div className="qr-upload-label">
                 Click to select an image
               </div>
-              <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>
+              <div className="qr-upload-sublabel">
                 PNG or JPG containing a QR code
               </div>
             </div>

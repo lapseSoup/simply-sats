@@ -25,6 +25,9 @@ import { getWalletKeys } from './state'
 import { resolvePublicKey, resolveListOutputs, formatLockedOutput } from './outputs'
 import { getActiveAccount } from '../accounts'
 
+// Maximum number of pending BRC-100 requests to prevent memory exhaustion from malicious flooding
+const MAX_PENDING_REQUESTS = 100
+
 // Request types that require an active wallet to be loaded
 const WALLET_REQUIRED_TYPES = [
   'getPublicKey',
@@ -93,10 +96,10 @@ export async function setupHttpServerListener(): Promise<() => void> {
         if (request.type === 'getPublicKey' && keys) {
           // S-61: Validate params before auto-response (mirrors handler validation)
           const params = request.params || {}
-          if (params.identityKey !== undefined && typeof params.identityKey !== 'string') {
+          if (params.identityKey !== undefined && typeof params.identityKey !== 'boolean') {
             await invoke('respond_to_brc100', {
               requestId: request.id,
-              response: { error: { code: -32602, message: 'identityKey must be a string' } }
+              response: { error: { code: -32602, message: 'identityKey must be a boolean' } }
             })
             return
           }
@@ -202,6 +205,20 @@ export async function setupHttpServerListener(): Promise<() => void> {
           // Don't auto-process - let it fall through to be queued for approval
         }
 
+        // S-124: Reject new requests when the pending queue is full to prevent memory exhaustion
+        if (pendingRequests.size >= MAX_PENDING_REQUESTS) {
+          brc100Logger.warn('BRC-100 pending request queue full, rejecting', { requestId: request.id })
+          try {
+            await invoke('respond_to_brc100', {
+              requestId: request.id,
+              response: { error: { code: -32000, message: 'Too many pending requests' } }
+            })
+          } catch (e) {
+            brc100Logger.error('Failed to send queue-full response', e)
+          }
+          return
+        }
+
         // Store as pending and notify UI for requests that need approval
         pendingRequests.set(request.id, {
           request,
@@ -249,7 +266,8 @@ export async function setupHttpServerListener(): Promise<() => void> {
     })
 
     return unlisten
-  } catch {
+  } catch (err) {
+    brc100Logger.error('Failed to set up HTTP server listener', err)
     return () => {}
   }
 }

@@ -141,7 +141,9 @@ export async function handleBRC100Request(
       case 'createAction':
       case 'lockBSV':
       case 'unlockBSV':
-      case 'getTaggedKeys': {
+      case 'getTaggedKeys':
+      case 'encrypt':
+      case 'decrypt': {
         return queueApprovalRequest(request, pendingRequests, requestManager)
       }
 

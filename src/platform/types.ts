@@ -238,6 +238,9 @@ export interface PlatformAdapter {
   /** Get the mnemonic once (consumed after read) */
   getMnemonicOnce(): Promise<string>
 
+  /** Get the mnemonic without clearing it from the store */
+  getMnemonic(): Promise<string>
+
   /** Clear all keys from the store */
   clearKeys(): Promise<void>
 

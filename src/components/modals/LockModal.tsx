@@ -9,6 +9,7 @@ import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 import { isOk } from '../../domain/types'
 import { LOCK } from '../../config'
+import { formatTimeRemaining, AVERAGE_BLOCK_TIME_SECONDS } from '../../utils/timeFormatting'
 
 // Helper to calculate estimated unlock date - defined outside component to avoid render purity issues
 function calculateEstimatedUnlockDate(blocks: number): Date | null {
@@ -46,25 +47,10 @@ export function LockModal({ onClose }: LockModalProps) {
   // Check if this is a long lock (> 1 week)
   const isLongLock = blocks > LOCK.LONG_LOCK_WARNING_BLOCKS
 
-  // Estimate unlock time (average 10 min per block)
-  const estimatedMinutes = blocks * 10
-  const estimatedHours = Math.floor(estimatedMinutes / 60)
-  const estimatedDays = Math.floor(estimatedHours / 24)
-  const estimatedWeeks = Math.floor(estimatedDays / 7)
-  const estimatedMonths = Math.floor(estimatedDays / 30)
-
-  let timeEstimate = ''
-  if (estimatedMonths > 0) {
-    timeEstimate = `~${estimatedMonths} month${estimatedMonths > 1 ? 's' : ''}`
-  } else if (estimatedWeeks > 0) {
-    timeEstimate = `~${estimatedWeeks} week${estimatedWeeks > 1 ? 's' : ''}`
-  } else if (estimatedDays > 0) {
-    timeEstimate = `~${estimatedDays} day${estimatedDays > 1 ? 's' : ''}`
-  } else if (estimatedHours > 0) {
-    timeEstimate = `~${estimatedHours} hour${estimatedHours > 1 ? 's' : ''}`
-  } else if (estimatedMinutes > 0) {
-    timeEstimate = `~${estimatedMinutes} min`
-  }
+  // Q-67: Use shared time formatting utility instead of duplicated inline logic
+  const timeEstimate = blocks > 0
+    ? formatTimeRemaining(blocks * AVERAGE_BLOCK_TIME_SECONDS)
+    : ''
 
   // Format date for display
   const formatDate = (date: Date) => {

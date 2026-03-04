@@ -10,19 +10,20 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::key_derivation;
 use crate::brc100_signing;
 use crate::transaction;
 
 /// Internal key storage — holds sensitive WIFs and mnemonic.
-/// All fields are zeroized on Drop to prevent memory leakage.
+/// WIF and mnemonic fields use `Zeroizing<String>` so sensitive data
+/// is automatically zeroized when the wrapper is dropped or replaced.
 pub struct KeyStoreInner {
-    wallet_wif: Option<String>,
-    ord_wif: Option<String>,
-    identity_wif: Option<String>,
-    mnemonic: Option<String>,
+    wallet_wif: Option<Zeroizing<String>>,
+    ord_wif: Option<Zeroizing<String>>,
+    identity_wif: Option<Zeroizing<String>>,
+    mnemonic: Option<Zeroizing<String>>,
     // Public keys cached for quick access
     pub_keys: Option<PublicWalletKeys>,
 }
@@ -44,20 +45,10 @@ impl KeyStoreInner {
         }
     }
 
-    /// Clear all keys and zeroize sensitive data
+    /// Clear all keys from the store.
+    /// Zeroizing<String> automatically zeroizes the inner String when dropped,
+    /// so setting fields to None is sufficient for secure cleanup.
     pub fn clear(&mut self) {
-        if let Some(ref mut wif) = self.wallet_wif {
-            wif.zeroize();
-        }
-        if let Some(ref mut wif) = self.ord_wif {
-            wif.zeroize();
-        }
-        if let Some(ref mut wif) = self.identity_wif {
-            wif.zeroize();
-        }
-        if let Some(ref mut m) = self.mnemonic {
-            m.zeroize();
-        }
         self.wallet_wif = None;
         self.ord_wif = None;
         self.identity_wif = None;
@@ -71,11 +62,12 @@ impl KeyStoreInner {
 
     /// Get the WIF for a given key type.
     /// Used by key_store commands and the auth module.
+    /// Returns a plain String clone — callers wrap in Zeroizing as needed.
     pub fn get_wif(&self, key_type: &str) -> Result<String, String> {
         match key_type {
-            "wallet" => self.wallet_wif.clone().ok_or_else(|| "No wallet key stored".to_string()),
-            "ord" | "ordinals" => self.ord_wif.clone().ok_or_else(|| "No ordinals key stored".to_string()),
-            "identity" => self.identity_wif.clone().ok_or_else(|| "No identity key stored".to_string()),
+            "wallet" => self.wallet_wif.as_deref().cloned().ok_or_else(|| "No wallet key stored".to_string()),
+            "ord" | "ordinals" => self.ord_wif.as_deref().cloned().ok_or_else(|| "No ordinals key stored".to_string()),
+            "identity" => self.identity_wif.as_deref().cloned().ok_or_else(|| "No identity key stored".to_string()),
             _ => Err(format!("Invalid key type: {}", key_type)),
         }
     }
@@ -126,14 +118,14 @@ pub async fn store_keys(
         identity_pub_key: full_keys.identity_pub_key.clone(),
     };
 
-    // Store WIFs and mnemonic in Rust-only memory
+    // Store WIFs and mnemonic in Rust-only memory (wrapped in Zeroizing for secure drop)
     let mut store = key_store.lock().await;
     // Clear any existing keys first
     store.clear();
-    store.wallet_wif = Some(full_keys.wallet_wif);
-    store.ord_wif = Some(full_keys.ord_wif);
-    store.identity_wif = Some(full_keys.identity_wif);
-    store.mnemonic = Some((*mnemonic).clone());
+    store.wallet_wif = Some(Zeroizing::new(full_keys.wallet_wif));
+    store.ord_wif = Some(Zeroizing::new(full_keys.ord_wif));
+    store.identity_wif = Some(Zeroizing::new(full_keys.identity_wif));
+    store.mnemonic = Some(Zeroizing::new((*mnemonic).clone()));
     store.pub_keys = Some(pub_keys.clone());
 
     log::info!("Keys stored in Rust key store (account_index: {:?})", account_index);
@@ -167,10 +159,10 @@ pub async fn store_keys_direct(
 
     let mut store = key_store.lock().await;
     store.clear();
-    store.wallet_wif = Some(wallet_wif);
-    store.ord_wif = Some(ord_wif);
-    store.identity_wif = Some(identity_wif);
-    store.mnemonic = mnemonic;
+    store.wallet_wif = Some(Zeroizing::new(wallet_wif));
+    store.ord_wif = Some(Zeroizing::new(ord_wif));
+    store.identity_wif = Some(Zeroizing::new(identity_wif));
+    store.mnemonic = mnemonic.map(Zeroizing::new);
     store.pub_keys = Some(pub_keys.clone());
 
     log::info!("Keys stored directly in Rust key store");
@@ -206,20 +198,31 @@ pub async fn has_keys(
     Ok(store.has_keys())
 }
 
-/// Get mnemonic once for temporary display, then clear it from memory
-/// Use this for one-time display operations (e.g., showing recovery phrase in UI)
+/// Get mnemonic once for temporary display, then clear it from memory.
+/// Use this for one-time display operations (e.g., showing recovery phrase in UI).
+/// NOTE: Prefer `get_mnemonic` for most use cases — clearing on read breaks
+/// multi-function workflows in SettingsSecurity.
 #[tauri::command]
 pub async fn get_mnemonic_once(
     key_store: tauri::State<'_, SharedKeyStore>,
 ) -> Result<Option<String>, String> {
     let mut store = key_store.lock().await;
-    let mnemonic = store.mnemonic.clone();
-    // Clear mnemonic from memory after retrieval
-    if let Some(ref mut m) = store.mnemonic {
-        m.zeroize();
-    }
+    let mnemonic = store.mnemonic.as_deref().cloned();
+    // Clear mnemonic from memory after retrieval (Zeroizing handles secure drop)
     store.mnemonic = None;
     Ok(mnemonic)
+}
+
+/// Read mnemonic from store without clearing it.
+/// The mnemonic remains in Rust memory until wallet lock (`clear_keys`).
+/// Use this when the mnemonic may be needed by multiple operations in a session
+/// (e.g., export keys, show phrase, export with one-time password).
+#[tauri::command]
+pub async fn get_mnemonic(
+    key_store: tauri::State<'_, SharedKeyStore>,
+) -> Result<Option<String>, String> {
+    let store = key_store.lock().await;
+    Ok(store.mnemonic.as_deref().cloned())
 }
 
 /// Switch to a different account by re-deriving keys from the stored mnemonic.
@@ -231,7 +234,7 @@ pub async fn switch_account_from_store(
     account_index: u32,
 ) -> Result<PublicWalletKeys, String> {
     let mut store = key_store.lock().await;
-    let mnemonic = store.mnemonic.clone()
+    let mnemonic = store.mnemonic.as_deref().cloned()
         .ok_or_else(|| "No mnemonic in key store — wallet may be locked".to_string())?;
 
     // Use Zeroizing wrapper to ensure the clone is cleared after derivation
@@ -251,10 +254,10 @@ pub async fn switch_account_from_store(
 
     // Atomic key swap: overwrite fields directly instead of clear() + restore.
     // This prevents a crash between clear() and restore from leaving the store empty (BUG-3).
-    store.wallet_wif = Some(full_keys.wallet_wif);
-    store.ord_wif = Some(full_keys.ord_wif);
-    store.identity_wif = Some(full_keys.identity_wif);
-    store.mnemonic = Some(full_keys.mnemonic);
+    store.wallet_wif = Some(Zeroizing::new(full_keys.wallet_wif));
+    store.ord_wif = Some(Zeroizing::new(full_keys.ord_wif));
+    store.identity_wif = Some(Zeroizing::new(full_keys.identity_wif));
+    store.mnemonic = Some(Zeroizing::new(full_keys.mnemonic));
     store.pub_keys = Some(pub_keys.clone());
 
     log::info!("Account switched in Rust key store (account_index: {})", account_index);
@@ -641,8 +644,8 @@ mod tests {
     #[test]
     fn test_key_store_clear_zeroizes() {
         let mut store = KeyStoreInner::new();
-        store.wallet_wif = Some("L1secret".to_string());
-        store.mnemonic = Some("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string());
+        store.wallet_wif = Some(Zeroizing::new("L1secret".to_string()));
+        store.mnemonic = Some(Zeroizing::new("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string()));
         assert!(store.has_keys());
 
         store.clear();
@@ -654,9 +657,9 @@ mod tests {
     #[test]
     fn test_get_wif_validates_key_type() {
         let mut store = KeyStoreInner::new();
-        store.wallet_wif = Some("test_wif".to_string());
-        store.ord_wif = Some("test_ord_wif".to_string());
-        store.identity_wif = Some("test_id_wif".to_string());
+        store.wallet_wif = Some(Zeroizing::new("test_wif".to_string()));
+        store.ord_wif = Some(Zeroizing::new("test_ord_wif".to_string()));
+        store.identity_wif = Some(Zeroizing::new("test_id_wif".to_string()));
 
         assert!(store.get_wif("wallet").is_ok());
         assert!(store.get_wif("ord").is_ok());

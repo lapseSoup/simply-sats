@@ -760,6 +760,7 @@ pub fn run() {
             key_store::get_public_keys,
             key_store::has_keys,
             key_store::get_mnemonic_once,
+            key_store::get_mnemonic,
             key_store::switch_account_from_store,
             key_store::sign_message_from_store,
             key_store::sign_data_from_store,

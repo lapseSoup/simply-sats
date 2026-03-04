@@ -8,6 +8,8 @@ interface OrdinalSelectionContextType {
   ordinalToTransfer: Ordinal | null
   ordinalToList: Ordinal | null
   selectOrdinal: (ordinal: Ordinal) => void
+  /** B-104: Clear selectedOrdinal to prevent stale state after modal close */
+  clearSelectedOrdinal: () => void
   startTransferOrdinal: (ordinal: Ordinal) => void
   startListOrdinal: (ordinal: Ordinal) => void
   completeTransfer: () => void
@@ -38,6 +40,10 @@ export function OrdinalSelectionProvider({ children }: OrdinalSelectionProviderP
     setSelectedOrdinal(ordinal)
   }, [])
 
+  const clearSelectedOrdinal = useCallback(() => {
+    setSelectedOrdinal(null)
+  }, [])
+
   const startTransferOrdinal = useCallback((ordinal: Ordinal) => {
     setOrdinalToTransfer(ordinal)
   }, [])
@@ -59,6 +65,7 @@ export function OrdinalSelectionProvider({ children }: OrdinalSelectionProviderP
     ordinalToTransfer,
     ordinalToList,
     selectOrdinal,
+    clearSelectedOrdinal,
     startTransferOrdinal,
     startListOrdinal,
     completeTransfer,
@@ -68,6 +75,7 @@ export function OrdinalSelectionProvider({ children }: OrdinalSelectionProviderP
     ordinalToTransfer,
     ordinalToList,
     selectOrdinal,
+    clearSelectedOrdinal,
     startTransferOrdinal,
     startListOrdinal,
     completeTransfer,

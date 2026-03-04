@@ -1,11 +1,12 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useCallback } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { MnemonicModal, UnlockConfirmModal } from './components/modals'
+import type { Ordinal } from './domain/types'
 import type { LockedUTXO } from './services/wallet'
 import type { BRC100Request } from './services/brc100'
 import type { Account } from './services/accounts'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
-import { useModal } from './contexts'
+import { useModalContext, useOrdinalSelection, useWalletSetup, useLockWorkflow } from './contexts'
 
 // Re-export types from ModalContext for backward compatibility
 export type { Modal, AccountModalMode } from './contexts/ModalContext'
@@ -110,16 +111,45 @@ export function AppModals({
   unlockableLocks,
   onConfirmUnlock,
 }: AppModalsProps) {
-  const {
-    modal, closeModal,
-    selectedOrdinal,
-    ordinalToTransfer, completeTransfer,
-    ordinalToList, completeList,
-    newMnemonic, confirmMnemonic,
-    accountModalMode,
-    unlockConfirm, cancelUnlock, unlocking,
-    startTransferOrdinal, startListOrdinal
-  } = useModal()
+  // Granular context hooks (A-64: avoid merged useModal() to prevent needless re-renders)
+  const { modal, closeModal: rawCloseModal, accountModalMode, openModal } = useModalContext()
+  const ordinalCtx = useOrdinalSelection()
+  const { newMnemonic, confirmMnemonic: rawConfirmMnemonic } = useWalletSetup()
+  const { unlockConfirm, cancelUnlock, unlocking } = useLockWorkflow()
+
+  // Compound actions: replicate useModal() behavior at the call site
+  // B-104/B-111: Clear ordinal state when closing any modal
+  const closeModal = useCallback(() => {
+    rawCloseModal()
+    ordinalCtx.clearSelectedOrdinal()
+    ordinalCtx.completeTransfer()
+    ordinalCtx.completeList()
+  }, [rawCloseModal, ordinalCtx])
+
+  const completeTransfer = useCallback(() => {
+    ordinalCtx.completeTransfer()
+    rawCloseModal()
+  }, [ordinalCtx, rawCloseModal])
+
+  const completeList = useCallback(() => {
+    ordinalCtx.completeList()
+    rawCloseModal()
+  }, [ordinalCtx, rawCloseModal])
+
+  const confirmMnemonic = useCallback(() => {
+    rawConfirmMnemonic()
+    rawCloseModal()
+  }, [rawConfirmMnemonic, rawCloseModal])
+
+  const startTransferOrdinal = useCallback((ordinal: Ordinal) => {
+    ordinalCtx.startTransferOrdinal(ordinal)
+    openModal('transfer-ordinal')
+  }, [ordinalCtx, openModal])
+
+  const startListOrdinal = useCallback((ordinal: Ordinal) => {
+    ordinalCtx.startListOrdinal(ordinal)
+    openModal('list-ordinal')
+  }, [ordinalCtx, openModal])
 
   return (
     <>
@@ -172,7 +202,7 @@ export function AppModals({
         </ErrorBoundary>
       )}
 
-      {modal === 'ordinal' && selectedOrdinal && (
+      {modal === 'ordinal' && ordinalCtx.selectedOrdinal && (
         <ErrorBoundary
           context="OrdinalModal"
           fallback={(error, reset) => (
@@ -181,16 +211,16 @@ export function AppModals({
         >
           <Suspense fallback={<ModalLoadingFallback />}>
             <OrdinalModal
-              ordinal={selectedOrdinal}
+              ordinal={ordinalCtx.selectedOrdinal}
               onClose={closeModal}
-              onTransfer={() => startTransferOrdinal(selectedOrdinal)}
-              onList={() => startListOrdinal(selectedOrdinal)}
+              onTransfer={() => startTransferOrdinal(ordinalCtx.selectedOrdinal!)}
+              onList={() => startListOrdinal(ordinalCtx.selectedOrdinal!)}
             />
           </Suspense>
         </ErrorBoundary>
       )}
 
-      {modal === 'transfer-ordinal' && ordinalToTransfer && (
+      {modal === 'transfer-ordinal' && ordinalCtx.ordinalToTransfer && (
         <ErrorBoundary
           context="OrdinalTransferModal"
           fallback={(error, reset) => (
@@ -199,14 +229,14 @@ export function AppModals({
         >
           <Suspense fallback={<ModalLoadingFallback />}>
             <OrdinalTransferModal
-              ordinal={ordinalToTransfer}
+              ordinal={ordinalCtx.ordinalToTransfer}
               onClose={completeTransfer}
             />
           </Suspense>
         </ErrorBoundary>
       )}
 
-      {modal === 'list-ordinal' && ordinalToList && (
+      {modal === 'list-ordinal' && ordinalCtx.ordinalToList && (
         <ErrorBoundary
           context="OrdinalListModal"
           fallback={(error, reset) => (
@@ -215,7 +245,7 @@ export function AppModals({
         >
           <Suspense fallback={<ModalLoadingFallback />}>
             <OrdinalListModal
-              ordinal={ordinalToList}
+              ordinal={ordinalCtx.ordinalToList}
               onClose={completeList}
             />
           </Suspense>
