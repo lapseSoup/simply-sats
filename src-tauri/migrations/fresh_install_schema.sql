@@ -1,5 +1,5 @@
 -- Consolidated schema for fresh installs
--- This represents the final state after all migrations 001-012
+-- This represents the final state after all migrations 001-033
 -- Used to avoid tauri_plugin_sql hanging on DML in migrations
 
 -- Migration tracking table (matches sqlx format)
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS _sqlx_migrations (
 
 -- ==================== CORE TABLES ====================
 
--- UTXOs table (001 + 002 address + 003 account_id + 006 spending_status)
+-- UTXOs table (001 + 002 address + 003 account_id + 006 spending_status + 032 relinquished)
 CREATE TABLE IF NOT EXISTS utxos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     txid TEXT NOT NULL,
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS utxos (
     pending_spending_txid TEXT,
     pending_since INTEGER,
     frozen INTEGER DEFAULT 0,
+    relinquished INTEGER NOT NULL DEFAULT 0,
     UNIQUE(txid, vout)
 );
 
@@ -92,7 +93,7 @@ CREATE TABLE IF NOT EXISTS locks (
     FOREIGN KEY (utxo_id) REFERENCES utxos(id) ON DELETE CASCADE
 );
 
--- Certificates (001)
+-- Certificates (001 + 030 enhanced BRC-52 fields)
 CREATE TABLE IF NOT EXISTS certificates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL,
@@ -102,7 +103,12 @@ CREATE TABLE IF NOT EXISTS certificates (
     fields TEXT,
     signature TEXT,
     created_at INTEGER NOT NULL,
-    revoked_at INTEGER
+    revoked_at INTEGER,
+    master_certificate TEXT,
+    keyring TEXT,
+    revocation_outpoint TEXT,
+    certifier_identity_key TEXT,
+    account_id INTEGER NOT NULL DEFAULT 0
 );
 
 -- Sync state (001 + 003 account_id + 022 UNIQUE per account)
@@ -295,6 +301,59 @@ CREATE TABLE IF NOT EXISTS address_book (
     UNIQUE(address, account_id)
 );
 
+-- Auth sessions (029)
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    peer_identity_key TEXT NOT NULL,
+    session_nonce TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    expires_at INTEGER NOT NULL,
+    account_id INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(peer_identity_key, session_nonce)
+);
+
+-- Identity contacts (031)
+CREATE TABLE IF NOT EXISTS identity_contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    identity_key TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    pike_verified INTEGER NOT NULL DEFAULT 0,
+    pike_verified_at INTEGER,
+    first_seen_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    last_seen_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    trust_level INTEGER NOT NULL DEFAULT 0,
+    account_id INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(identity_key, account_id)
+);
+
+-- PCW notes (033)
+CREATE TABLE IF NOT EXISTS pcw_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    txid TEXT NOT NULL,
+    vout INTEGER NOT NULL,
+    satoshis INTEGER NOT NULL,
+    denomination INTEGER NOT NULL,
+    derivation_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    peer_identity_key TEXT,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    account_id INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(txid, vout)
+);
+
+-- PCW receipts (033)
+CREATE TABLE IF NOT EXISTS pcw_receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_hash TEXT NOT NULL UNIQUE,
+    merkle_root TEXT NOT NULL,
+    payment_amount INTEGER NOT NULL,
+    peer_identity_key TEXT NOT NULL,
+    receipt_data TEXT NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'received',
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    account_id INTEGER NOT NULL DEFAULT 0
+);
+
 -- ==================== INDEXES ====================
 
 CREATE INDEX IF NOT EXISTS idx_utxos_basket ON utxos(basket);
@@ -332,6 +391,16 @@ CREATE INDEX IF NOT EXISTS idx_ordinal_cache_account ON ordinal_cache(account_id
 CREATE INDEX IF NOT EXISTS idx_ordinal_cache_transferred ON ordinal_cache(transferred);
 CREATE INDEX IF NOT EXISTS idx_address_book_account ON address_book(account_id);
 CREATE INDEX IF NOT EXISTS idx_address_book_last_used ON address_book(last_used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_peer ON auth_sessions(peer_identity_key);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_certificates_type ON certificates(type);
+CREATE INDEX IF NOT EXISTS idx_certificates_certifier ON certificates(certifier);
+CREATE INDEX IF NOT EXISTS idx_certificates_account ON certificates(account_id);
+CREATE INDEX IF NOT EXISTS idx_identity_contacts_account ON identity_contacts(account_id);
+CREATE INDEX IF NOT EXISTS idx_pcw_notes_status ON pcw_notes(status);
+CREATE INDEX IF NOT EXISTS idx_pcw_notes_account ON pcw_notes(account_id);
+CREATE INDEX IF NOT EXISTS idx_pcw_receipts_peer ON pcw_receipts(peer_identity_key);
+CREATE INDEX IF NOT EXISTS idx_pcw_receipts_account ON pcw_receipts(account_id);
 
 -- ==================== DEFAULT DATA ====================
 
