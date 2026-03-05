@@ -104,6 +104,11 @@ export async function createAccount(
 
   const database = getDatabase()
 
+  /**
+   * @security S-136 ACCEPTED RISK: Keys exist as plaintext briefly during encryption.
+   * Inherent to key lifecycle — no mitigation needed beyond limiting this code path
+   * to wallet creation, restore, and account management flows.
+   */
   const keysObj = {
     mnemonic: keys.mnemonic,
     walletWif: keys.walletWif,

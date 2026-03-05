@@ -60,6 +60,8 @@ interface AccountSwitcherProps {
   onManageAccounts: () => void
   formatBalance: (sats: number) => string
   accountBalances?: Record<number, number>
+  /** Q-111: Called when the dropdown opens so the parent can lazy-fetch balances */
+  onOpen?: () => void
 }
 
 export function AccountSwitcher({
@@ -70,7 +72,8 @@ export function AccountSwitcher({
   onImportAccount,
   onManageAccounts,
   formatBalance,
-  accountBalances = {}
+  accountBalances = {},
+  onOpen
 }: AccountSwitcherProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [closing, setClosing] = useState(false)
@@ -224,7 +227,7 @@ export function AccountSwitcher({
     <div className="account-switcher" ref={dropdownRef}>
       <button
         className="account-switcher-button"
-        onClick={() => { if (closing) return; setIsOpen(!isOpen) }}
+        onClick={() => { if (closing) return; if (!isOpen) onOpen?.(); setIsOpen(!isOpen) }}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={`Current account: ${activeAccount?.name || 'Account 1'}`}

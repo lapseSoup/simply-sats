@@ -64,7 +64,7 @@ function makeContentCacheRef(): MutableRefObject<Map<string, OrdinalContentEntry
 
 describe('cacheOrdinalsInBackground', () => {
   let contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>
-  let bumpCacheVersion: ReturnType<typeof vi.fn>
+  let bumpCacheVersion: () => void
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -82,14 +82,14 @@ describe('cacheOrdinalsInBackground', () => {
 
   it('returns early if activeAccountId is null', async () => {
     const ordinals = [makeOrdinal()]
-    await cacheOrdinalsInBackground(ordinals, null, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(ordinals, null, contentCacheRef, bumpCacheVersion, () => false, true)
 
     expect(mockedBatchUpsertOrdinalCache).not.toHaveBeenCalled()
   })
 
   it('returns early if activeAccountId is 0 (falsy)', async () => {
     const ordinals = [makeOrdinal()]
-    await cacheOrdinalsInBackground(ordinals, 0 as never, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(ordinals, 0 as never, contentCacheRef, bumpCacheVersion, () => false, true)
 
     expect(mockedBatchUpsertOrdinalCache).not.toHaveBeenCalled()
   })
@@ -101,7 +101,7 @@ describe('cacheOrdinalsInBackground', () => {
       makeOrdinal({ origin: 'c', txid: 'tx-c' }),
     ]
 
-    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, () => false, true)
 
     expect(mockedBatchUpsertOrdinalCache).toHaveBeenCalledTimes(1)
     // Verify the batch call shape
@@ -124,7 +124,7 @@ describe('cacheOrdinalsInBackground', () => {
       { origin: 'transferred-away', txid: 'tx-2', vout: 0, satoshis: 1, contentType: null, contentHash: null, accountId: 1, fetchedAt: 0, blockHeight: 200 },
     ] as never)
 
-    await cacheOrdinalsInBackground(currentOrdinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(currentOrdinals, 1, contentCacheRef, bumpCacheVersion, () => false, true)
 
     expect(mockedMarkOrdinalTransferred).toHaveBeenCalledTimes(1)
     expect(mockedMarkOrdinalTransferred).toHaveBeenCalledWith('transferred-away')
@@ -138,7 +138,7 @@ describe('cacheOrdinalsInBackground', () => {
       { origin: 'should-not-mark', txid: 'tx-2', vout: 0, satoshis: 1, contentType: null, contentHash: null, accountId: 1, fetchedAt: 0, blockHeight: 200 },
     ] as never)
 
-    await cacheOrdinalsInBackground(currentOrdinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, false)
+    await cacheOrdinalsInBackground(currentOrdinals, 1, contentCacheRef, bumpCacheVersion, () => false, false)
 
     expect(mockedMarkOrdinalTransferred).not.toHaveBeenCalled()
     expect(mockedGetCachedOrdinals).not.toHaveBeenCalled()
@@ -154,7 +154,7 @@ describe('cacheOrdinalsInBackground', () => {
       makeOrdinal({ origin: 'c' }),
     ]
 
-    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, isCancelled, true)
+    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, isCancelled, true)
 
     // Batch upsert should not be called since isCancelled returned true
     expect(mockedBatchUpsertOrdinalCache).not.toHaveBeenCalled()
@@ -174,7 +174,7 @@ describe('cacheOrdinalsInBackground', () => {
       { origin: 'transferred', txid: 'tx-2', vout: 0, satoshis: 1, contentType: null, contentHash: null, accountId: 1, fetchedAt: 0, blockHeight: 200 },
     ] as never)
 
-    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, isCancelled, true)
+    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, isCancelled, true)
 
     // Transfer marking should not happen because isCancelled returned true before it
     expect(mockedGetCachedOrdinals).not.toHaveBeenCalled()
@@ -193,7 +193,7 @@ describe('cacheOrdinalsInBackground', () => {
       contentType: 'image/png',
     })
 
-    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, () => false, true)
 
     // Should fetch at most 50
     expect(mockedFetchOrdinalContent).toHaveBeenCalledTimes(50)
@@ -214,7 +214,7 @@ describe('cacheOrdinalsInBackground', () => {
       contentType: 'image/png',
     })
 
-    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, () => false, true)
 
     // hasOrdinalContent should only be called for 'not-cached' (skips 'cached-in-memory')
     expect(mockedHasOrdinalContent).toHaveBeenCalledTimes(1)
@@ -238,7 +238,7 @@ describe('cacheOrdinalsInBackground', () => {
       contentType: 'image/png',
     })
 
-    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, () => false, true)
 
     // Only fetches for 'not-in-db'
     expect(mockedFetchOrdinalContent).toHaveBeenCalledTimes(1)
@@ -255,7 +255,7 @@ describe('cacheOrdinalsInBackground', () => {
       contentType: 'text/plain',
     })
 
-    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, () => false, true)
 
     // Content should be saved in contentCacheRef
     expect(contentCacheRef.current.has('fetch-me')).toBe(true)
@@ -274,7 +274,7 @@ describe('cacheOrdinalsInBackground', () => {
     mockedHasOrdinalContent.mockResolvedValue(false)
     mockedFetchOrdinalContent.mockResolvedValue(null) // API returns nothing
 
-    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
+    await cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, () => false, true)
 
     expect(bumpCacheVersion).not.toHaveBeenCalled()
   })
@@ -285,14 +285,14 @@ describe('cacheOrdinalsInBackground', () => {
 
     // Should not throw — the outer try/catch should swallow
     await expect(
-      cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion as any, () => false, true)
+      cacheOrdinalsInBackground(ordinals, 1, contentCacheRef, bumpCacheVersion, () => false, true)
     ).resolves.toBeUndefined()
   })
 })
 
 describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
   let contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>
-  let bumpCacheVersionMock: ReturnType<typeof vi.fn>
+  let bumpCacheVersionMock: () => void
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -307,7 +307,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
 
   it('returns immediately when origin is already in memory cache', async () => {
     contentCacheRef.current.set('origin-1', { contentText: 'already cached' })
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('origin-1')
@@ -326,7 +326,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
       contentType: 'text/plain',
     })
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('db-origin')
@@ -348,7 +348,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
       contentText: undefined,
     })
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('empty-origin')
@@ -367,7 +367,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
       contentType: 'text/html',
     })
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('api-origin', 'text/html', 1)
@@ -384,7 +384,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
     mockedHasOrdinalContent.mockResolvedValue(false)
     mockedFetchOrdinalContent.mockResolvedValue(null)
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('no-content', 'image/png')
@@ -399,7 +399,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
     mockedHasOrdinalContent.mockResolvedValue(false)
     mockedFetchOrdinalContent.mockRejectedValue(new Error('Network timeout'))
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     // Should not throw
     await act(async () => {
@@ -413,7 +413,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
   it('does not crash when hasOrdinalContent throws', async () => {
     mockedHasOrdinalContent.mockRejectedValue(new Error('DB read error'))
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('db-error-origin')
@@ -426,7 +426,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
     mockedHasOrdinalContent.mockResolvedValue(true)
     mockedGetCachedOrdinalContent.mockResolvedValue(null)
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('null-content-origin')
@@ -441,7 +441,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
     mockedHasOrdinalContent.mockResolvedValue(false)
     mockedFetchOrdinalContent.mockResolvedValue(null)
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('typed-origin', 'application/json')
@@ -458,7 +458,7 @@ describe('useOrdinalCache — fetchOrdinalContentIfMissing', () => {
       contentType: 'image/png',
     })
 
-    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock as any }))
+    const { result } = renderHook(() => useOrdinalCache({ contentCacheRef, bumpCacheVersion: bumpCacheVersionMock }))
 
     await act(async () => {
       await result.current.fetchOrdinalContentIfMissing('transferred-origin', 'image/png', 42)

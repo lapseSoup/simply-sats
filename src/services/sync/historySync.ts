@@ -29,6 +29,7 @@ import { getLockingScript, isOurOutput, isOurOutputMulti } from './addressSync'
 // tx across multiple addresses within a single sync cycle.
 // Cleared at the end of every syncWallet() call.
 // ---------------------------------------------------------------------------
+const MAX_TX_DETAIL_CACHE_SIZE = 5000
 const txDetailCache = new Map<string, WocTransaction>()
 
 /** Get a cached transaction detail by txid. */
@@ -43,6 +44,11 @@ export function hasTxDetailCacheEntry(txid: string): boolean {
 
 /** Store a transaction detail in the per-sync cache. */
 export function setTxDetailCacheEntry(txid: string, detail: WocTransaction): void {
+  if (txDetailCache.size >= MAX_TX_DETAIL_CACHE_SIZE) {
+    // Map iteration order is insertion order — delete oldest entry
+    const oldestKey = txDetailCache.keys().next().value
+    if (oldestKey !== undefined) txDetailCache.delete(oldestKey)
+  }
   txDetailCache.set(txid, detail)
 }
 
@@ -110,7 +116,13 @@ export async function calculateTxAmount(
         let prevTx = txDetailCache.get(vin.txid) ?? null
         if (!prevTx) {
           prevTx = await wocClient.getTransactionDetails(vin.txid)
-          if (prevTx) txDetailCache.set(vin.txid, prevTx)
+          if (prevTx) {
+            if (txDetailCache.size >= MAX_TX_DETAIL_CACHE_SIZE) {
+              const oldestKey = txDetailCache.keys().next().value
+              if (oldestKey !== undefined) txDetailCache.delete(oldestKey)
+            }
+            txDetailCache.set(vin.txid, prevTx)
+          }
         }
         if (prevTx?.vout?.[vin.vout]) {
           const prevOutput = prevTx.vout[vin.vout]!
@@ -241,6 +253,7 @@ export async function syncTransactionHistory(address: string, accountId?: number
               }
             } catch (_spentErr) {
               // Best-effort — detectLockedUtxos will also check later
+              syncLogger.debug('Lock spent check failed (best-effort)', { txid: txRef.tx_hash, vout: i, error: String(_spentErr) })
             }
             break
           }
@@ -270,7 +283,10 @@ export async function syncTransactionHistory(address: string, accountId?: number
             if (vin.txid && vin.vout !== undefined) {
               try {
                 await markLockUnlockedByTxid(vin.txid, vin.vout, accountId)
-              } catch (_e) { /* best-effort — lock may not exist in DB yet */ }
+              } catch (_e) {
+                // best-effort — lock may not exist in DB yet
+                syncLogger.debug('Failed to mark lock as unlocked (best-effort)', { txid: vin.txid, vout: vin.vout, error: String(_e) })
+              }
             }
           }
         }
@@ -335,6 +351,7 @@ export async function syncTransactionHistory(address: string, accountId?: number
         }, accountId)
       } catch (_e) {
         // Best-effort: don't fail sync if labeling fails
+        syncLogger.debug('Transaction labeling failed (best-effort)', { txid: txRef.tx_hash, label: txLabel, error: String(_e) })
       }
     }
   }

@@ -10,7 +10,7 @@ import {
   ChevronRight
 } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../../contexts'
-import { useUI } from '../../../contexts/UIContext'
+import { useUI, type ToastType } from '../../../contexts/UIContext'
 import { encrypt } from '../../../services/crypto'
 import { logger } from '../../../services/logger'
 import { hasPassword } from '../../../services/wallet'
@@ -21,6 +21,48 @@ import { PasswordInput } from '../../shared/PasswordInput'
 import { TestRecoveryModal } from '../TestRecoveryModal'
 import { handleKeyDown } from './settingsKeyDown'
 import { SECURITY } from '../../../config'
+import type { WalletKeys } from '../../../domain/types'
+
+/**
+ * Shared helper: fetch wallet keys, encrypt, and save to a JSON file.
+ * Used by both password-based and one-time-password export flows.
+ */
+async function exportKeysToFile(
+  wallet: WalletKeys,
+  password: string,
+  showToast: (msg: string, type?: ToastType) => void
+): Promise<void> {
+  const { getWifForOperation } = await import('../../../services/wallet')
+  const identityWif = await getWifForOperation('identity', 'exportKeys', wallet)
+  const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet)
+  const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet)
+  const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
+
+  const keyData = {
+    format: 'simply-sats',
+    version: 1,
+    mnemonic: mnemonic || null,
+    keys: {
+      identity: { wif: identityWif, pubKey: wallet.identityPubKey },
+      payment: { wif: walletWif, address: wallet.walletAddress },
+      ordinals: { wif: ordWif, address: wallet.ordAddress }
+    }
+  }
+  const encrypted = await encrypt(JSON.stringify(keyData), password)
+  const encryptedExport = {
+    format: 'simply-sats-keys-encrypted',
+    version: 1,
+    encrypted
+  }
+  const filePath = await saveFileDialog({
+    defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }]
+  })
+  if (filePath) {
+    await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))
+    showToast('Encrypted keys saved to file!')
+  }
+}
 
 interface SettingsSecurityProps {
   onClose: () => void
@@ -72,38 +114,9 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       return
     }
 
-    // Has password -- use sessionPassword for encryption (existing behavior)
+    // Has password -- use sessionPassword for encryption
     try {
-      const { getWifForOperation } = await import('../../../services/wallet')
-      const identityWif = await getWifForOperation('identity', 'exportKeys', wallet)
-      const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet)
-      const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet)
-      const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
-
-      const keyData = {
-        format: 'simply-sats',
-        version: 1,
-        mnemonic: mnemonic || null,
-        keys: {
-          identity: { wif: identityWif, pubKey: wallet.identityPubKey },
-          payment: { wif: walletWif, address: wallet.walletAddress },
-          ordinals: { wif: ordWif, address: wallet.ordAddress }
-        }
-      }
-      const encrypted = await encrypt(JSON.stringify(keyData), sessionPassword)
-      const encryptedExport = {
-        format: 'simply-sats-keys-encrypted',
-        version: 1,
-        encrypted
-      }
-      const filePath = await saveFileDialog({
-        defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }]
-      })
-      if (filePath) {
-        await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))
-        showToast('Encrypted keys saved to file!')
-      }
+      await exportKeysToFile(wallet, sessionPassword, showToast)
     } catch (err) {
       logger.error('Key export failed', err)
       showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
@@ -178,36 +191,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       return
     }
     try {
-      const { getWifForOperation } = await import('../../../services/wallet')
-      const identityWif = await getWifForOperation('identity', 'exportKeys', wallet!)
-      const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet!)
-      const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet!)
-      const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
-
-      const keyData = {
-        format: 'simply-sats',
-        version: 1,
-        mnemonic: mnemonic || null,
-        keys: {
-          identity: { wif: identityWif, pubKey: wallet!.identityPubKey },
-          payment: { wif: walletWif, address: wallet!.walletAddress },
-          ordinals: { wif: ordWif, address: wallet!.ordAddress }
-        }
-      }
-      const encrypted = await encrypt(JSON.stringify(keyData), exportPassword)
-      const encryptedExport = {
-        format: 'simply-sats-keys-encrypted',
-        version: 1,
-        encrypted
-      }
-      const filePath = await saveFileDialog({
-        defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }]
-      })
-      if (filePath) {
-        await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))
-        showToast('Keys exported! Remember the password you used.')
-      }
+      await exportKeysToFile(wallet!, exportPassword, showToast)
     } catch (err) {
       logger.error('Key export failed', err)
       showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')

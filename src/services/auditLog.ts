@@ -15,7 +15,7 @@
  * @module services/auditLog
  */
 
-import Database from '@tauri-apps/plugin-sql'
+import { getDatabase } from '../infrastructure/database/connection'
 import { walletLogger } from './logger'
 import { FEATURES } from '../config'
 import type { AuditAction, AuditLogEntry, IAuditLogRepository } from '../domain/repositories'
@@ -25,19 +25,6 @@ const DEFAULT_RETENTION_DAYS = 90
 
 // Maximum entries to return in a single query
 const MAX_QUERY_LIMIT = 1000
-
-// Singleton database connection
-let db: Database | null = null
-
-/**
- * Get or create database connection
- */
-async function getDb(): Promise<Database> {
-  if (!db) {
-    db = await Database.load('sqlite:simplysats.db')
-  }
-  return db
-}
 
 /** Maximum serialized size for audit log details (10 KB) */
 const MAX_DETAILS_SIZE = 10240
@@ -102,7 +89,7 @@ export async function logAuditAction(
   }
 
   try {
-    const database = await getDb()
+    const database = getDatabase()
     const timestamp = Math.floor(Date.now() / 1000)
     const detailsJson = options?.details ? sanitizeDetails(options.details) : null
 
@@ -135,7 +122,7 @@ export async function getRecentAuditLogs(limit: number = 100): Promise<AuditLogE
   }
 
   try {
-    const database = await getDb()
+    const database = getDatabase()
     const effectiveLimit = Math.min(limit, MAX_QUERY_LIMIT)
 
     const rows = await database.select<AuditLogEntry[]>(
@@ -168,7 +155,7 @@ export async function getAuditLogsByAction(
   }
 
   try {
-    const database = await getDb()
+    const database = getDatabase()
     const effectiveLimit = Math.min(limit, MAX_QUERY_LIMIT)
 
     const rows = await database.select<AuditLogEntry[]>(
@@ -202,7 +189,7 @@ export async function getAuditLogsByAccount(
   }
 
   try {
-    const database = await getDb()
+    const database = getDatabase()
     const effectiveLimit = Math.min(limit, MAX_QUERY_LIMIT)
 
     const rows = await database.select<AuditLogEntry[]>(
@@ -233,7 +220,7 @@ export async function exportAuditLogs(): Promise<AuditLogEntry[]> {
   }
 
   try {
-    const database = await getDb()
+    const database = getDatabase()
 
     const rows = await database.select<AuditLogEntry[]>(
       `SELECT id, timestamp, action, details, account_id as accountId, origin, txid, success
@@ -262,7 +249,7 @@ export async function clearOldAuditLogs(timestamp?: number): Promise<number> {
   }
 
   try {
-    const database = await getDb()
+    const database = getDatabase()
     const cutoff = timestamp ?? Math.floor(Date.now() / 1000) - (DEFAULT_RETENTION_DAYS * 24 * 60 * 60)
 
     const result = await database.execute(
@@ -291,7 +278,7 @@ export async function getFailedUnlockAttempts(
   const cutoff = since ?? Math.floor(Date.now() / 1000) - (24 * 60 * 60) // Last 24 hours
 
   try {
-    const database = await getDb()
+    const database = getDatabase()
 
     const rows = await database.select<AuditLogEntry[]>(
       `SELECT id, timestamp, action, details, account_id as accountId, origin, txid, success

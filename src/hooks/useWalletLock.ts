@@ -110,7 +110,13 @@ export function useWalletLock({
     } catch (e) {
       walletLogger.warn('Failed to clear Rust key store', { error: String(e) })
     }
-    audit.walletLocked(activeAccountId ?? undefined)
+    // B-126: Read current account from DB to avoid stale closure capture during account switches
+    let currentAccountId = activeAccountId
+    try {
+      const currentAccount = await getActiveAccount()
+      if (currentAccount?.id != null) currentAccountId = currentAccount.id
+    } catch { /* use closure value as fallback */ }
+    audit.walletLocked(currentAccountId ?? undefined)
   }, [activeAccountId, setWalletState, setSessionPassword])
 
   // Lock wallet when app is hidden for extended period

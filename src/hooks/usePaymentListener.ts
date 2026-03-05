@@ -47,12 +47,14 @@ export function usePaymentListener({
     resetMessageBoxAuth()
     loadNotifications()
 
+    let timerId: ReturnType<typeof setTimeout> | null = null
+
     const handleNewPayment = (payment: PaymentNotification) => {
       logger.info('New payment received', { txid: payment.txid, amount: payment.amount })
       setNewPaymentAlert(payment)
       showToastRef.current(`Received ${payment.amount?.toLocaleString() || 'unknown'} sats!`)
       fetchDataRef.current().catch(err => logger.error('Failed to refresh data after payment', err))
-      setTimeout(() => setNewPaymentAlert(null), 5000)
+      timerId = setTimeout(() => setNewPaymentAlert(null), 5000)
     }
 
     // S-121: Use store-based listener — identity WIF never enters JS heap.
@@ -61,6 +63,8 @@ export function usePaymentListener({
 
     return () => {
       stopListener()
+      setNewPaymentAlert(null)
+      if (timerId) clearTimeout(timerId)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- *Ref values are stable refs from useLatestRef
   }, [wallet])

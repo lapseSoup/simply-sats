@@ -473,7 +473,10 @@ export async function syncWallet(
         // instead of waiting the full delay when the user switches accounts
         try {
           await cancellableDelay(RATE_LIMITS.addressSyncDelay, token)
-        } catch { break } // CancellationError — exit the loop
+        } catch {
+          syncLogger.debug('[SYNC] Sync cancelled during tx history delay')
+          break
+        } // CancellationError — exit the loop
       } catch (e) {
         syncLogger.warn(`Failed to sync tx history for ${addr.slice(0,12)}...`, { error: String(e) })
       }

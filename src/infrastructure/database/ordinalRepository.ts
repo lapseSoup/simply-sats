@@ -7,7 +7,7 @@
  */
 
 import { getDatabase } from './connection'
-import { dbLogger } from '../../services/logger'
+import { dbLogger } from './dbLogger'
 import type { CachedOrdinal } from './types'
 import type { OrdinalCacheRow, OrdinalCacheStatsRow } from './row-types'
 

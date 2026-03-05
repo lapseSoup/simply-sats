@@ -18,17 +18,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const {
   mockDbExecute,
   mockDbSelect,
-  mockDbLoad,
 } = vi.hoisted(() => ({
   mockDbExecute: vi.fn(),
   mockDbSelect: vi.fn(),
-  mockDbLoad: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/plugin-sql', () => ({
-  default: {
-    load: (...args: unknown[]) => mockDbLoad(...args),
-  },
+vi.mock('../infrastructure/database/connection', () => ({
+  getDatabase: () => ({
+    execute: mockDbExecute,
+    select: mockDbSelect,
+  }),
 }))
 
 vi.mock('./logger', () => ({
@@ -65,14 +64,8 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('Audit Log Service', () => {
-  const mockDb = {
-    execute: mockDbExecute,
-    select: mockDbSelect,
-  }
-
   beforeEach(() => {
     vi.resetAllMocks()
-    mockDbLoad.mockResolvedValue(mockDb)
     mockDbExecute.mockResolvedValue({ rowsAffected: 1 })
     mockDbSelect.mockResolvedValue([])
   })

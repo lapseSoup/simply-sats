@@ -223,7 +223,13 @@ export function useWalletActions({
       } catch (e) {
         walletLogger.warn('Failed to initialize Rust key store after JSON import', { error: String(e) })
       }
-      setWallet(keys)
+      // Set active account state immediately after refresh (matches handleCreateWallet pattern)
+      const activeAccForImport = await getActiveAccount()
+      if (activeAccForImport) {
+        setActiveAccountState(activeAccForImport, activeAccForImport.id ?? null)
+      }
+      // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
+      setWallet({ ...keys, mnemonic: '' })
       const sessionPwd = password ?? ''
       setSessionPassword(sessionPwd)
       setModuleSessionPassword(sessionPwd)
@@ -232,7 +238,7 @@ export function useWalletActions({
       walletLogger.error('Failed to import JSON', e)
       return false
     }
-  }, [setWallet, setSessionPassword, refreshAccounts, storeKeysInRust])
+  }, [setWallet, setSessionPassword, refreshAccounts, setActiveAccountState, storeKeysInRust])
 
   const handleDeleteWallet = useCallback(async () => {
     // 1. Stop auto-lock timer

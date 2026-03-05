@@ -29,6 +29,15 @@ import { ok, err, type Result, type WalletResult } from '../domain/types'
 import { ErrorCodes, AppError } from '../services/errors'
 import type { RecipientOutput } from '../domain/transaction/builder'
 
+/** Safely extract txid from an error context object */
+function extractTxidFromContext(context: unknown): string {
+  if (context != null && typeof context === 'object' && 'txid' in context) {
+    const txid = (context as Record<string, unknown>).txid
+    return typeof txid === 'string' ? txid : 'unknown'
+  }
+  return 'unknown'
+}
+
 /**
  * Build an array of ExtendedUTXOs with correct per-address WIFs for multi-key spending.
  * Resolves derived address child keys via BRC-42 key derivation and optionally
@@ -172,7 +181,7 @@ export function useWalletSend({
       if (!sendResult.ok) {
         // Q-65: Use error code instead of fragile string matching for broadcast-succeeded-but-DB-failed
         if (sendResult.error.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
-          const txid = (sendResult.error.context as Record<string, unknown>)?.txid as string || 'unknown'
+          const txid = extractTxidFromContext(sendResult.error.context)
           walletLogger.warn('Broadcast succeeded but DB write failed — treating as success', { txid })
           return ok({ txid, warning: sendResult.error.message })
         }
@@ -186,7 +195,7 @@ export function useWalletSend({
     } catch (e) {
       // Q-65: Also handle thrown AppError with BROADCAST_SUCCEEDED_DB_FAILED code
       if (e instanceof AppError && e.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
-        const txid = (e.context as Record<string, unknown>)?.txid as string || 'unknown'
+        const txid = extractTxidFromContext(e.context)
         return ok({ txid, warning: e.message })
       }
       return err(e instanceof Error ? e.message : 'Send failed')
@@ -208,7 +217,7 @@ export function useWalletSend({
       const sendResult = await sendBSVMultiOutput(result.walletWif, recipients, result.extendedUtxos, activeAccountId ?? undefined)
       if (!sendResult.ok) {
         if (sendResult.error.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
-          const txid = (sendResult.error.context as Record<string, unknown>)?.txid as string || 'unknown'
+          const txid = extractTxidFromContext(sendResult.error.context)
           walletLogger.warn('Multi-send broadcast succeeded but DB write failed — treating as success', { txid })
           return ok({ txid, warning: sendResult.error.message })
         }
@@ -221,7 +230,7 @@ export function useWalletSend({
       return ok({ txid })
     } catch (e) {
       if (e instanceof AppError && e.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
-        const txid = (e.context as Record<string, unknown>)?.txid as string || 'unknown'
+        const txid = extractTxidFromContext(e.context)
         return ok({ txid, warning: e.message })
       }
       return err(e instanceof Error ? e.message : 'Multi-recipient send failed')

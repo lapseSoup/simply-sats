@@ -13,7 +13,7 @@ export function SettingsCache() {
   const [showCacheOptions, setShowCacheOptions] = useState(false)
 
   useEffect(() => {
-    getCacheStats().then(stats => setCacheStats(stats)).catch(() => {})
+    getCacheStats().then(stats => setCacheStats(stats)).catch(() => { /* Cache stats are non-critical; failure just means the section won't render */ })
   }, [])
 
   const refreshCacheStats = useCallback(async () => {

@@ -18,6 +18,7 @@ import type {
   BalanceSumRow,
   SqlParams
 } from './row-types'
+import { toErrorMessage } from '../../utils/errorMessage'
 
 // ============================================
 // Migration Helpers
@@ -35,7 +36,7 @@ async function ensureColumn(probeColumn: string, ddlStatements: string[]): Promi
     // Only run DDL if this is a "no such column" error; other errors (e.g., DB busy)
     // should not trigger DDL migrations because the column already exists and
     // ALTER TABLE would fail with "duplicate column name", masking the real error.
-    const msg = probeError instanceof Error ? probeError.message : String(probeError)
+    const msg = toErrorMessage(probeError)
     if (!msg.toLowerCase().includes('no such column')) {
       dbLogger.warn(`[DB] Column probe for '${probeColumn}' failed with non-schema error — skipping DDL`, { error: msg })
       return
@@ -46,7 +47,7 @@ async function ensureColumn(probeColumn: string, ddlStatements: string[]): Promi
         await database.execute(ddl)
       } catch (ddlError) {
         // Ignore "duplicate column" — the column may have been added by another path
-        const ddlMsg = ddlError instanceof Error ? ddlError.message : String(ddlError)
+        const ddlMsg = toErrorMessage(ddlError)
         if (ddlMsg.toLowerCase().includes('duplicate column')) {
           dbLogger.debug(`[DB] Column already exists (duplicate), skipping: ${ddl.substring(0, 60)}`)
         } else {
@@ -209,7 +210,7 @@ export async function addUTXO(utxo: Omit<UTXO, 'id'>, accountId?: number): Promi
 
     return ok(utxoId)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -264,7 +265,7 @@ export async function getUTXOsByBasket(basket: string, spendableOnly = true, acc
 
     return ok(utxos)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -303,7 +304,7 @@ export async function getSpendableUTXOs(accountId?: number): Promise<Result<UTXO
       tags: []
     })))
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -336,7 +337,7 @@ export async function getSpendableUTXOsByAddress(address: string): Promise<Resul
       tags: []
     })))
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -360,7 +361,7 @@ export async function markUTXOSpent(txid: string, vout: number, spentTxid: strin
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -393,7 +394,7 @@ export async function markUtxosPendingSpend(
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -421,7 +422,7 @@ export async function confirmUtxosSpent(
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -446,7 +447,7 @@ export async function rollbackPendingSpend(
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -481,7 +482,7 @@ export async function getPendingUtxos(timeoutMs: number = 300000): Promise<Resul
       pendingSince: row.pending_since
     })))
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -504,7 +505,7 @@ export async function getUtxoByOutpoint(txid: string, vout: number, accountId?: 
     const rows = await database.select<{ satoshis: number }[]>(query, params)
     return ok(rows[0] ?? null)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -542,7 +543,7 @@ export async function getBalanceFromDB(basket?: string, accountId?: number): Pro
     const result = await database.select<BalanceSumRow[]>(query, params)
     return ok(result[0]?.total || 0)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -592,7 +593,7 @@ export async function getAllUTXOs(accountId?: number): Promise<Result<UTXO[], Db
 
     return ok(utxos)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -627,7 +628,7 @@ export async function toggleUtxoFrozen(
     }
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -670,7 +671,7 @@ export async function repairUTXOs(accountId?: number): Promise<Result<number, Db
 
     return ok(fixed)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -685,7 +686,7 @@ export async function clearUtxosForAccount(accountId: number): Promise<Result<vo
     await database.execute('DELETE FROM utxos WHERE account_id = $1', [accountId])
     return ok(undefined)
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }
 
@@ -767,6 +768,6 @@ export async function reassignAccountData(targetAccountId: number): Promise<Resu
       return ok(totalFixed)
     })
   } catch (error) {
-    return err(new DbError(error instanceof Error ? error.message : String(error), 'QUERY_FAILED', error))
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
   }
 }

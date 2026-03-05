@@ -5,7 +5,7 @@
  */
 
 import { type Result, ok, err } from '../../domain/types'
-import { DbError } from '../../services/errors'
+import { DbError } from './dbError'
 import { getDatabase } from './connection'
 import type { SyncStateRow } from './row-types'
 

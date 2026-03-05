@@ -5,7 +5,7 @@
  */
 
 import { getDatabase } from './connection'
-import { dbLogger } from '../../services/logger'
+import { dbLogger } from './dbLogger'
 import type { Lock, UTXO } from './types'
 import type { LockRow, LockWithUTXORow } from './row-types'
 

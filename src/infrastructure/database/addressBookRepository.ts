@@ -6,8 +6,8 @@
  */
 
 import { getDatabase } from './connection'
-import { dbLogger } from '../../services/logger'
-import { DbError } from '../../services/errors'
+import { dbLogger } from './dbLogger'
+import { DbError } from './dbError'
 import type { Result } from '../../domain/types'
 import { ok, err } from '../../domain/types'
 import type { AddressBookEntry } from './types'

@@ -308,14 +308,18 @@ export function useAccountSwitching({
     const keys = await accountsCreateNewAccount(name, accountPassword)
     if (keys) {
       // Store mnemonic in Rust key store before clearing from React state
-      await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? (accounts.length))
+      const accountIndex = keys.accountIndex ?? 0
+      if (keys.accountIndex == null) {
+        walletLogger.warn('keys.accountIndex was null, using fallback 0')
+      }
+      await storeKeysInRust(keys.mnemonic, accountIndex)
       // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
       setWallet({ ...keys, mnemonic: '' })
       setIsLocked(false)
       return true
     }
     return false
-  }, [accountsCreateNewAccount, setWallet, setIsLocked, accounts.length, storeKeysInRust])
+  }, [accounts.length, accountsCreateNewAccount, setWallet, setIsLocked, storeKeysInRust])
 
   const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()
@@ -327,7 +331,11 @@ export function useAccountSwitching({
     const keys = await accountsImportAccount(name, mnemonic, accountPassword)
     if (keys) {
       // Store mnemonic in Rust key store before clearing from React state
-      await storeKeysInRust(keys.mnemonic, keys.accountIndex ?? (accounts.length))
+      const accountIndex = keys.accountIndex ?? 0
+      if (keys.accountIndex == null) {
+        walletLogger.warn('keys.accountIndex was null, using fallback 0')
+      }
+      await storeKeysInRust(keys.mnemonic, accountIndex)
       // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
       setWallet({ ...keys, mnemonic: '' })
       setIsLocked(false)
@@ -346,7 +354,7 @@ export function useAccountSwitching({
       return true
     }
     return false
-  }, [accountsImportAccount, setWallet, setIsLocked, refreshAccounts, accounts.length, storeKeysInRust])
+  }, [accountsImportAccount, setWallet, setIsLocked, refreshAccounts, storeKeysInRust])
 
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
     const success = await accountsDeleteAccount(accountId)
@@ -363,14 +371,17 @@ export function useAccountSwitching({
           }
         }
         if (keys) {
-          setWallet(keys)
+          // Strip mnemonic from React state (mnemonic lives in Rust key store)
+          setWallet({ ...keys, mnemonic: '' })
+          await refreshAccounts()
+          setActiveAccountState(active, active.id ?? null)
         } else {
           walletLogger.error('Cannot switch to remaining account after deletion — no keys available.')
         }
       }
     }
     return success
-  }, [accountsDeleteAccount, setWallet, getKeysForAccount])
+  }, [accountsDeleteAccount, setWallet, getKeysForAccount, refreshAccounts, setActiveAccountState])
 
   return {
     switchAccount,

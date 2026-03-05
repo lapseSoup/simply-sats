@@ -114,6 +114,9 @@ fn calculate_change_and_fee(
 
 /// Add a P2PKH output to a transaction for the given address and satoshi amount.
 pub(crate) fn add_p2pkh_output(tx: &mut SdkTransaction, address: &str, satoshis: u64) -> Result<(), String> {
+    if satoshis == 0 {
+        return Err("Output satoshis must be > 0".into());
+    }
     let addr = Address::from_string(address)
         .map_err(|e| format!("Invalid address '{}': {}", address, e))?;
     let locking_script = p2pkh::lock(&addr)

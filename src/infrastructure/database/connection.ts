@@ -20,7 +20,7 @@
  */
 
 import Database from '@tauri-apps/plugin-sql'
-import { dbLogger } from '../../services/logger'
+import { dbLogger } from './dbLogger'
 
 // Database instance (singleton)
 let db: Database | null = null

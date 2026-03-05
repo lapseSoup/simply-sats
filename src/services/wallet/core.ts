@@ -15,6 +15,7 @@ import { walletLogger } from '../logger'
 import { AppError, ErrorCodes } from '../errors'
 import type { Result } from '../../domain/types'
 import { ok, err } from '../../domain/types'
+import { toErrorMessage } from '../../utils/errorMessage'
 
 // Re-export WALLET_PATHS for backward compatibility
 export { WALLET_PATHS }
@@ -57,7 +58,7 @@ export async function restoreWallet(mnemonic: string): Promise<Result<WalletKeys
     return err(new AppError(
       'Failed to derive wallet keys from mnemonic',
       ErrorCodes.ENCRYPTION_ERROR,
-      { originalError: error instanceof Error ? error.message : String(error) }
+      { originalError: toErrorMessage(error) }
     ))
   }
 }

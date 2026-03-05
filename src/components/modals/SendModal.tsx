@@ -14,6 +14,7 @@ import { saveAddress } from '../../infrastructure/database'
 import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
 import { toWalletUtxo } from '../../domain/types'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
+import { formatSatoshis } from '../../utils/formatting'
 import type { RecipientOutput } from '../../domain/transaction/builder'
 
 /**
@@ -281,12 +282,7 @@ export function SendModal({ onClose }: SendModalProps) {
   }
 
   // Format amount for display in confirmation
-  const formatAmount = (sats: number) => {
-    if (sats >= 100000000) {
-      return `${satoshisToBtc(sats).toFixed(8)} BSV`
-    }
-    return `${sats.toLocaleString()} sats`
-  }
+  const formatAmount = (sats: number) => formatSatoshis(sats)
 
   return (
     <>

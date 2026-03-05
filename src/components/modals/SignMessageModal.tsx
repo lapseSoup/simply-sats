@@ -50,7 +50,7 @@ export function SignMessageModal({ onClose }: SignMessageModalProps) {
   }, [wallet, verifyMessage, verifySignature])
 
   const handleCopySignature = useCallback(() => {
-    navigator.clipboard.writeText(signature).catch(() => {})
+    navigator.clipboard.writeText(signature).catch(clipErr => walletLogger.warn('Clipboard write failed', { error: String(clipErr) }))
     showToast('Copied')
   }, [signature, showToast])
 

@@ -685,7 +685,7 @@ describe('useAccountSwitching', () => {
       })
 
       expect(opts.getKeysForAccount).toHaveBeenCalledWith(remainingAccount, 'testpassword')
-      expect(opts.setWallet).toHaveBeenCalledWith(fallbackKeys)
+      expect(opts.setWallet).toHaveBeenCalledWith({ ...fallbackKeys, mnemonic: '' })
     })
   })
 

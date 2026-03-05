@@ -22,7 +22,10 @@
 import type { WalletKeys } from '../wallet'
 import { brc100Logger } from '../logger'
 
-// Current wallet keys (set by App component for HTTP server requests)
+/**
+ * @security S-135 ACCEPTED RISK: Module-level mutable state can diverge from React state.
+ * Mitigated by assertKeysMatchAccount() guard which detects divergence before signing.
+ */
 let currentWalletKeys: WalletKeys | null = null
 
 // Identity address at the time setWalletKeys() was last called — used to detect divergence.

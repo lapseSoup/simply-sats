@@ -46,6 +46,7 @@ import {
 } from '../errors'
 import type { RecipientOutput } from '../../domain/transaction/builder'
 import { type Result, ok, err } from '../../domain/types'
+import { toErrorMessage } from '../../utils/errorMessage'
 
 /**
  * Broadcast a signed transaction via the Rust ARC broadcaster (Tauri) or WoC fallback.
@@ -144,7 +145,7 @@ export async function executeBroadcast(
         'Transaction failed and wallet state could not be fully restored. Your balance may appear incorrect until the next sync.',
         ErrorCodes.UTXO_STUCK_IN_PENDING,
         {
-          broadcastError: broadcastError instanceof Error ? broadcastError.message : String(broadcastError),
+          broadcastError: toErrorMessage(broadcastError),
           rollbackError: rollbackResult.error.message,
           pendingTxid,
           outpointCount: spentOutpoints.length
@@ -217,7 +218,7 @@ async function recordTransactionResult(
     throw new AppError(
       `Transaction broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
       ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
-      { txid, originalError: error instanceof Error ? error.message : String(error) }
+      { txid, originalError: toErrorMessage(error) }
     )
   }
 }
@@ -330,7 +331,7 @@ export async function getAllSpendableUTXOs(walletWif: string, accountId?: number
       } catch (e) {
         walletLogger.warn('getAllSpendableUTXOs: failed to re-derive child key', {
           address: d.address,
-          error: e instanceof Error ? e.message : String(e)
+          error: toErrorMessage(e)
         })
       }
     } else if (d.privateKeyWif) {
@@ -501,7 +502,7 @@ export async function consolidateUtxos(
       return err(new AppError(
         `Consolidation broadcast succeeded (txid: ${txid}) but failed to record locally. The transaction is on-chain but your wallet may show incorrect balance until next sync.`,
         ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED,
-        { txid, originalError: error instanceof Error ? error.message : String(error) }
+        { txid, originalError: toErrorMessage(error) }
       ))
     }
 

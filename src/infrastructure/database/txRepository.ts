@@ -8,7 +8,7 @@ import { getDatabase } from './connection'
 import type { Transaction } from './types'
 import type { TransactionRow, SqlParams } from './row-types'
 import { type Result, ok, err } from '../../domain/types'
-import { DbError } from '../../services/errors'
+import { DbError } from './dbError'
 
 /**
  * Add a new transaction (won't overwrite if exists)

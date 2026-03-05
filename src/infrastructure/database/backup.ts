@@ -5,7 +5,7 @@
  */
 
 import { getDatabase } from './connection'
-import { dbLogger } from '../../services/logger'
+import { dbLogger } from './dbLogger'
 import type { DatabaseBackup, UTXO, Transaction, Lock, Basket } from './types'
 import type { UTXORow, TransactionRow, LockRow, BasketRow, SyncStateRow } from './row-types'
 import { getDerivedAddresses, ensureDerivedAddressesTable } from './addressRepository'

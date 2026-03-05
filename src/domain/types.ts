@@ -100,6 +100,12 @@ export function flatMapResult<T, U, E>(
 // Wallet Types
 // ============================================
 
+/**
+ * @security S-131/S-132 PLANNED MIGRATION: This type includes WIF fields that are stored
+ * in React state for the session lifetime. The planned fix is to create a PublicWalletKeys
+ * type (already exists at services/wallet/types.ts) for React state, and route all WIF
+ * access through getWifForOperation() or Rust _from_store commands.
+ */
 export interface WalletKeys {
   mnemonic: string
   walletType: 'yours'

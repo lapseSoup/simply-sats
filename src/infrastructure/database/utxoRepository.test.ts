@@ -456,7 +456,7 @@ describe('getUTXOsByBasket', () => {
       .mockResolvedValueOnce([
         { id: 1, txid: 'tx1', vout: 0, satoshis: 2000, locking_script: 'ls', address: '1A', basket: 'derived', spendable: 1, created_at: 100, spent_at: null, spent_txid: null }
       ])
-      .mockResolvedValueOnce([{ tag: 'important' }]) // tags for utxo 1
+      .mockResolvedValueOnce([{ utxo_id: 1, tag: 'important' }]) // tags for utxo 1
 
     const result = await getUTXOsByBasket('derived')
     expect(result.ok).toBe(true)
@@ -725,7 +725,7 @@ describe('getAllUTXOs', () => {
       .mockResolvedValueOnce([
         { id: 1, txid: 'tx1', vout: 0, satoshis: 1000, locking_script: 'ls', address: '1A', basket: 'default', spendable: 1, created_at: 100, spent_at: null, spent_txid: null }
       ])
-      .mockResolvedValueOnce([{ tag: 'test' }])
+      .mockResolvedValueOnce([{ utxo_id: 1, tag: 'test' }])
 
     const result = await getAllUTXOs()
     expect(result.ok).toBe(true)

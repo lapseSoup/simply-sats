@@ -115,6 +115,7 @@ async function persistLocks(
       }, accountId)
     } catch (_e) {
       // Best-effort — duplicate key or other transient error
+      walletLogger.debug('Failed to persist lock (best-effort)', { txid: lock.txid, vout: lock.vout, error: String(_e) })
     }
   }
 }
@@ -160,6 +161,7 @@ async function autoLabelLockTransactions(
       }
     } catch (_e) {
       // Best-effort
+      walletLogger.debug('Failed to auto-label lock transaction (best-effort)', { txid: lock.txid, error: String(_e) })
     }
   }
 }
@@ -245,6 +247,7 @@ async function voidPhantomLocks(
       // (could be a pending/unconfirmed tx not yet in WoC, or a network error)
     } catch (_e) {
       // Best-effort — don't remove locks on transient network errors
+      walletLogger.debug('Phantom lock check failed (best-effort)', { txid: preloaded.txid, vout: preloaded.vout, error: String(_e) })
     }
   }
 
