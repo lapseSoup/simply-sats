@@ -38,7 +38,9 @@ describe('formatSatoshis', () => {
       const result = formatSatoshis(100_000_001)
       expect(result).toBe('1.00000001 BSV')
       // Verify exactly 8 decimal digits
-      const decimals = result.split('.')[1].replace(' BSV', '')
+      const parts = result.split('.')
+      expect(parts[1]).toBeDefined()
+      const decimals = parts[1]!.replace(' BSV', '')
       expect(decimals).toHaveLength(8)
     })
   })
