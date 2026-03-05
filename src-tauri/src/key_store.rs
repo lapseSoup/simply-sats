@@ -67,6 +67,11 @@ impl KeyStoreInner {
         self.wallet_wif.is_some()
     }
 
+    /// Get the cached public keys (if any).
+    pub fn get_pub_keys(&self) -> Option<&PublicWalletKeys> {
+        self.pub_keys.as_ref()
+    }
+
     /// Get the WIF for a given key type.
     /// Used by key_store commands and the auth module.
     /// Returns `Zeroizing<String>` so the caller never holds a plain, non-zeroizing copy.

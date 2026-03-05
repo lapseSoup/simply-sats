@@ -18,6 +18,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use crate::{SharedBRC100State, SharedSessionState};
 use crate::key_store::SharedKeyStore;
+use std::path::PathBuf;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -73,6 +74,7 @@ struct AppState {
     session_state: SharedSessionState,
     rate_limiter: SharedRateLimiter,
     key_store: SharedKeyStore,
+    db_path: PathBuf,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
@@ -106,6 +108,23 @@ struct AuthResponse {
 #[derive(Serialize)]
 struct HeightResponse {
     height: u32,
+}
+
+// BRC-103/104 mutual authentication handshake types
+const AUTH_SESSION_TTL_SECS: i64 = 3600; // 1 hour, matches config.FEATURES.AUTH_SESSION_TTL_SECONDS
+
+#[derive(Deserialize)]
+struct AuthHandshakeRequest {
+    #[serde(rename = "identityKey")]
+    identity_key: String,
+    nonce: String,
+}
+
+#[derive(Serialize)]
+struct AuthHandshakeResponse {
+    #[serde(rename = "identityKey")]
+    identity_key: String,
+    nonce: String,
 }
 
 /// Middleware to validate Host header for DNS rebinding protection
@@ -194,6 +213,11 @@ pub async fn start_server(
     session_state: SharedSessionState,
     key_store: SharedKeyStore,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Resolve database path using the same logic as lib.rs
+    let db_path = dirs::data_dir()
+        .map(|d| d.join("com.simplysats.wallet").join("simplysats.db"))
+        .unwrap_or_else(|| PathBuf::from("simplysats.db"));
+
     // Create rate limiter: RATE_LIMIT_PER_MINUTE requests per minute
     let quota = Quota::per_minute(NonZeroU32::new(RATE_LIMIT_PER_MINUTE).unwrap());
     let rate_limiter = Arc::new(RateLimiter::direct(quota));
@@ -204,6 +228,7 @@ pub async fn start_server(
         session_state,
         rate_limiter,
         key_store,
+        db_path,
     };
 
     // Configure CORS to only allow localhost and Tauri webview origins
@@ -276,7 +301,8 @@ pub async fn start_server(
     let public_routes = Router::new()
         .route("/getVersion", post(handle_get_version))
         .route("/isAuthenticated", post(handle_is_authenticated))
-        .route("/waitForAuthentication", post(handle_wait_for_authentication));
+        .route("/waitForAuthentication", post(handle_wait_for_authentication))
+        .route("/.well-known/auth", post(handle_auth_request));
 
     // Protected routes — require a valid session token
     let protected_routes = Router::new()
@@ -365,6 +391,102 @@ async fn handle_wait_for_authentication(
     let authenticated = store.has_keys();
     drop(store);
     Json(AuthResponse { authenticated })
+}
+
+/// BRC-103/104 mutual authentication handshake endpoint.
+///
+/// Receives a peer's identity key and nonce, generates a response nonce,
+/// stores the session in the `auth_sessions` table, and returns the server's
+/// identity key with the response nonce. Actual cryptographic verification
+/// is handled by the TypeScript AuthService — this endpoint is a session
+/// storage mechanism.
+async fn handle_auth_request(
+    State(state): State<AppState>,
+    Json(req): Json<AuthHandshakeRequest>,
+) -> Response {
+    // Validate inputs
+    if req.identity_key.is_empty() || req.nonce.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "isError": true,
+            "code": -32602,
+            "message": "Missing identityKey or nonce"
+        }))).into_response();
+    }
+
+    // 1. Generate response nonce (32 random bytes, hex-encoded)
+    //    Uses OsRng (CSPRNG, Send-safe) — same pattern as SessionState::new() in lib.rs
+    let nonce_bytes: Vec<u8> = (0..32).map(|_| rand::Rng::gen::<u8>(&mut rand::rngs::OsRng)).collect();
+    let response_nonce = hex::encode(&nonce_bytes);
+
+    // 2. Calculate expiry
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let expires_at = now + AUTH_SESSION_TTL_SECS;
+
+    // 3. Store session in database (spawn_blocking because rusqlite::Connection is !Send)
+    let db_path = state.db_path.clone();
+    let peer_key = req.identity_key.clone();
+    let nonce_for_db = response_nonce.clone();
+
+    let db_result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let conn = rusqlite::Connection::open(&db_path)
+            .map_err(|e| format!("Failed to open database: {}", e))?;
+
+        conn.execute(
+            "INSERT INTO auth_sessions (peer_identity_key, session_nonce, created_at, expires_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![peer_key, nonce_for_db, now, expires_at],
+        ).map_err(|e| format!("Failed to store auth session: {}", e))?;
+
+        // Clean up expired sessions (best-effort)
+        let _ = conn.execute("DELETE FROM auth_sessions WHERE expires_at < ?1", rusqlite::params![now]);
+
+        Ok(())
+    }).await;
+
+    match db_result {
+        Ok(Ok(())) => {},
+        Ok(Err(e)) => {
+            log::error!("[Auth] {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "isError": true,
+                "code": -32000,
+                "message": "Internal error"
+            }))).into_response();
+        }
+        Err(e) => {
+            log::error!("[Auth] Database task panicked: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                "isError": true,
+                "code": -32000,
+                "message": "Internal error"
+            }))).into_response();
+        }
+    }
+
+    // 4. Get server's identity public key from key store
+    let server_identity_key = {
+        let store = state.key_store.lock().await;
+        match store.get_pub_keys() {
+            Some(keys) => keys.identity_pub_key.clone(),
+            None => {
+                log::warn!("[Auth] No identity key in key store — wallet may be locked");
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32003,
+                    "message": "Wallet is locked"
+                }))).into_response();
+            }
+        }
+    };
+
+    log::info!("[Auth] Session created for peer {:.16}... (expires in {}s)", req.identity_key, AUTH_SESSION_TTL_SECS);
+
+    (StatusCode::OK, Json(AuthHandshakeResponse {
+        identity_key: server_identity_key,
+        nonce: response_nonce,
+    })).into_response()
 }
 
 async fn handle_get_height(Json(_args): Json<EmptyArgs>) -> Json<HeightResponse> {
