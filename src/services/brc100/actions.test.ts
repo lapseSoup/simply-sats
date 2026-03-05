@@ -165,6 +165,15 @@ vi.mock('@bsv/sdk', () => ({
     id() { return 'txid123' }
     lockTime = 0
   },
+  ProtoWallet: class MockProtoWallet { keyDeriver: unknown = undefined },
+}))
+
+vi.mock('../brc/certificates', () => ({
+  CertificateService: class MockCertificateService {},
+}))
+
+vi.mock('../brc/adapter', () => ({
+  TauriProtoWallet: class MockTauriProtoWallet {},
 }))
 
 // ---------------------------------------------------------------------------

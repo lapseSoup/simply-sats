@@ -36,7 +36,11 @@ const WALLET_REQUIRED_TYPES = [
   'listOutputs',
   'lockBSV',
   'unlockBSV',
-  'listLocks'
+  'listLocks',
+  'acquireCertificate',
+  'proveCertificate',
+  'listCertificates',
+  'relinquishCertificate'
 ] as const
 
 // Set up listener for HTTP server requests via Tauri events
@@ -155,6 +159,29 @@ export async function setupHttpServerListener(): Promise<() => void> {
             await invoke('respond_to_brc100', {
               requestId: request.id,
               response: { error: { code: -32000, message: 'Failed to list locks' } }
+            })
+            return
+          }
+        }
+
+        // Auto-respond to listCertificates — read-only, no approval needed
+        if (request.type === 'listCertificates' && keys) {
+          try {
+            const { CertificateService } = await import('../brc/certificates')
+            const { TauriProtoWallet } = await import('../brc/adapter')
+            const certService = new CertificateService(new TauriProtoWallet())
+            const filter = (request.params?.filter ?? undefined) as { type?: string; certifier?: string } | undefined
+            const certs = await certService.listCertificates(filter)
+            await invoke('respond_to_brc100', {
+              requestId: request.id,
+              response: { result: { certificates: certs } }
+            })
+            return
+          } catch (e) {
+            brc100Logger.error('Failed to list certificates', e)
+            await invoke('respond_to_brc100', {
+              requestId: request.id,
+              response: { error: { code: -32000, message: 'Failed to list certificates' } }
             })
             return
           }

@@ -3,7 +3,8 @@
  *
  * Contains the core execution logic for each BRC-100 request type:
  * getPublicKey, createSignature, createAction, lockBSV, unlockBSV,
- * encrypt, decrypt, getTaggedKeys.
+ * encrypt, decrypt, getTaggedKeys, acquireCertificate, proveCertificate,
+ * listCertificates, relinquishCertificate.
  */
 
 import { brc100Logger as _brc100Logger } from '../logger'
@@ -38,6 +39,8 @@ import { createLockTransaction } from './locks'
 import { buildAndBroadcastAction } from './formatting'
 import { deriveTaggedKeyFromStore, type DerivationTag } from '../keyDerivation'
 import { isValidPublicKey } from '../../domain/wallet/validation'
+import { CertificateService } from '../brc/certificates'
+import { TauriProtoWallet } from '../brc/adapter'
 
 // A3: In-flight unlock operations — prevents double-spend from concurrent calls
 const inflightUnlocks = new Map<string, Promise<void>>()
@@ -550,6 +553,82 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
           code: RPC_INTERNAL_ERROR,
           message: error instanceof Error ? error.message : 'Key derivation failed'
         }
+      }
+      break
+    }
+
+    case 'acquireCertificate': {
+      const params = getParams<{ type?: string; certifier?: string; fields?: Record<string, string> }>(request)
+      if (!params.type || !params.certifier) {
+        setError(response, RPC_INVALID_PARAMS, 'Missing required params: type, certifier')
+        break
+      }
+      try {
+        const certService = new CertificateService(new TauriProtoWallet())
+        const result = await certService.createSelfSignedCert({
+          type: params.type,
+          fields: params.fields ?? {},
+        })
+        response.result = { certificate: result.certificate }
+      } catch (error) {
+        setError(response, RPC_INTERNAL_ERROR, error instanceof Error ? error.message : 'Certificate acquisition failed')
+      }
+      break
+    }
+
+    case 'proveCertificate': {
+      const params = getParams<{
+        certificate?: Record<string, unknown>
+        verifierPublicKey?: string
+        fieldsToReveal?: string[]
+      }>(request)
+      if (!params.certificate || !params.verifierPublicKey || !params.fieldsToReveal) {
+        setError(response, RPC_INVALID_PARAMS, 'Missing required params: certificate, verifierPublicKey, fieldsToReveal')
+        break
+      }
+      // S-66: Validate verifier public key format
+      if (!isValidPublicKey(params.verifierPublicKey)) {
+        setError(response, RPC_INVALID_PARAMS, 'Invalid verifier public key format')
+        break
+      }
+      try {
+        const certService = new CertificateService(new TauriProtoWallet())
+        const result = await certService.proveCertificate({
+          certificate: params.certificate as import('../brc/certificates').CertificateInfo,
+          verifierPublicKey: params.verifierPublicKey,
+          fieldsToReveal: params.fieldsToReveal,
+        })
+        response.result = { proof: result }
+      } catch (error) {
+        setError(response, RPC_INTERNAL_ERROR, error instanceof Error ? error.message : 'Certificate proof failed')
+      }
+      break
+    }
+
+    case 'listCertificates': {
+      try {
+        const params = getParams<{ filter?: { type?: string; certifier?: string } }>(request)
+        const certService = new CertificateService(new TauriProtoWallet())
+        const certs = await certService.listCertificates(params?.filter)
+        response.result = { certificates: certs }
+      } catch (error) {
+        setError(response, RPC_INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to list certificates')
+      }
+      break
+    }
+
+    case 'relinquishCertificate': {
+      const params = getParams<{ serialNumber?: string }>(request)
+      if (!params.serialNumber) {
+        setError(response, RPC_INVALID_PARAMS, 'Missing required param: serialNumber')
+        break
+      }
+      try {
+        const certService = new CertificateService(new TauriProtoWallet())
+        await certService.relinquishCertificate(params.serialNumber)
+        response.result = { success: true }
+      } catch (error) {
+        setError(response, RPC_INTERNAL_ERROR, error instanceof Error ? error.message : 'Certificate relinquishment failed')
       }
       break
     }

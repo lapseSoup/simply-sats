@@ -19,7 +19,11 @@ export const BRC100_REQUEST_TYPES = [
   'listLocks',
   'encrypt',
   'decrypt',
-  'getTaggedKeys'
+  'getTaggedKeys',
+  'acquireCertificate',
+  'proveCertificate',
+  'listCertificates',
+  'relinquishCertificate'
 ] as const
 
 export type BRC100RequestType = typeof BRC100_REQUEST_TYPES[number]

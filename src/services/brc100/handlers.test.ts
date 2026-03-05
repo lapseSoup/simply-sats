@@ -22,6 +22,15 @@ import type { BRC100Request } from './types'
 vi.mock('@bsv/sdk', () => ({
   PrivateKey: { fromWif: vi.fn(() => ({ toPublicKey: () => ({ toString: () => '02' + 'a'.repeat(64), toAddress: () => '1Addr' }) })) },
   PublicKey: { fromString: vi.fn(() => ({})) },
+  ProtoWallet: class MockProtoWallet { keyDeriver: unknown = undefined },
+}))
+
+vi.mock('../brc/certificates', () => ({
+  CertificateService: class MockCertificateService {},
+}))
+
+vi.mock('../brc/adapter', () => ({
+  TauriProtoWallet: class MockTauriProtoWallet {},
 }))
 
 vi.mock('./signing', () => ({
