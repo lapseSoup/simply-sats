@@ -34,19 +34,43 @@ vi.mock('./database', () => ({
   addUTXO: vi.fn().mockResolvedValue({ ok: true, value: 1 }),
   markUTXOSpent: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
   getSpendableUTXOs: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+  getPendingUtxos: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+  rollbackPendingSpend: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
   getPendingTransactionTxids: vi.fn().mockResolvedValue({ ok: true, value: new Set<string>() }),
   getPendingIncomingAmountWithoutUtxo: vi.fn().mockResolvedValue({ ok: true, value: 0 }),
   getLastSyncedHeight: vi.fn().mockResolvedValue({ ok: true, value: 0 }),
   updateSyncState: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
   upsertTransaction: vi.fn().mockResolvedValue({ ok: true, value: 'txid' }),
+  addTransaction: vi.fn().mockResolvedValue({ ok: true, value: 'txid' }),
+  getKnownTxids: vi.fn().mockResolvedValue({ ok: true, value: new Set<string>() }),
   getDerivedAddresses: vi.fn().mockResolvedValue([]),
-  updateDerivedAddressSyncTime: vi.fn().mockResolvedValue(undefined)
+  updateDerivedAddressSyncTime: vi.fn().mockResolvedValue(undefined),
+  getUtxoByOutpoint: vi.fn().mockResolvedValue({ ok: true, value: null }),
+  addLockIfNotExists: vi.fn().mockResolvedValue({ ok: true, value: 1 }),
+  markLockUnlockedByTxid: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+  getTransactionLabels: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+  updateTransactionLabels: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+  getPendingTransactions: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+  updateTransactionStatus: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+  deleteUtxosByTxid: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+  getAllTransactions: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+  getTransactionCount: vi.fn().mockResolvedValue({ ok: true, value: 0 }),
+  updateTransactionAmount: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+  getLocks: vi.fn().mockResolvedValue([]),
+  getAllSyncStates: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+  clearSyncTimesForAccount: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
+  withTransaction: vi.fn().mockImplementation(async (fn: () => Promise<unknown>) => await fn()),
+  getDatabase: vi.fn().mockReturnValue({
+    execute: vi.fn().mockResolvedValue(undefined),
+    select: vi.fn().mockResolvedValue([])
+  })
 }))
 
 // Mock config module
 vi.mock('./config', () => ({
   RATE_LIMITS: {
-    addressSyncDelay: 500
+    addressSyncDelay: 0,
+    maxConcurrentRequests: 3
   }
 }))
 
@@ -59,6 +83,7 @@ import {
   getOrdinalsFromDatabase,
   recordSentTransaction,
   markUtxosSpent,
+  syncWallet,
   needsInitialSync,
   syncAddress,
   type AddressInfo,
@@ -68,7 +93,11 @@ import {
 import { DbError } from './errors'
 
 import {
+  getDatabase,
+  withTransaction,
   getSpendableUTXOs,
+  getDerivedAddresses,
+  getAllSyncStates,
   getPendingTransactionTxids,
   getPendingIncomingAmountWithoutUtxo,
   getLastSyncedHeight,
@@ -481,6 +510,49 @@ describe('Sync Service', () => {
       await expect(
         syncAddress({ address: '1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf Na', basket: 'default', accountId: 1 })
       ).rejects.toThrow('DB locked')
+    })
+  })
+
+  describe('syncWallet scope repair', () => {
+    it('purges confirmed tx history when stale sync_state addresses are detected', async () => {
+      const walletAddress = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa'
+      const ordAddress = '1BoatSLRHtKNngkdXEeobR76b53LETtpyT'
+      const identityAddress = '1KFHE7w8BhaENAswwryaoccDb6qcT6DbYY'
+      const staleAddress = '1dice8EMZmqKvrGE4Qc9bUFf9PX3xaYDp'
+
+      const executeMock = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(getDatabase).mockReturnValue({
+        execute: executeMock,
+        select: vi.fn().mockResolvedValue([])
+      } as unknown as ReturnType<typeof getDatabase>)
+      vi.mocked(withTransaction).mockImplementation(async (fn: () => Promise<unknown>) => await fn())
+      vi.mocked(getDerivedAddresses).mockResolvedValue([])
+      vi.mocked(getAllSyncStates).mockResolvedValue({
+        ok: true,
+        value: [
+          { address: walletAddress, height: 939000, syncedAt: Date.now() },
+          { address: ordAddress, height: 939000, syncedAt: Date.now() },
+          { address: identityAddress, height: 939000, syncedAt: Date.now() },
+          { address: staleAddress, height: 939000, syncedAt: Date.now() }
+        ]
+      })
+      mockWocClient.getUtxosSafe.mockResolvedValue({ ok: true, value: [] })
+      mockWocClient.getTransactionHistorySafe.mockResolvedValue({ ok: true, value: [] })
+
+      await syncWallet(walletAddress, ordAddress, identityAddress, 8, 'wallet-pubkey')
+
+      expect(executeMock).toHaveBeenCalledWith(
+        'DELETE FROM sync_state WHERE account_id = $1 AND address = $2',
+        [8, staleAddress]
+      )
+      expect(executeMock).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM transaction_labels'),
+        [8]
+      )
+      expect(executeMock).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM transactions'),
+        [8]
+      )
     })
   })
 })

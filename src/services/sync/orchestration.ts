@@ -306,6 +306,82 @@ async function backfillNullAmounts(
 }
 
 /**
+ * Repair account scope drift caused by historical key/account race conditions.
+ *
+ * If sync_state contains addresses that are not part of the account's current
+ * address set, this account was previously synced with mismatched keys+account_id.
+ * In that case, confirmed tx history may include rows from another account.
+ *
+ * Recovery strategy:
+ * 1) Remove stale sync_state rows for this account.
+ * 2) Drop confirmed tx rows for this account (pending rows are preserved).
+ * 3) Let the normal tx-history sync below rebuild confirmed rows from current addresses.
+ */
+async function repairAccountScopeDrift(
+  accountId: number,
+  validAddresses: string[]
+): Promise<void> {
+  const syncStatesResult = await getAllSyncStates(accountId)
+  if (!syncStatesResult.ok) {
+    syncLogger.warn('[SYNC] Failed to inspect sync_state for scope drift', {
+      accountId,
+      error: syncStatesResult.error.message
+    })
+    return
+  }
+
+  const validSet = new Set(validAddresses)
+  const staleAddresses = syncStatesResult.value
+    .map(s => s.address)
+    .filter(address => !validSet.has(address))
+
+  if (staleAddresses.length === 0) return
+
+  const db = getDatabase()
+  try {
+    await withTransaction(async () => {
+      for (const staleAddress of staleAddresses) {
+        await db.execute(
+          'DELETE FROM sync_state WHERE account_id = $1 AND address = $2',
+          [accountId, staleAddress]
+        )
+      }
+
+      // Keep pending rows (locally-broadcast txs not yet in history API).
+      await db.execute(
+        `DELETE FROM transaction_labels
+         WHERE account_id = $1
+           AND txid IN (
+             SELECT txid
+             FROM transactions
+             WHERE account_id = $1
+               AND (status = 'confirmed' OR block_height IS NOT NULL)
+           )`,
+        [accountId]
+      )
+      await db.execute(
+        `DELETE FROM transactions
+         WHERE account_id = $1
+           AND (status = 'confirmed' OR block_height IS NOT NULL)`,
+        [accountId]
+      )
+    })
+
+    syncLogger.warn('[SYNC] Repaired account scope drift; purged confirmed tx history for clean rebuild', {
+      accountId,
+      staleAddressCount: staleAddresses.length,
+      staleAddressPreview: staleAddresses.slice(0, 3).map(a => a.slice(0, 12))
+    })
+  } catch (e) {
+    syncLogger.error('[SYNC] Failed to repair account scope drift', {
+      accountId,
+      staleAddressCount: staleAddresses.length,
+      error: String(e)
+    })
+  }
+}
+
+/**
  * Resolve pending transactions that may have been missed during sync.
  *
  * `syncTransactionHistory` skips already-known txids for efficiency.
@@ -481,6 +557,13 @@ export async function syncWallet(
     if (token.isCancelled) {
       syncLogger.debug('[SYNC] Cancelled during sync')
       return undefined
+    }
+
+    // Self-heal historical cross-account contamination: if this account has stale
+    // sync_state addresses from another account, rebuild confirmed tx history.
+    if (accountId !== undefined) {
+      const validAddresses = [walletAddress, ordAddress, identityAddress, ...derivedAddresses.map(d => d.address)]
+      await repairAccountScopeDrift(accountId, validAddresses)
     }
 
     // Sync transaction history for main + ordinals addresses (ordinals receive at ordAddress)
