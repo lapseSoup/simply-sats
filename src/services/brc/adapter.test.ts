@@ -767,29 +767,119 @@ describe('TauriProtoWallet', () => {
   })
 
   // =========================================================================
-  // revealCounterpartyKeyLinkage / revealSpecificKeyLinkage — not yet implemented
+  // revealCounterpartyKeyLinkage (BRC-69)
   // =========================================================================
   describe('revealCounterpartyKeyLinkage', () => {
-    it('throws not yet implemented', async () => {
-      await expect(
-        wallet.revealCounterpartyKeyLinkage({
-          counterparty: MOCK_COUNTERPARTY_PUB_KEY,
-          verifier: MOCK_IDENTITY_PUB_KEY,
+    const MOCK_HMAC_BYTES = Array.from({ length: 32 }, (_, i) => i)
+    const MOCK_VERIFIER_PUB_KEY =
+      '02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab'
+
+    it('returns encrypted linkage result with all required fields', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+        encrypt_ecies_from_store: {
+          ciphertext: btoa('encrypted'),
+          senderPublicKey: MOCK_IDENTITY_PUB_KEY,
+        },
+      })
+
+      const result = await wallet.revealCounterpartyKeyLinkage({
+        counterparty: MOCK_COUNTERPARTY_PUB_KEY,
+        verifier: MOCK_VERIFIER_PUB_KEY,
+      })
+
+      expect(result.encryptedLinkage).toBeInstanceOf(Array)
+      expect(result.encryptedLinkageProof).toBeInstanceOf(Array)
+      expect(result.prover).toBe(MOCK_IDENTITY_PUB_KEY)
+      expect(result.verifier).toBe(MOCK_VERIFIER_PUB_KEY)
+      expect(result.counterparty).toBe(MOCK_COUNTERPARTY_PUB_KEY)
+      expect(result.revelationTime).toBeDefined()
+    })
+
+    it('encrypts linkage for the verifier', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+        encrypt_ecies_from_store: {
+          ciphertext: btoa('encrypted'),
+          senderPublicKey: MOCK_IDENTITY_PUB_KEY,
+        },
+      })
+
+      await wallet.revealCounterpartyKeyLinkage({
+        counterparty: MOCK_COUNTERPARTY_PUB_KEY,
+        verifier: MOCK_VERIFIER_PUB_KEY,
+      })
+
+      expect(mockTauriInvoke).toHaveBeenCalledWith(
+        'encrypt_ecies_from_store',
+        expect.objectContaining({
+          recipientPubKey: MOCK_VERIFIER_PUB_KEY,
         }),
-      ).rejects.toThrow('not yet implemented')
+      )
     })
   })
 
+  // =========================================================================
+  // revealSpecificKeyLinkage (BRC-72)
+  // =========================================================================
   describe('revealSpecificKeyLinkage', () => {
-    it('throws not yet implemented', async () => {
-      await expect(
-        wallet.revealSpecificKeyLinkage({
-          counterparty: MOCK_COUNTERPARTY_PUB_KEY,
-          verifier: MOCK_IDENTITY_PUB_KEY,
-          protocolID: MOCK_PROTOCOL,
-          keyID: 'test-key',
+    const MOCK_HMAC_BYTES = Array.from({ length: 32 }, (_, i) => i)
+    const MOCK_VERIFIER_PUB_KEY =
+      '02abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab'
+
+    it('returns encrypted specific linkage with protocolID and keyID', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+        encrypt_ecies_from_store: {
+          ciphertext: btoa('encrypted'),
+          senderPublicKey: MOCK_IDENTITY_PUB_KEY,
+        },
+      })
+
+      const result = await wallet.revealSpecificKeyLinkage({
+        counterparty: MOCK_COUNTERPARTY_PUB_KEY,
+        verifier: MOCK_VERIFIER_PUB_KEY,
+        protocolID: MOCK_PROTOCOL,
+        keyID: 'test-key',
+      })
+
+      expect(result.encryptedLinkage).toBeInstanceOf(Array)
+      expect(result.encryptedLinkageProof).toBeInstanceOf(Array)
+      expect(result.prover).toBe(MOCK_IDENTITY_PUB_KEY)
+      expect(result.verifier).toBe(MOCK_VERIFIER_PUB_KEY)
+      expect(result.counterparty).toBe(MOCK_COUNTERPARTY_PUB_KEY)
+      expect(result.protocolID).toEqual(MOCK_PROTOCOL)
+      expect(result.keyID).toBe('test-key')
+      expect(typeof result.proofType).toBe('number')
+    })
+
+    it('computes HMAC with correct counterparty and invoice number', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+        encrypt_ecies_from_store: {
+          ciphertext: btoa('encrypted'),
+          senderPublicKey: MOCK_IDENTITY_PUB_KEY,
+        },
+      })
+
+      await wallet.revealSpecificKeyLinkage({
+        counterparty: MOCK_COUNTERPARTY_PUB_KEY,
+        verifier: MOCK_VERIFIER_PUB_KEY,
+        protocolID: MOCK_PROTOCOL,
+        keyID: 'test-key',
+      })
+
+      expect(mockTauriInvoke).toHaveBeenCalledWith(
+        'hmac_with_derived_key_from_store',
+        expect.objectContaining({
+          counterpartyPubKey: MOCK_COUNTERPARTY_PUB_KEY,
+          invoiceNumber: '2-test-protocol-test-key',
         }),
-      ).rejects.toThrow('not yet implemented')
+      )
     })
   })
 

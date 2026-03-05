@@ -421,24 +421,98 @@ export class TauriProtoWallet extends ProtoWallet {
   }
 
   // =========================================================================
-  // ProtoWallet interface — Key linkage (not yet implemented)
+  // ProtoWallet interface — Key linkage (BRC-69 / BRC-72)
   // =========================================================================
 
   override async revealCounterpartyKeyLinkage(
-    _args: RevealCounterpartyKeyLinkageArgs,
+    args: RevealCounterpartyKeyLinkageArgs,
   ): Promise<RevealCounterpartyKeyLinkageResult> {
-    // TODO (Task 17): Implement BRC-69/72 key linkage revelation.
-    throw new Error(
-      'revealCounterpartyKeyLinkage is not yet implemented in TauriProtoWallet (planned for Task 17)',
-    )
+    const { counterparty, verifier } = args
+    const keys = await this.getPublicKeys()
+
+    // Compute the counterparty linkage: HMAC of the counterparty's identity
+    const linkageData = new TextEncoder().encode(counterparty)
+    const linkageProtocol: WalletProtocol = [2, 'key-linkage-revelation']
+    const invoiceNumber = `${linkageProtocol[0]}-${linkageProtocol[1]}-counterparty`
+
+    const hmacResult = await this.createHmac({
+      data: Array.from(linkageData),
+      protocolID: linkageProtocol,
+      keyID: 'counterparty',
+      counterparty,
+    })
+
+    // Encrypt the linkage for the verifier
+    const encryptResult = await this.encrypt({
+      plaintext: hmacResult.hmac,
+      protocolID: linkageProtocol,
+      keyID: invoiceNumber,
+      counterparty: verifier,
+    })
+
+    // Encrypt the proof
+    const proofResult = await this.encrypt({
+      plaintext: Array.from(linkageData),
+      protocolID: linkageProtocol,
+      keyID: `${invoiceNumber}-proof`,
+      counterparty: verifier,
+    })
+
+    return {
+      encryptedLinkage: encryptResult.ciphertext,
+      encryptedLinkageProof: proofResult.ciphertext,
+      prover: keys.identityPubKey,
+      verifier,
+      counterparty,
+      revelationTime: new Date().toISOString(),
+    }
   }
 
   override async revealSpecificKeyLinkage(
-    _args: RevealSpecificKeyLinkageArgs,
+    args: RevealSpecificKeyLinkageArgs,
   ): Promise<RevealSpecificKeyLinkageResult> {
-    // TODO (Task 17): Implement BRC-69/72 specific key linkage revelation.
-    throw new Error(
-      'revealSpecificKeyLinkage is not yet implemented in TauriProtoWallet (planned for Task 17)',
-    )
+    const { counterparty, verifier, protocolID, keyID } = args
+    const keys = await this.getPublicKeys()
+
+    const invoiceNumber = buildInvoiceNumber(protocolID, keyID)
+    const linkageProtocol: WalletProtocol = [2, 'key-linkage-revelation']
+
+    // Compute the specific key derivation scalar
+    const specificData = new TextEncoder().encode(invoiceNumber)
+    const hmacResult = await this.createHmac({
+      data: Array.from(specificData),
+      protocolID,
+      keyID,
+      counterparty,
+    })
+
+    // Encrypt the linkage for the verifier
+    const encryptResult = await this.encrypt({
+      plaintext: hmacResult.hmac,
+      protocolID: linkageProtocol,
+      keyID: invoiceNumber,
+      counterparty: verifier,
+    })
+
+    // Encrypt the proof
+    const proofResult = await this.encrypt({
+      plaintext: Array.from(specificData),
+      protocolID: linkageProtocol,
+      keyID: `${invoiceNumber}-proof`,
+      counterparty: verifier,
+    })
+
+    return {
+      encryptedLinkage: encryptResult.ciphertext,
+      encryptedLinkageProof: proofResult.ciphertext,
+      prover: keys.identityPubKey,
+      verifier,
+      counterparty: typeof counterparty === 'string' && counterparty !== 'self' && counterparty !== 'anyone'
+        ? counterparty
+        : keys.identityPubKey,
+      protocolID,
+      keyID,
+      proofType: 0,
+    }
   }
 }
