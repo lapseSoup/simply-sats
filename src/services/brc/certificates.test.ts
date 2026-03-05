@@ -6,7 +6,6 @@
  * WoC client is also mocked for revocation checks.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { Utils } from '@bsv/sdk'
 import type { Result } from '../../domain/types'
 import type { ApiError, WocClient } from '../../infrastructure/api/wocClient'
 
@@ -30,7 +29,6 @@ vi.mock('../../infrastructure/api/wocClient', async (importOriginal) => {
 // Import after mocks
 import { TauriProtoWallet } from './adapter'
 import { CertificateService } from './certificates'
-import type { CertificateInfo } from './certificates'
 
 // ---------------------------------------------------------------------------
 // Fixtures
