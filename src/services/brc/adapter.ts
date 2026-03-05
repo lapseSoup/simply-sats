@@ -231,14 +231,18 @@ export class TauriProtoWallet extends ProtoWallet {
       return { signature: hexToBytes(sigHex) }
     }
 
-    // For a specific counterparty, we would need to sign with a derived key.
-    // TODO (Task 3): Add a Tauri command `sign_data_with_derived_key_from_store`
-    // that performs BRC-42 derivation + signing entirely in Rust.
-    // For now, fall back to signing with the identity key.
-    const sigHex = await tauriInvoke<string>('sign_data_from_store', {
-      data: new Uint8Array(dataToSign),
-      keyType: 'identity',
-    })
+    // For a specific counterparty, sign with a BRC-42 derived key.
+    // The derivation + signing happens entirely in Rust — private keys never leave the backend.
+    const invoiceNumber = buildInvoiceNumber(args.protocolID, args.keyID)
+    const sigHex = await tauriInvoke<string>(
+      'sign_data_with_derived_key_from_store',
+      {
+        data: new Uint8Array(dataToSign),
+        counterpartyPubKey: counterparty,
+        invoiceNumber,
+        keyType: 'identity',
+      },
+    )
     return { signature: hexToBytes(sigHex) }
   }
 
@@ -347,19 +351,73 @@ export class TauriProtoWallet extends ProtoWallet {
   // =========================================================================
 
   override async createHmac(
-    _args: CreateHmacArgs,
+    args: CreateHmacArgs,
   ): Promise<CreateHmacResult> {
-    // TODO (Task 3): Implement via Tauri command using derived symmetric key.
-    // Requires a new Rust command that performs BRC-42 symmetric key derivation
-    // and HMAC-SHA256 computation entirely in the backend.
-    throw new Error('createHmac is not yet implemented in TauriProtoWallet (planned for Task 3)')
+    const keys = await this.getPublicKeys()
+    const counterparty = this.resolveCounterparty(args.counterparty, 'self')
+
+    // Determine the counterparty public key for BRC-42 derivation
+    const counterpartyPubKey =
+      counterparty === 'self' || counterparty === 'anyone'
+        ? keys.identityPubKey
+        : counterparty
+
+    const invoiceNumber = buildInvoiceNumber(args.protocolID, args.keyID)
+
+    const hmacBytes = await tauriInvoke<number[]>(
+      'hmac_with_derived_key_from_store',
+      {
+        data: new Uint8Array(args.data),
+        counterpartyPubKey,
+        invoiceNumber,
+        keyType: 'identity',
+      },
+    )
+
+    return { hmac: hmacBytes }
   }
 
   override async verifyHmac(
-    _args: VerifyHmacArgs,
+    args: VerifyHmacArgs,
   ): Promise<VerifyHmacResult> {
-    // TODO (Task 3): Implement via Tauri command using derived symmetric key.
-    throw new Error('verifyHmac is not yet implemented in TauriProtoWallet (planned for Task 3)')
+    const keys = await this.getPublicKeys()
+    const counterparty = this.resolveCounterparty(args.counterparty, 'self')
+
+    // Determine the counterparty public key for BRC-42 derivation
+    const counterpartyPubKey =
+      counterparty === 'self' || counterparty === 'anyone'
+        ? keys.identityPubKey
+        : counterparty
+
+    const invoiceNumber = buildInvoiceNumber(args.protocolID, args.keyID)
+
+    const computedHmac = await tauriInvoke<number[]>(
+      'hmac_with_derived_key_from_store',
+      {
+        data: new Uint8Array(args.data),
+        counterpartyPubKey,
+        invoiceNumber,
+        keyType: 'identity',
+      },
+    )
+
+    // Constant-time comparison to prevent timing attacks
+    if (computedHmac.length !== args.hmac.length) {
+      const e = new Error('HMAC is not valid') as Error & { code: string }
+      e.code = 'ERR_INVALID_HMAC'
+      throw e
+    }
+    let diff = 0
+    for (let i = 0; i < computedHmac.length; i++) {
+      diff |= computedHmac[i] ^ args.hmac[i]
+    }
+    if (diff !== 0) {
+      const e = new Error('HMAC is not valid') as Error & { code: string }
+      e.code = 'ERR_INVALID_HMAC'
+      throw e
+    }
+
+    return { valid: true }
   }
 
   // =========================================================================

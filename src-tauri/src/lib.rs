@@ -809,6 +809,8 @@ pub fn run() {
             key_store::get_derived_addresses_from_store,
             key_store::find_derived_key_from_store,
             key_store::derive_tagged_key_from_store,
+            key_store::sign_data_with_derived_key_from_store,
+            key_store::hmac_with_derived_key_from_store,
             brc42_derivation::derive_child_key,
             brc42_derivation::get_derived_addresses,
             brc42_derivation::find_derived_key_for_address,

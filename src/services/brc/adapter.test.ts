@@ -276,6 +276,31 @@ describe('TauriProtoWallet', () => {
       ).rejects.toThrow('data or hashToDirectlySign must be provided')
     })
 
+    it('signs data with derived key for specific counterparty', async () => {
+      const mockSigHex = 'deadbeef'
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        sign_data_with_derived_key_from_store: mockSigHex,
+      })
+
+      const result = await wallet.createSignature({
+        protocolID: MOCK_PROTOCOL,
+        keyID: 'test-key-1',
+        counterparty: MOCK_COUNTERPARTY_PUB_KEY,
+        data: [1, 2, 3],
+      })
+
+      expect(result.signature).toBeInstanceOf(Array)
+      expect(mockTauriInvoke).toHaveBeenCalledWith(
+        'sign_data_with_derived_key_from_store',
+        expect.objectContaining({
+          counterpartyPubKey: MOCK_COUNTERPARTY_PUB_KEY,
+          invoiceNumber: '2-test-protocol-test-key-1',
+          keyType: 'identity',
+        }),
+      )
+    })
+
     it('defaults counterparty to anyone for createSignature', async () => {
       const mockSigHex = 'cafe'
       routeInvoke({
@@ -611,30 +636,133 @@ describe('TauriProtoWallet', () => {
   })
 
   // =========================================================================
-  // createHmac / verifyHmac — not yet implemented
+  // createHmac / verifyHmac
   // =========================================================================
   describe('createHmac', () => {
-    it('throws not yet implemented', async () => {
-      await expect(
-        wallet.createHmac({
-          protocolID: MOCK_PROTOCOL,
-          keyID: 'test-key',
-          data: [1, 2, 3],
+    const MOCK_HMAC_BYTES = Array.from({ length: 32 }, (_, i) => i)
+
+    it('computes HMAC with identity key for self counterparty', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+      })
+
+      const result = await wallet.createHmac({
+        protocolID: MOCK_PROTOCOL,
+        keyID: 'test-key',
+        counterparty: 'self',
+        data: [1, 2, 3],
+      })
+
+      expect(result.hmac).toEqual(MOCK_HMAC_BYTES)
+      expect(mockTauriInvoke).toHaveBeenCalledWith(
+        'hmac_with_derived_key_from_store',
+        expect.objectContaining({
+          counterpartyPubKey: MOCK_IDENTITY_PUB_KEY,
+          invoiceNumber: '2-test-protocol-test-key',
+          keyType: 'identity',
         }),
-      ).rejects.toThrow('not yet implemented')
+      )
+    })
+
+    it('uses counterparty pubkey for specific counterparty', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+      })
+
+      await wallet.createHmac({
+        protocolID: MOCK_PROTOCOL,
+        keyID: 'test-key',
+        counterparty: MOCK_COUNTERPARTY_PUB_KEY,
+        data: [10, 20, 30],
+      })
+
+      expect(mockTauriInvoke).toHaveBeenCalledWith(
+        'hmac_with_derived_key_from_store',
+        expect.objectContaining({
+          counterpartyPubKey: MOCK_COUNTERPARTY_PUB_KEY,
+        }),
+      )
+    })
+
+    it('defaults counterparty to self', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+      })
+
+      await wallet.createHmac({
+        protocolID: MOCK_PROTOCOL,
+        keyID: 'test-key',
+        data: [1, 2, 3],
+      })
+
+      expect(mockTauriInvoke).toHaveBeenCalledWith(
+        'hmac_with_derived_key_from_store',
+        expect.objectContaining({
+          counterpartyPubKey: MOCK_IDENTITY_PUB_KEY,
+        }),
+      )
     })
   })
 
   describe('verifyHmac', () => {
-    it('throws not yet implemented', async () => {
+    const MOCK_HMAC_BYTES = Array.from({ length: 32 }, (_, i) => i)
+
+    it('returns valid: true when HMAC matches', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+      })
+
+      const result = await wallet.verifyHmac({
+        protocolID: MOCK_PROTOCOL,
+        keyID: 'test-key',
+        counterparty: 'self',
+        data: [1, 2, 3],
+        hmac: MOCK_HMAC_BYTES,
+      })
+
+      expect(result).toEqual({ valid: true })
+    })
+
+    it('throws ERR_INVALID_HMAC when HMAC does not match', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+      })
+
+      try {
+        await wallet.verifyHmac({
+          protocolID: MOCK_PROTOCOL,
+          keyID: 'test-key',
+          counterparty: 'self',
+          data: [1, 2, 3],
+          hmac: [99, 99, 99], // Wrong HMAC
+        })
+        expect.fail('Should have thrown')
+      } catch (e) {
+        expect((e as Error).message).toBe('HMAC is not valid')
+        expect((e as Error & { code: string }).code).toBe('ERR_INVALID_HMAC')
+      }
+    })
+
+    it('throws ERR_INVALID_HMAC when HMAC lengths differ', async () => {
+      routeInvoke({
+        get_public_keys: MOCK_PUBLIC_KEYS,
+        hmac_with_derived_key_from_store: MOCK_HMAC_BYTES,
+      })
+
       await expect(
         wallet.verifyHmac({
           protocolID: MOCK_PROTOCOL,
           keyID: 'test-key',
+          counterparty: 'self',
           data: [1, 2, 3],
-          hmac: [4, 5, 6],
+          hmac: [1, 2], // Wrong length
         }),
-      ).rejects.toThrow('not yet implemented')
+      ).rejects.toThrow('HMAC is not valid')
     })
   })
 

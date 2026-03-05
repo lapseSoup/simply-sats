@@ -12,10 +12,16 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use zeroize::Zeroizing;
 
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use zeroize::Zeroize;
+
 use crate::key_derivation;
 use crate::brc100_signing;
 use crate::bsv_sdk_adapter;
 use crate::transaction;
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// Internal key storage — holds sensitive WIFs and mnemonic.
 /// WIF and mnemonic fields use `Zeroizing<String>` so sensitive data
@@ -621,6 +627,77 @@ pub async fn derive_tagged_key_from_store(
     let wif = store.get_wif(&key_type)?;
     drop(store);
     crate::brc42_derivation::derive_tagged_key((*wif).clone(), label, id, domain)
+}
+
+// ==================== Derived Key Signing & HMAC Commands (from store) ====================
+
+/// Sign raw data using a BRC-42 derived child key from the store.
+///
+/// Derives a child key via BRC-42 (ECDH + HMAC-SHA256 scalar addition) using the
+/// stored identity/wallet/ordinals key, then signs `data` with the derived key.
+/// The derived WIF is never exposed to JavaScript — it only exists transiently
+/// in Rust memory and is dropped (zeroized) after signing.
+#[tauri::command]
+pub async fn sign_data_with_derived_key_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    data: Vec<u8>,
+    counterparty_pub_key: String,
+    invoice_number: String,
+    key_type: String,
+) -> Result<String, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = store.get_wif(&key_type)?;
+    drop(store); // Release lock before crypto operations
+
+    // BRC-42 derive child key
+    let derived = crate::brc42_derivation::derive_child_key(
+        (*wif).clone(),
+        counterparty_pub_key,
+        invoice_number,
+    )?;
+    // derived.wif is a plain String — sign with it, then it drops at end of scope
+    brc100_signing::sign_data(derived.wif, data)
+}
+
+/// Compute HMAC-SHA256 using a BRC-42 derived child key from the store.
+///
+/// Derives a child key via BRC-42, extracts the raw 32-byte private key from the
+/// derived WIF, uses those bytes as the HMAC-SHA256 key over `data`, and returns
+/// the 32-byte HMAC. The private key bytes are explicitly zeroized after use.
+#[tauri::command]
+pub async fn hmac_with_derived_key_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    data: Vec<u8>,
+    counterparty_pub_key: String,
+    invoice_number: String,
+    key_type: String,
+) -> Result<Vec<u8>, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = store.get_wif(&key_type)?;
+    drop(store); // Release lock before crypto operations
+
+    // BRC-42 derive child key
+    let derived = crate::brc42_derivation::derive_child_key(
+        (*wif).clone(),
+        counterparty_pub_key,
+        invoice_number,
+    )?;
+
+    // Decode derived WIF to raw 32-byte private key
+    let mut privkey_bytes = bsv_sdk_adapter::sdk_wif_to_bytes(&derived.wif)?;
+
+    // HMAC-SHA256(privkey_bytes, data)
+    let mut mac = HmacSha256::new_from_slice(&privkey_bytes)
+        .map_err(|e| format!("HMAC init failed: {}", e))?;
+    mac.update(&data);
+    let result = mac.finalize().into_bytes();
+
+    // Zeroize the private key bytes from memory
+    privkey_bytes.zeroize();
+
+    Ok(result.to_vec())
 }
 
 // ==================== Bridge Command for Complex JS Operations ====================
