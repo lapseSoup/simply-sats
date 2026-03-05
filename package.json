@@ -18,6 +18,7 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@bsv/sdk": "^2.0.5",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@noble/curves": "^2.0.1",
