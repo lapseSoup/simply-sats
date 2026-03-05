@@ -35,6 +35,7 @@ vi.mock('./database', () => ({
   markUTXOSpent: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
   getSpendableUTXOs: vi.fn().mockResolvedValue({ ok: true, value: [] }),
   getPendingTransactionTxids: vi.fn().mockResolvedValue({ ok: true, value: new Set<string>() }),
+  getPendingIncomingAmountWithoutUtxo: vi.fn().mockResolvedValue({ ok: true, value: 0 }),
   getLastSyncedHeight: vi.fn().mockResolvedValue({ ok: true, value: 0 }),
   updateSyncState: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
   upsertTransaction: vi.fn().mockResolvedValue({ ok: true, value: 'txid' }),
@@ -69,6 +70,7 @@ import { DbError } from './errors'
 import {
   getSpendableUTXOs,
   getPendingTransactionTxids,
+  getPendingIncomingAmountWithoutUtxo,
   getLastSyncedHeight,
   upsertTransaction,
   markUTXOSpent as dbMarkUTXOSpent
@@ -153,19 +155,29 @@ describe('Sync Service', () => {
       expect(balance).toBe(3500)
     })
 
-    it('should exclude outputs from pending transactions', async () => {
+    it('should include pending-tx outputs in display balance', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
         createMockDBUtxo({ txid: 'confirmed_tx', satoshis: 1000, basket: 'default' }),
         createMockDBUtxo({ txid: 'pending_tx', satoshis: 2000, basket: 'default' })
       ] })
-      vi.mocked(getPendingTransactionTxids).mockResolvedValueOnce({
-        ok: true,
-        value: new Set(['pending_tx'])
-      })
 
       const balance = await getBalanceFromDatabase()
 
-      expect(balance).toBe(1000)
+      expect(balance).toBe(3000)
+    })
+
+    it('adds pending incoming amount when no UTXO row exists yet (account-scoped)', async () => {
+      vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
+        createMockDBUtxo({ txid: 'confirmed_tx', satoshis: 1000, basket: 'default' }),
+      ] })
+      vi.mocked(getPendingIncomingAmountWithoutUtxo).mockResolvedValueOnce({
+        ok: true,
+        value: 700
+      })
+
+      const balance = await getBalanceFromDatabase('default', 2)
+
+      expect(balance).toBe(1700)
     })
 
     it('should filter by basket when specified', async () => {

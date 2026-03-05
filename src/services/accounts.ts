@@ -249,6 +249,48 @@ export async function getAccountByIdentity(identityAddress: string): Promise<Acc
 }
 
 /**
+ * Best-effort lookup: resolve a local account ID that owns a given address.
+ *
+ * Priority:
+ * 1. derived_addresses.address (most explicit mapping)
+ * 2. utxos.address (works for wallet/ord addresses once seen on-chain)
+ * 3. accounts.identity_address
+ */
+export async function findLocalAccountIdByAddress(address: string): Promise<number | null> {
+  if (!address) return null
+  const database = getDatabase()
+
+  try {
+    const derivedRows = await database.select<Array<{ account_id: number | null }>>(
+      'SELECT account_id FROM derived_addresses WHERE address = $1 AND account_id IS NOT NULL LIMIT 1',
+      [address]
+    )
+    const derivedId = derivedRows[0]?.account_id
+    if (typeof derivedId === 'number' && Number.isFinite(derivedId)) return derivedId
+  } catch (_e) {
+    // Table/query may be unavailable during early init; continue to next lookup path.
+  }
+
+  try {
+    const utxoRows = await database.select<Array<{ account_id: number | null }>>(
+      `SELECT account_id
+       FROM utxos
+       WHERE address = $1 AND account_id IS NOT NULL
+       ORDER BY CASE WHEN spent_at IS NULL THEN 0 ELSE 1 END, created_at DESC
+       LIMIT 1`,
+      [address]
+    )
+    const utxoId = utxoRows[0]?.account_id
+    if (typeof utxoId === 'number' && Number.isFinite(utxoId)) return utxoId
+  } catch (_e) {
+    // UTXO table may be unavailable/corrupt; continue to identity lookup.
+  }
+
+  const byIdentity = await getAccountByIdentity(address)
+  return byIdentity?.id ?? null
+}
+
+/**
  * Switch to a different account
  */
 export async function switchAccount(accountId: number): Promise<boolean> {

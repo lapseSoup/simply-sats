@@ -10,6 +10,7 @@ import type { LockedUTXO } from '../wallet/types'
 import {
   getSpendableUTXOs,
   getPendingTransactionTxids,
+  getPendingIncomingAmountWithoutUtxo,
   markUTXOSpent,
   upsertTransaction,
   type UTXO as DBUtxo
@@ -47,12 +48,22 @@ export async function getBalanceFromDatabase(basket?: string, accountId?: number
     syncLogger.warn('[BALANCE] Failed to query spendable UTXOs', { error: utxosResult.error.message })
     return 0
   }
-  const pendingTxids = await getPendingTxidSet(accountId)
-  const utxos = utxosResult.value.filter(u => !pendingTxids.has(u.txid))
+  // NOTE: We intentionally do NOT filter out UTXOs by pending txid here.
+  // Inputs from pending sends are already excluded by spending_status='pending'.
+  // Keeping pending change outputs in display balance prevents temporary under-reporting.
+  const utxos = utxosResult.value
 
   if (basket) {
     const filtered = utxos.filter(u => u.basket === basket)
-    const balance = filtered.reduce((sum, u) => sum + u.satoshis, 0)
+    let balance = filtered.reduce((sum, u) => sum + u.satoshis, 0)
+    // Pending inbound transfers can exist in tx history before UTXO discovery.
+    // Add them to default-basket display balance only when no UTXO row exists yet.
+    if (basket === BASKETS.DEFAULT && accountId !== undefined) {
+      const pendingInboundResult = await getPendingIncomingAmountWithoutUtxo(accountId)
+      if (pendingInboundResult.ok && pendingInboundResult.value > 0) {
+        balance += pendingInboundResult.value
+      }
+    }
     syncLogger.debug(`[BALANCE] getBalanceFromDatabase('${basket}', account=${accountId}): ${filtered.length} UTXOs, ${balance} sats`)
     if (basket === 'derived' && filtered.length > 0) {
       syncLogger.debug('[BALANCE] Derived UTXOs', { utxos: filtered.map(u => ({ txid: u.txid.slice(0, 8), vout: u.vout, sats: u.satoshis, basket: u.basket })) })
@@ -60,7 +71,14 @@ export async function getBalanceFromDatabase(basket?: string, accountId?: number
     return balance
   }
 
-  return utxos.reduce((sum, u) => sum + u.satoshis, 0)
+  let total = utxos.reduce((sum, u) => sum + u.satoshis, 0)
+  if (accountId !== undefined) {
+    const pendingInboundResult = await getPendingIncomingAmountWithoutUtxo(accountId)
+    if (pendingInboundResult.ok && pendingInboundResult.value > 0) {
+      total += pendingInboundResult.value
+    }
+  }
+  return total
 }
 
 /**

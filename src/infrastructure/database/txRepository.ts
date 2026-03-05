@@ -583,6 +583,37 @@ export async function getPendingTransactionTxids(accountId?: number): Promise<Re
 }
 
 /**
+ * Sum pending incoming transaction amounts that do NOT yet have any local UTXO row.
+ *
+ * Used for UI balance display so internal/inbound pending transfers appear immediately,
+ * while avoiding double-counting once UTXOs are written.
+ */
+export async function getPendingIncomingAmountWithoutUtxo(accountId: number): Promise<Result<number, DbError>> {
+  try {
+    const database = getDatabase()
+    const rows = await database.select<{ total: number }[]>(
+      `SELECT COALESCE(SUM(t.amount), 0) AS total
+       FROM transactions t
+       WHERE t.account_id = $1
+         AND t.status = 'pending'
+         AND t.amount > 0
+         AND NOT EXISTS (
+           SELECT 1
+           FROM utxos u
+           WHERE u.account_id = t.account_id
+             AND u.txid = t.txid
+             AND u.spendable = 1
+             AND u.spent_at IS NULL
+         )`,
+      [accountId]
+    )
+    return ok(rows[0]?.total ?? 0)
+  } catch (e) {
+    return err(new DbError(`getPendingIncomingAmountWithoutUtxo failed: ${e instanceof Error ? e.message : String(e)}`, 'QUERY_FAILED', e))
+  }
+}
+
+/**
  * Get pending transaction metadata for an account.
  * Used by sync reconciliation to age out phantom pending transactions.
  */

@@ -451,7 +451,22 @@ export function useSyncData({
 
         // B-21: Only replace DB ordinals with API data when ALL API calls succeeded.
         // If some calls failed, apiOrdinals is a partial set — keep the full DB set intact.
-        const allOrdinals: Ordinal[] = allOrdinalApiCallsSucceeded ? apiOrdinals : dbOrdinals
+        //
+        // Also avoid clobbering a non-empty DB set with an empty API set.
+        // Some provider failures surface as [] (fulfilled) instead of rejected.
+        // Treat "all fulfilled + empty API + non-empty DB" as transient and keep DB.
+        let allOrdinals: Ordinal[]
+        if (!allOrdinalApiCallsSucceeded) {
+          allOrdinals = dbOrdinals
+        } else if (apiOrdinals.length === 0 && dbOrdinals.length > 0) {
+          syncLogger.warn('Ordinals API returned empty set; retaining DB ordinals snapshot', {
+            dbCount: dbOrdinals.length,
+            accountId: activeAccountId
+          })
+          allOrdinals = dbOrdinals
+        } else {
+          allOrdinals = apiOrdinals
+        }
 
         // Guard: if account switched during slow API calls, discard results
         if (checkCancelled()) return

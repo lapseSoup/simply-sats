@@ -602,6 +602,31 @@ describe('useSyncData', () => {
       expect(ordinals[0]!.origin).toBe('db-1')
     })
 
+    it('retains DB ordinals when all API calls fulfill but return empty', async () => {
+      const dbOrdinals = [
+        { origin: 'db-1', txid: 'tx-db-1', vout: 0, satoshis: 1 },
+        { origin: 'db-2', txid: 'tx-db-2', vout: 1, satoshis: 1 },
+      ]
+      mockedGetOrdinalsFromDatabase.mockResolvedValue(dbOrdinals as never)
+
+      mockedGetOrdinals
+        .mockResolvedValueOnce([]) // ordAddress
+        .mockResolvedValueOnce([]) // walletAddress
+        .mockResolvedValueOnce([]) // identityAddress
+
+      const opts = makeOptions()
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
+      })
+
+      const lastCall = opts.setOrdinalsWithRef.mock.calls[opts.setOrdinalsWithRef.mock.calls.length - 1]!
+      const ordinals = lastCall[0] as Array<{ origin: string }>
+      expect(ordinals.length).toBe(2)
+      expect(ordinals[0]!.origin).toBe('db-1')
+    })
+
     it('calls cacheOrdinalsInBackground with allApiCallsSucceeded=true when all succeed', async () => {
       mockedGetOrdinals.mockResolvedValue([makeOrdinal()])
       const opts = makeOptions()

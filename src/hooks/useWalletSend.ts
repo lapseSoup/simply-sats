@@ -17,12 +17,14 @@ import {
 import { sendBSVMultiOutput } from '../services/wallet/transactions'
 import { listOrdinal } from '../services/wallet/marketplace'
 import {
-  getDerivedAddresses
+  getDerivedAddresses,
+  upsertTransaction
 } from '../infrastructure/database'
 import { deriveChildKey } from '../services/keyDerivation'
 import {
   getSpendableUtxosFromDatabase
 } from '../services/sync'
+import { findLocalAccountIdByAddress } from '../services/accounts'
 import { audit } from '../services/auditLog'
 import { walletLogger } from '../services/logger'
 import { ok, err, type Result, type WalletResult } from '../domain/types'
@@ -169,6 +171,53 @@ export function useWalletSend({
   sendTokenAction,
   syncInactiveAccountsBackground
 }: UseWalletSendOptions): UseWalletSendReturn {
+  const mirrorInternalReceives = useCallback(async (
+    txid: string,
+    recipients: Array<{ address: string; satoshis: number }>
+  ): Promise<void> => {
+    if (activeAccountId == null || recipients.length === 0) return
+
+    const sumsByAccount = new Map<number, number>()
+    for (const recipient of recipients) {
+      if (!recipient.address || recipient.satoshis <= 0) continue
+      try {
+        const recipientAccountId = await findLocalAccountIdByAddress(recipient.address)
+        if (recipientAccountId == null || recipientAccountId === activeAccountId) continue
+        sumsByAccount.set(
+          recipientAccountId,
+          (sumsByAccount.get(recipientAccountId) ?? 0) + recipient.satoshis
+        )
+      } catch (e) {
+        walletLogger.warn('Internal transfer lookup failed', {
+          address: recipient.address,
+          error: String(e)
+        })
+      }
+    }
+
+    if (sumsByAccount.size === 0) return
+
+    await Promise.all(
+      Array.from(sumsByAccount.entries()).map(async ([recipientAccountId, amount]) => {
+        const txResult = await upsertTransaction({
+          txid,
+          description: `Received ${amount} sats (internal transfer)`,
+          createdAt: Date.now(),
+          status: 'pending',
+          amount,
+          labels: ['receive', 'internal']
+        }, recipientAccountId)
+        if (!txResult.ok) {
+          walletLogger.warn('Failed to mirror internal receive transaction', {
+            txid,
+            recipientAccountId,
+            error: txResult.error.message
+          })
+        }
+      })
+    )
+  }, [activeAccountId])
+
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
     if (!wallet) return err('No wallet loaded')
 
@@ -188,6 +237,7 @@ export function useWalletSend({
         return err(sendResult.error.message)
       }
       const { txid } = sendResult.value
+      await mirrorInternalReceives(txid, [{ address, satoshis: amountSats }])
       await fetchData()
       syncInactiveAccountsBackground?.()
       audit.transactionSent(txid, amountSats, activeAccountId ?? undefined)
@@ -202,7 +252,7 @@ export function useWalletSend({
     } finally {
       derivedMap?.clear()
     }
-  }, [wallet, fetchData, activeAccountId, syncInactiveAccountsBackground])
+  }, [wallet, fetchData, activeAccountId, syncInactiveAccountsBackground, mirrorInternalReceives])
 
 
   const handleSendMulti = useCallback(async (recipients: RecipientOutput[], selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
@@ -224,6 +274,10 @@ export function useWalletSend({
         return err(sendResult.error.message)
       }
       const { txid } = sendResult.value
+      await mirrorInternalReceives(
+        txid,
+        recipients.map(r => ({ address: r.address, satoshis: r.satoshis }))
+      )
       await fetchData()
       syncInactiveAccountsBackground?.()
       audit.transactionSent(txid, totalSent, activeAccountId ?? undefined)
@@ -237,7 +291,7 @@ export function useWalletSend({
     } finally {
       derivedMap?.clear()
     }
-  }, [wallet, fetchData, activeAccountId, syncInactiveAccountsBackground])
+  }, [wallet, fetchData, activeAccountId, syncInactiveAccountsBackground, mirrorInternalReceives])
 
   const handleTransferOrdinal = useCallback(async (
     ordinal: Ordinal,
