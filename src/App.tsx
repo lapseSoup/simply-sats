@@ -2,11 +2,10 @@ import { useState, useCallback } from 'react'
 import { AlertCircle, X } from 'lucide-react'
 import './App.css'
 
-import { useWallet, useUI, useModalContext, useOrdinalSelection, useWalletSetup, useLockWorkflow } from './contexts'
-import type { Ordinal } from './domain/types'
+import { useWallet, useUI, useModalContext, useWalletSetup, useLockWorkflow } from './contexts'
 import { useSyncStatus } from './contexts/NetworkContext'
 import { Toast, PaymentAlert, SkipLink, ErrorBoundary, SimplySatsLogo } from './components/shared'
-import { useKeyboardNav, useBrc100Handler } from './hooks'
+import { useKeyboardNav, useBrc100Handler, useModalCompoundActions } from './hooks'
 import { Header, BalanceDisplay, QuickActions } from './components/wallet'
 import { RestoreModal, MnemonicModal, LockScreenModal, BackupVerificationModal } from './components/modals'
 import { FEATURES } from './config'
@@ -53,7 +52,6 @@ export function WalletApp() {
     deleteAccount,
     renameAccount,
     syncError,
-    consumePendingDiscovery,
     peekPendingDiscovery,
     clearPendingDiscovery,
     refreshAccounts
@@ -63,34 +61,12 @@ export function WalletApp() {
   const { setSyncPhase } = useSyncStatus()
 
   // Granular context hooks (A-64: avoid merged useModal() to prevent needless re-renders)
-  const { modal, openModal, closeModal: rawCloseModal, openAccountModal } = useModalContext()
-  const ordinalCtx = useOrdinalSelection()
-  const { newMnemonic, setNewMnemonic, confirmMnemonic: rawConfirmMnemonic } = useWalletSetup()
+  const { modal, openModal, openAccountModal } = useModalContext()
+  const { newMnemonic, setNewMnemonic } = useWalletSetup()
   const { unlockConfirm, unlocking, setUnlocking, startUnlock, startUnlockAll, cancelUnlock } = useLockWorkflow()
 
-  // Compound actions: set domain state AND open/close modal together
-  const selectOrdinal = useCallback((ordinal: Ordinal) => {
-    ordinalCtx.selectOrdinal(ordinal)
-    openModal('ordinal')
-  }, [ordinalCtx, openModal])
-
-  const startTransferOrdinal = useCallback((ordinal: Ordinal) => {
-    ordinalCtx.startTransferOrdinal(ordinal)
-    openModal('transfer-ordinal')
-  }, [ordinalCtx, openModal])
-
-  // B-104/B-111: Clear ordinal state when closing any modal
-  const closeModal = useCallback(() => {
-    rawCloseModal()
-    ordinalCtx.clearSelectedOrdinal()
-    ordinalCtx.completeTransfer()
-    ordinalCtx.completeList()
-  }, [rawCloseModal, ordinalCtx])
-
-  const confirmMnemonic = useCallback(() => {
-    rawConfirmMnemonic()
-    rawCloseModal()
-  }, [rawConfirmMnemonic, rawCloseModal])
+  // Shared compound actions (Q-121: single source of truth for modal+domain combos)
+  const { closeModal, confirmMnemonic, selectOrdinal, startTransferOrdinal } = useModalCompoundActions()
 
   // UI State
   const [activeTab, setActiveTab] = useState<Tab>('activity')
@@ -139,7 +115,6 @@ export function WalletApp() {
     fetchData,
     performSync,
     refreshTokens,
-    consumePendingDiscovery,
     peekPendingDiscovery,
     clearPendingDiscovery,
     refreshAccounts,
@@ -297,7 +272,7 @@ export function WalletApp() {
                   showToast('Mnemonic not available — wallet may have been imported without one', 'warning')
                 }
               } catch (_err) {
-                logger.error('get_mnemonic_once failed', { error: String(_err) })
+                logger.error('get_mnemonic failed', { error: String(_err) })
                 showToast('Failed to retrieve recovery phrase', 'error')
               }
               setShowBackupReminder(false)

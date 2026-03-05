@@ -11,7 +11,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode, type MutableRefObject } from 'react'
-import type { WalletKeys, UTXO, Ordinal, LockedUTXO } from '../domain/types'
+import type { WalletKeys, UTXO, Ordinal, LockedUTXO, TxHistoryItem } from '../domain/types'
 import { useSyncStatus } from './NetworkContext'
 
 // Extracted hooks
@@ -27,14 +27,8 @@ export interface OrdinalContentEntry {
   contentType?: string
 }
 
-export interface TxHistoryItem {
-  tx_hash: string
-  height: number
-  amount?: number
-  address?: string
-  description?: string
-  createdAt?: number
-}
+// Re-export from domain/types for backward compatibility
+export type { TxHistoryItem } from '../domain/types'
 
 export interface BasketBalances {
   default: number

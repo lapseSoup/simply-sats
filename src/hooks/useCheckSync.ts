@@ -42,7 +42,6 @@ interface UseCheckSyncOptions {
   fetchData: () => Promise<void>
   performSync: (isRestore?: boolean, forceReset?: boolean, silent?: boolean) => Promise<void>
   refreshTokens: () => Promise<void>
-  consumePendingDiscovery: () => DiscoveryParams | null
   peekPendingDiscovery: () => DiscoveryParams | null
   clearPendingDiscovery: () => void
   refreshAccounts: () => Promise<void>
@@ -64,7 +63,6 @@ export function useCheckSync({
   fetchData,
   performSync,
   refreshTokens,
-  consumePendingDiscovery: _consumePendingDiscovery,
   peekPendingDiscovery,
   clearPendingDiscovery,
   refreshAccounts,

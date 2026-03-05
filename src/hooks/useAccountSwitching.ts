@@ -308,9 +308,9 @@ export function useAccountSwitching({
     const keys = await accountsCreateNewAccount(name, accountPassword)
     if (keys) {
       // Store mnemonic in Rust key store before clearing from React state
-      const accountIndex = keys.accountIndex ?? 0
+      const accountIndex = keys.accountIndex ?? accounts.length
       if (keys.accountIndex == null) {
-        walletLogger.warn('keys.accountIndex was null, using fallback 0')
+        walletLogger.warn('keys.accountIndex was null, using fallback accounts.length', { fallback: accounts.length })
       }
       await storeKeysInRust(keys.mnemonic, accountIndex)
       // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
@@ -319,7 +319,7 @@ export function useAccountSwitching({
       return true
     }
     return false
-  }, [accounts.length, accountsCreateNewAccount, setWallet, setIsLocked, storeKeysInRust])
+  }, [accounts, accountsCreateNewAccount, setWallet, setIsLocked, storeKeysInRust])
 
   const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()
@@ -331,9 +331,9 @@ export function useAccountSwitching({
     const keys = await accountsImportAccount(name, mnemonic, accountPassword)
     if (keys) {
       // Store mnemonic in Rust key store before clearing from React state
-      const accountIndex = keys.accountIndex ?? 0
+      const accountIndex = keys.accountIndex ?? accounts.length
       if (keys.accountIndex == null) {
-        walletLogger.warn('keys.accountIndex was null, using fallback 0')
+        walletLogger.warn('keys.accountIndex was null, using fallback accounts.length', { fallback: accounts.length })
       }
       await storeKeysInRust(keys.mnemonic, accountIndex)
       // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
@@ -354,7 +354,7 @@ export function useAccountSwitching({
       return true
     }
     return false
-  }, [accountsImportAccount, setWallet, setIsLocked, refreshAccounts, storeKeysInRust])
+  }, [accounts, accountsImportAccount, setWallet, setIsLocked, refreshAccounts, storeKeysInRust])
 
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
     const success = await accountsDeleteAccount(accountId)

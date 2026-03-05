@@ -1,12 +1,12 @@
-import { lazy, Suspense, useCallback } from 'react'
+import { lazy, Suspense } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { MnemonicModal, UnlockConfirmModal } from './components/modals'
-import type { Ordinal } from './domain/types'
 import type { LockedUTXO } from './services/wallet'
 import type { BRC100Request } from './services/brc100'
 import type { Account } from './services/accounts'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { useModalContext, useOrdinalSelection, useWalletSetup, useLockWorkflow } from './contexts'
+import { useModalCompoundActions } from './hooks'
 
 // Re-export types from ModalContext for backward compatibility
 export type { Modal, AccountModalMode } from './contexts/ModalContext'
@@ -112,44 +112,20 @@ export function AppModals({
   onConfirmUnlock,
 }: AppModalsProps) {
   // Granular context hooks (A-64: avoid merged useModal() to prevent needless re-renders)
-  const { modal, closeModal: rawCloseModal, accountModalMode, openModal } = useModalContext()
+  const { modal, accountModalMode } = useModalContext()
   const ordinalCtx = useOrdinalSelection()
-  const { newMnemonic, confirmMnemonic: rawConfirmMnemonic } = useWalletSetup()
+  const { newMnemonic } = useWalletSetup()
   const { unlockConfirm, cancelUnlock, unlocking } = useLockWorkflow()
 
-  // Compound actions: replicate useModal() behavior at the call site
-  // B-104/B-111: Clear ordinal state when closing any modal
-  const closeModal = useCallback(() => {
-    rawCloseModal()
-    ordinalCtx.clearSelectedOrdinal()
-    ordinalCtx.completeTransfer()
-    ordinalCtx.completeList()
-  }, [rawCloseModal, ordinalCtx])
-
-  const completeTransfer = useCallback(() => {
-    ordinalCtx.completeTransfer()
-    rawCloseModal()
-  }, [ordinalCtx, rawCloseModal])
-
-  const completeList = useCallback(() => {
-    ordinalCtx.completeList()
-    rawCloseModal()
-  }, [ordinalCtx, rawCloseModal])
-
-  const confirmMnemonic = useCallback(() => {
-    rawConfirmMnemonic()
-    rawCloseModal()
-  }, [rawConfirmMnemonic, rawCloseModal])
-
-  const startTransferOrdinal = useCallback((ordinal: Ordinal) => {
-    ordinalCtx.startTransferOrdinal(ordinal)
-    openModal('transfer-ordinal')
-  }, [ordinalCtx, openModal])
-
-  const startListOrdinal = useCallback((ordinal: Ordinal) => {
-    ordinalCtx.startListOrdinal(ordinal)
-    openModal('list-ordinal')
-  }, [ordinalCtx, openModal])
+  // Shared compound actions (Q-121: single source of truth for modal+domain combos)
+  const {
+    closeModal,
+    confirmMnemonic,
+    startTransferOrdinal,
+    startListOrdinal,
+    completeTransfer,
+    completeList,
+  } = useModalCompoundActions()
 
   return (
     <>
@@ -202,23 +178,28 @@ export function AppModals({
         </ErrorBoundary>
       )}
 
-      {modal === 'ordinal' && ordinalCtx.selectedOrdinal && (
-        <ErrorBoundary
-          context="OrdinalModal"
-          fallback={(error, reset) => (
-            <ModalErrorFallback modalName="Ordinal" error={error} reset={reset} onClose={closeModal} />
-          )}
-        >
-          <Suspense fallback={<ModalLoadingFallback />}>
-            <OrdinalModal
-              ordinal={ordinalCtx.selectedOrdinal}
-              onClose={closeModal}
-              onTransfer={() => startTransferOrdinal(ordinalCtx.selectedOrdinal!)}
-              onList={() => startListOrdinal(ordinalCtx.selectedOrdinal!)}
-            />
-          </Suspense>
-        </ErrorBoundary>
-      )}
+      {/* Q-126: capture selectedOrdinal to avoid non-null assertions in callbacks */}
+      {(() => {
+        const selected = ordinalCtx.selectedOrdinal
+        if (modal !== 'ordinal' || !selected) return null
+        return (
+          <ErrorBoundary
+            context="OrdinalModal"
+            fallback={(error, reset) => (
+              <ModalErrorFallback modalName="Ordinal" error={error} reset={reset} onClose={closeModal} />
+            )}
+          >
+            <Suspense fallback={<ModalLoadingFallback />}>
+              <OrdinalModal
+                ordinal={selected}
+                onClose={closeModal}
+                onTransfer={() => startTransferOrdinal(selected)}
+                onList={() => startListOrdinal(selected)}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        )
+      })()}
 
       {modal === 'transfer-ordinal' && ordinalCtx.ordinalToTransfer && (
         <ErrorBoundary

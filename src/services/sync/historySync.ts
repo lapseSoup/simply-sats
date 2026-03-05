@@ -113,15 +113,11 @@ export async function calculateTxAmount(
       // Try 2: Fetch parent transaction from API (reliable, works after fresh sync)
       //         Use txDetailCache to avoid refetching the same parent tx
       try {
-        let prevTx = txDetailCache.get(vin.txid) ?? null
+        let prevTx = getTxDetailCacheEntry(vin.txid) ?? null
         if (!prevTx) {
           prevTx = await wocClient.getTransactionDetails(vin.txid)
           if (prevTx) {
-            if (txDetailCache.size >= MAX_TX_DETAIL_CACHE_SIZE) {
-              const oldestKey = txDetailCache.keys().next().value
-              if (oldestKey !== undefined) txDetailCache.delete(oldestKey)
-            }
-            txDetailCache.set(vin.txid, prevTx)
+            setTxDetailCacheEntry(vin.txid, prevTx)
           }
         }
         if (prevTx?.vout?.[vin.vout]) {
@@ -298,7 +294,7 @@ export async function syncTransactionHistory(address: string, accountId?: number
       if (!txLabel && amount !== undefined && amount < 0) {
         for (const vin of txDetails.vin) {
           if (!vin.txid || vin.vout === undefined) continue
-          const parentTx = txDetailCache.get(vin.txid)
+          const parentTx = getTxDetailCacheEntry(vin.txid)
           const parentOut = parentTx?.vout?.[vin.vout]
           if (parentOut && parentOut.value === 1e-8) {
             const ordinalOrigin = `${vin.txid}_${vin.vout}`

@@ -605,10 +605,11 @@ async fn check_address_balance(address: String) -> Result<i64, String> {
                     let unconfirmed = data["unconfirmed"].as_i64().unwrap_or(0);
                     Ok(confirmed + unconfirmed)
                 }
-                Err(_) => Ok(-1),
+                Err(e) => Err(format!("Failed to parse balance response: {}", e)),
             }
         }
-        _ => Ok(-1),
+        Ok(resp) => Err(format!("Balance API returned HTTP {}", resp.status())),
+        Err(e) => Err(format!("Balance API request failed: {}", e)),
     }
 }
 

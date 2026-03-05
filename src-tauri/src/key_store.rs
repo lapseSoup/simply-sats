@@ -63,12 +63,12 @@ impl KeyStoreInner {
 
     /// Get the WIF for a given key type.
     /// Used by key_store commands and the auth module.
-    /// Returns a plain String clone — callers wrap in Zeroizing as needed.
-    pub fn get_wif(&self, key_type: &str) -> Result<String, String> {
+    /// Returns `Zeroizing<String>` so the caller never holds a plain, non-zeroizing copy.
+    pub fn get_wif(&self, key_type: &str) -> Result<Zeroizing<String>, String> {
         match key_type {
-            "wallet" => self.wallet_wif.as_deref().cloned().ok_or_else(|| "No wallet key stored".to_string()),
-            "ord" | "ordinals" => self.ord_wif.as_deref().cloned().ok_or_else(|| "No ordinals key stored".to_string()),
-            "identity" => self.identity_wif.as_deref().cloned().ok_or_else(|| "No identity key stored".to_string()),
+            "wallet" => self.wallet_wif.clone().ok_or_else(|| "No wallet key stored".to_string()),
+            "ord" | "ordinals" => self.ord_wif.clone().ok_or_else(|| "No ordinals key stored".to_string()),
+            "identity" => self.identity_wif.clone().ok_or_else(|| "No identity key stored".to_string()),
             _ => Err(format!("Invalid key type: {}", key_type)),
         }
     }
@@ -215,6 +215,7 @@ pub async fn has_keys(
 pub async fn get_mnemonic_once(
     key_store: tauri::State<'_, SharedKeyStore>,
 ) -> Result<Option<String>, String> {
+    log::warn!("Mnemonic retrieved via get_mnemonic_once command (will be cleared from store)");
     let mut store = key_store.lock().await;
     let mnemonic = store.mnemonic.as_deref().cloned();
     // Clear mnemonic from memory after retrieval (Zeroizing handles secure drop)
@@ -230,6 +231,7 @@ pub async fn get_mnemonic_once(
 pub async fn get_mnemonic(
     key_store: tauri::State<'_, SharedKeyStore>,
 ) -> Result<Option<String>, String> {
+    log::warn!("Mnemonic retrieved via get_mnemonic command");
     let store = key_store.lock().await;
     Ok(store.mnemonic.as_deref().cloned())
 }
@@ -299,7 +301,7 @@ pub async fn sign_message_from_store(
 ) -> Result<String, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    let wif = store.get_wif(&key_type)?;
     drop(store); // Release lock before signing
     brc100_signing::sign_message((*wif).clone(), message)
     // wif zeroized on drop
@@ -314,7 +316,7 @@ pub async fn sign_data_from_store(
 ) -> Result<String, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    let wif = store.get_wif(&key_type)?;
     drop(store);
     brc100_signing::sign_data((*wif).clone(), data)
 }
@@ -330,7 +332,7 @@ pub async fn encrypt_ecies_from_store(
 ) -> Result<brc100_signing::EncryptResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    let wif = store.get_wif(&key_type)?;
     drop(store);
     brc100_signing::encrypt_ecies((*wif).clone(), plaintext, recipient_pub_key, sender_pub_key)
 }
@@ -345,7 +347,7 @@ pub async fn decrypt_ecies_from_store(
 ) -> Result<String, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    let wif = store.get_wif(&key_type)?;
     drop(store);
     brc100_signing::decrypt_ecies((*wif).clone(), ciphertext_bytes, sender_pub_key)
 }
@@ -364,7 +366,7 @@ pub async fn build_p2pkh_tx_from_store(
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    let wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_p2pkh_tx((*wif).clone(), to_address, satoshis, selected_utxos, total_input, fee_rate)
 }
@@ -381,7 +383,7 @@ pub async fn build_multi_key_p2pkh_tx_from_store(
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    let wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_multi_key_p2pkh_tx((*wif).clone(), to_address, satoshis, selected_utxos, total_input, fee_rate)
 }
@@ -395,7 +397,7 @@ pub async fn build_consolidation_tx_from_store(
 ) -> Result<transaction::BuiltConsolidationResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    let wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_consolidation_tx((*wif).clone(), utxos, fee_rate)
 }
@@ -413,7 +415,7 @@ pub async fn build_lock_tx_from_store(
 ) -> Result<transaction::BuiltLockResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    let wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_lock_tx(
         (*wif).clone(),
@@ -440,7 +442,7 @@ pub async fn build_unlock_tx_from_store(
 ) -> Result<transaction::BuiltLockResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    let wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_unlock_tx(
         (*wif).clone(),
@@ -465,7 +467,7 @@ pub async fn build_multi_output_p2pkh_tx_from_store(
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    let wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_multi_output_p2pkh_tx(
         (*wif).clone(),
@@ -488,7 +490,7 @@ pub async fn build_custom_output_tx_from_store(
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    let wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_custom_output_tx(
         (*wif).clone(),
@@ -511,7 +513,7 @@ pub async fn build_inscription_tx_from_store(
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif("wallet")?);
+    let wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_inscription_tx(
         (*wif).clone(),
@@ -538,8 +540,8 @@ pub async fn build_token_transfer_tx_from_store(
 ) -> Result<transaction::BuiltTransactionResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let token_wif = Zeroizing::new(store.get_wif(&token_key_type)?);
-    let funding_wif = Zeroizing::new(store.get_wif("wallet")?);
+    let token_wif = store.get_wif(&token_key_type)?;
+    let funding_wif = store.get_wif("wallet")?;
     drop(store);
     transaction::build_token_transfer_tx(
         (*token_wif).clone(),
@@ -566,7 +568,7 @@ pub async fn derive_child_key_from_store(
 ) -> Result<crate::brc42_derivation::DerivedKeyResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    let wif = store.get_wif(&key_type)?;
     drop(store);
     crate::brc42_derivation::derive_child_key((*wif).clone(), sender_pub_key, invoice_number)
 }
@@ -581,7 +583,7 @@ pub async fn get_derived_addresses_from_store(
 ) -> Result<Vec<crate::brc42_derivation::DerivedAddressResult>, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    let wif = store.get_wif(&key_type)?;
     drop(store);
     crate::brc42_derivation::get_derived_addresses((*wif).clone(), sender_pub_keys, invoice_numbers)
 }
@@ -598,7 +600,7 @@ pub async fn find_derived_key_from_store(
 ) -> Result<Option<crate::brc42_derivation::DerivedKeyResult>, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    let wif = store.get_wif(&key_type)?;
     drop(store);
     crate::brc42_derivation::find_derived_key_for_address(
         (*wif).clone(), target_address, sender_pub_key, invoice_numbers, max_numeric,
@@ -616,7 +618,7 @@ pub async fn derive_tagged_key_from_store(
 ) -> Result<crate::brc42_derivation::TaggedKeyResult, String> {
     let store = key_store.lock().await;
     require_keys(&store)?;
-    let wif = Zeroizing::new(store.get_wif(&key_type)?);
+    let wif = store.get_wif(&key_type)?;
     drop(store);
     crate::brc42_derivation::derive_tagged_key((*wif).clone(), label, id, domain)
 }
@@ -649,7 +651,8 @@ pub async fn get_wif_for_operation(
          This is a transitional bridge — migrate to a _from_store command.",
         operation, key_type
     );
-    Ok(wif)
+    // Extract the inner String for IPC — this is the only place a plain copy is needed
+    Ok((*wif).clone())
 }
 
 #[cfg(test)]

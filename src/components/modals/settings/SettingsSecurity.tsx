@@ -1,6 +1,4 @@
 import { useState, useCallback, useEffect } from 'react'
-import { saveFileDialog } from '../../../utils/dialog'
-import { writeFile } from '../../../utils/fs'
 import { tauriInvoke } from '../../../utils/tauri'
 import {
   Lock,
@@ -10,59 +8,17 @@ import {
   ChevronRight
 } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../../contexts'
-import { useUI, type ToastType } from '../../../contexts/UIContext'
-import { encrypt } from '../../../services/crypto'
+import { useUI } from '../../../contexts/UIContext'
 import { logger } from '../../../services/logger'
 import { hasPassword } from '../../../services/wallet'
 import { encryptAllAccounts } from '../../../services/accounts'
+import { exportKeysToFile } from '../../../services/keyExport'
 import { NO_PASSWORD, setSessionPassword as setModuleSessionPassword } from '../../../services/sessionPasswordStore'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'
 import { PasswordInput } from '../../shared/PasswordInput'
 import { TestRecoveryModal } from '../TestRecoveryModal'
 import { handleKeyDown } from './settingsKeyDown'
 import { SECURITY } from '../../../config'
-import type { WalletKeys } from '../../../domain/types'
-
-/**
- * Shared helper: fetch wallet keys, encrypt, and save to a JSON file.
- * Used by both password-based and one-time-password export flows.
- */
-async function exportKeysToFile(
-  wallet: WalletKeys,
-  password: string,
-  showToast: (msg: string, type?: ToastType) => void
-): Promise<void> {
-  const { getWifForOperation } = await import('../../../services/wallet')
-  const identityWif = await getWifForOperation('identity', 'exportKeys', wallet)
-  const walletWif = await getWifForOperation('wallet', 'exportKeys', wallet)
-  const ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet)
-  const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
-
-  const keyData = {
-    format: 'simply-sats',
-    version: 1,
-    mnemonic: mnemonic || null,
-    keys: {
-      identity: { wif: identityWif, pubKey: wallet.identityPubKey },
-      payment: { wif: walletWif, address: wallet.walletAddress },
-      ordinals: { wif: ordWif, address: wallet.ordAddress }
-    }
-  }
-  const encrypted = await encrypt(JSON.stringify(keyData), password)
-  const encryptedExport = {
-    format: 'simply-sats-keys-encrypted',
-    version: 1,
-    encrypted
-  }
-  const filePath = await saveFileDialog({
-    defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
-    filters: [{ name: 'JSON', extensions: ['json'] }]
-  })
-  if (filePath) {
-    await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))
-    showToast('Encrypted keys saved to file!')
-  }
-}
 
 interface SettingsSecurityProps {
   onClose: () => void
@@ -88,14 +44,31 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
   const [exportPasswordError, setExportPasswordError] = useState('')
   const isPasswordless = !hasPassword()
 
+  // Overwrite mnemonic state with zeros before clearing (security hygiene).
+  // JS strings are immutable so this replaces the React state slot's reference with
+  // a zeros string, then immediately sets to null.  React 18+ batches both updates
+  // so only null is committed and the useEffect timer is not re-triggered.
+  const clearMnemonic = useCallback(() => {
+    setMnemonicToShow(prev => (prev ? '0'.repeat(prev.length) : prev))
+    setMnemonicToShow(null)
+  }, [])
+
   // Auto-clear mnemonic from memory after 60 seconds (security)
   useEffect(() => {
     if (!mnemonicToShow) return
     const timer = setTimeout(() => {
-      setMnemonicToShow(null)
+      clearMnemonic()
     }, SECURITY.MNEMONIC_AUTO_CLEAR_MS)
     return () => clearTimeout(timer)
-  }, [mnemonicToShow])
+  }, [mnemonicToShow, clearMnemonic])
+
+  // Overwrite mnemonic on unmount so it doesn't linger in React fiber tree
+  useEffect(() => {
+    return () => {
+      clearMnemonic()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleExportKeys = useCallback(() => {
     setShowKeysWarning(true)
@@ -361,8 +334,8 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
           type="warning"
           confirmText="Done"
           cancelText=""
-          onConfirm={() => setMnemonicToShow(null)}
-          onCancel={() => setMnemonicToShow(null)}
+          onConfirm={clearMnemonic}
+          onCancel={clearMnemonic}
         />
       )}
 

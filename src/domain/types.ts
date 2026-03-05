@@ -167,6 +167,23 @@ export interface DBUtxo {
 }
 
 // ============================================
+// Transaction History Types
+// ============================================
+
+/**
+ * A single transaction in the wallet's history.
+ * Shared across ActivityTab, SyncContext, and related helpers.
+ */
+export interface TxHistoryItem {
+  tx_hash: string
+  height: number
+  amount?: number
+  address?: string
+  description?: string
+  createdAt?: number
+}
+
+// ============================================
 // Transaction Types
 // ============================================
 

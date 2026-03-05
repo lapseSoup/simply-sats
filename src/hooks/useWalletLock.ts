@@ -98,7 +98,9 @@ export function useWalletLock({
       return
     }
     walletLogger.info('Locking wallet')
-    setIsLocked(true)
+    // B-137: Clear in-memory state first (fast, synchronous), but defer the visible
+    // "locked" UI state until after Rust keys are actually cleared, so the user
+    // never sees the lock screen while keys still exist in native memory.
     setWalletState(null)
     setWalletKeys(null)
     setSessionPassword(null)
@@ -110,6 +112,7 @@ export function useWalletLock({
     } catch (e) {
       walletLogger.warn('Failed to clear Rust key store', { error: String(e) })
     }
+    setIsLocked(true)
     // B-126: Read current account from DB to avoid stale closure capture during account switches
     let currentAccountId = activeAccountId
     try {

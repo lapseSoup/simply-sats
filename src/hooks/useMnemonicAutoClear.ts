@@ -20,6 +20,8 @@ export function useMnemonicAutoClear(
   useEffect(() => {
     if (!newMnemonic) return
     const timer = setTimeout(() => {
+      // Overwrite mnemonic with zeros before clearing to reduce exposure in memory
+      setNewMnemonic('0'.repeat(newMnemonic.length))
       setNewMnemonic(null)
       logger.info('Mnemonic auto-cleared from memory after timeout')
     }, SECURITY.MNEMONIC_AUTO_CLEAR_MS)

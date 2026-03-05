@@ -170,11 +170,20 @@ async function createAuthHeadersFromStore(
   })
 }
 
+// ==================== Shared Implementation Functions ====================
+// These impl functions contain the core logic. Public WIF-based and store-based
+// variants are thin wrappers that inject the appropriate auth header creator.
+
+/** Function that creates auth headers for a given HTTP method, path, and optional body. */
+type CreateHeadersFn = (method: string, path: string, body?: string) => Promise<Record<string, string>>
+
 /**
- * List messages from our payment inbox
- * @deprecated Use listPaymentMessagesFromStore() instead
+ * Core implementation for listing messages from the payment inbox.
+ * Handles auth-failure suppression, HTTP request, and response parsing.
  */
-export async function listPaymentMessages(identityWif: string): Promise<PaymentMessage[]> {
+async function listPaymentMessagesImpl(
+  createHeadersFn: CreateHeadersFn
+): Promise<PaymentMessage[]> {
   // Skip if we've had too many auth failures (don't spam the API)
   // S-76: Allow one retry after cooldown period to detect recovered auth
   if (_authFailureCount >= AUTH_FAILURE_MAX_SUPPRESS) {
@@ -188,7 +197,7 @@ export async function listPaymentMessages(identityWif: string): Promise<PaymentM
   const path = `/api/v1/message/${PAYMENT_INBOX}`
 
   try {
-    const headers = await createAuthHeaders(identityWif, 'GET', path)
+    const headers = await createHeadersFn('GET', path)
 
     const response = await fetch(`${MESSAGEBOX_HOST}${path}`, {
       method: 'GET',
@@ -196,9 +205,7 @@ export async function listPaymentMessages(identityWif: string): Promise<PaymentM
     })
 
     if (!response.ok) {
-      if (response.status === 404) {
-        return [] // No messages
-      }
+      if (response.status === 404) return []
       if (response.status === 401) {
         _authFailureCount++
         _lastAuthFailureTime = Date.now()
@@ -224,11 +231,10 @@ export async function listPaymentMessages(identityWif: string): Promise<PaymentM
 }
 
 /**
- * Acknowledge (delete) messages we've processed
- * @deprecated Use acknowledgeMessagesFromStore() instead
+ * Core implementation for acknowledging (deleting) processed messages.
  */
-export async function acknowledgeMessages(
-  identityWif: string,
+async function acknowledgeMessagesImpl(
+  createHeadersFn: CreateHeadersFn,
   messageIds: string[]
 ): Promise<boolean> {
   if (messageIds.length === 0) return true
@@ -237,7 +243,7 @@ export async function acknowledgeMessages(
   const body = JSON.stringify({ messageIds })
 
   try {
-    const headers = await createAuthHeaders(identityWif, 'POST', path, body)
+    const headers = await createHeadersFn('POST', path, body)
 
     const response = await fetch(`${MESSAGEBOX_HOST}${path}`, {
       method: 'POST',
@@ -280,13 +286,17 @@ function parsePaymentMessage(message: PaymentMessage): PaymentNotification | nul
 }
 
 /**
- * Check for new payment messages and process them
- * @deprecated Use checkForPaymentsFromStore() instead
+ * Core implementation for checking payment messages.
+ * Handles duplicate detection, notification parsing, MAX_NOTIFICATIONS cap,
+ * and acknowledgment delegation.
  */
-export async function checkForPayments(identityWif: string): Promise<PaymentNotification[]> {
+async function checkForPaymentsImpl(
+  listFn: () => Promise<PaymentMessage[]>,
+  acknowledgeFn: (messageIds: string[]) => Promise<boolean>
+): Promise<PaymentNotification[]> {
   messageLogger.info('Checking MessageBox for payment notifications')
 
-  const messages = await listPaymentMessages(identityWif)
+  const messages = await listFn()
   messageLogger.info('Found messages in payment inbox', { count: messages.length })
 
   const newNotifications: PaymentNotification[] = []
@@ -317,12 +327,188 @@ export async function checkForPayments(identityWif: string): Promise<PaymentNoti
 
   // Acknowledge processed messages
   if (processedIds.length > 0) {
-    await acknowledgeMessages(identityWif, processedIds)
+    await acknowledgeFn(processedIds)
     saveNotifications()
   }
 
   return newNotifications
 }
+
+/**
+ * Core implementation for the periodic payment listener.
+ * Manages interval setup, cleanup, and an in-flight guard (S-143)
+ * to prevent concurrent checkFn calls from overlapping.
+ */
+function startPaymentListenerImpl(
+  checkFn: () => Promise<PaymentNotification[]>,
+  onNewPayment: ((notification: PaymentNotification) => void) | undefined,
+  intervalMs: number
+): () => void {
+  // B-115: If a listener is already running, clean it up before starting a new one
+  if (isListening) {
+    messageLogger.debug('Payment listener already running — stopping old listener')
+    currentListenerCleanup?.()
+  }
+
+  isListening = true
+  messageLogger.info('Starting payment message listener')
+
+  // Initial check (fire-and-forget, not guarded — only the interval needs the guard)
+  checkFn().then(newPayments => {
+    for (const payment of newPayments) {
+      onNewPayment?.(payment)
+    }
+  }).catch(e => {
+    messageLogger.error('Initial payment check failed', e)
+  })
+
+  // S-143: In-flight guard prevents concurrent checkFn calls from overlapping
+  let checking = false
+  const intervalId = setInterval(async () => {
+    if (checking) return
+    checking = true
+    try {
+      const newPayments = await checkFn()
+      for (const payment of newPayments) {
+        onNewPayment?.(payment)
+      }
+    } catch (e) {
+      messageLogger.error('Payment check failed', e)
+    } finally {
+      checking = false
+    }
+  }, intervalMs)
+
+  const cleanup = () => {
+    clearInterval(intervalId)
+    isListening = false
+    currentListenerCleanup = null
+    messageLogger.info('Payment listener stopped')
+  }
+
+  currentListenerCleanup = cleanup
+  return cleanup
+}
+
+// ==================== Public API: WIF-based (deprecated) ====================
+
+/**
+ * List messages from our payment inbox
+ * @deprecated Use listPaymentMessagesFromStore() instead
+ */
+export async function listPaymentMessages(identityWif: string): Promise<PaymentMessage[]> {
+  return listPaymentMessagesImpl(
+    (method, path, body) => createAuthHeaders(identityWif, method, path, body)
+  )
+}
+
+/**
+ * Acknowledge (delete) messages we've processed
+ * @deprecated Use acknowledgeMessagesFromStore() instead
+ */
+export async function acknowledgeMessages(
+  identityWif: string,
+  messageIds: string[]
+): Promise<boolean> {
+  return acknowledgeMessagesImpl(
+    (method, path, body) => createAuthHeaders(identityWif, method, path, body),
+    messageIds
+  )
+}
+
+/**
+ * Check for new payment messages and process them
+ * @deprecated Use checkForPaymentsFromStore() instead
+ */
+export async function checkForPayments(identityWif: string): Promise<PaymentNotification[]> {
+  return checkForPaymentsImpl(
+    () => listPaymentMessages(identityWif),
+    (messageIds) => acknowledgeMessages(identityWif, messageIds)
+  )
+}
+
+/**
+ * Start periodic checking for payment messages.
+ * @deprecated Use startPaymentListenerFromStore() instead
+ */
+export function startPaymentListener(
+  identityWif: string,
+  onNewPayment?: (notification: PaymentNotification) => void,
+  intervalMs = 30000
+): () => void {
+  return startPaymentListenerImpl(
+    () => checkForPayments(identityWif),
+    onNewPayment,
+    intervalMs
+  )
+}
+
+/**
+ * Start periodic checking for payment messages using a WIF string.
+ * @deprecated Use `startPaymentListener` directly — it now accepts WIF strings.
+ */
+export function startPaymentListenerFromWif(
+  identityWif: string,
+  onNewPayment?: (notification: PaymentNotification) => void,
+  intervalMs = 30000
+): () => void {
+  return startPaymentListener(identityWif, onNewPayment, intervalMs)
+}
+
+// ==================== Public API: Store-based (S-121) ====================
+// These functions use the Rust key store for signing, so the identity WIF
+// never enters the JavaScript heap. They accept identityPubKey instead of WIF.
+
+/**
+ * List messages from our payment inbox using store-based auth (S-121).
+ */
+export async function listPaymentMessagesFromStore(identityPubKey: string): Promise<PaymentMessage[]> {
+  return listPaymentMessagesImpl(
+    (method, path, body) => createAuthHeadersFromStore(identityPubKey, method, path, body)
+  )
+}
+
+/**
+ * Acknowledge messages using store-based auth (S-121).
+ */
+export async function acknowledgeMessagesFromStore(
+  identityPubKey: string,
+  messageIds: string[]
+): Promise<boolean> {
+  return acknowledgeMessagesImpl(
+    (method, path, body) => createAuthHeadersFromStore(identityPubKey, method, path, body),
+    messageIds
+  )
+}
+
+/**
+ * Check for new payment messages using store-based auth (S-121).
+ */
+export async function checkForPaymentsFromStore(identityPubKey: string): Promise<PaymentNotification[]> {
+  return checkForPaymentsImpl(
+    () => listPaymentMessagesFromStore(identityPubKey),
+    (messageIds) => acknowledgeMessagesFromStore(identityPubKey, messageIds)
+  )
+}
+
+/**
+ * Start periodic checking for payment messages using the Rust key store (S-121).
+ * The identity WIF never enters the JavaScript heap — only the public key
+ * is passed in, and all signing is delegated to `sign_data_from_store`.
+ */
+export function startPaymentListenerFromStore(
+  identityPubKey: string,
+  onNewPayment?: (notification: PaymentNotification) => void,
+  intervalMs = 30000
+): () => void {
+  return startPaymentListenerImpl(
+    () => checkForPaymentsFromStore(identityPubKey),
+    onNewPayment,
+    intervalMs
+  )
+}
+
+// ==================== Public API: Utility functions ====================
 
 /**
  * Get the derivation info for a specific UTXO
@@ -360,175 +546,6 @@ export function clearNotifications(): void {
   saveNotifications()
 }
 
-// ==================== Store-Based Variants (S-121) ====================
-// These functions use the Rust key store for signing, so the identity WIF
-// never enters the JavaScript heap. They accept identityPubKey instead of WIF.
-
-/**
- * List messages from our payment inbox using store-based auth (S-121).
- */
-export async function listPaymentMessagesFromStore(identityPubKey: string): Promise<PaymentMessage[]> {
-  if (_authFailureCount >= AUTH_FAILURE_MAX_SUPPRESS) {
-    if (Date.now() - _lastAuthFailureTime > AUTH_FAILURE_RESET_MS) {
-      _authFailureCount = 0
-    } else {
-      return []
-    }
-  }
-
-  const path = `/api/v1/message/${PAYMENT_INBOX}`
-
-  try {
-    const headers = await createAuthHeadersFromStore(identityPubKey, 'GET', path)
-
-    const response = await fetch(`${MESSAGEBOX_HOST}${path}`, {
-      method: 'GET',
-      headers
-    })
-
-    if (!response.ok) {
-      if (response.status === 404) return []
-      if (response.status === 401) {
-        _authFailureCount++
-        _lastAuthFailureTime = Date.now()
-        if (_authFailureCount === 1) {
-          messageLogger.warn('MessageBox auth failed — will suppress further attempts', { status: 401 })
-        }
-        return []
-      }
-      const errorText = await response.text()
-      messageLogger.error('MessageBox error', undefined, { status: response.status, errorText })
-      return []
-    }
-
-    _authFailureCount = 0
-    const data = await response.json()
-    return data.messages || []
-  } catch (error) {
-    messageLogger.error('Failed to list payment messages', error)
-    return []
-  }
-}
-
-/**
- * Acknowledge messages using store-based auth (S-121).
- */
-export async function acknowledgeMessagesFromStore(
-  identityPubKey: string,
-  messageIds: string[]
-): Promise<boolean> {
-  if (messageIds.length === 0) return true
-
-  const path = `/api/v1/message/acknowledge`
-  const body = JSON.stringify({ messageIds })
-
-  try {
-    const headers = await createAuthHeadersFromStore(identityPubKey, 'POST', path, body)
-
-    const response = await fetch(`${MESSAGEBOX_HOST}${path}`, {
-      method: 'POST',
-      headers,
-      body
-    })
-
-    return response.ok
-  } catch (error) {
-    messageLogger.error('Failed to acknowledge messages', error)
-    return false
-  }
-}
-
-/**
- * Check for new payment messages using store-based auth (S-121).
- */
-export async function checkForPaymentsFromStore(identityPubKey: string): Promise<PaymentNotification[]> {
-  messageLogger.info('Checking MessageBox for payment notifications (store-based)')
-
-  const messages = await listPaymentMessagesFromStore(identityPubKey)
-  messageLogger.info('Found messages in payment inbox', { count: messages.length })
-
-  const newNotifications: PaymentNotification[] = []
-  const processedIds: string[] = []
-
-  for (const msg of messages) {
-    const notification = parsePaymentMessage(msg)
-    if (notification) {
-      const exists = paymentNotifications.some(
-        n => n.txid === notification.txid && n.vout === notification.vout
-      )
-
-      if (!exists) {
-        paymentNotifications.push(notification)
-        newNotifications.push(notification)
-        messageLogger.info('New payment notification', { txid: notification.txid, vout: notification.vout, amount: notification.amount })
-      }
-
-      processedIds.push(msg.messageId)
-    }
-  }
-
-  // Cap stored notifications to prevent unbounded growth
-  if (paymentNotifications.length > MAX_NOTIFICATIONS) {
-    paymentNotifications = paymentNotifications.slice(-MAX_NOTIFICATIONS)
-  }
-
-  if (processedIds.length > 0) {
-    await acknowledgeMessagesFromStore(identityPubKey, processedIds)
-    saveNotifications()
-  }
-
-  return newNotifications
-}
-
-/**
- * Start periodic checking for payment messages using the Rust key store (S-121).
- * The identity WIF never enters the JavaScript heap — only the public key
- * is passed in, and all signing is delegated to `sign_data_from_store`.
- */
-export function startPaymentListenerFromStore(
-  identityPubKey: string,
-  onNewPayment?: (notification: PaymentNotification) => void,
-  intervalMs = 30000
-): () => void {
-  // B-115: If a listener is already running, clean it up before starting a new one
-  if (isListening) {
-    messageLogger.debug('Payment listener already running — stopping old listener')
-    currentListenerCleanup?.()
-  }
-
-  isListening = true
-  messageLogger.info('Starting payment message listener (store-based)')
-
-  checkForPaymentsFromStore(identityPubKey).then(newPayments => {
-    for (const payment of newPayments) {
-      onNewPayment?.(payment)
-    }
-  }).catch(e => {
-    messageLogger.error('Initial payment check failed', e)
-  })
-
-  const intervalId = setInterval(async () => {
-    try {
-      const newPayments = await checkForPaymentsFromStore(identityPubKey)
-      for (const payment of newPayments) {
-        onNewPayment?.(payment)
-      }
-    } catch (e) {
-      messageLogger.error('Payment check failed', e)
-    }
-  }, intervalMs)
-
-  const cleanup = () => {
-    clearInterval(intervalId)
-    isListening = false
-    currentListenerCleanup = null
-    messageLogger.info('Payment listener stopped')
-  }
-
-  currentListenerCleanup = cleanup
-  return cleanup
-}
-
 /**
  * Derive the private key for a payment using the notification info.
  * Returns the child WIF and address via Tauri's BRC-42 derivation command.
@@ -552,71 +569,6 @@ export async function deriveKeyFromNotification(
   )
 
   return { wif: result.wif, address: result.address }
-}
-
-/**
- * Start periodic checking for payment messages.
- * Accepts a WIF string for the identity key.
- * @deprecated Use startPaymentListenerFromStore() instead
- */
-export function startPaymentListener(
-  identityWif: string,
-  onNewPayment?: (notification: PaymentNotification) => void,
-  intervalMs = 30000 // Check every 30 seconds
-): () => void {
-  // B-115: If a listener is already running, clean it up before starting a new one
-  if (isListening) {
-    messageLogger.debug('Payment listener already running — stopping old listener')
-    currentListenerCleanup?.()
-  }
-
-  isListening = true
-  messageLogger.info('Starting payment message listener')
-
-  // Initial check
-  checkForPayments(identityWif).then(newPayments => {
-    for (const payment of newPayments) {
-      onNewPayment?.(payment)
-    }
-  }).catch(e => {
-    messageLogger.error('Initial payment check failed', e)
-  })
-
-  // Set up interval
-  const intervalId = setInterval(async () => {
-    try {
-      const newPayments = await checkForPayments(identityWif)
-      for (const payment of newPayments) {
-        onNewPayment?.(payment)
-      }
-    } catch (e) {
-      messageLogger.error('Payment check failed', e)
-    }
-  }, intervalMs)
-
-  // Return cleanup function
-  const cleanup = () => {
-    clearInterval(intervalId)
-    isListening = false
-    currentListenerCleanup = null
-    messageLogger.info('Payment listener stopped')
-  }
-
-  currentListenerCleanup = cleanup
-  return cleanup
-}
-
-/**
- * Start periodic checking for payment messages using a WIF string.
- *
- * @deprecated Use `startPaymentListener` directly — it now accepts WIF strings.
- */
-export function startPaymentListenerFromWif(
-  identityWif: string,
-  onNewPayment?: (notification: PaymentNotification) => void,
-  intervalMs = 30000
-): () => void {
-  return startPaymentListener(identityWif, onNewPayment, intervalMs)
 }
 
 export type { PaymentNotification }

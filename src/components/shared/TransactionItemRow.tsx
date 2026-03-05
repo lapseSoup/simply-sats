@@ -1,14 +1,8 @@
 import { memo, type ReactNode } from 'react'
 import { OrdinalImage } from './OrdinalImage'
+import type { TxHistoryItem } from '../../domain/types'
 
-// Transaction type shared between ActivityTab and SearchTab
-export type TxHistoryItem = {
-  tx_hash: string
-  amount?: number
-  height: number
-  description?: string
-  createdAt?: number
-}
+export type { TxHistoryItem }
 
 export function formatTxDate(height: number, currentHeight: number, createdAt?: number): string | null {
   // Use block height to estimate confirmation time when available (more accurate than createdAt)
@@ -99,7 +93,7 @@ export const TransactionItemRow = memo(function TransactionItemRow({
             <div className={`tx-amount-value ${tx.amount > 0 ? 'positive' : 'negative'}`}>
               {displayInSats
                 ? <>{tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} sats</>
-                : <>{tx.amount > 0 ? '+' : ''}{formatBSVShort(Math.abs(tx.amount))} BSV</>
+                : <>{tx.amount > 0 ? '+' : '-'}{formatBSVShort(Math.abs(tx.amount))} BSV</>
               }
             </div>
             <div className="tx-amount-usd">

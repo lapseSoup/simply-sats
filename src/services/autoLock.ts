@@ -220,8 +220,9 @@ export function pauseAutoLock(): void {
  */
 export function resumeAutoLock(onLock: () => void | Promise<void>, onWarning?: () => void): void {
   if (state.checkInterval) return  // Already running, don't duplicate
+  if (!state.isEnabled && !state.isPaused) return  // Fully stopped, don't resurrect
 
-  state.isEnabled = true   // Re-enable (may have been disabled by stopAutoLock)
+  state.isEnabled = true
   state.isPaused = false
   state.lastActiveTime = Date.now() // Reset timer on resume
   state.warningFired = false

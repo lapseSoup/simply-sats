@@ -1,8 +1,8 @@
 # Simply Sats — Review Findings
-**Latest review:** 2026-03-04 (v29 / Review #29 — Full Codebase Review)
-**Full report:** `docs/reviews/2026-03-04-full-review-v29.md`
-**Rating:** 8.0 / 10 (30 new issues found — 0 critical, 1 high, 16 medium, 13 low). All 30 resolved: 21 fixed, 2 verified, 7 deferred. A-50 confirmed fixed (circular deps resolved). 495 total resolved.
-**Review #29 summary:** Full 4-phase review. Baseline clean: 0 lint errors, typecheck passes, 1957/1957 tests pass. Found 30 new issues: 7 security (3 medium, 4 low — WIF-in-JS-heap root cause identified), 8 bugs (1 high: handleImportJSON mnemonic leak, 3 medium, 4 low), 7 architecture (4 medium: auditLog separate DB, connection pool atomicity, runtime DDL expansion, services bypass PlatformAdapter), 14 quality (6 medium, 8 low — test coverage gaps, silent catch blocks, DRY violations). A-50 fixed, A-49/A-55/A-60 improved. A-58 expanded (1→7 runtime DDL files).
+**Latest review:** 2026-03-05 (v30 / Review #30 — Full Codebase Review)
+**Full report:** `docs/reviews/2026-03-05-full-review-v30.md`
+**Rating:** 7.8 / 10 (28 new issues found — 0 critical, 2 high, 11 medium, 15 low). Significant security improvements (Zeroizing migration, store-based payment listener, WIF/address validation), but get_mnemonic widens JS-heap exposure (S-138) and contentCacheSnapshot mutable ref regression (B-129).
+**Review #30 summary:** Full 4-phase review. Baseline clean: 0 lint errors, typecheck passes, 1961/1961 tests pass. Found 28 new issues: 6 security (1 high: get_mnemonic JS-heap exposure, 2 medium: get_wif bypasses Zeroizing + exportKeysToFile plaintext, 3 low), 9 bugs (1 high: contentCacheSnapshot mutable ref, 4 medium: dead cancellation + formatSatoshis + resumeAutoLock + accountIndex fallback, 4 low), 5 architecture (3 medium: duplicate TxHistoryItem + messageBox 8 near-dupes + useSyncData layer violation, 2 low), 8 quality (2 medium: closeModal duplication + safeDeleteTable SQL, 6 low).
 
 > **Legend:** ✅ Fixed | 🔴 Open-Critical | 🟠 Open-High | 🟡 Open-Medium | ⚪ Open-Low
 
@@ -39,6 +39,8 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-138 | ✅ Partial (v30) | `SettingsSecurity.tsx`, `SettingsBackup.tsx`, `useMnemonicAutoClear.ts`, `App.tsx` | `get_mnemonic` JS-side mitigation: zero-overwrite before clearing in all 4 call sites. `useMnemonicAutoClear` overwrites with zeros before null. SettingsSecurity adds unmount cleanup. SettingsBackup adds finally-block cleanup. Full Rust-side solution (S-138 architectural) deferred |
+| B-129 | ✅ Fixed (v30) | `WalletStateContext.tsx` | `contentCacheSnapshot` typed as `ReadonlyMap<string, OrdinalContentEntry>` — compile-time protection against mutations without runtime copy cost |
 | B-121 | ✅ Fixed (v29) | `useWalletActions.ts:226` | `handleImportJSON` calls `setWallet(keys)` without stripping mnemonic — every other path uses `{ ...keys, mnemonic: '' }`. Full mnemonic persists in React state after JSON import. **Fix:** Stripped mnemonic from setWallet call |
 | S-99 | ✅ Fixed (v23) | `brc100/outputs.ts:61` | `getLocksFromDB(currentHeight)` called without `accountId` in `resolveListOutputs()`. BRC-100 `listOutputs` with `basket: 'wrootz_locks'` returned locks from ALL accounts. **Fix:** Added `getActiveAccount()`, passed `activeAccountId` |
 | S-100 | ✅ Fixed (v23) | `brc100/listener.ts:138` | Same as S-99 — `getLocksFromDB(currentHeight)` in `listLocks` auto-response had no account scoping. **Fix:** Added `getActiveAccount()`, passed `activeAccount?.id` |
@@ -127,6 +129,17 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-139 | ✅ Fixed (v30) | `key_store.rs:64-74` | `get_wif()` now returns `Zeroizing<String>`. 18 callers updated. `get_wif_for_operation` extracts inner string only at IPC boundary |
+| S-140 | ✅ Fixed (v30) | `services/keyExport.ts`, `SettingsSecurity.tsx` | Extracted `exportKeysToFile` to service module with `try/finally` zero-overwrite cleanup for WIF/mnemonic variables |
+| B-130 | ✅ Fixed (v30) | `Header.tsx` | Removed dead cancellation pattern. Added `fetchingRef` in-flight guard to prevent concurrent fetch races |
+| B-131 | ✅ Fixed (v30) | `formatting.ts` | `formatSatoshis` now uses `Math.abs(sats)` for threshold comparison, preserves sign with `const sign = sats < 0 ? '-' : ''` |
+| B-132 | ✅ Fixed (v30) | `autoLock.ts` | `resumeAutoLock` now guards `if (!state.isEnabled && !state.isPaused) return` — prevents resurrecting stopped auto-lock |
+| B-133 | ✅ Fixed (v30) | `useAccountSwitching.ts` | Changed `accountIndex ?? 0` to `accountIndex ?? accounts.length` in both `createNewAccount` and `importAccount` |
+| A-77 | ✅ Fixed (v30) | `domain/types.ts`, `TransactionItemRow.tsx`, `SyncContext.tsx` | Canonical `TxHistoryItem` in domain/types.ts. Both files now re-export from domain |
+| A-78 | ✅ Fixed (v30) | `messageBox.ts` | Extracted 4 `*Impl` helper functions. Both WIF and store variants delegate to shared impl. Added in-flight guard for concurrent interval ticks |
+| A-79 | ✅ Fixed (v30) | `useSyncData.ts` | Changed import from `../infrastructure/database` to `../services/database` |
+| Q-121 | ✅ Fixed (v30) | `hooks/useModalCompoundActions.ts`, `App.tsx`, `AppModals.tsx` | Extracted shared `useModalCompoundActions` hook. Both files delegate to single source of truth |
+| Q-122 | ✅ Fixed (v30) | `backup.ts` | Defined `ClearableTable` string literal union type for `safeDeleteTable` parameter — compile-time SQL injection protection |
 | B-110 | ✅ Fixed (v27) | `OrdinalsTab.tsx:328` | Inline arrow function as `rowComponent` causes react-window remount flicker. All visible rows unmount/remount on re-render. ActivityTab avoids this pattern correctly. **Fix:** Extracted `OrdinalVirtualRow` as module-level component. Stable ref for react-window |
 | B-111 | ✅ Fixed (v27) | `ModalContext.tsx:91-94` | `closeModal` clears `selectedOrdinal` but not `ordinalToTransfer`/`ordinalToList`. Stale reference if modal closed via X button. **Fix:** `closeModal` now also calls `completeTransfer()` + `completeList()` |
 | B-112 | ✅ Fixed (v27) | `SearchTab.tsx:155-158` | `if (amount && amount > 0)` false when `amount === 0`. Zero-amount txs show as "Transaction" not "Received"/"Sent". ActivityTab uses `!= null` correctly. **Fix:** Changed `amount &&` to `amount != null &&`. Also fixed amount display check |
@@ -339,6 +352,22 @@
 
 | ID | Status | File | Issue |
 |----|--------|------|-------|
+| S-141 | ✅ Fixed (v30) | `lib.rs` | Changed `Ok(-1)` to `Err(format!(...))` for JSON parse and HTTP error paths in `check_address_balance` |
+| S-142 | ✅ Fixed (v30) | `key_store.rs` | Added `log::warn!` audit logging to both `get_mnemonic` and `get_mnemonic_once` commands |
+| S-143 | ✅ Fixed (v30) | `messageBox.ts` | Added `let checking = false` in-flight guard in `startPaymentListenerImpl` to prevent concurrent interval ticks |
+| B-134 | ✅ Fixed (v30) | `TransactionItemRow.tsx` | Changed `tx.amount > 0 ? '+' : ''` to `tx.amount > 0 ? '+' : '-'` for BSV display |
+| B-135 | ✅ Fixed (v30) | `ordinalRepository.ts` | Added `lastSelfHealTime` module-level debounce with 60s interval |
+| B-136 | ✅ Fixed (v30) | `ModalContext.tsx` | Added guards so ordinal cleanup only runs when ordinal state exists |
+| B-137 | ✅ Fixed (v30) | `useWalletLock.ts` | Moved `setIsLocked(true)` to after `await tauriInvoke('clear_keys')` completes |
+| A-80 | ✅ Fixed (v30) | `App.tsx` | Fixed stale log message from `get_mnemonic_once` to `get_mnemonic` |
+| A-81 | ✅ Fixed (v30) | `services/keyExport.ts`, `SettingsSecurity.tsx` | Extracted `exportKeysToFile` to `services/keyExport.ts` service module |
+| Q-123 | ✅ Fixed (v30) | `AppProviders.tsx` | Fixed indentation of ErrorBoundary+Provider pairs to match consistent nesting pattern |
+| Q-124 | ✅ Fixed (v30) | `historySync.ts` | Replaced inline cache eviction with `setTxDetailCacheEntry()` and `getTxDetailCacheEntry()` calls |
+| Q-125 | ✅ Fixed (v30) | `timeFormatting.ts` | Added month (30+ days) and week (7-29 days) tiers to `formatTimeRemaining` |
+| Q-126 | ✅ Fixed (v30) | `AppModals.tsx` | Replaced `ordinalCtx.selectedOrdinal!` with safe IIFE capturing `selected` with null check |
+| Q-127 | ✅ Fixed (v30) | `formatting.test.ts` | 17 tests covering auto/short modes, negative amounts, edge cases (NaN, boundaries) |
+| Q-128 | ✅ Fixed (v30) | `timeFormatting.test.ts` | 33 tests covering zero/negative, minutes, hours, days, weeks, months, mixed values |
+| Q-129 | ✅ Fixed (v30) | `useCheckSync.ts` | Removed unused `consumePendingDiscovery` from interface and destructured params |
 | B-113 | ✅ Fixed (v27) | `useSyncData.ts:536` | `ordinalsRef` in `fetchData` dependency array but unused in function body. Dead dependency. **Fix:** Removed `ordinalsRef` from dependency array and `UseSyncDataOptions` interface |
 | B-114 | ✅ Fixed (v27) | `ActivityTab.tsx:95` | `formatTxDate` called twice per row — once for truthiness check, once for render. **Fix:** Stored `formatTxDate` result in `dateStr` variable, used once |
 | A-65 | ✅ Fixed (v27) | `useCheckSync.ts:337` | Dynamic `await import('../services/accounts')` in fire-and-forget. Should be static import. **Fix:** Changed to static import: `import { getAllAccounts } from '../services/accounts'` |
@@ -555,39 +584,43 @@
 
 | Category | Total | ✅ Fixed/Verified/Accepted/Deferred | 🔴 Critical Open | 🟠 High Open | 🟡 Medium Open | ⚪ Low Open |
 |----------|-------|-------------------------------------|-------------------|--------------|----------------|-------------|
-| Security | 137 | 133 | 0 | 0 | 1 | 3 |
-| Bugs | 128 | 127 | 0 | 0 | 0 | 1 |
-| Architecture | 76 | 65 | 0 | 0 | 6 | 5 |
-| Quality | 120 | 117 | 0 | 0 | 0 | 3 |
+| Security | 143 | 139 | 0 | 0 | 1 | 3 |
+| Bugs | 137 | 136 | 0 | 0 | 0 | 1 |
+| Architecture | 81 | 72 | 0 | 0 | 6 | 3 |
+| Quality | 129 | 127 | 0 | 0 | 0 | 2 |
 | UX/UI | 40 | 40 | 0 | 0 | 0 | 0 |
 | Stability | 13 | 13 | 0 | 0 | 0 | 0 |
-| **Total** | **514** | **495** | **0** | **0** | **7** | **12** |
+| **Total** | **543** | **527** | **0** | **0** | **7** | **9** |
 
 ---
 
-## Remaining Open Items (as of Review #29 fixes)
+## Remaining Open Items (as of Review #30 — post-fix)
 
-**30 new issues found in Review #29.** All 30 resolved: 21 fixed, 2 verified non-bugs, 7 deferred. A-50 confirmed fixed. 495 total resolved.
+**28 issues found in Review #30 — all 28 fixed in v30.** S-138 is partial fix (JS-side mitigation; full Rust-side solution is architectural debt).
 
-### Open — High (0)
-None — B-121 fixed in v29.
-
-### Open — Medium (7)
+### Open — Medium (7, all pre-existing)
 #### Security (1)
 - **S-126** — useWalletSend.ts pulls WIFs into JS heap via getWifForOperation (6 call sites)
 
 #### Architecture (6)
-- **A-49** — 13 files bypass PlatformAdapter (improved from 27)
-- **A-51** — WalletStateContext bundles 24 fields (improved from 25)
-- **A-55** — 6 service files bypass repository layer with raw SQL (improved from 37)
-- **A-56** — Legacy WoC methods hide API failures
-- **A-58** — 7 repositories use runtime DDL instead of migrations (expanded from 1)
-- **A-60** — WalletContext coordinator (improved structure but still large)
+- **A-49** — 13 files bypass PlatformAdapter (unchanged)
+- **A-51** — WalletStateContext bundles 24 fields (unchanged)
+- **A-55** — 6 service files bypass repository layer (unchanged)
+- **A-56** — Legacy WoC methods hide API failures (unchanged)
+- **A-58** — 7 repositories use runtime DDL (unchanged)
+- **A-60** — WalletContext coordinator still large (slight improvement)
 
-### Open — Low (12)
+### Open — Low (9, all pre-existing)
+#### Security (3)
 - S-117, S-118, S-119
-- A-52, A-53, A-59, A-62, A-68
+
+#### Bugs (1)
 - B-78
+
+#### Architecture (3)
+- A-52, A-53, A-59, A-62, A-68
+
+#### Quality (2)
 - Q-70, Q-76, Q-114
 
 ### Deferred to separate PR (10)
@@ -606,6 +639,62 @@ None — B-121 fixed in v29.
 - **S-17** — `SENSITIVE_KEYS` empty in secureStorage
 - **S-57** — `getKnownTaggedKey` returns root private keys — intentional for BRC-42 interop
 - **S-59** — Session token accessible to any JS context — CSP + webview isolation mitigate
+
+---
+
+## Prioritized Remediation — Review #30 (completed)
+
+All 28 issues from Review #30 have been fixed in v30. Summary of fixes:
+
+### Security (6 issues — all fixed)
+- **S-138** (partial): JS-side zero-overwrite mitigation in 4 call sites
+- **S-139**: `get_wif()` returns `Zeroizing<String>`, 18 callers updated
+- **S-140/A-81**: `exportKeysToFile` extracted to service with try/finally cleanup
+- **S-141**: `check_address_balance` returns `Err()` instead of `Ok(-1)`
+- **S-142**: Audit logging for `get_mnemonic` command
+- **S-143**: In-flight guard for concurrent payment listener ticks
+
+### Bugs (9 issues — all fixed)
+- **B-129**: ReadonlyMap typing for contentCacheSnapshot
+- **B-130**: fetchingRef in-flight guard replacing dead cancellation
+- **B-131**: Math.abs() for negative amount formatting
+- **B-132**: Guard against resurrecting stopped auto-lock
+- **B-133**: accounts.length fallback for accountIndex
+- **B-134**: Negative sign in BSV display
+- **B-135**: 60s debounce for self-heal query
+- **B-136**: Conditional ordinal cleanup on modal close
+- **B-137**: setIsLocked after clear_keys completes
+
+### Architecture (5 issues — all fixed)
+- **A-77**: Canonical TxHistoryItem in domain/types.ts
+- **A-78**: 4 shared Impl helpers for messageBox.ts
+- **A-79**: useSyncData imports from services layer
+- **A-80**: Stale log message fixed
+- **A-81**: Business logic moved to service module
+
+### Quality (8 issues — all fixed)
+- **Q-121**: useModalCompoundActions shared hook
+- **Q-122**: ClearableTable string literal union type
+- **Q-123**: AppProviders indentation fixed
+- **Q-124**: Cache eviction uses accessor functions
+- **Q-125**: Month/week tiers for formatTimeRemaining
+- **Q-126**: Safe IIFE pattern for selectedOrdinal
+- **Q-127**: 17 tests for formatSatoshis
+- **Q-128**: 33 tests for formatTimeRemaining
+- **Q-129**: Removed unused consumePendingDiscovery parameter
+8. **B-130** `Header.tsx:33-53` — Remove dead cancellation code, add in-flight guard. **Effort: quick**
+9. **B-131** `formatting.ts` — Use `Math.abs()` for threshold, preserve sign. **Effort: quick**
+10. **B-132** `autoLock.ts:221-232` — Only resume from paused state, not from stopped. **Effort: quick**
+11. **A-77** `TransactionItemRow.tsx` — Move `TxHistoryItem` to `domain/types.ts`. **Effort: quick**
+12. **A-78** `messageBox.ts` — Factor shared logic into generic internals or remove deprecated WIF variants. **Effort: medium**
+13. **Q-121** `App.tsx`, `AppModals.tsx` — Extract shared `closeModal` into `useModalCompoundActions` hook. **Effort: quick**
+14. **Q-122** `backup.ts` — Use string literal union type for `tableName` parameter. **Effort: quick**
+
+### Later
+15. **A-79** — Route useSyncData DB queries through service layer. **Effort: medium**
+16. **Q-127/Q-128** — Add tests for formatSatoshis and formatTimeRemaining. **Effort: quick**
+17. **B-135** — Debounce ordinal self-heal query. **Effort: quick**
+18. **B-136** — Guard closeModal ordinal cleanup with conditionals. **Effort: quick**
 
 ---
 

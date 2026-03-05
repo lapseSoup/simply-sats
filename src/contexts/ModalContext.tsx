@@ -101,11 +101,13 @@ export function useModal() {
 
   // B-104: Clear selectedOrdinal when closing any modal to prevent stale state
   // B-111: Also clear ordinalToTransfer/ordinalToList to prevent stale references
+  // B-136: Only call cleanup when there's actually ordinal state to clear,
+  // avoiding unnecessary re-renders when closing non-ordinal modals.
   const closeModal = useCallback(() => {
     modalCtx.closeModal()
-    ordinalCtx.clearSelectedOrdinal()
-    ordinalCtx.completeTransfer()
-    ordinalCtx.completeList()
+    if (ordinalCtx.selectedOrdinal) ordinalCtx.clearSelectedOrdinal()
+    if (ordinalCtx.ordinalToTransfer) ordinalCtx.completeTransfer()
+    if (ordinalCtx.ordinalToList) ordinalCtx.completeList()
   }, [modalCtx, ordinalCtx])
 
   return useMemo(() => ({

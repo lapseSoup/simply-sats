@@ -53,10 +53,11 @@ describe('useMnemonicAutoClear', () => {
     vi.advanceTimersByTime(299999)
     expect(setNewMnemonic).not.toHaveBeenCalled()
 
-    // Should be cleared exactly at timeout
+    // Should be cleared exactly at timeout (overwrite with zeros, then null)
     vi.advanceTimersByTime(1)
-    expect(setNewMnemonic).toHaveBeenCalledTimes(1)
-    expect(setNewMnemonic).toHaveBeenCalledWith(null)
+    expect(setNewMnemonic).toHaveBeenCalledTimes(2)
+    expect(setNewMnemonic).toHaveBeenNthCalledWith(1, '0'.repeat('word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12'.length))
+    expect(setNewMnemonic).toHaveBeenNthCalledWith(2, null)
   })
 
   it('clears timeout on unmount (cleanup)', () => {
@@ -95,8 +96,9 @@ describe('useMnemonicAutoClear', () => {
 
     // Now advance to complete the NEW timer (300000ms from rerender)
     vi.advanceTimersByTime(100000)
-    expect(setNewMnemonic).toHaveBeenCalledTimes(1)
-    expect(setNewMnemonic).toHaveBeenCalledWith(null)
+    expect(setNewMnemonic).toHaveBeenCalledTimes(2)
+    expect(setNewMnemonic).toHaveBeenNthCalledWith(1, '0'.repeat('second mnemonic'.length))
+    expect(setNewMnemonic).toHaveBeenNthCalledWith(2, null)
   })
 
   it('does not restart timer when mnemonic changes to null', () => {
@@ -128,9 +130,10 @@ describe('useMnemonicAutoClear', () => {
     rerender({ mnemonic: 'mnemonic-3' })
     rerender({ mnemonic: 'mnemonic-4' })
 
-    // Only the last timer should be active
+    // Only the last timer should be active (overwrite with zeros, then null)
     vi.advanceTimersByTime(300000)
-    expect(setNewMnemonic).toHaveBeenCalledTimes(1)
-    expect(setNewMnemonic).toHaveBeenCalledWith(null)
+    expect(setNewMnemonic).toHaveBeenCalledTimes(2)
+    expect(setNewMnemonic).toHaveBeenNthCalledWith(1, '0'.repeat('mnemonic-4'.length))
+    expect(setNewMnemonic).toHaveBeenNthCalledWith(2, null)
   })
 })

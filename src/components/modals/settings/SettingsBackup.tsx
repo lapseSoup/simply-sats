@@ -34,15 +34,19 @@ export function SettingsBackup() {
   const [pendingBackupType, setPendingBackupType] = useState<'essential' | 'full' | null>(null)
 
   const executeBackupWithPassword = useCallback(async (password: string, type: 'essential' | 'full') => {
+    let identityWif = ''
+    let walletWif = ''
+    let ordWif = ''
+    let mnemonic: string | null = ''
     try {
       if (type === 'full') showToast('Exporting full backup (including ordinal content)...')
       const dbBackup = type === 'full' ? await exportDatabaseFull() : await exportDatabase()
       const { getWifForOperation } = await import('../../../services/wallet')
       const operationName = type === 'full' ? 'exportFullBackup' : 'exportBackup'
-      const identityWif = await getWifForOperation('identity', operationName, wallet!)
-      const walletWif = await getWifForOperation('wallet', operationName, wallet!)
-      const ordWif = await getWifForOperation('ordinals', operationName, wallet!)
-      const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
+      identityWif = await getWifForOperation('identity', operationName, wallet!)
+      walletWif = await getWifForOperation('wallet', operationName, wallet!)
+      ordWif = await getWifForOperation('ordinals', operationName, wallet!)
+      mnemonic = await tauriInvoke<string | null>('get_mnemonic')
 
       const fullBackup = {
         format: 'simply-sats-full',
@@ -75,6 +79,12 @@ export function SettingsBackup() {
     } catch (err) {
       logger.error('Backup failed', err)
       showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
+    } finally {
+      // Overwrite sensitive interim variables to shorten their in-memory lifespan
+      identityWif = '0'.repeat(identityWif.length)
+      walletWif = '0'.repeat(walletWif.length)
+      ordWif = '0'.repeat(ordWif.length)
+      mnemonic = '0'.repeat(mnemonic?.length ?? 0)
     }
   }, [wallet, showToast])
 

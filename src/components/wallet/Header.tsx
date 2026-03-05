@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { RefreshCw, Settings } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
@@ -30,26 +30,32 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
 
   // Q-111: Lazy-fetch balances only when the AccountSwitcher dropdown opens,
   // instead of eagerly fetching for ALL accounts on every activeAccountId change.
+  // B-130: Use a ref guard to prevent concurrent fetches (the old `cancelled`
+  // variable inside useCallback was dead code — the cleanup was never invoked).
+  const fetchingRef = useRef(false)
   const fetchAccountBalances = useCallback(async () => {
     if (accounts.length === 0) return
-    let cancelled = false
-    const balances: Record<number, number> = {}
-    for (const account of accounts) {
-      if (cancelled) return
-      if (account.id) {
-        try {
-          const defaultResult = await getBalanceFromDB('default', account.id)
-          const derivedResult = await getBalanceFromDB('derived', account.id)
-          const defaultBal = defaultResult.ok ? defaultResult.value : 0
-          const derivedBal = derivedResult.ok ? derivedResult.value : 0
-          balances[account.id] = defaultBal + derivedBal
-        } catch {
-          balances[account.id] = 0
+    if (fetchingRef.current) return
+    fetchingRef.current = true
+    try {
+      const balances: Record<number, number> = {}
+      for (const account of accounts) {
+        if (account.id) {
+          try {
+            const defaultResult = await getBalanceFromDB('default', account.id)
+            const derivedResult = await getBalanceFromDB('derived', account.id)
+            const defaultBal = defaultResult.ok ? defaultResult.value : 0
+            const derivedBal = derivedResult.ok ? derivedResult.value : 0
+            balances[account.id] = defaultBal + derivedBal
+          } catch {
+            balances[account.id] = 0
+          }
         }
       }
+      setAccountBalances(balances)
+    } finally {
+      fetchingRef.current = false
     }
-    if (!cancelled) setAccountBalances(balances)
-    return () => { cancelled = true }
   }, [accounts])
 
   const handleSync = useCallback(async () => {

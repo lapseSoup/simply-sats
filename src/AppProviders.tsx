@@ -62,25 +62,25 @@ export function AppProviders({ children }: AppProvidersProps) {
                                 <ErrorBoundary context="LocksProvider">
                                   <LocksProvider>
                                     <ErrorBoundary context="OrdinalSelectionProvider">
-                                    <OrdinalSelectionProvider>
-                                    <ErrorBoundary context="WalletSetupProvider">
-                                    <WalletSetupProvider>
-                                    <ErrorBoundary context="LockWorkflowProvider">
-                                    <LockWorkflowProvider>
-                                      <ErrorBoundary context="ModalProvider">
-                                        <ModalProvider>
-                                          <ErrorBoundary context="WalletProvider">
-                                            <WalletProvider>
-                                              {children}
-                                            </WalletProvider>
-                                          </ErrorBoundary>
-                                        </ModalProvider>
-                                      </ErrorBoundary>
-                                    </LockWorkflowProvider>
-                                    </ErrorBoundary>
-                                    </WalletSetupProvider>
-                                    </ErrorBoundary>
-                                    </OrdinalSelectionProvider>
+                                      <OrdinalSelectionProvider>
+                                        <ErrorBoundary context="WalletSetupProvider">
+                                          <WalletSetupProvider>
+                                            <ErrorBoundary context="LockWorkflowProvider">
+                                              <LockWorkflowProvider>
+                                                <ErrorBoundary context="ModalProvider">
+                                                  <ModalProvider>
+                                                    <ErrorBoundary context="WalletProvider">
+                                                      <WalletProvider>
+                                                        {children}
+                                                      </WalletProvider>
+                                                    </ErrorBoundary>
+                                                  </ModalProvider>
+                                                </ErrorBoundary>
+                                              </LockWorkflowProvider>
+                                            </ErrorBoundary>
+                                          </WalletSetupProvider>
+                                        </ErrorBoundary>
+                                      </OrdinalSelectionProvider>
                                     </ErrorBoundary>
                                   </LocksProvider>
                                 </ErrorBoundary>

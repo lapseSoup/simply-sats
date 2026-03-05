@@ -23,8 +23,9 @@ export interface WalletStateContextType {
   usdPrice: number
   utxos: UTXO[]
   ordinals: Ordinal[]
-  /** Snapshot of ordinal content cache. Updates when cacheVersion bumps (once per batch). */
-  contentCacheSnapshot: Map<string, OrdinalContentEntry>
+  /** Snapshot of ordinal content cache. Updates when cacheVersion bumps (once per batch).
+   *  ReadonlyMap prevents consumers from accidentally mutating the shared ref. */
+  contentCacheSnapshot: ReadonlyMap<string, OrdinalContentEntry>
   locks: LockedUTXO[]
   txHistory: TxHistoryItem[]
   basketBalances: BasketBalances

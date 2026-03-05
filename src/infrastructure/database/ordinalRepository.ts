@@ -11,6 +11,10 @@ import { dbLogger } from './dbLogger'
 import type { CachedOrdinal } from './types'
 import type { OrdinalCacheRow, OrdinalCacheStatsRow } from './row-types'
 
+/** Debounce guard — run the self-heal UPDATE at most once per minute */
+let lastSelfHealTime = 0
+const SELF_HEAL_INTERVAL_MS = 60_000
+
 /**
  * Parse content_data from the DB into a Uint8Array.
  * Tauri's sql plugin stores Array.from(Uint8Array) params as a JSON text string
@@ -75,7 +79,8 @@ export async function getCachedOrdinals(accountId?: number): Promise<CachedOrdin
   const database = getDatabase()
 
   try {
-    if (accountId !== undefined) {
+    if (accountId !== undefined && Date.now() - lastSelfHealTime > SELF_HEAL_INTERVAL_MS) {
+      lastSelfHealTime = Date.now()
       // Self-heal: if a row is marked transferred but its outpoint is still
       // unspent in this account's UTXO set, it is currently owned.
       await database.execute(

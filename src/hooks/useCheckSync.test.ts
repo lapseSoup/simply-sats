@@ -96,7 +96,6 @@ function makeOptions(overrides: Partial<Parameters<typeof useCheckSync>[0]> = {}
     fetchData: vi.fn().mockResolvedValue(undefined),
     performSync: vi.fn().mockResolvedValue(undefined),
     refreshTokens: vi.fn().mockResolvedValue(undefined),
-    consumePendingDiscovery: vi.fn().mockReturnValue(null),
     peekPendingDiscovery: vi.fn().mockReturnValue(null),
     clearPendingDiscovery: vi.fn(),
     refreshAccounts: vi.fn().mockResolvedValue(undefined),

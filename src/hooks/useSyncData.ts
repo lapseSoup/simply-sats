@@ -11,7 +11,7 @@ import {
   getAllTransactions,
   getDerivedAddresses,
   getLocks as getLocksFromDB,
-} from '../infrastructure/database'
+} from '../services/database'
 import {
   getAllCachedOrdinalOrigins,
   getBatchOrdinalContent,

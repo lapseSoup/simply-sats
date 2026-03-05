@@ -235,13 +235,24 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
   dbLogger.info('Database import complete')
 }
 
+/** Tables that may not exist in older schema versions but are safe to clear. */
+type ClearableTable =
+  | 'account_settings'
+  | 'accounts'
+  | 'derived_addresses'
+  | 'contacts'
+  | 'token_balances'
+  | 'tokens'
+  | 'connected_apps'
+  | 'certificates'
+  | 'audit_log'
+  | 'ordinal_cache'
+
 /**
  * Safely delete all rows from a table, ignoring errors if the table
  * doesn't exist in older schema versions.
- *
- * IMPORTANT: Only call with hardcoded table name literals — never with user input.
  */
-async function safeDeleteTable(db: ReturnType<typeof getDatabase>, tableName: string): Promise<void> {
+async function safeDeleteTable(db: ReturnType<typeof getDatabase>, tableName: ClearableTable): Promise<void> {
   try {
     await db.execute(`DELETE FROM ${tableName}`)
   } catch (_e) {
