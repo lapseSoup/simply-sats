@@ -764,26 +764,44 @@ describe('useSyncData', () => {
       expect(firstCall[0]).toEqual(dbOrdinals)
     })
 
-    it('B-107: always shows DB ordinals immediately even when ordinalsRef is non-empty', async () => {
+    it('does not clobber richer preloaded ordinals with smaller overlapping DB snapshot', async () => {
       const dbOrdinals = [{ origin: 'db-ord', txid: 'tx', vout: 0, satoshis: 1 }]
       mockedGetOrdinalsFromDatabase.mockResolvedValue(dbOrdinals as never)
       mockedGetOrdinals.mockResolvedValue([makeOrdinal({ origin: 'api-ord' })])
       const opts = makeOptions()
-      // ordinalsRef already has data (e.g. from previous account or cache)
-      opts.ordinalsRef.current = [makeOrdinal()]
+      // Preloaded state already has this origin plus additional ordinals.
+      opts.ordinalsRef.current = [
+        makeOrdinal({ origin: 'db-ord', txid: 'tx', vout: 0 }),
+        makeOrdinal({ origin: 'cached-ord', txid: 'tx-2', vout: 1 })
+      ]
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
         await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
-      // B-107: First call should be DB ordinals (shown immediately before API),
-      // second call should be API ordinals (final authoritative set)
+      // Should skip the smaller overlapping DB set and only apply the API set.
+      expect(opts.setOrdinalsWithRef).toHaveBeenCalledTimes(1)
+      const onlyCall = opts.setOrdinalsWithRef.mock.calls[0]!
+      expect((onlyCall[0] as Ordinal[])[0]!.origin).toBe('api-ord')
+    })
+
+    it('replaces non-overlapping preloaded ordinals with DB ordinals (account switch safety)', async () => {
+      const dbOrdinals = [{ origin: 'new-account-ord', txid: 'new-tx', vout: 0, satoshis: 1 }]
+      mockedGetOrdinalsFromDatabase.mockResolvedValue(dbOrdinals as never)
+      mockedGetOrdinals.mockResolvedValue([makeOrdinal({ origin: 'api-ord' })])
+      const opts = makeOptions()
+      // Simulate stale ordinals from a different account (no overlap with DB set).
+      opts.ordinalsRef.current = [makeOrdinal({ origin: 'old-account-ord', txid: 'old-tx', vout: 0 })]
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
+      })
+
       expect(opts.setOrdinalsWithRef).toHaveBeenCalledTimes(2)
       const firstCall = opts.setOrdinalsWithRef.mock.calls[0]!
-      expect((firstCall[0] as Ordinal[])[0]!.origin).toBe('db-ord')
-      const secondCall = opts.setOrdinalsWithRef.mock.calls[1]!
-      expect((secondCall[0] as Ordinal[])[0]!.origin).toBe('api-ord')
+      expect((firstCall[0] as Ordinal[])[0]!.origin).toBe('new-account-ord')
     })
 
     it('handles complete API failure with error message', async () => {

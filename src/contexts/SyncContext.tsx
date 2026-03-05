@@ -165,6 +165,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setTxHistory,
     setUtxos,
     setOrdinalsWithRef,
+    ordinalsRef,
     setSyncError,
     bumpCacheVersion,
     contentCacheRef,

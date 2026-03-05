@@ -34,6 +34,7 @@ interface UseSyncDataOptions {
   setTxHistory: (history: TxHistoryItem[]) => void
   setUtxos: (utxos: UTXO[]) => void
   setOrdinalsWithRef: (ordinals: Ordinal[]) => void
+  ordinalsRef: MutableRefObject<Ordinal[]>
   setSyncError: (error: string | null) => void
   bumpCacheVersion: () => void
   contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>
@@ -61,6 +62,7 @@ export function useSyncData({
   setTxHistory,
   setUtxos,
   setOrdinalsWithRef,
+  ordinalsRef,
   setSyncError,
   bumpCacheVersion,
   contentCacheRef,
@@ -369,14 +371,26 @@ export function useSyncData({
         // Guard: if account switched during async DB call, discard results
         if (checkCancelled()) return
 
-        // B-107: Always display DB ordinals as the initial set before slow API calls.
-        // Previously guarded by `ordinalsRef.current.length === 0` to avoid overwriting
-        // optimistic state (e.g. after a transfer), but that guard also blocked ordinals
-        // from appearing on startup/switch when fetchDataFromDB had already populated
-        // state from cache. The API results at line ~451 will replace these regardless,
-        // so any brief re-flash of a transferred ordinal is acceptable vs. showing nothing.
+        // Avoid clobbering a richer preloaded ordinal set (e.g. from fetchDataFromDB)
+        // with a smaller DB fallback snapshot while API calls are still in flight.
+        // We still replace when the current set is empty, when DB has >= items, or
+        // when there is no origin overlap (likely a different account's stale state).
         if (dbOrdinals.length > 0) {
-          setOrdinalsWithRef(dbOrdinals)
+          const currentOrdinals = ordinalsRef.current
+          if (currentOrdinals.length === 0 || dbOrdinals.length >= currentOrdinals.length) {
+            setOrdinalsWithRef(dbOrdinals)
+          } else {
+            const currentOrigins = new Set(currentOrdinals.map(ord => ord.origin))
+            const hasOverlap = dbOrdinals.some(ord => currentOrigins.has(ord.origin))
+            if (!hasOverlap) {
+              setOrdinalsWithRef(dbOrdinals)
+            } else {
+              syncLogger.debug('Retaining richer preloaded ordinals until API refresh completes', {
+                preloadedCount: currentOrdinals.length,
+                dbCount: dbOrdinals.length
+              })
+            }
+          }
         }
 
         // Load cached content from DB for instant previews.
@@ -509,7 +523,7 @@ export function useSyncData({
       }
       syncLogger.error('Failed to fetch data', error)
     }
-  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, bumpCacheVersion, contentCacheRef])
+  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, ordinalsRef, setSyncError, bumpCacheVersion, contentCacheRef])
 
   return { fetchDataFromDB, fetchData }
 }

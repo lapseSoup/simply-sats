@@ -19,7 +19,12 @@ vi.mock('../../services/logger', () => ({
 }))
 
 import { getDatabase } from './connection'
-import { getBatchOrdinalContent } from './ordinalRepository'
+import {
+  getBatchOrdinalContent,
+  getCachedOrdinals,
+  upsertOrdinalCache,
+  batchUpsertOrdinalCache
+} from './ordinalRepository'
 
 // ---------- Mock DB ----------
 
@@ -285,5 +290,79 @@ describe('getBatchOrdinalContent', () => {
 
     expect(result.size).toBe(0)
     expect(mockDb.select).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ordinal ownership healing and upserts', () => {
+  it('heals transferred rows for still-unspent outpoints when accountId is provided', async () => {
+    mockDb.select.mockResolvedValueOnce([
+      {
+        id: 1,
+        origin: 'txid1_0',
+        txid: 'txid1',
+        vout: 0,
+        satoshis: 1,
+        content_type: 'image/png',
+        content_hash: 'hash1',
+        account_id: 7,
+        fetched_at: 123456,
+        block_height: 900000
+      }
+    ])
+
+    const rows = await getCachedOrdinals(7)
+
+    expect(mockDb.execute).toHaveBeenCalledTimes(1)
+    const healSql = mockDb.execute.mock.calls[0]![0] as string
+    expect(healSql).toContain('UPDATE ordinal_cache')
+    expect(healSql).toContain('SET transferred = 0')
+    expect(mockDb.execute.mock.calls[0]![1]).toEqual([7])
+
+    expect(mockDb.select).toHaveBeenCalledTimes(1)
+    const selectSql = mockDb.select.mock.calls[0]![0] as string
+    expect(selectSql).toContain('EXISTS')
+    expect(selectSql).toContain('FROM utxos u')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.origin).toBe('txid1_0')
+  })
+
+  it('upsertOrdinalCache unmarks transferred rows on conflict', async () => {
+    await upsertOrdinalCache({
+      origin: 'txid2_1',
+      txid: 'txid2',
+      vout: 1,
+      satoshis: 1,
+      contentType: 'image/png',
+      contentHash: 'hash2',
+      accountId: 1,
+      fetchedAt: 999999,
+      blockHeight: 800000
+    })
+
+    expect(mockDb.execute).toHaveBeenCalledTimes(1)
+    const sql = mockDb.execute.mock.calls[0]![0] as string
+    expect(sql).toContain('ON CONFLICT(origin) DO UPDATE SET')
+    expect(sql).toContain('transferred = 0')
+  })
+
+  it('batchUpsertOrdinalCache unmarks transferred rows on conflict', async () => {
+    await batchUpsertOrdinalCache([
+      {
+        origin: 'txid3_0',
+        txid: 'txid3',
+        vout: 0,
+        satoshis: 1,
+        contentType: undefined,
+        contentHash: undefined,
+        accountId: 1,
+        fetchedAt: 111111,
+        blockHeight: 700000
+      }
+    ])
+
+    expect(mockDb.execute).toHaveBeenCalledTimes(1)
+    const sql = mockDb.execute.mock.calls[0]![0] as string
+    expect(sql).toContain('ON CONFLICT(origin) DO UPDATE SET')
+    expect(sql).toContain('transferred = 0')
   })
 })

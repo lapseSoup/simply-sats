@@ -75,8 +75,42 @@ export async function getCachedOrdinals(accountId?: number): Promise<CachedOrdin
   const database = getDatabase()
 
   try {
+    if (accountId !== undefined) {
+      // Self-heal: if a row is marked transferred but its outpoint is still
+      // unspent in this account's UTXO set, it is currently owned.
+      await database.execute(
+        `UPDATE ordinal_cache
+         SET transferred = 0
+         WHERE account_id = $1
+           AND transferred = 1
+           AND EXISTS (
+             SELECT 1 FROM utxos u
+             WHERE u.account_id = $1
+               AND u.txid = ordinal_cache.txid
+               AND u.vout = ordinal_cache.vout
+               AND u.spendable = 1
+               AND u.spent_at IS NULL
+           )`,
+        [accountId]
+      )
+    }
+
     const query = accountId !== undefined
-      ? 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height FROM ordinal_cache WHERE account_id = $1 AND transferred = 0 ORDER BY fetched_at DESC'
+      ? `SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height
+         FROM ordinal_cache
+         WHERE account_id = $1
+           AND (
+             transferred = 0
+             OR EXISTS (
+               SELECT 1 FROM utxos u
+               WHERE u.account_id = $1
+                 AND u.txid = ordinal_cache.txid
+                 AND u.vout = ordinal_cache.vout
+                 AND u.spendable = 1
+                 AND u.spent_at IS NULL
+             )
+           )
+         ORDER BY fetched_at DESC`
       : 'SELECT id, origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height FROM ordinal_cache WHERE transferred = 0 ORDER BY fetched_at DESC'
     const params = accountId !== undefined ? [accountId] : []
 
@@ -243,6 +277,7 @@ export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> 
          txid = excluded.txid,
          vout = excluded.vout,
          satoshis = excluded.satoshis,
+         transferred = 0,
          content_type = COALESCE(excluded.content_type, ordinal_cache.content_type),
          content_hash = COALESCE(excluded.content_hash, ordinal_cache.content_hash),
          account_id = COALESCE(excluded.account_id, ordinal_cache.account_id),
@@ -314,6 +349,7 @@ export async function batchUpsertOrdinalCache(ordinals: CachedOrdinal[]): Promis
            txid = excluded.txid,
            vout = excluded.vout,
            satoshis = excluded.satoshis,
+           transferred = 0,
            content_type = COALESCE(excluded.content_type, ordinal_cache.content_type),
            content_hash = COALESCE(excluded.content_hash, ordinal_cache.content_hash),
            account_id = COALESCE(excluded.account_id, ordinal_cache.account_id),
