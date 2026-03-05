@@ -12,7 +12,7 @@
 import { useCallback, useRef, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
 import type { WalletKeys, LockedUTXO, PublicWalletKeys } from '../services/wallet'
 import type { Account } from '../services/accounts'
-import { getActiveAccount, switchAccount as switchAccountDb } from '../services/accounts'
+import { getActiveAccount, getAccountById, switchAccount as switchAccountDb } from '../services/accounts'
 import { discoverAccounts } from '../services/accountDiscovery'
 import {
   cancelSync
@@ -42,8 +42,8 @@ export function switchJustCompleted(): boolean { return (Date.now() - lastSwitch
 interface UseAccountSwitchingOptions {
   fetchVersionRef: MutableRefObject<number>
   accountsSwitchAccount: (accountId: number, password: string | null) => Promise<WalletKeys | null>
-  accountsCreateNewAccount: (name: string, password: string | null) => Promise<WalletKeys | null>
-  accountsImportAccount: (name: string, mnemonic: string, password: string | null) => Promise<WalletKeys | null>
+  accountsCreateNewAccount: (name: string, password: string | null) => Promise<{ keys: WalletKeys; accountId: number } | null>
+  accountsImportAccount: (name: string, mnemonic: string, password: string | null) => Promise<{ keys: WalletKeys; accountId: number } | null>
   accountsDeleteAccount: (accountId: number) => Promise<boolean>
   getKeysForAccount: (account: Account, password: string | null) => Promise<WalletKeys | null>
   setWallet: (wallet: WalletKeys | null) => void
@@ -314,53 +314,180 @@ export function useAccountSwitching({
   }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, resetSync, resetKnownUnlockedLocks, storeKeysInRust, fetchVersionRef, setIsLocked, fetchDataFromDB])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
-    const currentPassword = getSessionPassword()
-    if (currentPassword === null) {
-      walletLogger.error('Cannot create account - no session password available')
+    if (switchingRef.current) {
+      walletLogger.warn('Account operation already in progress — create blocked')
       return false
     }
-    const accountPassword = currentPassword === NO_PASSWORD ? null : currentPassword
-    if (accounts.length >= 10) {
-      walletLogger.warn('Account creation blocked - maximum 10 accounts reached')
-      return false
-    }
-    const keys = await accountsCreateNewAccount(name, accountPassword)
-    if (keys) {
-      // Store mnemonic in Rust key store before clearing from React state
+
+    switchingRef.current = true
+    switchInProgress = true
+    try {
+      const currentPassword = getSessionPassword()
+      if (currentPassword === null) {
+        walletLogger.error('Cannot create account - no session password available')
+        return false
+      }
+      const accountPassword = currentPassword === NO_PASSWORD ? null : currentPassword
+      if (accounts.length >= 10) {
+        walletLogger.warn('Account creation blocked - maximum 10 accounts reached')
+        return false
+      }
+
+      // Invalidate stale async callbacks and stop in-flight sync before the account changes.
+      cancelSync()
+      fetchVersionRef.current += 1
+      resetKnownUnlockedLocks()
+
+      const created = await accountsCreateNewAccount(name, accountPassword)
+      if (!created) return false
+
+      const { keys, accountId } = created
       const accountIndex = keys.accountIndex ?? accounts.length
       if (keys.accountIndex == null) {
         walletLogger.warn('keys.accountIndex was null, using fallback accounts.length', { fallback: accounts.length })
       }
       await storeKeysInRust(keys.mnemonic, accountIndex)
-      // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
+
+      // Ensure we have the full account row for state updates and telemetry.
+      const createdAccount = await getAccountById(accountId)
+      if (!createdAccount || !createdAccount.id) {
+        walletLogger.error('Created account row not found after create', { accountId })
+        return false
+      }
+
+      // CRITICAL ORDER: set wallet first, then activeAccountId, to prevent one-behind sync writes.
       setWallet({ ...keys, mnemonic: '' })
       setIsLocked(false)
+
+      // Preload DB-scoped data before exposing the new active account in UI.
+      const preloadVersion = fetchVersionRef.current
+      let preloadSucceeded = false
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await fetchDataFromDB(
+            keys,
+            createdAccount.id,
+            (loadedLocks) => {
+              if (fetchVersionRef.current !== preloadVersion) return
+              setLocks(loadedLocks)
+            },
+            () => fetchVersionRef.current !== preloadVersion
+          )
+          preloadSucceeded = true
+          break
+        } catch (e) {
+          walletLogger.warn('Create-account DB preload failed', {
+            accountId: createdAccount.id,
+            attempt,
+            error: String(e)
+          })
+          if (attempt < 2) {
+            await new Promise(resolve => setTimeout(resolve, 75))
+          }
+        }
+      }
+
+      if (!preloadSucceeded) {
+        resetSync()
+        setLocks([])
+      }
+
+      switchInProgress = false
+      lastSwitchCompletedAt = Date.now()
+      setActiveAccountState(createdAccount, createdAccount.id)
+      refreshAccounts().catch(e => walletLogger.warn('Background account refresh failed after create', e))
+      walletLogger.info('Created account and switched successfully', { accountId: createdAccount.id })
       return true
+    } catch (e) {
+      walletLogger.error('Error creating account', e)
+      return false
+    } finally {
+      switchingRef.current = false
+      switchInProgress = false
     }
-    return false
-  }, [accounts, accountsCreateNewAccount, setWallet, setIsLocked, storeKeysInRust])
+  }, [accounts, accountsCreateNewAccount, fetchDataFromDB, fetchVersionRef, refreshAccounts, resetKnownUnlockedLocks, resetSync, setActiveAccountState, setIsLocked, setLocks, setWallet, storeKeysInRust])
 
   const importAccount = useCallback(async (name: string, mnemonic: string): Promise<boolean> => {
-    const currentPassword = getSessionPassword()
-    if (currentPassword === null) {
-      walletLogger.error('Cannot import account - no session password available')
+    if (switchingRef.current) {
+      walletLogger.warn('Account operation already in progress — import blocked')
       return false
     }
-    const accountPassword = currentPassword === NO_PASSWORD ? null : currentPassword
-    const keys = await accountsImportAccount(name, mnemonic, accountPassword)
-    if (keys) {
-      // Store mnemonic in Rust key store before clearing from React state
+
+    switchingRef.current = true
+    switchInProgress = true
+    try {
+      const currentPassword = getSessionPassword()
+      if (currentPassword === null) {
+        walletLogger.error('Cannot import account - no session password available')
+        return false
+      }
+      const accountPassword = currentPassword === NO_PASSWORD ? null : currentPassword
+
+      // Invalidate stale async callbacks and stop in-flight sync before the account changes.
+      cancelSync()
+      fetchVersionRef.current += 1
+      resetKnownUnlockedLocks()
+
+      const imported = await accountsImportAccount(name, mnemonic, accountPassword)
+      if (!imported) return false
+
+      const { keys, accountId } = imported
       const accountIndex = keys.accountIndex ?? accounts.length
       if (keys.accountIndex == null) {
         walletLogger.warn('keys.accountIndex was null, using fallback accounts.length', { fallback: accounts.length })
       }
       await storeKeysInRust(keys.mnemonic, accountIndex)
-      // Set wallet WITHOUT mnemonic in React state (mnemonic lives in Rust key store)
+
+      const importedAccount = await getAccountById(accountId)
+      if (!importedAccount || !importedAccount.id) {
+        walletLogger.error('Imported account row not found after import', { accountId })
+        return false
+      }
+
+      // CRITICAL ORDER: set wallet first, then activeAccountId, to prevent one-behind sync writes.
       setWallet({ ...keys, mnemonic: '' })
       setIsLocked(false)
+
+      // Preload DB-scoped data before exposing the new active account in UI.
+      const preloadVersion = fetchVersionRef.current
+      let preloadSucceeded = false
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await fetchDataFromDB(
+            keys,
+            importedAccount.id,
+            (loadedLocks) => {
+              if (fetchVersionRef.current !== preloadVersion) return
+              setLocks(loadedLocks)
+            },
+            () => fetchVersionRef.current !== preloadVersion
+          )
+          preloadSucceeded = true
+          break
+        } catch (e) {
+          walletLogger.warn('Import-account DB preload failed', {
+            accountId: importedAccount.id,
+            attempt,
+            error: String(e)
+          })
+          if (attempt < 2) {
+            await new Promise(resolve => setTimeout(resolve, 75))
+          }
+        }
+      }
+
+      if (!preloadSucceeded) {
+        resetSync()
+        setLocks([])
+      }
+
+      switchInProgress = false
+      lastSwitchCompletedAt = Date.now()
+      setActiveAccountState(importedAccount, importedAccount.id)
+      refreshAccounts().catch(e => walletLogger.warn('Background account refresh failed after import', e))
+
       // Discover derivative accounts for this mnemonic (non-blocking)
-      const active = await getActiveAccount()
-      discoverAccounts(mnemonic, accountPassword, active?.id)
+      discoverAccounts(mnemonic, accountPassword, importedAccount.id)
         .then(async (found) => {
           if (found > 0) {
             await refreshAccounts()
@@ -371,9 +498,14 @@ export function useAccountSwitching({
           walletLogger.error('Account discovery failed', e)
         })
       return true
+    } catch (e) {
+      walletLogger.error('Error importing account', e)
+      return false
+    } finally {
+      switchingRef.current = false
+      switchInProgress = false
     }
-    return false
-  }, [accounts, accountsImportAccount, setWallet, setIsLocked, refreshAccounts, storeKeysInRust])
+  }, [accounts, accountsImportAccount, fetchDataFromDB, fetchVersionRef, refreshAccounts, resetKnownUnlockedLocks, resetSync, setActiveAccountState, setIsLocked, setLocks, setWallet, storeKeysInRust])
 
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {
     const success = await accountsDeleteAccount(accountId)

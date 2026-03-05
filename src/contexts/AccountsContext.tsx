@@ -22,8 +22,8 @@ interface AccountsContextType {
 
   // Account actions
   switchAccount: (accountId: number, password: string | null) => Promise<WalletKeys | null>
-  createNewAccount: (name: string, password: string | null) => Promise<WalletKeys | null>
-  importAccount: (name: string, mnemonic: string, password: string | null) => Promise<WalletKeys | null>
+  createNewAccount: (name: string, password: string | null) => Promise<{ keys: WalletKeys; accountId: number } | null>
+  importAccount: (name: string, mnemonic: string, password: string | null) => Promise<{ keys: WalletKeys; accountId: number } | null>
   deleteAccount: (accountId: number) => Promise<boolean>
   renameAccount: (accountId: number, name: string) => Promise<boolean>
   refreshAccounts: () => Promise<void>
@@ -124,7 +124,7 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
   }, [accounts, refreshAccounts])
 
   // Create new account - derives from the same mnemonic with new account index
-  const createNewAccount = useCallback(async (name: string, password: string | null): Promise<WalletKeys | null> => {
+  const createNewAccount = useCallback(async (name: string, password: string | null): Promise<{ keys: WalletKeys; accountId: number } | null> => {
     try {
       // Get all accounts sorted by ID to find the original (first created) account
       const allAccounts = await getAllAccounts()
@@ -179,17 +179,16 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
         accountLogger.error('Failed to create account in database', createResult.error)
         return null
       }
-      await refreshAccounts()
       accountLogger.info(`Created derived account: ${name} at index ${newAccountIndex}`)
-      return keys
+      return { keys, accountId: createResult.value }
     } catch (e) {
       accountLogger.error('Failed to create account', e)
       return null
     }
-  }, [refreshAccounts])
+  }, [])
 
   // Import account from external mnemonic
-  const importAccount = useCallback(async (name: string, mnemonic: string, password: string | null): Promise<WalletKeys | null> => {
+  const importAccount = useCallback(async (name: string, mnemonic: string, password: string | null): Promise<{ keys: WalletKeys; accountId: number } | null> => {
     try {
       const restoreResult = await restoreWallet(mnemonic)
       if (!restoreResult.ok) {
@@ -204,14 +203,13 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
         return null
       }
 
-      await refreshAccounts()
       accountLogger.info(`Imported account: ${name}`)
-      return keys
+      return { keys, accountId: importResult.value }
     } catch (e) {
       accountLogger.error('Failed to import account', e)
       return null
     }
-  }, [refreshAccounts])
+  }, [])
 
   // Delete account
   const deleteAccount = useCallback(async (accountId: number): Promise<boolean> => {

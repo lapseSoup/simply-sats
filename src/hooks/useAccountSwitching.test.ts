@@ -11,6 +11,7 @@ vi.mock('../utils/tauri', () => ({
 
 vi.mock('../services/accounts', () => ({
   getActiveAccount: vi.fn(),
+  getAccountById: vi.fn(),
   switchAccount: vi.fn(),
 }))
 
@@ -47,7 +48,7 @@ import {
   getLastSwitchDiag,
 } from './useAccountSwitching'
 import { tauriInvoke } from '../utils/tauri'
-import { switchAccount as switchAccountDb, getActiveAccount } from '../services/accounts'
+import { switchAccount as switchAccountDb, getActiveAccount, getAccountById } from '../services/accounts'
 import { discoverAccounts } from '../services/accountDiscovery'
 import { cancelSync } from '../services/sync'
 import { getSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
@@ -57,6 +58,7 @@ import type { WalletKeys, PublicWalletKeys } from '../services/wallet'
 const mockedTauriInvoke = vi.mocked(tauriInvoke)
 const mockedSwitchAccountDb = vi.mocked(switchAccountDb)
 const mockedGetActiveAccount = vi.mocked(getActiveAccount)
+const mockedGetAccountById = vi.mocked(getAccountById)
 const mockedGetSessionPassword = vi.mocked(getSessionPassword)
 const mockedClearSessionPassword = vi.mocked(clearSessionPassword)
 const mockedCancelSync = vi.mocked(cancelSync)
@@ -139,6 +141,7 @@ describe('useAccountSwitching', () => {
     // Default: tauriInvoke succeeds
     mockedTauriInvoke.mockResolvedValue(makePublicWalletKeys())
     mockedSwitchAccountDb.mockResolvedValue(true)
+    mockedGetAccountById.mockImplementation(async (id: number) => makeAccount({ id, name: `Account ${id}` }))
     mockedGetSessionPassword.mockReturnValue('testpassword')
   })
 
@@ -488,8 +491,9 @@ describe('useAccountSwitching', () => {
   describe('createNewAccount', () => {
     it('creates account successfully with session password', async () => {
       const newKeys = makeWalletKeys({ accountIndex: 2 })
+      mockedGetAccountById.mockResolvedValue(makeAccount({ id: 3, name: 'Account 3', derivationIndex: 2 }))
       const opts = makeOptions({
-        accountsCreateNewAccount: vi.fn().mockResolvedValue(newKeys),
+        accountsCreateNewAccount: vi.fn().mockResolvedValue({ keys: newKeys, accountId: 3 }),
       })
       const { result } = renderHook(() => useAccountSwitching(opts))
 
@@ -501,6 +505,13 @@ describe('useAccountSwitching', () => {
       expect(success).toBe(true)
       expect(opts.accountsCreateNewAccount).toHaveBeenCalledWith('New Account', 'testpassword')
       expect(opts.storeKeysInRust).toHaveBeenCalledWith(newKeys.mnemonic, 2)
+      expect(opts.fetchDataFromDB).toHaveBeenCalledWith(
+        newKeys,
+        3,
+        expect.any(Function),
+        expect.any(Function)
+      )
+      expect(opts.setActiveAccountState).toHaveBeenCalledWith(expect.objectContaining({ id: 3 }), 3)
       // Wallet should have mnemonic cleared
       const walletArg = vi.mocked(opts.setWallet).mock.calls[0]![0] as WalletKeys
       expect(walletArg.mnemonic).toBe('')
@@ -540,7 +551,7 @@ describe('useAccountSwitching', () => {
       mockedGetSessionPassword.mockReturnValue('') // NO_PASSWORD is ''
       const newKeys = makeWalletKeys()
       const opts = makeOptions({
-        accountsCreateNewAccount: vi.fn().mockResolvedValue(newKeys),
+        accountsCreateNewAccount: vi.fn().mockResolvedValue({ keys: newKeys, accountId: 3 }),
       })
       const { result } = renderHook(() => useAccountSwitching(opts))
 
@@ -570,10 +581,10 @@ describe('useAccountSwitching', () => {
   describe('importAccount', () => {
     it('imports account and triggers discovery', async () => {
       const importedKeys = makeWalletKeys({ accountIndex: 2 })
-      mockedGetActiveAccount.mockResolvedValue(makeAccount({ id: 3 }))
+      mockedGetAccountById.mockResolvedValue(makeAccount({ id: 3, name: 'Imported Account', derivationIndex: 2 }))
       mockedDiscoverAccounts.mockResolvedValue(2)
       const opts = makeOptions({
-        accountsImportAccount: vi.fn().mockResolvedValue(importedKeys),
+        accountsImportAccount: vi.fn().mockResolvedValue({ keys: importedKeys, accountId: 3 }),
       })
       const { result } = renderHook(() => useAccountSwitching(opts))
 
@@ -586,6 +597,13 @@ describe('useAccountSwitching', () => {
       expect(opts.accountsImportAccount).toHaveBeenCalledWith('Imported', 'word1 word2 word3', 'testpassword')
       expect(opts.storeKeysInRust).toHaveBeenCalled()
       expect(opts.setIsLocked).toHaveBeenCalledWith(false)
+      expect(opts.fetchDataFromDB).toHaveBeenCalledWith(
+        importedKeys,
+        3,
+        expect.any(Function),
+        expect.any(Function)
+      )
+      expect(mockedDiscoverAccounts).toHaveBeenCalledWith('word1 word2 word3', 'testpassword', 3)
     })
 
     it('returns false when no session password', async () => {
