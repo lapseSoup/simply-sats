@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS utxo_tags (
     UNIQUE(utxo_id, tag)
 );
 
--- Transactions (001 + 002 amount + 003 account_id + 009 UNIQUE(txid, account_id))
+-- Transactions (001 + 002 amount + 003 account_id + 009 UNIQUE(txid, account_id) + 028 beef_data)
 CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     txid TEXT NOT NULL,
@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     status TEXT NOT NULL DEFAULT 'pending',
     amount INTEGER,
     account_id INTEGER NOT NULL DEFAULT 1,
+    beef_data BLOB,
     UNIQUE(txid, account_id)
 );
 
