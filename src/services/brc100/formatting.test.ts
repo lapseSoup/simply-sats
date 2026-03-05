@@ -96,6 +96,22 @@ vi.mock('../logger', () => ({
   },
 }))
 
+// Mock BeefService and BRC config — use vi.hoisted so variables are available inside vi.mock factories
+const { mockWrapInBeef, mockBRC } = vi.hoisted(() => ({
+  mockWrapInBeef: vi.fn(() => new Uint8Array([0xBE, 0xEF, 0x01, 0x02])),
+  mockBRC: { BEEF_ENABLED: true },
+}))
+
+vi.mock('../brc/beef', () => ({
+  BeefService: class {
+    wrapInBeef = mockWrapInBeef
+  },
+}))
+
+vi.mock('../../config', () => ({
+  BRC: mockBRC,
+}))
+
 // Now import the function under test
 import { buildAndBroadcastAction } from './formatting'
 import type { WalletKeys } from '../wallet/types'
@@ -137,6 +153,9 @@ function makeActionRequest(overrides: Partial<CreateActionRequest> = {}): Create
 describe('buildAndBroadcastAction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Reset BEEF config to enabled (default)
+    mockBRC.BEEF_ENABLED = true
+    mockWrapInBeef.mockReturnValue(new Uint8Array([0xBE, 0xEF, 0x01, 0x02]))
     // Default: invoke returns a built tx
     mockInvoke.mockResolvedValue({
       rawTx: '01000000' + '00'.repeat(50),
@@ -227,5 +246,57 @@ describe('buildAndBroadcastAction', () => {
       vout: 0,
       satoshis: 50000,
     }))
+  })
+
+  it('includes BEEF data in response when BRC.BEEF_ENABLED is true', async () => {
+    mockBRC.BEEF_ENABLED = true
+    mockWrapInBeef.mockReturnValue(new Uint8Array([0xBE, 0xEF, 0x01, 0x02]))
+
+    const request = makeActionRequest({
+      outputs: [{ lockingScript: 'cafe', satoshis: 100 }],
+    })
+
+    const result = await buildAndBroadcastAction(mockKeys, request)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.beef).toBeDefined()
+      // Verify it's valid base64 of our mock bytes
+      expect(result.value.beef).toBe(btoa(String.fromCharCode(0xBE, 0xEF, 0x01, 0x02)))
+    }
+
+    expect(mockWrapInBeef).toHaveBeenCalled()
+  })
+
+  it('omits BEEF data when BRC.BEEF_ENABLED is false', async () => {
+    mockBRC.BEEF_ENABLED = false
+
+    const request = makeActionRequest({
+      outputs: [{ lockingScript: 'cafe', satoshis: 100 }],
+    })
+
+    const result = await buildAndBroadcastAction(mockKeys, request)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.beef).toBeUndefined()
+    }
+
+    expect(mockWrapInBeef).not.toHaveBeenCalled()
+  })
+
+  it('succeeds without BEEF when wrapInBeef throws', async () => {
+    mockBRC.BEEF_ENABLED = true
+    mockWrapInBeef.mockImplementation(() => { throw new Error('BEEF encoding failed') })
+
+    const request = makeActionRequest({
+      outputs: [{ lockingScript: 'cafe', satoshis: 100 }],
+    })
+
+    const result = await buildAndBroadcastAction(mockKeys, request)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      // BEEF wrapping is best-effort — action still succeeds
+      expect(result.value.txid).toBeDefined()
+      expect(result.value.beef).toBeUndefined()
+    }
   })
 })

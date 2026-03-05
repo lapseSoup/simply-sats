@@ -30,13 +30,15 @@ import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
 import { acquireSyncLock } from '../cancellation'
 import { getActiveAccount } from '../accounts'
+import { BeefService } from '../brc/beef'
+import { BRC } from '../../config'
 
 // Build and broadcast a transaction from createAction request
 // Transaction building requires the Tauri runtime (Rust backend).
 export async function buildAndBroadcastAction(
   keys: WalletKeys,
   actionRequest: CreateActionRequest
-): Promise<Result<{ txid: string }, string>> {
+): Promise<Result<{ txid: string; beef?: string }, string>> {
   if (!isTauri()) {
     return err('BRC-100 action transaction building requires Tauri runtime')
   }
@@ -273,7 +275,21 @@ export async function buildAndBroadcastAction(
     // Transaction is already broadcast, continue
   }
 
-  return ok({ txid })
+  // BRC-62: Wrap transaction in BEEF format for SPV-compliant response
+  let beef: string | undefined
+  if (BRC.BEEF_ENABLED) {
+    try {
+      const beefService = new BeefService()
+      const beefBytes = beefService.wrapInBeef(rawTx)
+      // Convert to base64 for JSON transport
+      beef = btoa(String.fromCharCode(...beefBytes))
+    } catch (e) {
+      // BEEF wrapping is best-effort — don't fail the action
+      brc100Logger.warn('BEEF wrapping failed:', e)
+    }
+  }
+
+  return ok({ txid, beef })
   } catch (e) {
     return err(e instanceof Error ? e.message : String(e))
   } finally {
