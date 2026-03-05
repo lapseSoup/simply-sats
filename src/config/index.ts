@@ -203,6 +203,27 @@ export const BRC100 = {
 } as const
 
 // ============================================
+// BRC Protocol Configuration
+// ============================================
+
+export const BRC = {
+  /** BRC-62: Enable BEEF transaction format */
+  BEEF_ENABLED: true,
+  /** BRC-103: Auth session time-to-live */
+  AUTH_SESSION_TTL_SECONDS: 3600,
+  /** BRC-85: PIKE TOTP verification window */
+  PIKE_TOTP_WINDOW: 30,
+  /** BRC-105: Auto-approve micropayments below this threshold */
+  MICROPAYMENT_AUTO_PAY_THRESHOLD: 100,
+  /** BRC-105: Always require user confirmation for micropayments */
+  MICROPAYMENT_REQUIRE_CONFIRMATION: true,
+  /** BRC-109: PCW-1 note denominations in satoshis */
+  PCW_NOTE_DENOMINATIONS: [100, 1000, 10000, 100000] as const,
+  /** BRC-109: Max concurrent PCW settlements */
+  PCW_MAX_CONCURRENT_SETTLEMENTS: 5,
+} as const
+
+// ============================================
 // Lock Configuration
 // ============================================
 
@@ -245,6 +266,27 @@ export const FEATURES = {
 
   /** Enable auto UTXO consolidation prompting */
   AUTO_CONSOLIDATION: true,
+
+  /** BRC-103/104 mutual authentication */
+  BRC_AUTH: true,
+
+  /** BRC-52 identity certificates */
+  BRC_CERTIFICATES: true,
+
+  /** BRC-29/105 authenticated payments */
+  BRC_PAYMENTS: true,
+
+  /** BRC-85 key exchange */
+  BRC_PIKE: true,
+
+  /** BRC-77/78 signed/encrypted messages */
+  BRC_MESSAGES: true,
+
+  /** BRC-69/72 key linkage (advanced, off by default) */
+  BRC_KEY_LINKAGE: false,
+
+  /** BRC-109 peer cash (experimental, off by default) */
+  BRC_PCW: false,
 } as const
 
 // Type exports for use in other modules
@@ -255,6 +297,7 @@ export type WalletConfig = typeof WALLET
 export type UIConfig = typeof UI
 export type StorageKeys = typeof STORAGE_KEYS
 export type ApiConfig = typeof API
+export type BrcConfig = typeof BRC
 export type FeatureFlags = typeof FEATURES
 
 // Known tokens — pre-registered for display even before user holds them
