@@ -255,7 +255,7 @@ describe('CertificateService', () => {
       expect(filtered).toHaveLength(1)
 
       // Verify it's the identity cert by checking it has a 'name' field
-      expect(filtered[0].fields).toHaveProperty('name')
+      expect(filtered[0]!.fields).toHaveProperty('name')
     })
 
     it('filters by certifier', async () => {

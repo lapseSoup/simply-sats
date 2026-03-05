@@ -259,7 +259,7 @@ describe('BasketService', () => {
 
       await service.listActions({ offset: 5 })
 
-      const query = mockDbSelect.mock.calls[0][0] as string
+      const query = mockDbSelect.mock.calls[0]![0] as string
       // Offset without limit should not appear
       expect(query).not.toContain('OFFSET')
     })
@@ -273,7 +273,7 @@ describe('BasketService', () => {
         limit: 50,
       })
 
-      const query = mockDbSelect.mock.calls[0][0] as string
+      const query = mockDbSelect.mock.calls[0]![0] as string
       expect(query).toContain('created_at >= ?')
       expect(query).toContain('created_at <= ?')
       expect(query).toContain('LIMIT ?')

@@ -125,7 +125,7 @@ describe('AuthService', () => {
       await auth.authenticatedFetch(TEST_URL)
 
       expect(globalThis.fetch).toHaveBeenCalledOnce()
-      const [, opts] = vi.mocked(globalThis.fetch).mock.calls[0]
+      const [, opts] = vi.mocked(globalThis.fetch).mock.calls[0]!
       const headers = opts?.headers as Headers
       expect(headers.get('x-bsv-auth-identity-key')).toBe(
         MOCK_IDENTITY_PUB_KEY,
@@ -135,7 +135,7 @@ describe('AuthService', () => {
     it('includes x-bsv-auth-nonce header', async () => {
       await auth.authenticatedFetch(TEST_URL)
 
-      const [, opts] = vi.mocked(globalThis.fetch).mock.calls[0]
+      const [, opts] = vi.mocked(globalThis.fetch).mock.calls[0]!
       const headers = opts?.headers as Headers
       expect(headers.get('x-bsv-auth-nonce')).toBe(
         'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
@@ -145,7 +145,7 @@ describe('AuthService', () => {
     it('includes x-bsv-auth-signature header from wallet signing', async () => {
       await auth.authenticatedFetch(TEST_URL)
 
-      const [, opts] = vi.mocked(globalThis.fetch).mock.calls[0]
+      const [, opts] = vi.mocked(globalThis.fetch).mock.calls[0]!
       const headers = opts?.headers as Headers
       const sig = headers.get('x-bsv-auth-signature')
       expect(sig).toBe(MOCK_SIGNATURE_HEX)
@@ -157,7 +157,7 @@ describe('AuthService', () => {
         body: '{"hello":"world"}',
       })
 
-      const [url, opts] = vi.mocked(globalThis.fetch).mock.calls[0]
+      const [url, opts] = vi.mocked(globalThis.fetch).mock.calls[0]!
       expect(url).toBe(TEST_URL)
       expect(opts?.method).toBe('POST')
       expect(opts?.body).toBe('{"hello":"world"}')
@@ -168,7 +168,7 @@ describe('AuthService', () => {
         headers: { 'content-type': 'application/json' },
       })
 
-      const [, opts] = vi.mocked(globalThis.fetch).mock.calls[0]
+      const [, opts] = vi.mocked(globalThis.fetch).mock.calls[0]!
       const headers = opts?.headers as Headers
       expect(headers.get('content-type')).toBe('application/json')
       // Auth headers should also be present

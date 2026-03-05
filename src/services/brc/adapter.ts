@@ -409,7 +409,7 @@ export class TauriProtoWallet extends ProtoWallet {
     }
     let diff = 0
     for (let i = 0; i < computedHmac.length; i++) {
-      diff |= computedHmac[i] ^ args.hmac[i]
+      diff |= computedHmac[i]! ^ args.hmac[i]!
     }
     if (diff !== 0) {
       const e = new Error('HMAC is not valid') as Error & { code: string }

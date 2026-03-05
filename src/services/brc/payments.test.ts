@@ -315,7 +315,7 @@ describe('PaymentService', () => {
       })
 
       expect(headers).toHaveProperty('x-bsv-payment')
-      const parsed = JSON.parse(headers['x-bsv-payment'])
+      const parsed = JSON.parse(headers['x-bsv-payment']!)
       expect(parsed).toEqual({
         derivationPrefix: 'prefix123',
         derivationSuffix: 'suffix456',
@@ -341,7 +341,7 @@ describe('PaymentService', () => {
         transaction: txData,
       })
 
-      const parsed = JSON.parse(headers['x-bsv-payment'])
+      const parsed = JSON.parse(headers['x-bsv-payment']!)
       expect(parsed.transaction).toBe(txData)
     })
   })

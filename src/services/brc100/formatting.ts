@@ -285,7 +285,7 @@ export async function buildAndBroadcastAction(
       beef = btoa(String.fromCharCode(...beefBytes))
     } catch (e) {
       // BEEF wrapping is best-effort — don't fail the action
-      brc100Logger.warn('BEEF wrapping failed:', e)
+      brc100Logger.warn('BEEF wrapping failed', undefined, e instanceof Error ? e : new Error(String(e)))
     }
   }
 

@@ -81,7 +81,10 @@ export interface VerifySignedMessageResult {
  * All crypto is delegated to the provided TauriProtoWallet instance.
  */
 export class MessageService {
-  constructor(private readonly wallet: TauriProtoWallet) {}
+  private readonly wallet: TauriProtoWallet
+  constructor(wallet: TauriProtoWallet) {
+    this.wallet = wallet
+  }
 
   // =========================================================================
   // BRC-77 — Signed Messages

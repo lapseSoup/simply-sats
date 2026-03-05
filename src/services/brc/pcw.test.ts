@@ -46,13 +46,13 @@ describe('PeerCashService', () => {
     it('handles exact denomination amounts', () => {
       const notes = pcw.splitIntoNotes(1000)
       expect(notes).toHaveLength(1)
-      expect(notes[0].denomination).toBe(1000)
+      expect(notes[0]!.denomination).toBe(1000)
     })
 
     it('handles amounts smaller than minimum denomination', () => {
       const notes = pcw.splitIntoNotes(50)
       expect(notes).toHaveLength(1)
-      expect(notes[0].satoshis).toBe(50)
+      expect(notes[0]!.satoshis).toBe(50)
     })
 
     it('handles zero amount', () => {
@@ -101,7 +101,7 @@ describe('PeerCashService', () => {
 
     it('selects from largest to smallest for efficiency', () => {
       const selected = pcw.disjointCoinSelection(utxos, 4000, new Set())
-      expect(selected[0].satoshis).toBe(5000)
+      expect(selected[0]!.satoshis).toBe(5000)
     })
 
     it('throws when insufficient non-reserved UTXOs', () => {

@@ -38,12 +38,10 @@ export interface Receipt {
 // ---------------------------------------------------------------------------
 
 export class PeerCashService {
-  private _wallet: TauriProtoWallet
   private denominations: number[]
   private reservedOutpoints = new Set<string>()
 
-  constructor(wallet: TauriProtoWallet) {
-    this._wallet = wallet
+  constructor(_wallet: TauriProtoWallet) {
     this.denominations = [...BRC.PCW_NOTE_DENOMINATIONS].sort((a, b) => b - a)
   }
 

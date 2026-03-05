@@ -82,7 +82,7 @@ export class BasketService {
     if (parts.length !== 2) {
       throw new Error(`Invalid outpoint format: ${outpoint}. Expected "txid.vout"`)
     }
-    const [txid, voutStr] = parts
+    const [txid, voutStr] = parts as [string, string]
     const vout = parseInt(voutStr, 10)
     if (isNaN(vout)) {
       throw new Error(`Invalid vout in outpoint: ${outpoint}`)

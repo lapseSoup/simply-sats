@@ -594,7 +594,7 @@ export async function executeApprovedRequest(request: BRC100Request, keys: Walle
       try {
         const certService = new CertificateService(new TauriProtoWallet())
         const result = await certService.proveCertificate({
-          certificate: params.certificate as import('../brc/certificates').CertificateInfo,
+          certificate: params.certificate as unknown as import('../brc/certificates').CertificateInfo,
           verifierPublicKey: params.verifierPublicKey,
           fieldsToReveal: params.fieldsToReveal,
         })

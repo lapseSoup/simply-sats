@@ -69,12 +69,12 @@ export class PIKEService {
     const totpHmac = hmac(sha256, new Uint8Array(hmacResult.hmac), timeBytes)
 
     // 4. Dynamic truncation (RFC 4226 section 5.4)
-    const offset = totpHmac[totpHmac.length - 1] & 0x0f
+    const offset = totpHmac[totpHmac.length - 1]! & 0x0f
     const code =
-      (((totpHmac[offset] & 0x7f) << 24) |
-        ((totpHmac[offset + 1] & 0xff) << 16) |
-        ((totpHmac[offset + 2] & 0xff) << 8) |
-        (totpHmac[offset + 3] & 0xff)) %
+      (((totpHmac[offset]! & 0x7f) << 24) |
+        ((totpHmac[offset + 1]! & 0xff) << 16) |
+        ((totpHmac[offset + 2]! & 0xff) << 8) |
+        (totpHmac[offset + 3]! & 0xff)) %
       1_000_000
 
     return code.toString().padStart(6, '0')

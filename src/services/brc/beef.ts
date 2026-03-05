@@ -36,7 +36,7 @@ export class BeefService {
 
     // Read first 4 bytes as unsigned little-endian uint32.
     // The outer `>>> 0` ensures the result is unsigned (bitwise OR produces signed int32).
-    const magic = (data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)) >>> 0
+    const magic = (data[0]! | (data[1]! << 8) | (data[2]! << 16) | (data[3]! << 24)) >>> 0
 
     return magic === BEEF_V1 || magic === BEEF_V2 || magic === ATOMIC_BEEF
   }
@@ -80,7 +80,7 @@ export class BeefService {
     }
 
     // The last transaction is the subject (newest / most dependent)
-    const lastTx = beef.txs[beef.txs.length - 1]
+    const lastTx = beef.txs[beef.txs.length - 1]!
     const txid = lastTx.txid
 
     const rawTxBytes = lastTx.rawTx
