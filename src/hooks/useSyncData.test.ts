@@ -117,6 +117,7 @@ function makeOptions() {
     setBalance: vi.fn(),
     setOrdBalance: vi.fn(),
     setTxHistory: vi.fn(),
+    setScopedDataAccountId: vi.fn(),
     setUtxos: vi.fn(),
     setOrdinalsWithRef: vi.fn(),
     setSyncError: vi.fn(),
@@ -220,6 +221,17 @@ describe('useSyncData', () => {
       expect(history).toHaveLength(2)
       // Sorted by height descending: tx-2 (height 200) comes first
       expect(history[0]!.tx_hash).toBe('tx-2')
+    })
+
+    it('marks account-scoped state with the loaded account id', async () => {
+      const opts = makeOptions()
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchDataFromDB(makeWalletKeys(), 7, vi.fn())
+      })
+
+      expect(opts.setScopedDataAccountId).toHaveBeenCalledWith(7)
     })
 
     it('loads locks from DB and calls onLocksLoaded', async () => {
@@ -495,6 +507,21 @@ describe('useSyncData', () => {
       })
 
       expect(mockedGetBalanceFromDatabase).not.toHaveBeenCalled()
+    })
+
+    it('marks account-scoped state after loading DB-backed activity', async () => {
+      mockedGetAllTransactions.mockResolvedValue({
+        ok: true,
+        value: [{ txid: 'tx-1', blockHeight: 123, amount: 1, createdAt: 1000 }],
+      } as never)
+      const opts = makeOptions()
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchData(makeWalletKeys(), 3, () => new Set(), vi.fn())
+      })
+
+      expect(opts.setScopedDataAccountId).toHaveBeenCalledWith(3)
     })
 
     it('fetches balance from DB and ord balance from API', async () => {

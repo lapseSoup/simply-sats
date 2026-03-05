@@ -4,6 +4,7 @@ import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import type { LockedUTXO } from '../../services/wallet'
 import { NoLocksEmpty } from '../shared/EmptyState'
+import { LocksListSkeleton } from '../shared/Skeleton'
 import { LockDetailModal } from '../modals/LockDetailModal'
 import { formatTimeRemaining, AVERAGE_BLOCK_TIME_SECONDS } from '../../utils/timeFormatting'
 
@@ -16,11 +17,12 @@ interface LocksTabProps {
 
 
 export const LocksTab = memo(function LocksTab({ onLock, onUnlock, onUnlockAll, unlocking }: LocksTabProps) {
-  const { locks, networkInfo } = useWalletState()
+  const { locks, networkInfo, activeAccountId, scopedDataAccountId } = useWalletState()
   const { formatUSD } = useUI()
   const [selectedLock, setSelectedLock] = useState<LockedUTXO | null>(null)
 
   const currentHeight = networkInfo?.blockHeight ?? 0
+  const isAccountDataReady = activeAccountId == null || scopedDataAccountId === activeAccountId
 
   // Memoize lock categorization
   const { unlockableLocks, lockedLocks } = useMemo(() => {
@@ -32,6 +34,14 @@ export const LocksTab = memo(function LocksTab({ onLock, onUnlock, onUnlockAll, 
       .sort((a, b) => a.unlockBlock - b.unlockBlock)
     return { unlockableLocks: unlockable, lockedLocks: locked }
   }, [locks, currentHeight])
+
+  if (!isAccountDataReady) {
+    return (
+      <div className="locks-tab">
+        <LocksListSkeleton />
+      </div>
+    )
+  }
 
   return (
     <>

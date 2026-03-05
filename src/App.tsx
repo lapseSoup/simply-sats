@@ -32,6 +32,7 @@ export function WalletApp() {
     wallet,
     loading,
     txHistory,
+    scopedDataAccountId,
     ordinals,
     locks,
     networkInfo,
@@ -240,6 +241,8 @@ export function WalletApp() {
   }
 
   // Main wallet UI
+  const hasAccountScopedData = activeAccountId == null || scopedDataAccountId === activeAccountId
+
   return (
     <div className="app">
       <SkipLink targetId="main-content">Skip to main content</SkipLink>
@@ -336,10 +339,10 @@ export function WalletApp() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         counts={{
-          activity: txHistory.length,
-          ordinals: ordinals.length,
+          activity: hasAccountScopedData ? txHistory.length : 0,
+          ordinals: hasAccountScopedData ? ordinals.length : 0,
           tokens: tokenBalances.length,
-          locks: locks.length
+          locks: hasAccountScopedData ? locks.length : 0
         }}
       />
 

@@ -41,8 +41,9 @@ function getContentCategory(contentType: string | undefined): ContentCategory {
 export const OrdinalsTab = memo(function OrdinalsTab({ onSelectOrdinal, onTransferOrdinal: _onTransferOrdinal }: OrdinalsTabProps) {
   // Note: _onTransferOrdinal is available for future use
   // cacheVersion (part of state context) triggers re-render when content cache updates
-  const { ordinals, contentCacheSnapshot, loading, activeAccountId } = useWalletState()
+  const { ordinals, contentCacheSnapshot, loading, activeAccountId, scopedDataAccountId } = useWalletState()
   const { fetchOrdinalContentIfMissing } = useSyncContext()
+  const isAccountDataReady = activeAccountId == null || scopedDataAccountId === activeAccountId
 
   // When <img> direct load fails, trigger service-layer fetch with retry + origin resolution.
   // The fetched content flows back via bumpCacheVersion → contentCacheSnapshot rebuild → re-render.
@@ -118,8 +119,8 @@ export const OrdinalsTab = memo(function OrdinalsTab({ onSelectOrdinal, onTransf
     return counts
   }, [ordinals])
 
-  // Show skeleton during initial load (loading with no data yet)
-  if (loading && ordinals.length === 0) {
+  // Show skeleton during initial load and while account-scoped data is transitioning.
+  if (!isAccountDataReady || (loading && ordinals.length === 0)) {
     return (
       <>
         <div className="ordinals-tab">

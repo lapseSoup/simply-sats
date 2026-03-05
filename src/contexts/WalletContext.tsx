@@ -71,6 +71,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     contentCacheRef,
     cacheVersion,
     txHistory,
+    scopedDataAccountId,
     basketBalances,
     balance,
     ordBalance,
@@ -448,6 +449,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     contentCacheSnapshot,
     locks,
     txHistory,
+    scopedDataAccountId,
     basketBalances,
     contacts,
     accounts,
@@ -465,7 +467,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     sessionPassword
   }), [
     wallet, balance, ordBalance, usdPrice, utxos, ordinals, contentCacheSnapshot,
-    locks, txHistory, basketBalances, contacts, accounts, activeAccount, activeAccountId,
+    locks, txHistory, scopedDataAccountId, basketBalances, contacts, accounts, activeAccount, activeAccountId,
     tokenBalances, tokensSyncing, isLocked, autoLockMinutes, networkInfo, syncing,
     syncError, loading, feeRateKB, sessionPassword
   ])

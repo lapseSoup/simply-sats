@@ -32,6 +32,7 @@ interface UseSyncDataOptions {
   setBalance: (balance: number) => void
   setOrdBalance: (balance: number) => void
   setTxHistory: (history: TxHistoryItem[]) => void
+  setScopedDataAccountId: (accountId: number | null) => void
   setUtxos: (utxos: UTXO[]) => void
   setOrdinalsWithRef: (ordinals: Ordinal[]) => void
   ordinalsRef: MutableRefObject<Ordinal[]>
@@ -60,6 +61,7 @@ export function useSyncData({
   setBalance,
   setOrdBalance,
   setTxHistory,
+  setScopedDataAccountId,
   setUtxos,
   setOrdinalsWithRef,
   ordinalsRef,
@@ -230,6 +232,9 @@ export function useSyncData({
         setTxHistory(dbTxHistory)
       }
     }
+    // Mark the in-memory sync state as belonging to this account only after
+    // the account-scoped state setters above have populated the new snapshot.
+    setScopedDataAccountId(activeAccountId)
 
     syncLogger.info('⏱ fetchDataFromDB: Phase 1 state setters done', { elapsedMs: Math.round(performance.now() - _t0) })
 
@@ -251,7 +256,7 @@ export function useSyncData({
         }
       })()
     }
-  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, setSyncError, bumpCacheVersion, contentCacheRef])
+  }, [setBalance, setOrdBalance, setTxHistory, setScopedDataAccountId, setUtxos, setOrdinalsWithRef, setSyncError, bumpCacheVersion, contentCacheRef])
 
   // Fetch data from database and API
   const fetchData = useCallback(async (
@@ -348,6 +353,9 @@ export function useSyncData({
 
       if (checkCancelled()) return
       setTxHistory(dbTxHistory)
+      // Once DB-backed activity is loaded, the UI can safely treat the current
+      // sync snapshot as belonging to this account.
+      setScopedDataAccountId(activeAccountId)
 
       // Load locks from database instantly so they appear before blockchain detection
       let preloadedLocks: LockedUTXO[] = []
@@ -538,7 +546,7 @@ export function useSyncData({
       }
       syncLogger.error('Failed to fetch data', error)
     }
-  }, [setBalance, setOrdBalance, setTxHistory, setUtxos, setOrdinalsWithRef, ordinalsRef, setSyncError, bumpCacheVersion, contentCacheRef])
+  }, [setBalance, setOrdBalance, setTxHistory, setScopedDataAccountId, setUtxos, setOrdinalsWithRef, ordinalsRef, setSyncError, bumpCacheVersion, contentCacheRef])
 
   return { fetchDataFromDB, fetchData }
 }

@@ -68,11 +68,12 @@ function ActivityRow({
 }
 
 export const ActivityTab = memo(function ActivityTab() {
-  const { txHistory, locks, loading, activeAccountId, ordinals, contentCacheSnapshot } = useWalletState()
+  const { txHistory, locks, loading, activeAccountId, scopedDataAccountId, ordinals, contentCacheSnapshot } = useWalletState()
   const { fetchOrdinalContentIfMissing } = useSyncContext()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
   const { networkInfo } = useNetworkInfo()
   const currentHeight = networkInfo?.blockHeight ?? 0
+  const isAccountDataReady = activeAccountId == null || scopedDataAccountId === activeAccountId
 
   // Sync is handled by App.tsx checkSync effect — no duplicate sync here
   const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
@@ -246,6 +247,14 @@ export const ActivityTab = memo(function ActivityTab() {
       ordinalCachedContent: contentCacheSnapshot.get(ord.origin)
     }
   }, [ordinalByTxid, ordinalByOrigin, contentCacheSnapshot])
+
+  if (!isAccountDataReady) {
+    return (
+      <div className="tx-list">
+        <ActivityListSkeleton />
+      </div>
+    )
+  }
 
   // Show skeleton during initial load (loading with no data yet)
   if (loading && txHistory.length === 0) {

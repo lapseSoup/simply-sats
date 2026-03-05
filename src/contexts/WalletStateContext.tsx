@@ -28,6 +28,7 @@ export interface WalletStateContextType {
   contentCacheSnapshot: ReadonlyMap<string, OrdinalContentEntry>
   locks: LockedUTXO[]
   txHistory: TxHistoryItem[]
+  scopedDataAccountId: number | null
   basketBalances: BasketBalances
   contacts: Contact[]
 

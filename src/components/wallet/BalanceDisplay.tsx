@@ -3,27 +3,22 @@ import { Lock } from 'lucide-react'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { useSyncStatus } from '../../contexts/NetworkContext'
+import { BalanceSkeleton } from '../shared/Skeleton'
 
 function BalanceDisplayComponent() {
-  const { balance, ordBalance, locks } = useWalletState()
+  const { balance, ordBalance, locks, activeAccountId, scopedDataAccountId } = useWalletState()
   const { displayInSats, toggleDisplayUnit, formatBSVShort, formatUSD } = useUI()
   const { syncing } = useSyncStatus()
 
   const totalBalance = balance + ordBalance
   const lockedBalance = locks.reduce((sum, l) => sum + l.satoshis, 0)
-  const isInitialSync = totalBalance === 0 && syncing
+  const isAccountDataReady = activeAccountId == null || scopedDataAccountId === activeAccountId
+  const showSkeleton = !isAccountDataReady || (totalBalance === 0 && syncing)
 
   return (
     <div className="balance-row" aria-live="polite">
-      {isInitialSync ? (
-        <>
-          <div className="balance-main">
-            <div className="balance-skeleton-bar balance-skeleton-bar--main skeleton" aria-label="Loading balance..." />
-          </div>
-          <div className="balance-sub">
-            <div className="balance-skeleton-bar balance-skeleton-bar--sub skeleton" />
-          </div>
-        </>
+      {showSkeleton ? (
+        <BalanceSkeleton />
       ) : (
         <>
           <div
@@ -51,7 +46,7 @@ function BalanceDisplayComponent() {
           </div>
         </>
       )}
-      {lockedBalance > 0 && (
+      {showSkeleton ? null : lockedBalance > 0 ? (
         <div className="balance-locked">
           <Lock size={11} strokeWidth={2} />
           {displayInSats
@@ -59,7 +54,7 @@ function BalanceDisplayComponent() {
             : `${formatBSVShort(lockedBalance)} locked`
           }
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

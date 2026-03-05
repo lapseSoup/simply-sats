@@ -43,6 +43,8 @@ interface SyncContextType {
   utxos: UTXO[]
   ordinals: Ordinal[]
   txHistory: TxHistoryItem[]
+  /** Account ID that the current account-scoped sync state belongs to. */
+  scopedDataAccountId: number | null
   basketBalances: BasketBalances
   balance: number
   ordBalance: number
@@ -56,6 +58,7 @@ interface SyncContextType {
   setUtxos: (utxos: UTXO[]) => void
   setOrdinals: (ordinals: Ordinal[]) => void
   setTxHistory: (history: TxHistoryItem[]) => void
+  setScopedDataAccountId: (accountId: number | null) => void
   setBasketBalances: (balances: BasketBalances) => void
   setBalance: (balance: number) => void
   setOrdBalance: (balance: number) => void
@@ -114,6 +117,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
   const [utxos, setUtxos] = useState<UTXO[]>([])
   const [ordinals, setOrdinals] = useState<Ordinal[]>([])
   const [txHistory, setTxHistory] = useState<TxHistoryItem[]>([])
+  const [scopedDataAccountId, setScopedDataAccountId] = useState<number | null>(null)
   const [basketBalances, setBasketBalances] = useState<BasketBalances>({
     default: 0,
     ordinals: 0,
@@ -143,6 +147,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setUtxos([])
     setOrdinalsWithRef([])
     setTxHistory([])
+    setScopedDataAccountId(null)
     setBasketBalances({ default: 0, ordinals: 0, identity: 0, derived: 0, locks: 0 })
     setBalance(initialBalance)
     setOrdBalance(0)
@@ -157,6 +162,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setBalance,
     setOrdBalance,
     setTxHistory,
+    setScopedDataAccountId,
     setUtxos,
     setOrdinalsWithRef,
     ordinalsRef,
@@ -184,6 +190,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     utxos,
     ordinals,
     txHistory,
+    scopedDataAccountId,
     basketBalances,
     balance,
     ordBalance,
@@ -193,6 +200,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setUtxos,
     setOrdinals: setOrdinalsWithRef,
     setTxHistory,
+    setScopedDataAccountId,
     setBasketBalances,
     setBalance,
     setOrdBalance,
@@ -201,7 +209,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
     fetchDataFromDB,
     fetchData,
     fetchOrdinalContentIfMissing
-  }), [utxos, ordinals, txHistory, basketBalances, balance, ordBalance, syncError, cacheVersion, setUtxos, setOrdinalsWithRef, setTxHistory, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData, fetchOrdinalContentIfMissing])
+  }), [utxos, ordinals, txHistory, scopedDataAccountId, basketBalances, balance, ordBalance, syncError, cacheVersion, setUtxos, setOrdinalsWithRef, setTxHistory, setScopedDataAccountId, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData, fetchOrdinalContentIfMissing])
 
   return (
     <SyncContext.Provider value={value}>
