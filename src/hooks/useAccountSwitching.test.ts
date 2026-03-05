@@ -166,6 +166,7 @@ describe('useAccountSwitching', () => {
       expect(walletArg.walletAddress).toBe('1WalletAddress')
       expect(opts.setIsLocked).toHaveBeenCalledWith(false)
       expect(opts.setActiveAccountState).toHaveBeenCalled()
+      expect(opts.resetSync).not.toHaveBeenCalled()
     })
 
     it('cancels in-flight sync before switching', async () => {
@@ -690,7 +691,26 @@ describe('useAccountSwitching', () => {
   })
 
   describe('fetchDataFromDB error handling during switch', () => {
-    it('succeeds even when fetchDataFromDB throws (best-effort preload)', async () => {
+    it('retries preload once and succeeds without clearing sync state', async () => {
+      const opts = makeOptions({
+        fetchDataFromDB: vi.fn()
+          .mockRejectedValueOnce(new Error('transient DB error'))
+          .mockResolvedValueOnce(undefined),
+      })
+      const { result } = renderHook(() => useAccountSwitching(opts))
+
+      let success = false
+      await act(async () => {
+        success = await result.current.switchAccount(2)
+      })
+
+      expect(success).toBe(true)
+      expect(opts.fetchDataFromDB).toHaveBeenCalledTimes(2)
+      expect(opts.resetSync).not.toHaveBeenCalled()
+      expect(opts.setActiveAccountState).toHaveBeenCalled()
+    })
+
+    it('succeeds even when preload fails twice and clears stale state', async () => {
       const opts = makeOptions({
         fetchDataFromDB: vi.fn().mockRejectedValue(new Error('DB error')),
       })
@@ -701,8 +721,10 @@ describe('useAccountSwitching', () => {
         success = await result.current.switchAccount(2)
       })
 
-      // Should still succeed — fetchDataFromDB failure is non-blocking
       expect(success).toBe(true)
+      expect(opts.fetchDataFromDB).toHaveBeenCalledTimes(2)
+      expect(opts.resetSync).toHaveBeenCalledTimes(1)
+      expect(opts.setLocks).toHaveBeenCalledWith([])
       expect(opts.setActiveAccountState).toHaveBeenCalled()
     })
   })

@@ -125,7 +125,7 @@ export function useAccountSwitching({
   setWallet,
   setIsLocked,
   setLocks,
-  resetSync: _resetSync,
+  resetSync,
   resetKnownUnlockedLocks,
   storeKeysInRust,
   refreshAccounts,
@@ -231,29 +231,48 @@ export function useAccountSwitching({
         setWallet({ ...keys, mnemonic: '' })
         setIsLocked(false)
 
-        // Rotate session token for new account
-        try {
-          await tauriInvoke('rotate_session_for_account', { accountId }, 5000)
-        } catch (e) {
-          walletLogger.warn('Failed to rotate session for account', { accountId, error: String(e) })
-        }
-
         // Load all cached data from DB in one call (balance, txHistory, locks,
         // ordinals, UTXOs). This populates the UI instantly without API calls.
         const preloadVersion = fetchVersionRef.current
-        try {
-          await fetchDataFromDB(
-            keys,
-            accountId,
-            (loadedLocks) => {
-              if (fetchVersionRef.current !== preloadVersion) return
-              setLocks(loadedLocks)
-            },
-            () => fetchVersionRef.current !== preloadVersion
-          )
-        } catch (_e) {
-          // Best-effort: full sync will pick up data anyway
+        let preloadSucceeded = false
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            await fetchDataFromDB(
+              keys,
+              accountId,
+              (loadedLocks) => {
+                if (fetchVersionRef.current !== preloadVersion) return
+                setLocks(loadedLocks)
+              },
+              () => fetchVersionRef.current !== preloadVersion
+            )
+            preloadSucceeded = true
+            break
+          } catch (e) {
+            walletLogger.warn('Account switch DB preload failed', {
+              accountId,
+              attempt,
+              error: String(e)
+            })
+            if (attempt < 2) {
+              await new Promise(resolve => setTimeout(resolve, 75))
+            }
+          }
         }
+
+        if (!preloadSucceeded) {
+          _lastSwitchDiag += ' | preload failed'
+          // Do not leave previous account data visible under the new account.
+          resetSync()
+          setLocks([])
+        }
+
+        // Rotate session token for new account in the background.
+        // This must not block preload/render during account switches.
+        void tauriInvoke('rotate_session_for_account', { accountId }, 5000)
+          .catch((e) => {
+            walletLogger.warn('Failed to rotate session for account', { accountId, error: String(e) })
+          })
 
         // Clear the switch-in-progress flag and record completion time BEFORE
         // setting active account state. setActiveAccountState triggers the App.tsx
@@ -292,7 +311,7 @@ export function useAccountSwitching({
         switchAccount(pendingId).catch(e => walletLogger.error('Queued switch failed', e))
       }
     }
-  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, resetKnownUnlockedLocks, storeKeysInRust, fetchVersionRef, setIsLocked, fetchDataFromDB])
+  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, resetSync, resetKnownUnlockedLocks, storeKeysInRust, fetchVersionRef, setIsLocked, fetchDataFromDB])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     const currentPassword = getSessionPassword()
