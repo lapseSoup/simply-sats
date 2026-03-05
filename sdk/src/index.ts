@@ -93,6 +93,42 @@ export interface BRC100Error {
   message: string
 }
 
+/** Certificate acquired or held by the wallet (BRC-52) */
+export interface Certificate {
+  type: string
+  serialNumber: string
+  certifier: string
+  subject: string
+  fields: Record<string, string>
+  revocationOutpoint?: string
+}
+
+/** Result of proving a certificate to a verifier (BRC-52) */
+export interface CertificateProof {
+  type: string
+  serialNumber: string
+  certifier: string
+  subject: string
+  fields: Record<string, string>
+  keyringForVerifier: Record<string, string>
+}
+
+/** Key linkage revelation result (BRC-69/72) */
+export interface KeyLinkageResult {
+  encryptedLinkage: string
+  encryptedLinkageProof: string
+  prover: string
+  verifier: string
+  counterparty: string
+  revelationTime: string
+}
+
+/** Basket balance result (BRC-46) */
+export interface BasketBalanceResult {
+  basketName: string
+  balance: number
+}
+
 /**
  * Simply Sats SDK Client
  *
@@ -508,6 +544,165 @@ export class SimplySats {
     const nonce = options.nonce ?? (await this.getNonce())
     const { nonce: _, ...params } = options
     return this.request<{ data: string }>('decrypt', params, nonce)
+  }
+
+  // ==================== Certificate Operations (BRC-52) ====================
+
+  /**
+   * Acquire a certificate from a certifier.
+   *
+   * Requests a certificate of the given type from the specified certifier,
+   * providing the required fields for certification.
+   * Note: This is a state-changing operation that requires a CSRF nonce.
+   *
+   * @param options.type - Certificate type identifier
+   * @param options.certifier - Public key of the certifier
+   * @param options.fields - Field values required by the certifier
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
+   */
+  async acquireCertificate(options: {
+    type: string
+    certifier: string
+    fields: Record<string, string>
+    nonce?: string
+  }): Promise<Certificate> {
+    const nonce = options.nonce ?? (await this.getNonce())
+    const { nonce: _, ...params } = options
+    return this.request<Certificate>('acquireCertificate', params, nonce)
+  }
+
+  /**
+   * Prove ownership of a certificate to a verifier.
+   *
+   * Reveals selected fields of a certificate to a verifier, providing
+   * cryptographic proof of the certificate's validity.
+   * Note: This is a state-changing operation that requires a CSRF nonce.
+   *
+   * @param options.serialNumber - Serial number of the certificate to prove
+   * @param options.verifierPublicKey - Public key of the verifier
+   * @param options.fieldsToReveal - Array of field names to reveal
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
+   */
+  async proveCertificate(options: {
+    serialNumber: string
+    verifierPublicKey: string
+    fieldsToReveal: string[]
+    nonce?: string
+  }): Promise<CertificateProof> {
+    const nonce = options.nonce ?? (await this.getNonce())
+    const { nonce: _, ...params } = options
+    return this.request<CertificateProof>('proveCertificate', params, nonce)
+  }
+
+  /**
+   * List certificates held by the wallet.
+   *
+   * Returns all certificates, optionally filtered by type.
+   *
+   * @param filter - Optional filter criteria
+   * @param filter.type - Filter by certificate type
+   */
+  async listCertificates(filter?: { type?: string }): Promise<Certificate[]> {
+    return this.request<Certificate[]>('listCertificates', { filter })
+  }
+
+  /**
+   * Relinquish (delete) a certificate from the wallet.
+   *
+   * Permanently removes a certificate. This cannot be undone.
+   * Note: This is a state-changing operation that requires a CSRF nonce.
+   *
+   * @param serialNumber - Serial number of the certificate to relinquish
+   * @param nonce - Optional CSRF nonce (auto-fetched if not provided)
+   */
+  async relinquishCertificate(serialNumber: string, nonce?: string): Promise<void> {
+    const actualNonce = nonce ?? (await this.getNonce())
+    await this.request<Record<string, never>>('relinquishCertificate', { serialNumber }, actualNonce)
+  }
+
+  // ==================== Key Linkage Operations (BRC-69/72) ====================
+
+  /**
+   * Reveal counterparty key linkage to a verifier.
+   *
+   * Proves the link between the wallet's identity and a counterparty for a
+   * specific protocol and key, allowing a verifier to confirm the relationship.
+   * Note: This is a state-changing operation that requires a CSRF nonce.
+   *
+   * @param options.counterparty - Public key of the counterparty
+   * @param options.verifier - Public key of the verifier
+   * @param options.protocolID - Protocol identifier tuple [securityLevel, protocolName]
+   * @param options.keyID - Key identifier within the protocol
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
+   */
+  async revealCounterpartyKeyLinkage(options: {
+    counterparty: string
+    verifier: string
+    protocolID: [number, string]
+    keyID: string
+    nonce?: string
+  }): Promise<KeyLinkageResult> {
+    const nonce = options.nonce ?? (await this.getNonce())
+    const { nonce: _, ...params } = options
+    return this.request<KeyLinkageResult>('revealCounterpartyKeyLinkage', params, nonce)
+  }
+
+  /**
+   * Reveal specific key linkage to a verifier.
+   *
+   * Proves the derivation linkage for a specific key used with a counterparty
+   * under a given protocol, allowing a verifier to confirm how the key was derived.
+   * Note: This is a state-changing operation that requires a CSRF nonce.
+   *
+   * @param options.counterparty - Public key of the counterparty
+   * @param options.verifier - Public key of the verifier
+   * @param options.protocolID - Protocol identifier tuple [securityLevel, protocolName]
+   * @param options.keyID - Key identifier within the protocol
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
+   */
+  async revealSpecificKeyLinkage(options: {
+    counterparty: string
+    verifier: string
+    protocolID: [number, string]
+    keyID: string
+    nonce?: string
+  }): Promise<KeyLinkageResult> {
+    const nonce = options.nonce ?? (await this.getNonce())
+    const { nonce: _, ...params } = options
+    return this.request<KeyLinkageResult>('revealSpecificKeyLinkage', params, nonce)
+  }
+
+  // ==================== Basket Operations (BRC-46/112) ====================
+
+  /**
+   * Get the total balance of a specific basket.
+   *
+   * Returns the sum of satoshis in all outputs tagged to the given basket.
+   *
+   * @param basketName - Name of the basket to query
+   */
+  async getBasketBalance(basketName: string): Promise<BasketBalanceResult> {
+    return this.request<BasketBalanceResult>('getBasketBalance', { basketName })
+  }
+
+  /**
+   * Relinquish (release) an output from a basket.
+   *
+   * Removes the output's association with the basket, freeing it for general use.
+   * Note: This is a state-changing operation that requires a CSRF nonce.
+   *
+   * @param options.basketName - Name of the basket containing the output
+   * @param options.outpoint - The outpoint to relinquish (format: "txid.vout")
+   * @param options.nonce - Optional CSRF nonce (auto-fetched if not provided)
+   */
+  async relinquishOutput(options: {
+    basketName: string
+    outpoint: string
+    nonce?: string
+  }): Promise<void> {
+    const nonce = options.nonce ?? (await this.getNonce())
+    const { nonce: _, ...params } = options
+    await this.request<Record<string, never>>('relinquishOutput', params, nonce)
   }
 
   // ==================== Convenience Methods ====================
