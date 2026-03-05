@@ -411,7 +411,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), null, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), null, () => new Set(), vi.fn())
       })
 
       expect(mockedGetBalanceFromDatabase).not.toHaveBeenCalled()
@@ -428,7 +428,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       expect(opts.setBalance).toHaveBeenCalledWith(3000)
@@ -444,7 +444,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       // allSettled handles partial failure — rejected result contributes 0
@@ -465,7 +465,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       expect(mockedGetOrdinals).toHaveBeenCalledTimes(3)
@@ -486,7 +486,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       const lastCall = opts.setOrdinalsWithRef.mock.calls[opts.setOrdinalsWithRef.mock.calls.length - 1]!
@@ -511,7 +511,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       // Should use DB ordinals, NOT partial API results
@@ -528,7 +528,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       expect(mockedCacheOrdinalsInBackground).toHaveBeenCalledTimes(1)
@@ -547,7 +547,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       expect(mockedCacheOrdinalsInBackground).toHaveBeenCalledTimes(1)
@@ -563,7 +563,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), onLocksDetected)
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), onLocksDetected)
       })
 
       expect(opts.setUtxos).toHaveBeenCalledWith(utxoList)
@@ -581,7 +581,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, knownUnlocked, onLocksDetected)
+        await result.current.fetchData(makeWalletKeys(), 1, () => knownUnlocked, onLocksDetected)
       })
 
       expect(onLocksDetected).toHaveBeenCalledWith(
@@ -595,7 +595,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       expect(opts.setSyncError).toHaveBeenCalledWith(
@@ -619,7 +619,7 @@ describe('useSyncData', () => {
 
       // Start fetch, then cancel midway
       const fetchPromise = act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn(), isCancelled)
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set<string>(), vi.fn(), isCancelled)
       })
 
       cancelled = true
@@ -641,7 +641,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), onLocksDetected)
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), onLocksDetected)
       })
 
       // Should have been called with preloadedLocks for immediate UI display
@@ -659,7 +659,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       // 3 base addresses + 1 derived = 4 calls
@@ -676,7 +676,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       // First call should be DB ordinals (immediate display)
@@ -694,7 +694,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       // B-107: First call should be DB ordinals (shown immediately before API),
@@ -713,7 +713,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       expect(opts.setSyncError).toHaveBeenCalledWith('Failed to load wallet data')
@@ -727,7 +727,7 @@ describe('useSyncData', () => {
       const { result } = renderHook(() => useSyncData(opts))
 
       await act(async () => {
-        await result.current.fetchData(makeWalletKeys(), 1, new Set(), vi.fn())
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
       })
 
       // setOrdBalance should not be called with NaN

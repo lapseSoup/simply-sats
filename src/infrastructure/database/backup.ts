@@ -236,11 +236,26 @@ export async function importDatabase(backup: DatabaseBackup): Promise<void> {
 }
 
 /**
+ * Safely delete all rows from a table, ignoring errors if the table
+ * doesn't exist in older schema versions.
+ *
+ * IMPORTANT: Only call with hardcoded table name literals — never with user input.
+ */
+async function safeDeleteTable(db: ReturnType<typeof getDatabase>, tableName: string): Promise<void> {
+  try {
+    await db.execute(`DELETE FROM ${tableName}`)
+  } catch (_e) {
+    // Table may not exist in older schema versions — safe to ignore
+  }
+}
+
+/**
  * Clear all data from database (for new wallet creation)
  */
 export async function clearDatabase(): Promise<void> {
   const database = getDatabase()
 
+  // Core tables (always exist)
   await database.execute('DELETE FROM utxo_tags')
   await database.execute('DELETE FROM transaction_labels')
   await database.execute('DELETE FROM locks')
@@ -249,76 +264,23 @@ export async function clearDatabase(): Promise<void> {
   await database.execute('DELETE FROM baskets')
   await database.execute('DELETE FROM sync_state')
 
-  // Clear accounts and settings
+  // Tables that may not exist in older schema versions
+  await safeDeleteTable(database, 'account_settings')
+  await safeDeleteTable(database, 'accounts')
+  await safeDeleteTable(database, 'derived_addresses')
+  await safeDeleteTable(database, 'contacts')
+  await safeDeleteTable(database, 'token_balances')
+  await safeDeleteTable(database, 'tokens')
+  await safeDeleteTable(database, 'connected_apps')
+  await safeDeleteTable(database, 'certificates')
+  await safeDeleteTable(database, 'audit_log')
+  await safeDeleteTable(database, 'ordinal_cache')
+
+  // Reset auto-increment for accounts so fresh wallets start at ID 1.
   try {
-    await database.execute('DELETE FROM account_settings')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-  try {
-    await database.execute('DELETE FROM accounts')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-  try {
-    // Reset auto-increment for accounts so fresh wallets start at ID 1.
     await database.execute("DELETE FROM sqlite_sequence WHERE name = 'accounts'")
   } catch (_e) {
     // sqlite_sequence may not exist in all environments
-  }
-
-  // Clear derived addresses
-  try {
-    await database.execute('DELETE FROM derived_addresses')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-
-  // Clear contacts
-  try {
-    await database.execute('DELETE FROM contacts')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-
-  // Clear tokens
-  try {
-    await database.execute('DELETE FROM token_balances')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-  try {
-    await database.execute('DELETE FROM tokens')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-
-  // Clear connected apps
-  try {
-    await database.execute('DELETE FROM connected_apps')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-
-  // Clear certificates
-  try {
-    await database.execute('DELETE FROM certificates')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-
-  // Clear audit log
-  try {
-    await database.execute('DELETE FROM audit_log')
-  } catch (_e) {
-    // Table may not exist yet
-  }
-
-  // Clear ordinal cache
-  try {
-    await database.execute('DELETE FROM ordinal_cache')
-  } catch (_e) {
-    // Table may not exist yet
   }
 
   dbLogger.info('Database cleared completely')

@@ -35,9 +35,13 @@ interface PaymentNotification {
   senderPublicKey: string
 }
 
+// Maximum number of payment notifications to retain in memory/storage
+const MAX_NOTIFICATIONS = 1000
+
 // Store for received payment notifications
 let paymentNotifications: PaymentNotification[] = []
 let isListening = false
+let currentListenerCleanup: (() => void) | null = null
 
 // Suppress repeated 401 errors — after first failure, back off exponentially
 // to avoid flooding the console with "Mutual-authentication failed!" every 30s
@@ -81,14 +85,22 @@ function hexToBytes(hex: string): Uint8Array {
 }
 
 /**
- * Create authentication headers for MessageBox API
- * This is a simplified BRC-103 auth implementation
+ * Build authentication headers using a provided signing function.
+ * Extracts the shared nonce generation, timestamp creation, SHA-256 hashing,
+ * and header assembly that was duplicated between WIF and store-based variants.
+ *
+ * @param identityPubKey - The public key to include in auth headers
+ * @param method - HTTP method (GET, POST, etc.)
+ * @param path - Request path
+ * @param body - Optional request body
+ * @param signFn - Signs the SHA-256 hash bytes and returns a DER hex signature
  */
-async function createAuthHeaders(
-  identityWif: string,
+async function buildAuthHeaders(
+  identityPubKey: string,
   method: string,
   path: string,
-  body?: string
+  body: string | undefined,
+  signFn: (hashBytes: number[]) => Promise<string>
 ): Promise<Record<string, string>> {
   const timestamp = Date.now().toString()
   // Generate random bytes for nonce (Web Crypto API)
@@ -101,25 +113,41 @@ async function createAuthHeaders(
   // Hash the message with SHA-256 (first hash)
   const messageHashHex = await tauriInvoke<string>('sha256_hash', { data: messageToSign })
 
-  // sign_data internally SHA-256 hashes before ECDSA signing (second hash),
-  // matching the original @bsv/sdk double-hash: Hash.sha256(msg) -> privateKey.sign(hash)
-  const signatureDerHex = await tauriInvoke<string>('sign_data', {
-    wif: identityWif,
-    data: Array.from(hexToBytes(messageHashHex))
-  })
+  // Delegate actual signing to the provided function
+  const signatureDerHex = await signFn(Array.from(hexToBytes(messageHashHex)))
 
+  return {
+    'Content-Type': 'application/json',
+    'x-bsv-auth-pubkey': identityPubKey,
+    'x-bsv-auth-timestamp': timestamp,
+    'x-bsv-auth-nonce': nonce,
+    'x-bsv-auth-signature': signatureDerHex
+  }
+}
+
+/**
+ * Create authentication headers for MessageBox API
+ * This is a simplified BRC-103 auth implementation
+ */
+async function createAuthHeaders(
+  identityWif: string,
+  method: string,
+  path: string,
+  body?: string
+): Promise<Record<string, string>> {
   // Get public key from WIF
   const keyInfo = await tauriInvoke<{ wif: string; address: string; pubKey: string }>(
     'keys_from_wif', { wif: identityWif }
   )
 
-  return {
-    'Content-Type': 'application/json',
-    'x-bsv-auth-pubkey': keyInfo.pubKey,
-    'x-bsv-auth-timestamp': timestamp,
-    'x-bsv-auth-nonce': nonce,
-    'x-bsv-auth-signature': signatureDerHex
-  }
+  return buildAuthHeaders(keyInfo.pubKey, method, path, body, async (hashBytes) => {
+    // sign_data internally SHA-256 hashes before ECDSA signing (second hash),
+    // matching the original @bsv/sdk double-hash: Hash.sha256(msg) -> privateKey.sign(hash)
+    return tauriInvoke<string>('sign_data', {
+      wif: identityWif,
+      data: hashBytes
+    })
+  })
 }
 
 /**
@@ -133,31 +161,18 @@ async function createAuthHeadersFromStore(
   path: string,
   body?: string
 ): Promise<Record<string, string>> {
-  const timestamp = Date.now().toString()
-  const nonceBytes = crypto.getRandomValues(new Uint8Array(16))
-  const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('')
-
-  const messageToSign = `${method}${path}${timestamp}${nonce}${body || ''}`
-
-  const messageHashHex = await tauriInvoke<string>('sha256_hash', { data: messageToSign })
-
-  // S-121: Use store-based signing — WIF never enters JS heap
-  const signatureDerHex = await tauriInvoke<string>('sign_data_from_store', {
-    data: Array.from(hexToBytes(messageHashHex)),
-    keyType: 'identity'
+  return buildAuthHeaders(identityPubKey, method, path, body, async (hashBytes) => {
+    // S-121: Use store-based signing — WIF never enters JS heap
+    return tauriInvoke<string>('sign_data_from_store', {
+      data: hashBytes,
+      keyType: 'identity'
+    })
   })
-
-  return {
-    'Content-Type': 'application/json',
-    'x-bsv-auth-pubkey': identityPubKey,
-    'x-bsv-auth-timestamp': timestamp,
-    'x-bsv-auth-nonce': nonce,
-    'x-bsv-auth-signature': signatureDerHex
-  }
 }
 
 /**
  * List messages from our payment inbox
+ * @deprecated Use listPaymentMessagesFromStore() instead
  */
 export async function listPaymentMessages(identityWif: string): Promise<PaymentMessage[]> {
   // Skip if we've had too many auth failures (don't spam the API)
@@ -210,6 +225,7 @@ export async function listPaymentMessages(identityWif: string): Promise<PaymentM
 
 /**
  * Acknowledge (delete) messages we've processed
+ * @deprecated Use acknowledgeMessagesFromStore() instead
  */
 export async function acknowledgeMessages(
   identityWif: string,
@@ -265,6 +281,7 @@ function parsePaymentMessage(message: PaymentMessage): PaymentNotification | nul
 
 /**
  * Check for new payment messages and process them
+ * @deprecated Use checkForPaymentsFromStore() instead
  */
 export async function checkForPayments(identityWif: string): Promise<PaymentNotification[]> {
   messageLogger.info('Checking MessageBox for payment notifications')
@@ -291,6 +308,11 @@ export async function checkForPayments(identityWif: string): Promise<PaymentNoti
 
       processedIds.push(msg.messageId)
     }
+  }
+
+  // Cap stored notifications to prevent unbounded growth
+  if (paymentNotifications.length > MAX_NOTIFICATIONS) {
+    paymentNotifications = paymentNotifications.slice(-MAX_NOTIFICATIONS)
   }
 
   // Acknowledge processed messages
@@ -445,6 +467,11 @@ export async function checkForPaymentsFromStore(identityPubKey: string): Promise
     }
   }
 
+  // Cap stored notifications to prevent unbounded growth
+  if (paymentNotifications.length > MAX_NOTIFICATIONS) {
+    paymentNotifications = paymentNotifications.slice(-MAX_NOTIFICATIONS)
+  }
+
   if (processedIds.length > 0) {
     await acknowledgeMessagesFromStore(identityPubKey, processedIds)
     saveNotifications()
@@ -463,9 +490,10 @@ export function startPaymentListenerFromStore(
   onNewPayment?: (notification: PaymentNotification) => void,
   intervalMs = 30000
 ): () => void {
+  // B-115: If a listener is already running, clean it up before starting a new one
   if (isListening) {
-    messageLogger.debug('Payment listener already running')
-    return () => {}
+    messageLogger.debug('Payment listener already running — stopping old listener')
+    currentListenerCleanup?.()
   }
 
   isListening = true
@@ -490,16 +518,21 @@ export function startPaymentListenerFromStore(
     }
   }, intervalMs)
 
-  return () => {
+  const cleanup = () => {
     clearInterval(intervalId)
     isListening = false
+    currentListenerCleanup = null
     messageLogger.info('Payment listener stopped')
   }
+
+  currentListenerCleanup = cleanup
+  return cleanup
 }
 
 /**
  * Derive the private key for a payment using the notification info.
  * Returns the child WIF and address via Tauri's BRC-42 derivation command.
+ * @deprecated Use Tauri derive_child_key_from_store command instead
  */
 export async function deriveKeyFromNotification(
   identityWif: string,
@@ -524,15 +557,17 @@ export async function deriveKeyFromNotification(
 /**
  * Start periodic checking for payment messages.
  * Accepts a WIF string for the identity key.
+ * @deprecated Use startPaymentListenerFromStore() instead
  */
 export function startPaymentListener(
   identityWif: string,
   onNewPayment?: (notification: PaymentNotification) => void,
   intervalMs = 30000 // Check every 30 seconds
 ): () => void {
+  // B-115: If a listener is already running, clean it up before starting a new one
   if (isListening) {
-    messageLogger.debug('Payment listener already running')
-    return () => {}
+    messageLogger.debug('Payment listener already running — stopping old listener')
+    currentListenerCleanup?.()
   }
 
   isListening = true
@@ -560,11 +595,15 @@ export function startPaymentListener(
   }, intervalMs)
 
   // Return cleanup function
-  return () => {
+  const cleanup = () => {
     clearInterval(intervalId)
     isListening = false
+    currentListenerCleanup = null
     messageLogger.info('Payment listener stopped')
   }
+
+  currentListenerCleanup = cleanup
+  return cleanup
 }
 
 /**

@@ -14,13 +14,17 @@ import { walletLogger } from './logger'
 // Storage keys
 const STORAGE_PREFIX = 'simply_sats_'
 
-// Keys that should be encrypted (session-scoped encryption with in-memory key).
-// NOTE: trusted_origins, connected_apps, and rate_limit were previously encrypted
-// but this caused data loss on app restart (session key is regenerated each session).
-// These values are app preferences, not secrets — they don't need encryption.
-const SENSITIVE_KEYS = new Set<string>([
-  // Currently empty — add keys here only for truly sensitive session-scoped data
-])
+/**
+ * Keys requiring encryption for session-scoped data.
+ * Currently empty: the session key regenerates on each app restart, so encrypting
+ * preferences here would cause data loss. All truly sensitive data (WIFs, mnemonics)
+ * is stored in the Rust key store with Zeroizing wrappers, not in JS.
+ *
+ * Previously encrypted keys (trusted_origins, connected_apps, rate_limit) were
+ * moved out because they are app preferences, not secrets, and encrypting them
+ * caused data loss across restarts.
+ */
+const SENSITIVE_KEYS = new Set<string>([])
 
 // Keys that remain unencrypted (non-sensitive preferences):
 // - cached_balance

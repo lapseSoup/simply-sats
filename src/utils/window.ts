@@ -53,13 +53,21 @@ export async function openViewerWindow(opts: OpenViewerOptions): Promise<void> {
       // Fall back to requested dimensions
     }
 
-    new WebviewWindow(opts.label, {
-      url: opts.url,
-      title: opts.title,
-      width: cappedWidth,
-      height: cappedHeight,
-      resizable: opts.resizable ?? true,
-    })
+    try {
+      const webview = new WebviewWindow(opts.label, {
+        url: opts.url,
+        title: opts.title,
+        width: cappedWidth,
+        height: cappedHeight,
+        resizable: opts.resizable ?? true,
+      })
+
+      webview.once('tauri://error', (e) => {
+        console.error(`[Window] Failed to create window '${opts.label}':`, e)
+      })
+    } catch (e) {
+      console.error(`[Window] WebviewWindow constructor failed for '${opts.label}':`, e)
+    }
   } else {
     window.open(opts.url, '_blank', `width=${width},height=${height},resizable=${opts.resizable ?? true ? 'yes' : 'no'}`)
   }

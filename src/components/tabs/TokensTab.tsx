@@ -83,11 +83,18 @@ export const TokensTab = memo(function TokensTab({ onRefresh }: TokensTabProps) 
   const { refreshTokens, handleSendToken } = useWalletActions()
   const { showToast } = useUI()
 
+  const [tokenError, setTokenError] = useState<string | null>(null)
+
   const handleRefresh = async () => {
-    if (onRefresh) {
-      await onRefresh()
-    } else {
-      await refreshTokens()
+    setTokenError(null)
+    try {
+      if (onRefresh) {
+        await onRefresh()
+      } else {
+        await refreshTokens()
+      }
+    } catch (e) {
+      setTokenError(e instanceof Error ? e.message : 'Failed to load tokens')
     }
   }
   const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(null)
@@ -190,6 +197,19 @@ export const TokensTab = memo(function TokensTab({ onRefresh }: TokensTabProps) 
         <div className="tokens-loading">
           <div className="loading-spinner" />
           <p>Loading tokens...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (tokenError) {
+    return (
+      <div className="tokens-tab">
+        <div className="tokens-error" role="alert">
+          <p>Failed to load tokens: {tokenError}</p>
+          <button className="refresh-button" onClick={handleRefresh} disabled={loading}>
+            Try Again
+          </button>
         </div>
       </div>
     )

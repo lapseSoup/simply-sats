@@ -49,7 +49,7 @@ interface UseSyncDataReturn {
   fetchData: (
     wallet: WalletKeys,
     activeAccountId: number | null,
-    knownUnlockedLocks: Set<string>,
+    getKnownUnlockedLocks: () => Set<string>,
     onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: LockedUTXO[] }) => void,
     isCancelled?: () => boolean
   ) => Promise<void>
@@ -277,7 +277,7 @@ export function useSyncData({
   const fetchData = useCallback(async (
     wallet: WalletKeys,
     activeAccountId: number | null,
-    knownUnlockedLocks: Set<string>,
+    getKnownUnlockedLocks: () => Set<string>,
     onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: LockedUTXO[] }) => void,
     isCancelled?: () => boolean
   ) => {
@@ -512,7 +512,7 @@ export function useSyncData({
         // Notify caller about UTXOs for lock detection
         onLocksDetected({
           utxos: utxoList,
-          shouldClearLocks: knownUnlockedLocks.size > 0
+          shouldClearLocks: getKnownUnlockedLocks().size > 0
         })
       } catch (e) {
         syncLogger.error('Failed to fetch UTXOs', e)

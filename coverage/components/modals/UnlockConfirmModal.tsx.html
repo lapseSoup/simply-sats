@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/10</span>
+                <span class='fraction'>0/9</span>
             </div>
         
             
@@ -39,14 +39,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/4</span>
+                <span class='fraction'>0/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>0/8</span>
             </div>
         
             
@@ -137,16 +137,8 @@
 <a name='L72'></a><a href='#L72'>72</a>
 <a name='L73'></a><a href='#L73'>73</a>
 <a name='L74'></a><a href='#L74'>74</a>
-<a name='L75'></a><a href='#L75'>75</a>
-<a name='L76'></a><a href='#L76'>76</a>
-<a name='L77'></a><a href='#L77'>77</a>
-<a name='L78'></a><a href='#L78'>78</a>
-<a name='L79'></a><a href='#L79'>79</a>
-<a name='L80'></a><a href='#L80'>80</a>
-<a name='L81'></a><a href='#L81'>81</a>
-<a name='L82'></a><a href='#L82'>82</a>
-<a name='L83'></a><a href='#L83'>83</a>
-<a name='L84'></a><a href='#L84'>84</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L75'></a><a href='#L75'>75</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -171,16 +163,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -230,6 +212,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { AlertTriangle, Unlock } from 'lucide-react'
+import { Modal } from '../shared/Modal'
 import type { LockedUTXO } from '../../services/wallet'
 import { feeFromBytes } from '../../services/wallet'
 &nbsp;
@@ -254,62 +237,52 @@ export function <span class="fstat-no" title="function not covered" >UnlockConfi
   const cantUnlock = <span class="cstat-no" title="statement not covered" >totalReceive &lt;= 0</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  return (</span>
-    &lt;div className="modal-overlay" onClick={onCancel}&gt;
-      &lt;div className="modal send-modal" onClick={<span class="fstat-no" title="function not covered" >e =&gt; <span class="cstat-no" title="statement not covered" >e</span>.stopPropagation()}&gt;</span>
-        &lt;div className="modal-header"&gt;
-          &lt;h2 className="modal-title"&gt;Confirm Unlock&lt;/h2&gt;
-          &lt;button className="modal-close" onClick={onCancel} aria-label="Close"&gt;×&lt;/button&gt;
+    &lt;Modal onClose={onCancel} title="Confirm Unlock"&gt;
+      &lt;div className="modal-content compact"&gt;
+        {cantUnlock &amp;&amp; (
+          &lt;div className="warning compact" style={{ marginBottom: 12 }} role="alert"&gt;
+            &lt;span className="warning-icon" aria-hidden="true"&gt;&lt;AlertTriangle size={16} strokeWidth={1.75} /&gt;&lt;/span&gt;
+            &lt;span className="warning-text"&gt;
+              Locked amount is less than the unlock fee. Cannot unlock.
+            &lt;/span&gt;
+          &lt;/div&gt;
+        )}
+        &lt;div className="send-summary compact"&gt;
+          &lt;div className="send-summary-row"&gt;
+            &lt;span&gt;Locks to Unlock&lt;/span&gt;
+            &lt;span&gt;{locks.length}&lt;/span&gt;
+          &lt;/div&gt;
+          &lt;div className="send-summary-row"&gt;
+            &lt;span&gt;Total Locked&lt;/span&gt;
+            &lt;span&gt;{totalSats.toLocaleString()} sats&lt;/span&gt;
+          &lt;/div&gt;
+          &lt;div className="send-summary-row"&gt;
+            &lt;span&gt;Transaction Fee{locks.length &gt; 1 ? 's' : ''}&lt;/span&gt;
+            &lt;span&gt;-{totalFee.toLocaleString()} sats&lt;/span&gt;
+          &lt;/div&gt;
+          &lt;div className="send-summary-row total"&gt;
+            &lt;span&gt;You'll Receive&lt;/span&gt;
+            &lt;span style={{ color: cantUnlock ? 'var(--error)' : 'var(--success)' }}&gt;
+              {cantUnlock ? 'Insufficient' : `+${totalReceive.toLocaleString()} sats`}
+            &lt;/span&gt;
+          &lt;/div&gt;
         &lt;/div&gt;
-        &lt;div className="modal-content compact"&gt;
-          {cantUnlock &amp;&amp; (
-            &lt;div className="warning compact" style={{ marginBottom: 12 }} role="alert"&gt;
-              &lt;span className="warning-icon" aria-hidden="true"&gt;&lt;AlertTriangle size={16} strokeWidth={1.75} /&gt;&lt;/span&gt;
-              &lt;span className="warning-text"&gt;
-                Locked amount is less than the unlock fee. Cannot unlock.
-              &lt;/span&gt;
-            &lt;/div&gt;
-          )}
-          &lt;div className="send-summary compact"&gt;
-            &lt;div className="send-summary-row"&gt;
-              &lt;span&gt;Locks to Unlock&lt;/span&gt;
-              &lt;span&gt;{locks.length}&lt;/span&gt;
-            &lt;/div&gt;
-            &lt;div className="send-summary-row"&gt;
-              &lt;span&gt;Total Locked&lt;/span&gt;
-              &lt;span&gt;{totalSats.toLocaleString()} sats&lt;/span&gt;
-            &lt;/div&gt;
-            &lt;div className="send-summary-row"&gt;
-              &lt;span&gt;Transaction Fee{locks.length &gt; 1 ? 's' : ''}&lt;/span&gt;
-              &lt;span&gt;-{totalFee.toLocaleString()} sats&lt;/span&gt;
-            &lt;/div&gt;
-            &lt;div className="send-summary-row" style={{ fontWeight: 600, borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 8 }}&gt;
-              &lt;span&gt;You'll Receive&lt;/span&gt;
-              &lt;span style={{ color: cantUnlock ? 'var(--error)' : 'var(--success)' }}&gt;
-                {cantUnlock ? 'Insufficient' : `+${totalReceive.toLocaleString()} sats`}
-              &lt;/span&gt;
-            &lt;/div&gt;
-          &lt;/div&gt;
 &nbsp;
-          &lt;div style={{ display: 'flex', gap: 8, marginTop: 16 }}&gt;
-            &lt;button
-              className="btn"
-              style={{ flex: 1, background: 'var(--surface-hover)' }}
-              onClick={onCancel}
-            &gt;
-              Cancel
-            &lt;/button&gt;
-            &lt;button
-              className="unlock-btn"
-              style={{ flex: 1, padding: '12px 24px', opacity: cantUnlock ? 0.5 : 1 }}
-              onClick={onConfirm}
-              disabled={unlocking || cantUnlock}
-            &gt;
-              {unlocking ? 'Unlocking...' : cantUnlock ? 'Cannot Unlock' : &lt;&gt;&lt;Unlock size={16} strokeWidth={1.75} /&gt; Unlock {totalReceive.toLocaleString()} sats&lt;/&gt;}
-            &lt;/button&gt;
-          &lt;/div&gt;
+        &lt;div className="modal-actions" style={{ marginTop: 16 }}&gt;
+          &lt;button className="btn btn-secondary" onClick={onCancel}&gt;
+            Cancel
+          &lt;/button&gt;
+          &lt;button
+            className="unlock-btn"
+            style={{ flex: 1, padding: '12px 24px', opacity: cantUnlock ? 0.5 : 1 }}
+            onClick={onConfirm}
+            disabled={unlocking || cantUnlock}
+          &gt;
+            {unlocking ? 'Unlocking...' : cantUnlock ? 'Cannot Unlock' : &lt;&gt;&lt;Unlock size={16} strokeWidth={1.75} /&gt; Unlock {totalReceive.toLocaleString()} sats&lt;/&gt;}
+          &lt;/button&gt;
         &lt;/div&gt;
       &lt;/div&gt;
-    &lt;/div&gt;
+    &lt;/Modal&gt;
   )
 }
 &nbsp;</pre></td></tr></table></pre>
@@ -319,7 +292,7 @@ export function <span class="fstat-no" title="function not covered" >UnlockConfi
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

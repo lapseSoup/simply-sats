@@ -157,8 +157,6 @@ function getRecentDates(days: number): string[] {
   return dates
 }
 
-const COMMON_INVOICE_NUMBERS: string[] = []
-
 function generateBSVDesktopInvoices(): string[] {
   const invoices: string[] = []
 
@@ -194,11 +192,19 @@ function generateBSVDesktopInvoices(): string[] {
   return invoices
 }
 
-COMMON_INVOICE_NUMBERS.push(...generateBSVDesktopInvoices())
+/** Q-106: Lazy-initialized cache for common invoice numbers */
+let _commonInvoiceNumbers: string[] | null = null
+
+function getLazyCommonInvoiceNumbers(): string[] {
+  if (!_commonInvoiceNumbers) {
+    _commonInvoiceNumbers = generateBSVDesktopInvoices()
+  }
+  return _commonInvoiceNumbers
+}
 
 /** Export common invoice numbers for callers that need them */
 export function getCommonInvoiceNumbers(): string[] {
-  return [...COMMON_INVOICE_NUMBERS]
+  return [...getLazyCommonInvoiceNumbers()]
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +218,7 @@ export function getCommonInvoiceNumbers(): string[] {
 export async function getDerivedAddressesFromKeys(
   receiverWif: string,
   senderPubKeys: string[] = [...KNOWN_SENDER_PUBKEYS],
-  invoiceNumbers: string[] = COMMON_INVOICE_NUMBERS
+  invoiceNumbers: string[] = getLazyCommonInvoiceNumbers()
 ): Promise<DerivedAddressResult[]> {
   if (senderPubKeys.length === 0) return []
 
@@ -232,7 +238,7 @@ export async function getDerivedAddressesFromKeys(
 export async function getDerivedAddressesFromStore(
   keyType: string,
   senderPubKeys: string[] = [...KNOWN_SENDER_PUBKEYS],
-  invoiceNumbers: string[] = COMMON_INVOICE_NUMBERS
+  invoiceNumbers: string[] = getLazyCommonInvoiceNumbers()
 ): Promise<DerivedAddressResult[]> {
   if (senderPubKeys.length === 0) return []
   return tauriInvoke<DerivedAddressResult[]>('get_derived_addresses_from_store', {
@@ -249,7 +255,7 @@ export async function findDerivedKeyForAddress(
   receiverWif: string,
   targetAddress: string,
   senderPubKeyHex: string,
-  invoiceNumbers: string[] = COMMON_INVOICE_NUMBERS,
+  invoiceNumbers: string[] = getLazyCommonInvoiceNumbers(),
   maxNumeric = 100
 ): Promise<DerivedKeyResult | null> {
   if (isTauri()) {
@@ -280,7 +286,7 @@ export async function debugFindInvoiceNumber(
   }
 
   // Build extended invoice number list for thorough search
-  const extendedInvoices = [...COMMON_INVOICE_NUMBERS]
+  const extendedInvoices = [...getLazyCommonInvoiceNumbers()]
 
   // Add numeric 0-1000
   for (let i = 0; i <= 1000; i++) {
@@ -389,6 +395,9 @@ export async function deriveTaggedKeyFromStore(
  *
  * SECURITY NOTE (S-57): This returns ROOT wallet/identity/ordinals keys
  * for well-known labels. The caller must gate this behind user approval.
+ *
+ * @deprecated Use `deriveTaggedKeyFromStore()` via Tauri command instead.
+ * This function returns raw WIFs in the result, exposing private keys to JavaScript.
  */
 export function getKnownTaggedKey(
   label: string,

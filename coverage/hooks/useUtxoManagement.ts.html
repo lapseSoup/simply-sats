@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/20</span>
+                <span class='fraction'>0/24</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/6</span>
+                <span class='fraction'>0/10</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/20</span>
+                <span class='fraction'>0/24</span>
             </div>
         
             
@@ -129,7 +129,14 @@
 <a name='L64'></a><a href='#L64'>64</a>
 <a name='L65'></a><a href='#L65'>65</a>
 <a name='L66'></a><a href='#L66'>66</a>
-<a name='L67'></a><a href='#L67'>67</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -171,6 +178,10 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -181,6 +192,9 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -203,8 +217,8 @@
  */
 &nbsp;
 import { useState, useCallback, useEffect } from 'react'
-import { getAllUTXOs, toggleUtxoFrozen } from '../services/database'
-import type { UTXO } from '../services/database'
+import { getAllUTXOs, toggleUtxoFrozen } from '../infrastructure/database'
+import type { UTXO } from '../infrastructure/database'
 import { uiLogger } from '../services/logger'
 &nbsp;
 interface UseUtxoManagementOptions {
@@ -234,9 +248,13 @@ export function <span class="fstat-no" title="function not covered" >useUtxoMana
   const <span class="cstat-no" title="statement not covered" >reload = useCallback(<span class="fstat-no" title="function not covered" >async () =&gt; {</span></span>
 <span class="cstat-no" title="statement not covered" >    setLoading(true)</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
-      const all = <span class="cstat-no" title="statement not covered" >await getAllUTXOs(accountId)</span>
-      const filtered = <span class="cstat-no" title="statement not covered" >filter ? all.filter(filter) : all</span>
-<span class="cstat-no" title="statement not covered" >      setUtxos(filtered)</span>
+      const allResult = <span class="cstat-no" title="statement not covered" >await getAllUTXOs(accountId)</span>
+<span class="cstat-no" title="statement not covered" >      if (allResult.ok) {</span>
+        const filtered = <span class="cstat-no" title="statement not covered" >filter ? allResult.value.filter(filter) : allResult.value</span>
+<span class="cstat-no" title="statement not covered" >        setUtxos(filtered)</span>
+      } else {
+<span class="cstat-no" title="statement not covered" >        uiLogger.error('Failed to load UTXOs', allResult.error)</span>
+      }
     } catch (e) {
 <span class="cstat-no" title="statement not covered" >      uiLogger.error('Failed to load UTXOs', e)</span>
     } finally {
@@ -246,7 +264,10 @@ export function <span class="fstat-no" title="function not covered" >useUtxoMana
 &nbsp;
   const <span class="cstat-no" title="statement not covered" >toggleFreeze = useCallback(<span class="fstat-no" title="function not covered" >async (t</span>xid: string, vout: number, currentlySpendable: boolean) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
-<span class="cstat-no" title="statement not covered" >      await toggleUtxoFrozen(txid, vout, currentlySpendable, accountId)</span>
+      const freezeResult = <span class="cstat-no" title="statement not covered" >await toggleUtxoFrozen(txid, vout, currentlySpendable, accountId)</span>
+<span class="cstat-no" title="statement not covered" >      if (!freezeResult.ok) {</span>
+<span class="cstat-no" title="statement not covered" >        uiLogger.error('Failed to toggle UTXO freeze', freezeResult.error)</span>
+      }
 <span class="cstat-no" title="statement not covered" >      await reload()</span>
     } catch (e) {
 <span class="cstat-no" title="statement not covered" >      uiLogger.error('Failed to toggle UTXO freeze', e)</span>
@@ -268,7 +289,7 @@ export function <span class="fstat-no" title="function not covered" >useUtxoMana
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../prettify.js"></script>
         <script>

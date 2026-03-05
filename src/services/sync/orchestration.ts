@@ -22,7 +22,8 @@ import {
   updateTransactionAmount,
   getLocks,
   getAllSyncStates,
-  clearSyncTimesForAccount as clearSyncTimesFn
+  clearSyncTimesForAccount as clearSyncTimesFn,
+  withTransaction
 } from '../database'
 import { RATE_LIMITS } from '../config'
 import { getWocClient } from '../../infrastructure/api/wocClient'
@@ -528,12 +529,14 @@ export async function syncWallet(
               txid: txid.slice(0, 12), vout, utxoId
             })
 
-            // Direct DELETE scoped by account_id to avoid deleting data from other accounts
+            // A-61: Wrap all deletes in a transaction so partial phantom cleanup can't leave orphaned rows
             const db = getDatabase()
-            await db.execute('DELETE FROM locks WHERE utxo_id = $1 AND account_id = $2', [utxoId, accountId ?? 1])
-            await db.execute('DELETE FROM utxos WHERE id = $1 AND account_id = $2', [utxoId, accountId ?? 1])
-            await db.execute('DELETE FROM transaction_labels WHERE txid = $1 AND account_id = $2', [txid, accountId ?? 1])
-            await db.execute('DELETE FROM transactions WHERE txid = $1 AND account_id = $2', [txid, accountId ?? 1])
+            await withTransaction(async () => {
+              await db.execute('DELETE FROM locks WHERE utxo_id = $1 AND account_id = $2', [utxoId, accountId ?? 1])
+              await db.execute('DELETE FROM utxos WHERE id = $1 AND account_id = $2', [utxoId, accountId ?? 1])
+              await db.execute('DELETE FROM transaction_labels WHERE txid = $1 AND account_id = $2', [txid, accountId ?? 1])
+              await db.execute('DELETE FROM transactions WHERE txid = $1 AND account_id = $2', [txid, accountId ?? 1])
+            })
 
             syncLogger.warn('[SYNC] Phantom lock fully purged from all tables', { txid: txid.slice(0, 12) })
           }

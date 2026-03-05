@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/30</span>
+                <span class='fraction'>0/23</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/31</span>
+                <span class='fraction'>0/36</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/27</span>
+                <span class='fraction'>0/18</span>
             </div>
         
             
@@ -201,12 +201,10 @@
 <a name='L136'></a><a href='#L136'>136</a>
 <a name='L137'></a><a href='#L137'>137</a>
 <a name='L138'></a><a href='#L138'>138</a>
-<a name='L139'></a><a href='#L139'>139</a>
-<a name='L140'></a><a href='#L140'>140</a>
-<a name='L141'></a><a href='#L141'>141</a>
-<a name='L142'></a><a href='#L142'>142</a>
-<a name='L143'></a><a href='#L143'>143</a>
-<a name='L144'></a><a href='#L144'>144</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L139'></a><a href='#L139'>139</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -236,21 +234,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -327,6 +310,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -352,9 +342,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useCallback } from 'react'
 import type { Ordinal } from '../../services/wallet'
 import { useUI } from '../../contexts/UIContext'
-import { openUrl } from '@tauri-apps/plugin-opener'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { currentMonitor } from '@tauri-apps/api/window'
+import { openExternalUrl } from '../../utils/opener'
+import { openViewerWindow } from '../../utils/window'
 import { Copy, Maximize2 } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { OrdinalImage } from '../shared/OrdinalImage'
@@ -364,13 +353,17 @@ interface OrdinalModalProps {
   onClose: () =&gt; void
   onTransfer?: () =&gt; void
   onList?: () =&gt; void
+  // TODO: Enable onBuy once listPrice is supported on the Ordinal type.
+  // purchaseOrdinal() is implemented in src/services/wallet/marketplace.ts and
+  // ready to wire up once GorillaPool returns payout + listPrice in the API.
+  onBuy?: () =&gt; void
 }
 &nbsp;
-export function <span class="fstat-no" title="function not covered" >OrdinalModal({</span> ordinal, onClose, onTransfer, onList }: OrdinalModalProps) {
+export function <span class="fstat-no" title="function not covered" >OrdinalModal({</span> ordinal, onClose, onTransfer, onList, onBuy }: OrdinalModalProps) {
   const { copyToClipboard <span class="cstat-no" title="statement not covered" >} = useUI()</span>
 &nbsp;
   const openOnWoC = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(t</span>xid: string) =&gt; {</span>
-<span class="cstat-no" title="statement not covered" >    openUrl(`https://whatsonchain.com/tx/${txid}`)</span>
+<span class="cstat-no" title="statement not covered" >    openExternalUrl(`https://whatsonchain.com/tx/${txid}`)</span>
   }
 &nbsp;
   const isImage = <span class="cstat-no" title="statement not covered" >ordinal.contentType?.startsWith('image/')</span>
@@ -380,27 +373,12 @@ export function <span class="fstat-no" title="function not covered" >OrdinalModa
     const imageUrl = <span class="cstat-no" title="statement not covered" >`https://ordinals.gorillapool.io/content/${ordinal.origin}`</span>
     const viewerUrl = <span class="cstat-no" title="statement not covered" >`${window.location.origin}/ordinal-viewer.html?src=${encodeURIComponent(imageUrl)}`</span>
 &nbsp;
-    // Cap window size at 90% of screen
-    let width = <span class="cstat-no" title="statement not covered" >800</span>
-    let height = <span class="cstat-no" title="statement not covered" >800</span>
-<span class="cstat-no" title="statement not covered" >    try {</span>
-      const monitor = <span class="cstat-no" title="statement not covered" >await currentMonitor()</span>
-<span class="cstat-no" title="statement not covered" >      if (monitor) {</span>
-        const maxW = <span class="cstat-no" title="statement not covered" >Math.floor(monitor.size.width / monitor.scaleFactor * 0.9)</span>
-        const maxH = <span class="cstat-no" title="statement not covered" >Math.floor(monitor.size.height / monitor.scaleFactor * 0.9)</span>
-<span class="cstat-no" title="statement not covered" >        width = Math.min(width, maxW)</span>
-<span class="cstat-no" title="statement not covered" >        height = Math.min(height, maxH)</span>
-      }
-    } catch {
-      // Fall back to default size
-    }
-&nbsp;
-<span class="cstat-no" title="statement not covered" >    new WebviewWindow(label, {</span>
+<span class="cstat-no" title="statement not covered" >    await openViewerWindow({</span>
+      label,
       url: viewerUrl,
       title: `Ordinal ${ordinal.origin.slice(0, 8)}...`,
-      width,
-      height,
-      resizable: true,
+      width: 800,
+      height: 800,
     })
   }, [ordinal.origin])
 &nbsp;
@@ -438,7 +416,7 @@ export function <span class="fstat-no" title="function not covered" >OrdinalModa
             role="button"
             tabIndex={0}
             onClick={<span class="fstat-no" title="function not covered" >() =&gt; <span class="cstat-no" title="statement not covered" >h</span>andleCopyValue(ordinal.origin, 'Origin')}</span>
-            onKeyDown={<span class="fstat-no" title="function not covered" >(e</span>) =&gt; { <span class="cstat-no" title="statement not covered" >if (e.key === 'Enter') <span class="cstat-no" title="statement not covered" >handleCopyValue(ordinal.origin, 'Origin') }</span></span>}
+            onKeyDown={<span class="fstat-no" title="function not covered" >(e</span>) =&gt; { <span class="cstat-no" title="statement not covered" >if (e.key === 'Enter' || e.key === ' ') { <span class="cstat-no" title="statement not covered" >e.preventDefault(); <span class="cstat-no" title="statement not covered" >h</span>andleCopyValue(ordinal.origin, 'Origin') }</span> }</span>}
             aria-label="Copy origin"
           &gt;
             &lt;span className="ordinal-info-label"&gt;Origin&lt;/span&gt;
@@ -452,7 +430,7 @@ export function <span class="fstat-no" title="function not covered" >OrdinalModa
             role="button"
             tabIndex={0}
             onClick={<span class="fstat-no" title="function not covered" >() =&gt; <span class="cstat-no" title="statement not covered" >h</span>andleCopyValue(`${ordinal.txid}:${ordinal.vout}`, 'Outpoint')}</span>
-            onKeyDown={<span class="fstat-no" title="function not covered" >(e</span>) =&gt; { <span class="cstat-no" title="statement not covered" >if (e.key === 'Enter') <span class="cstat-no" title="statement not covered" >handleCopyValue(`${ordinal.txid}:${ordinal.vout}`, 'Outpoint') }</span></span>}
+            onKeyDown={<span class="fstat-no" title="function not covered" >(e</span>) =&gt; { <span class="cstat-no" title="statement not covered" >if (e.key === 'Enter' || e.key === ' ') { <span class="cstat-no" title="statement not covered" >e.preventDefault(); <span class="cstat-no" title="statement not covered" >h</span>andleCopyValue(`${ordinal.txid}:${ordinal.vout}`, 'Outpoint') }</span> }</span>}
             aria-label="Copy outpoint"
           &gt;
             &lt;span className="ordinal-info-label"&gt;Outpoint&lt;/span&gt;
@@ -474,8 +452,15 @@ export function <span class="fstat-no" title="function not covered" >OrdinalModa
             &lt;/button&gt;
           &lt;/div&gt;
         &lt;/div&gt;
-        {(onList || onTransfer) &amp;&amp; (
+        {(onList || onTransfer || onBuy) &amp;&amp; (
           &lt;div className="ordinal-actions"&gt;
+            {onBuy &amp;&amp; (
+              // TODO: Show only when ordinal.listPrice &gt; 0 once listPrice is
+              // available on the Ordinal type (requires GorillaPool API support).
+              &lt;button className="btn btn-primary" onClick={onBuy}&gt;
+                Buy
+              &lt;/button&gt;
+            )}
             {onList &amp;&amp; (
               &lt;button className="btn btn-secondary" onClick={onList}&gt;
                 List for Sale
@@ -499,7 +484,7 @@ export function <span class="fstat-no" title="function not covered" >OrdinalModa
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

@@ -131,7 +131,7 @@ export function useAccountSwitching({
   refreshAccounts,
   setActiveAccountState,
   fetchDataFromDB,
-  wallet,
+  wallet: _wallet,
   accounts
 }: UseAccountSwitchingOptions): UseAccountSwitchingReturn {
 
@@ -352,7 +352,8 @@ export function useAccountSwitching({
     const success = await accountsDeleteAccount(accountId)
     if (success) {
       const active = await getActiveAccount()
-      if (active && wallet === null) {
+      // B-103: Removed `wallet === null` check — it used a stale closure capture
+      if (active) {
         // Try Rust derivation first, fall back to password
         let keys = await deriveKeysFromRust(active)
         if (!keys) {
@@ -369,7 +370,7 @@ export function useAccountSwitching({
       }
     }
     return success
-  }, [accountsDeleteAccount, wallet, setWallet, getKeysForAccount])
+  }, [accountsDeleteAccount, setWallet, getKeysForAccount])
 
   return {
     switchAccount,

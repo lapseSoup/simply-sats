@@ -23,6 +23,21 @@ const { mockExecute, mockSelect, mockTauriInvoke, signatureStore } = vi.hoisted(
       signatureStore.set(fakeSig, { wif, message })
       return Promise.resolve(fakeSig)
     }
+    if (cmd === 'sign_message_from_store') {
+      // S-129: acquireCertificate now signs via Rust store instead of pulling WIF to JS
+      const keyType = args?.keyType as string
+      const message = args?.message as string
+      // Map keyType to WIF for test consistency
+      const wifForKeyType: Record<string, string> = {
+        identity: 'L1RrrnXkcKut5DEMwtDthjwRcTTwED36thyL1DebVrKuwvohjMNi',
+        wallet: 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73sVHnoWn',
+      }
+      const wif = wifForKeyType[keyType] ?? 'unknown'
+      sigCounter++
+      const fakeSig = `deadbeef${sigCounter.toString(16).padStart(8, '0')}`
+      signatureStore.set(fakeSig, { wif, message })
+      return Promise.resolve(fakeSig)
+    }
     if (cmd === 'verify_signature') {
       const pubKeyHex = args?.publicKeyHex as string
       const message = args?.message as string

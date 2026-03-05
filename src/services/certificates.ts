@@ -390,10 +390,12 @@ export async function acquireCertificate(
     expiresAt: Date.now() + (365 * 24 * 60 * 60 * 1000) // 1 year default
   }
 
-  // Sign with identity key (self-signed)
-  const { getWifForOperation } = await import('./wallet')
-  const identityWif = await getWifForOperation('identity', 'acquireCertificate', keys)
-  const signature = await signCertificate(certData, identityWif)
+  // S-129: Sign with identity key from Rust store (keeps WIF out of JS)
+  const signingData = createCertificateSigningData(certData)
+  const signature = await tauriInvoke<string>('sign_message_from_store', {
+    message: signingData,
+    keyType: 'identity'
+  })
 
   const cert: Certificate = {
     ...certData,

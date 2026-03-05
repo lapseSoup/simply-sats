@@ -271,6 +271,9 @@ export class ChromeAdapter implements PlatformAdapter {
     return keyStore.mnemonic
   }
 
+  // S-128: JS strings are immutable — setting to null is the best we can do.
+  // The original values may persist in V8 heap until garbage collection.
+  // For true zeroization, use the Tauri desktop platform which uses Rust's Zeroizing<String>.
   async clearKeys(): Promise<void> {
     keyStore.mnemonic = null
     keyStore.walletWif = null

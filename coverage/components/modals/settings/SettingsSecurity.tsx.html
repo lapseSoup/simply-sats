@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/129</span>
+                <span class='fraction'>0/134</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/63</span>
+                <span class='fraction'>0/65</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/125</span>
+                <span class='fraction'>0/130</span>
             </div>
         
             
@@ -537,10 +537,7 @@
 <a name='L472'></a><a href='#L472'>472</a>
 <a name='L473'></a><a href='#L473'>473</a>
 <a name='L474'></a><a href='#L474'>474</a>
-<a name='L475'></a><a href='#L475'>475</a>
-<a name='L476'></a><a href='#L476'>476</a>
-<a name='L477'></a><a href='#L477'>477</a>
-<a name='L478'></a><a href='#L478'>478</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L475'></a><a href='#L475'>475</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -569,11 +566,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -694,12 +687,13 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1018,9 +1012,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useState, useCallback, useEffect } from 'react'
-import { save } from '@tauri-apps/plugin-dialog'
-import { writeTextFile } from '@tauri-apps/plugin-fs'
-import { invoke } from '@tauri-apps/api/core'
+import { saveFileDialog } from '../../../utils/dialog'
+import { writeFile } from '../../../utils/fs'
+import { tauriInvoke } from '../../../utils/tauri'
 import {
   Lock,
   FileText,
@@ -1028,10 +1022,11 @@ import {
   ClipboardCheck,
   ChevronRight
 } from 'lucide-react'
-import { useWallet } from '../../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { encrypt } from '../../../services/crypto'
-import { hasPassword } from '../../../services/wallet/storage'
+import { logger } from '../../../services/logger'
+import { hasPassword } from '../../../services/wallet'
 import { encryptAllAccounts } from '../../../services/accounts'
 import { NO_PASSWORD, setSessionPassword as setModuleSessionPassword } from '../../../services/sessionPasswordStore'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'
@@ -1045,13 +1040,8 @@ interface SettingsSecurityProps {
 }
 &nbsp;
 export function <span class="fstat-no" title="function not covered" >SettingsSecurity({</span> onClose }: SettingsSecurityProps) {
-  const {
-    wallet,
-    sessionPassword,
-    autoLockMinutes,
-    setAutoLockMinutes,
-    lockWallet
-<span class="cstat-no" title="statement not covered" >  } = useWallet()</span>
+  const { wallet, sessionPassword, autoLockMinutes <span class="cstat-no" title="statement not covered" >} = useWalletState()</span>
+  const { setAutoLockMinutes, lockWallet, setSessionPassword <span class="cstat-no" title="statement not covered" >} = useWalletActions()</span>
   const { showToast <span class="cstat-no" title="statement not covered" >} = useUI()</span>
 &nbsp;
   const [showKeysWarning, setShowKeysWarning<span class="cstat-no" title="statement not covered" >] = useState(false)</span>
@@ -1101,7 +1091,7 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
       const identityWif = <span class="cstat-no" title="statement not covered" >await getWifForOperation('identity', 'exportKeys', wallet)</span>
       const walletWif = <span class="cstat-no" title="statement not covered" >await getWifForOperation('wallet', 'exportKeys', wallet)</span>
       const ordWif = <span class="cstat-no" title="statement not covered" >await getWifForOperation('ordinals', 'exportKeys', wallet)</span>
-      const mnemonic = <span class="cstat-no" title="statement not covered" >await invoke&lt;string | null&gt;('get_mnemonic_once')</span>
+      const mnemonic = <span class="cstat-no" title="statement not covered" >await tauriInvoke&lt;string | null&gt;('get_mnemonic_once')</span>
 &nbsp;
       const keyData = <span class="cstat-no" title="statement not covered" >{</span>
         format: 'simply-sats',
@@ -1119,16 +1109,16 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
         version: 1,
         encrypted
       }
-      const filePath = <span class="cstat-no" title="statement not covered" >await save({</span>
+      const filePath = <span class="cstat-no" title="statement not covered" >await saveFileDialog({</span>
         defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
         filters: [{ name: 'JSON', extensions: ['json'] }]
       })
 <span class="cstat-no" title="statement not covered" >      if (filePath) {</span>
-<span class="cstat-no" title="statement not covered" >        await writeTextFile(filePath, JSON.stringify(encryptedExport, null, 2))</span>
+<span class="cstat-no" title="statement not covered" >        await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))</span>
 <span class="cstat-no" title="statement not covered" >        showToast('Encrypted keys saved to file!')</span>
       }
     } catch (err) {
-<span class="cstat-no" title="statement not covered" >      console.error('Key export failed:', err)</span>
+<span class="cstat-no" title="statement not covered" >      logger.error('Key export failed', err)</span>
 <span class="cstat-no" title="statement not covered" >      showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')</span>
     }
 <span class="cstat-no" title="statement not covered" >    setShowKeysWarning(false)</span>
@@ -1142,14 +1132,14 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
 <span class="cstat-no" title="statement not covered" >    setShowMnemonicWarning(false)</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
       // Fetch mnemonic once from Rust key store (auto-clears after retrieval)
-      const mnemonic = <span class="cstat-no" title="statement not covered" >await invoke&lt;string | null&gt;('get_mnemonic_once')</span>
+      const mnemonic = <span class="cstat-no" title="statement not covered" >await tauriInvoke&lt;string | null&gt;('get_mnemonic_once')</span>
 <span class="cstat-no" title="statement not covered" >      if (mnemonic) {</span>
 <span class="cstat-no" title="statement not covered" >        setMnemonicToShow(mnemonic)</span>
       } else {
 <span class="cstat-no" title="statement not covered" >        showToast('Mnemonic not available — wallet may have been imported without one', 'warning')</span>
       }
     } catch (err) {
-<span class="cstat-no" title="statement not covered" >      console.error('Failed to retrieve mnemonic:', err)</span>
+<span class="cstat-no" title="statement not covered" >      logger.error('Failed to retrieve mnemonic', err)</span>
 <span class="cstat-no" title="statement not covered" >      showToast('Failed to retrieve recovery phrase', 'error')</span>
     }
   }, [showToast])
@@ -1170,13 +1160,14 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
     }
 <span class="cstat-no" title="statement not covered" >    setSettingPassword(true)</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
-<span class="cstat-no" title="statement not covered" >      await encryptAllAccounts(newPassword)</span>
+      const result = <span class="cstat-no" title="statement not covered" >await encryptAllAccounts(newPassword)</span>
+<span class="cstat-no" title="statement not covered" >      if (!result.ok) {</span>
+<span class="cstat-no" title="statement not covered" >        setSetPasswordErrorState(result.error.message)</span>
+<span class="cstat-no" title="statement not covered" >        return</span>
+      }
       // encryptAllAccounts already re-encrypts secure storage and sets HAS_PASSWORD
 <span class="cstat-no" title="statement not covered" >      setModuleSessionPassword(newPassword)</span>
-      // Also update React state sessionPassword
-      // Note: We can't call setSessionPassword from useWallet here since it's
-      // a React state setter, but setModuleSessionPassword updates the module store.
-      // The user will need to refresh or the next unlock will pick it up.
+<span class="cstat-no" title="statement not covered" >      setSessionPassword(newPassword)</span>
 <span class="cstat-no" title="statement not covered" >      setAutoLockMinutes(10) // Enable auto-lock at default</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >      showToast('Password set! Lock screen and auto-lock are now enabled.')</span>
@@ -1188,7 +1179,7 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
     } finally {
 <span class="cstat-no" title="statement not covered" >      setSettingPassword(false)</span>
     }
-  }, [newPassword, confirmNewPassword, showToast, setAutoLockMinutes])
+  }, [newPassword, confirmNewPassword, showToast, setAutoLockMinutes, setSessionPassword])
 &nbsp;
   const <span class="cstat-no" title="statement not covered" >handleExportWithOneTimePassword = useCallback(<span class="fstat-no" title="function not covered" >async () =&gt; {</span></span>
 <span class="cstat-no" title="statement not covered" >    if (exportPassword.length &lt; SECURITY.MIN_PASSWORD_LENGTH) {</span>
@@ -1204,7 +1195,7 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
       const identityWif = <span class="cstat-no" title="statement not covered" >await getWifForOperation('identity', 'exportKeys', wallet!)</span>
       const walletWif = <span class="cstat-no" title="statement not covered" >await getWifForOperation('wallet', 'exportKeys', wallet!)</span>
       const ordWif = <span class="cstat-no" title="statement not covered" >await getWifForOperation('ordinals', 'exportKeys', wallet!)</span>
-      const mnemonic = <span class="cstat-no" title="statement not covered" >await invoke&lt;string | null&gt;('get_mnemonic_once')</span>
+      const mnemonic = <span class="cstat-no" title="statement not covered" >await tauriInvoke&lt;string | null&gt;('get_mnemonic_once')</span>
 &nbsp;
       const keyData = <span class="cstat-no" title="statement not covered" >{</span>
         format: 'simply-sats',
@@ -1222,16 +1213,16 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
         version: 1,
         encrypted
       }
-      const filePath = <span class="cstat-no" title="statement not covered" >await save({</span>
+      const filePath = <span class="cstat-no" title="statement not covered" >await saveFileDialog({</span>
         defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
         filters: [{ name: 'JSON', extensions: ['json'] }]
       })
 <span class="cstat-no" title="statement not covered" >      if (filePath) {</span>
-<span class="cstat-no" title="statement not covered" >        await writeTextFile(filePath, JSON.stringify(encryptedExport, null, 2))</span>
+<span class="cstat-no" title="statement not covered" >        await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))</span>
 <span class="cstat-no" title="statement not covered" >        showToast('Keys exported! Remember the password you used.')</span>
       }
     } catch (err) {
-<span class="cstat-no" title="statement not covered" >      console.error('Key export failed:', err)</span>
+<span class="cstat-no" title="statement not covered" >      logger.error('Key export failed', err)</span>
 <span class="cstat-no" title="statement not covered" >      showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')</span>
     }
 <span class="cstat-no" title="statement not covered" >    setShowExportPasswordPrompt(false)</span>
@@ -1260,7 +1251,7 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
                     &lt;div className="settings-row-value"&gt;
                       &lt;select
                         value={autoLockMinutes}
-                        onChange={<span class="fstat-no" title="function not covered" >(e</span>) =&gt; <span class="cstat-no" title="statement not covered" >setAutoLockMinutes(parseInt(e.target.value))}</span>
+                        onChange={<span class="fstat-no" title="function not covered" >(e</span>) =&gt; <span class="cstat-no" title="statement not covered" >setAutoLockMinutes(parseInt(e.target.value, 10))}</span>
                         onClick={<span class="fstat-no" title="function not covered" >(e</span>) =&gt; <span class="cstat-no" title="statement not covered" >e.stopPropagation()}</span>
                         aria-label="Auto-lock timeout"
                         style={{
@@ -1501,7 +1492,7 @@ export function <span class="fstat-no" title="function not covered" >SettingsSec
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

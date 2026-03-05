@@ -18,6 +18,7 @@ export async function addLock(lock: Omit<Lock, 'id'>, accountId?: number): Promi
   const result = await database.execute(
     `INSERT INTO locks (utxo_id, unlock_block, lock_block, ordinal_origin, created_at, account_id)
      VALUES ($1, $2, $3, $4, $5, $6)`,
+    // Q-77: accountId defaults to 1 for backwards compatibility with single-account wallets
     [lock.utxoId, lock.unlockBlock, lock.lockBlock || null, lock.ordinalOrigin || null, lock.createdAt, accountId ?? 1]
   )
 

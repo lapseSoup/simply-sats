@@ -547,15 +547,43 @@ pub struct BRC100Error {
     pub message: String,
 }
 
+/// Validate a BSV address format before using it in a URL.
+///
+/// Checks: non-empty, valid length (25-34 chars), base58 characters only
+/// (no 0, O, I, l), and starts with '1' (P2PKH mainnet). This prevents
+/// URL parameter injection (path traversal, query strings, etc.) by ensuring
+/// the address contains only safe characters.
+fn validate_bsv_address(address: &str) -> Result<(), String> {
+    if address.is_empty() {
+        return Err("Address is empty".to_string());
+    }
+    if address.len() < 25 || address.len() > 34 {
+        return Err(format!("Invalid address length: {}", address.len()));
+    }
+    // Base58 alphabet — excludes 0, O, I, l to avoid visual ambiguity
+    // This also guarantees no '/', '?', '&', '#', etc. can appear in the URL path
+    const BASE58_CHARS: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    if !address.chars().all(|c| BASE58_CHARS.contains(c)) {
+        return Err("Address contains invalid characters".to_string());
+    }
+    // BSV P2PKH mainnet addresses start with '1'
+    if !address.starts_with('1') {
+        return Err("Address must start with '1' (P2PKH mainnet)".to_string());
+    }
+    Ok(())
+}
+
 /// Check the confirmed + unconfirmed balance of a BSV address via WhatsOnChain.
 ///
 /// Uses Rust's reqwest HTTP client rather than the webview's fetch() API.
 /// This bypasses WKWebView CDN caching issues that cause the /history and
 /// /balance endpoints to return stale empty data for some addresses.
 ///
-/// Returns the total balance in satoshis (confirmed + unconfirmed), or -1 on error.
+/// Returns the total balance in satoshis (confirmed + unconfirmed).
 #[tauri::command]
-async fn check_address_balance(address: String) -> i64 {
+async fn check_address_balance(address: String) -> Result<i64, String> {
+    validate_bsv_address(&address)?;
+
     let url = format!(
         "https://api.whatsonchain.com/v1/bsv/main/address/{}/balance",
         address
@@ -575,12 +603,12 @@ async fn check_address_balance(address: String) -> i64 {
                 Ok(data) => {
                     let confirmed = data["confirmed"].as_i64().unwrap_or(0);
                     let unconfirmed = data["unconfirmed"].as_i64().unwrap_or(0);
-                    confirmed + unconfirmed
+                    Ok(confirmed + unconfirmed)
                 }
-                Err(_) => -1,
+                Err(_) => Ok(-1),
             }
         }
-        _ => -1,
+        _ => Ok(-1),
     }
 }
 

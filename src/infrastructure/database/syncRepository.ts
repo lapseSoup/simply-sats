@@ -49,6 +49,7 @@ export async function getLastSyncedHeight(address: string, accountId?: number): 
 export async function updateSyncState(address: string, height: number, accountId?: number): Promise<Result<void, DbError>> {
   try {
     const database = getDatabase()
+    // Q-77: accountId defaults to 1 for backwards compatibility with single-account wallets
     const accId = accountId ?? 1
     await database.execute(
       `INSERT OR REPLACE INTO sync_state (address, last_synced_height, last_synced_at, account_id)

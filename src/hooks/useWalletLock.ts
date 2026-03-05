@@ -31,7 +31,6 @@ import { clearSessionKey } from '../services/secureStorage'
 import { SECURITY } from '../config'
 
 interface UseWalletLockOptions {
-  activeAccount: Account | null
   activeAccountId: number | null
   getKeysForAccount: (account: Account, password: string | null) => Promise<WalletKeys | null>
   refreshAccounts: () => Promise<void>
@@ -53,7 +52,6 @@ interface UseWalletLockReturn {
 }
 
 export function useWalletLock({
-  activeAccount,
   activeAccountId,
   getKeysForAccount,
   refreshAccounts,
@@ -164,15 +162,13 @@ export function useWalletLock({
         throw new Error(`Too many failed attempts. Please wait ${timeStr} before trying again.`)
       }
 
-      let account = activeAccount
+      // B-102: Always fetch from DB to avoid stale activeAccount closure capture
+      let account = await getActiveAccount()
       if (!account) {
-        walletLogger.debug('No active account in state, fetching from database...')
-        account = await getActiveAccount()
-        if (!account) {
-          const allAccounts = await getAllAccounts()
-          if (allAccounts.length > 0) {
-            account = allAccounts[0]!
-          }
+        walletLogger.debug('No active account in DB, trying all accounts...')
+        const allAccounts = await getAllAccounts()
+        if (allAccounts.length > 0) {
+          account = allAccounts[0]!
         }
       }
 
@@ -251,7 +247,7 @@ export function useWalletLock({
         await new Promise(resolve => setTimeout(resolve, UNLOCK_MIN_TIME_MS - elapsed))
       }
     }
-  }, [activeAccount, getKeysForAccount, refreshAccounts, storeKeysInRust, setWalletState, setSessionPassword, preloadDataFromDB])
+  }, [getKeysForAccount, refreshAccounts, storeKeysInRust, setWalletState, setSessionPassword, preloadDataFromDB])
 
   // Set auto-lock timeout (S-112: validate and clamp to safe bounds)
   const setAutoLockMinutes = useCallback((minutes: number) => {

@@ -27,7 +27,7 @@ import { useAccountSwitching } from '../hooks/useAccountSwitching'
 import { hasPassword } from '../services/wallet/storage'
 import { getAccountKeys } from '../services/accounts'
 import { getSessionPassword } from '../services/sessionPasswordStore'
-import { syncWallet, clearSyncTimesForAccount } from '../services/sync'
+import { syncWallet } from '../services/sync'
 
 // Split context objects
 import { WalletStateContext, useWalletState, type WalletStateContextType } from './WalletStateContext'
@@ -178,7 +178,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
     autoLockMinutes,
     lockWallet, unlockWallet, setAutoLockMinutes
   } = useWalletLock({
-    activeAccount,
     activeAccountId,
     getKeysForAccount,
     refreshAccounts,
@@ -309,7 +308,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     await syncFetchData(
       wallet,
       currentAccountId,
-      knownUnlockedLocksRef.current,
+      () => knownUnlockedLocksRef.current,
       async ({ utxos: _fetchedUtxos, preloadedLocks }) => {
         if (fetchVersionRef.current !== version) return
 
@@ -403,11 +402,6 @@ export function WalletProvider({ children }: WalletProviderProps) {
           if (!keys) continue
           await syncWallet(keys.walletAddress, keys.ordAddress, keys.identityAddress, account.id ?? undefined, keys.walletPubKey)
           try { await refreshAccounts() } catch { /* non-critical */ }
-          // Reset sync timestamp so the staleness check fires a fresh full sync
-          // (including TX history) when the user actually switches to this account.
-          if (account.id !== undefined) {
-            try { await clearSyncTimesForAccount(account.id) } catch { /* non-critical */ }
-          }
         } catch (e) {
           walletLogger.warn('Background sync failed for inactive account', { accountId: account.id, error: String(e) })
         }
@@ -440,9 +434,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [])
 
   // Split into state (read-only) and actions (write operations)
-  // Snapshot cache for render-safe access (ref reads are not allowed during render in React 19)
+  // A-54: Return ref directly instead of O(n) copy. Callers must not mutate.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const contentCacheSnapshot = useMemo(() => new Map(contentCacheRef.current), [cacheVersion])
+  const contentCacheSnapshot = useMemo(() => contentCacheRef.current, [cacheVersion])
 
   const stateValue: WalletStateContextType = useMemo(() => ({
     wallet,

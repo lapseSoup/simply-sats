@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/80</span>
+                <span class='fraction'>0/79</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/71</span>
+                <span class='fraction'>0/70</span>
             </div>
         
             
@@ -317,8 +317,7 @@
 <a name='L252'></a><a href='#L252'>252</a>
 <a name='L253'></a><a href='#L253'>253</a>
 <a name='L254'></a><a href='#L254'>254</a>
-<a name='L255'></a><a href='#L255'>255</a>
-<a name='L256'></a><a href='#L256'>256</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L255'></a><a href='#L255'>255</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -339,15 +338,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -357,18 +347,12 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -380,6 +364,21 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -391,7 +390,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -574,7 +572,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useState, useCallback } from 'react'
-import { PrivateKey } from '@bsv/sdk'
 import {
   RefreshCw,
   Users,
@@ -583,8 +580,9 @@ import {
   Plus,
   ChevronRight
 } from 'lucide-react'
-import { useWallet } from '../../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
+// TODO(A-45): Deep service imports — expose via context hook or barrel when available
 import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../../services/keyDerivation'
 import { checkForPayments, getPaymentNotifications } from '../../../services/messageBox'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'
@@ -592,7 +590,8 @@ import { UTXOsTab } from '../../tabs/UTXOsTab'
 import { handleKeyDown } from './settingsKeyDown'
 &nbsp;
 export function <span class="fstat-no" title="function not covered" >SettingsAdvanced() {</span>
-  const { wallet, performSync, fetchData <span class="cstat-no" title="statement not covered" >} = useWallet()</span>
+  const { wallet <span class="cstat-no" title="statement not covered" >} = useWalletState()</span>
+  const { performSync, fetchData <span class="cstat-no" title="statement not covered" >} = useWalletActions()</span>
   const { showToast <span class="cstat-no" title="statement not covered" >} = useUI()</span>
 &nbsp;
   const [showSenderInput, setShowSenderInput<span class="cstat-no" title="statement not covered" >] = useState(false)</span>
@@ -625,8 +624,7 @@ export function <span class="fstat-no" title="function not covered" >SettingsAdv
 <span class="cstat-no" title="statement not covered" >    try {</span>
       const { getWifForOperation } = <span class="cstat-no" title="statement not covered" >await import('../../../services/wallet')</span>
       const identityWif = <span class="cstat-no" title="statement not covered" >await getWifForOperation('identity', 'checkMessageBox', wallet)</span>
-      const identityPrivKey = <span class="cstat-no" title="statement not covered" >PrivateKey.fromWif(identityWif)</span>
-      const newPayments = <span class="cstat-no" title="statement not covered" >await checkForPayments(identityPrivKey)</span>
+      const newPayments = <span class="cstat-no" title="statement not covered" >await checkForPayments(identityWif)</span>
 <span class="cstat-no" title="statement not covered" >      setPaymentNotifications(getPaymentNotifications())</span>
 <span class="cstat-no" title="statement not covered" >      if (newPayments.length &gt; 0) {</span>
 <span class="cstat-no" title="statement not covered" >        showToast(`Found ${newPayments.length} new payment(s)!`)</span>
@@ -652,9 +650,8 @@ export function <span class="fstat-no" title="function not covered" >SettingsAdv
 <span class="cstat-no" title="statement not covered" >      try {</span>
         const { getWifForOperation } = <span class="cstat-no" title="statement not covered" >await import('../../../services/wallet')</span>
         const identityWif = <span class="cstat-no" title="statement not covered" >await getWifForOperation('identity', 'debugInvoiceFinder', wallet)</span>
-        const identityPrivKey = <span class="cstat-no" title="statement not covered" >PrivateKey.fromWif(identityWif)</span>
 <span class="cstat-no" title="statement not covered" >        for (const sender of senders) {</span>
-          const <span class="cstat-no" title="statement not covered" >result = debugFindInvoiceNumber(identityPrivKey, sender, debugAddressInput)</span>
+          const result = <span class="cstat-no" title="statement not covered" >await debugFindInvoiceNumber(identityWif, sender, debugAddressInput)</span>
 <span class="cstat-no" title="statement not covered" >          if (result.found) {</span>
 <span class="cstat-no" title="statement not covered" >            setDebugResult(`Found: "${result.invoiceNumber}"`)</span>
 <span class="cstat-no" title="statement not covered" >            setDebugSearching(false)</span>
@@ -835,7 +832,7 @@ export function <span class="fstat-no" title="function not covered" >SettingsAdv
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

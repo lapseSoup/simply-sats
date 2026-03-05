@@ -14,6 +14,7 @@ use zeroize::Zeroizing;
 
 use crate::key_derivation;
 use crate::brc100_signing;
+use crate::bsv_sdk_adapter;
 use crate::transaction;
 
 /// Internal key storage — holds sensitive WIFs and mnemonic.
@@ -101,11 +102,12 @@ pub async fn store_keys(
     // Immediately wrap the IPC-received mnemonic in Zeroizing so it gets cleared on drop
     let mnemonic = Zeroizing::new(mnemonic);
 
-    // Derive full keys using existing key_derivation module
+    // Derive full keys using existing key_derivation module.
+    // Pass &str reference to avoid cloning the inner String out of Zeroizing wrapper.
     let full_keys = if let Some(idx) = account_index {
-        key_derivation::derive_wallet_keys_for_account((*mnemonic).clone(), idx)?
+        key_derivation::derive_wallet_keys_for_account_inner(&mnemonic, idx)?
     } else {
-        key_derivation::derive_wallet_keys((*mnemonic).clone())?
+        key_derivation::derive_wallet_keys_for_account_inner(&mnemonic, 0)?
     };
 
     let pub_keys = PublicWalletKeys {
@@ -125,7 +127,9 @@ pub async fn store_keys(
     store.wallet_wif = Some(Zeroizing::new(full_keys.wallet_wif));
     store.ord_wif = Some(Zeroizing::new(full_keys.ord_wif));
     store.identity_wif = Some(Zeroizing::new(full_keys.identity_wif));
-    store.mnemonic = Some(Zeroizing::new((*mnemonic).clone()));
+    // Clone the Zeroizing wrapper (not the inner String) so the stored copy
+    // is also zeroized on drop.
+    store.mnemonic = Some(mnemonic.clone());
     store.pub_keys = Some(pub_keys.clone());
 
     log::info!("Keys stored in Rust key store (account_index: {:?})", account_index);
@@ -147,6 +151,11 @@ pub async fn store_keys_direct(
     identity_pub_key: String,
     mnemonic: Option<String>,
 ) -> Result<PublicWalletKeys, String> {
+    // Validate WIF format before storing — reject malformed keys early
+    validate_wif(&wallet_wif).map_err(|e| format!("wallet_wif: {}", e))?;
+    validate_wif(&ord_wif).map_err(|e| format!("ord_wif: {}", e))?;
+    validate_wif(&identity_wif).map_err(|e| format!("identity_wif: {}", e))?;
+
     let pub_keys = PublicWalletKeys {
         wallet_type: "yours".to_string(),
         wallet_address: wallet_address.clone(),
@@ -234,13 +243,11 @@ pub async fn switch_account_from_store(
     account_index: u32,
 ) -> Result<PublicWalletKeys, String> {
     let mut store = key_store.lock().await;
-    let mnemonic = store.mnemonic.as_deref().cloned()
+    // Borrow the stored mnemonic as &str — no cloning needed for derivation.
+    let mnemonic_ref = store.mnemonic.as_deref()
         .ok_or_else(|| "No mnemonic in key store — wallet may be locked".to_string())?;
 
-    // Use Zeroizing wrapper to ensure the clone is cleared after derivation
-    let mnemonic_for_derive = Zeroizing::new(mnemonic);
-    let full_keys = key_derivation::derive_wallet_keys_for_account((*mnemonic_for_derive).clone(), account_index)?;
-    drop(mnemonic_for_derive);
+    let full_keys = key_derivation::derive_wallet_keys_for_account_inner(mnemonic_ref, account_index)?;
 
     let pub_keys = PublicWalletKeys {
         wallet_type: full_keys.wallet_type.clone(),
@@ -262,6 +269,14 @@ pub async fn switch_account_from_store(
 
     log::info!("Account switched in Rust key store (account_index: {})", account_index);
     Ok(pub_keys)
+}
+
+/// Validate that a string is a valid WIF-encoded private key.
+/// Uses the BSV SDK to parse the WIF — if it can derive a public key, it's valid.
+fn validate_wif(wif: &str) -> Result<(), String> {
+    bsv_sdk_adapter::sdk_privkey_from_wif(wif)
+        .map(|_| ())
+        .map_err(|e| format!("Invalid WIF: {}", e))
 }
 
 /// Ensure keys are loaded before sensitive operations.

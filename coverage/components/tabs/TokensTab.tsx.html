@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/74</span>
+                <span class='fraction'>0/81</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/61</span>
+                <span class='fraction'>0/67</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/16</span>
+                <span class='fraction'>0/18</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/72</span>
+                <span class='fraction'>0/79</span>
             </div>
         
             
@@ -366,7 +366,24 @@
 <a name='L301'></a><a href='#L301'>301</a>
 <a name='L302'></a><a href='#L302'>302</a>
 <a name='L303'></a><a href='#L303'>303</a>
-<a name='L304'></a><a href='#L304'>304</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L304'></a><a href='#L304'>304</a>
+<a name='L305'></a><a href='#L305'>305</a>
+<a name='L306'></a><a href='#L306'>306</a>
+<a name='L307'></a><a href='#L307'>307</a>
+<a name='L308'></a><a href='#L308'>308</a>
+<a name='L309'></a><a href='#L309'>309</a>
+<a name='L310'></a><a href='#L310'>310</a>
+<a name='L311'></a><a href='#L311'>311</a>
+<a name='L312'></a><a href='#L312'>312</a>
+<a name='L313'></a><a href='#L313'>313</a>
+<a name='L314'></a><a href='#L314'>314</a>
+<a name='L315'></a><a href='#L315'>315</a>
+<a name='L316'></a><a href='#L316'>316</a>
+<a name='L317'></a><a href='#L317'>317</a>
+<a name='L318'></a><a href='#L318'>318</a>
+<a name='L319'></a><a href='#L319'>319</a>
+<a name='L320'></a><a href='#L320'>320</a>
+<a name='L321'></a><a href='#L321'>321</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -392,9 +409,21 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -417,6 +446,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -434,6 +465,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -566,6 +599,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -679,7 +713,7 @@ import { useState, memo, useCallback, useMemo } from 'react'
 import { Search, RefreshCw } from 'lucide-react'
 import type { TokenBalance } from '../../services/tokens'
 import { formatTokenAmount } from '../../services/tokens'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
@@ -694,8 +728,22 @@ const <span class="cstat-no" title="statement not covered" >TokenCard = memo(fun
   balance: TokenBalance
   onSend: (balance: TokenBalance) =&gt; void
 }) {
+  const <span class="cstat-no" title="statement not covered" >handleKeyDown = useCallback(<span class="fstat-no" title="function not covered" >(e</span>: React.KeyboardEvent) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >    if (e.key === 'Enter' || e.key === ' ') {</span>
+<span class="cstat-no" title="statement not covered" >      e.preventDefault()</span>
+<span class="cstat-no" title="statement not covered" >      onSend(balance)</span>
+    }
+  }, [onSend, balance])
+&nbsp;
 <span class="cstat-no" title="statement not covered" >  return (</span>
-    &lt;div className="token-card"&gt;
+    &lt;div
+      className="token-card"
+      tabIndex={0}
+      role="button"
+      onClick={<span class="fstat-no" title="function not covered" >() =&gt; <span class="cstat-no" title="statement not covered" >o</span>nSend(balance)}</span>
+      onKeyDown={handleKeyDown}
+      aria-label={`${balance.token.ticker} — ${formatTokenAmount(balance.total, balance.token.decimals)}`}
+    &gt;
       &lt;div className="token-icon"&gt;
         {balance.token.iconUrl ? (
           &lt;img src={balance.token.iconUrl} alt={balance.token.ticker} /&gt;
@@ -722,6 +770,7 @@ const <span class="cstat-no" title="statement not covered" >TokenCard = memo(fun
           className="send-button"
           onClick={<span class="fstat-no" title="function not covered" >() =&gt; <span class="cstat-no" title="statement not covered" >o</span>nSend(balance)}</span>
           disabled={balance.confirmed &lt;= 0n}
+          title={balance.confirmed &lt;= 0n ? 'No confirmed tokens to send' : undefined}
         &gt;
           Send
         &lt;/button&gt;
@@ -734,8 +783,9 @@ interface TokensTabProps {
   onRefresh?: () =&gt; Promise&lt;void&gt;
 }
 &nbsp;
-export function <span class="fstat-no" title="function not covered" >TokensTab({</span> onRefresh }: TokensTabProps) {
-  const { tokenBalances, tokensSyncing: loading, refreshTokens, handleSendToken <span class="cstat-no" title="statement not covered" >} = useWallet()</span>
+export const <span class="cstat-no" title="statement not covered" >TokensTab = memo(function <span class="fstat-no" title="function not covered" >TokensTab({</span> onRefresh }: TokensTabProps) {</span>
+  const { tokenBalances, tokensSyncing: loading <span class="cstat-no" title="statement not covered" >} = useWalletState()</span>
+  const { refreshTokens, handleSendToken <span class="cstat-no" title="statement not covered" >} = useWalletActions()</span>
   const { showToast <span class="cstat-no" title="statement not covered" >} = useUI()</span>
 &nbsp;
   const handleRefresh = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async () =&gt; {</span></span>
@@ -869,6 +919,7 @@ export function <span class="fstat-no" title="function not covered" >TokensTab({
             placeholder="Search tokens..."
             value={filter}
             onChange={<span class="fstat-no" title="function not covered" >e =&gt; <span class="cstat-no" title="statement not covered" >s</span>etFilter(e.target.value)}</span>
+            aria-label="Search tokens"
           /&gt;
         &lt;/div&gt;
         &lt;button
@@ -971,7 +1022,7 @@ export function <span class="fstat-no" title="function not covered" >TokensTab({
 &nbsp;
     &lt;/div&gt;
   )
-}
+})
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -979,7 +1030,7 @@ export function <span class="fstat-no" title="function not covered" >TokensTab({
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

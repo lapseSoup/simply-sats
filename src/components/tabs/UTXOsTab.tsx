@@ -78,7 +78,7 @@ export const UTXOsTab = memo(function UTXOsTab() {
   const { fetchData } = useWalletActions()
   const { formatUSD } = useUI()
 
-  const [selectedUtxos, setSelectedUtxos] = useState<Set<string>>(new Set())
+  const [selectedUtxos, setSelectedUtxos] = useState<Set<string>>(() => new Set())
   const [sortField, setSortField] = useState<SortField>('amount')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [filterBasket, setFilterBasket] = useState<string>('all')

@@ -62,6 +62,37 @@ function updateActivity() {
   state.warningFired = false
 }
 
+/** Create the interval callback for checking inactivity. Shared by initAutoLock and resumeAutoLock. */
+function createInactivityChecker(
+  onLock: () => void | Promise<void>,
+  onWarning?: () => void
+): () => void {
+  return () => {
+    if (!state.isEnabled) return
+    const timeSinceActive = Date.now() - state.lastActiveTime
+    if (timeSinceActive >= state.inactivityLimit) {
+      state.isEnabled = false
+      walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
+      try {
+        Promise.resolve(onLock()).catch(err => {
+          walletLogger.error('[AutoLock] Lock callback failed', err)
+        })
+      } catch (err) {
+        walletLogger.error('[AutoLock] Lock callback threw synchronously', err)
+      }
+    } else if (
+      onWarning &&
+      !state.warningFired &&
+      state.inactivityLimit > WARNING_BEFORE_LOCK_MS &&
+      timeSinceActive >= state.inactivityLimit - WARNING_BEFORE_LOCK_MS
+    ) {
+      state.warningFired = true
+      walletLogger.debug('[AutoLock] Warning: wallet will lock in ~30 seconds')
+      onWarning()
+    }
+  }
+}
+
 /**
  * Initialize auto-lock with a callback for when lock should trigger
  *
@@ -96,33 +127,7 @@ export function initAutoLock(
   }
 
   // Check for inactivity every 5 seconds (max overshoot ≈ 4s)
-  state.checkInterval = setInterval(() => {
-    if (!state.isEnabled) return
-
-    const timeSinceActive = Date.now() - state.lastActiveTime
-
-    if (timeSinceActive >= state.inactivityLimit) {
-      state.isEnabled = false  // Prevent re-entry while lock is processing
-      walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
-      try {
-        // onLock may return a Promise (e.g. lockWallet) — catch to prevent unhandled rejections
-        Promise.resolve(onLock()).catch(err => {
-          walletLogger.error('[AutoLock] Lock callback failed', err)
-        })
-      } catch (err) {
-        walletLogger.error('[AutoLock] Lock callback threw synchronously', err)
-      }
-    } else if (
-      onWarning &&
-      !state.warningFired &&
-      state.inactivityLimit > WARNING_BEFORE_LOCK_MS &&
-      timeSinceActive >= state.inactivityLimit - WARNING_BEFORE_LOCK_MS
-    ) {
-      state.warningFired = true
-      walletLogger.debug('[AutoLock] Warning: wallet will lock in ~30 seconds')
-      onWarning()
-    }
-  }, CHECK_INTERVAL_MS)
+  state.checkInterval = setInterval(createInactivityChecker(onLock, onWarning), CHECK_INTERVAL_MS)
 
   walletLogger.info(`[AutoLock] Initialized with ${inactivityLimitMs / 60000} minute timeout`)
 
@@ -214,38 +219,14 @@ export function pauseAutoLock(): void {
  * Resume auto-lock after pause
  */
 export function resumeAutoLock(onLock: () => void | Promise<void>, onWarning?: () => void): void {
-  if (!state.isEnabled || state.checkInterval) return
+  if (state.checkInterval) return  // Already running, don't duplicate
 
+  state.isEnabled = true   // Re-enable (may have been disabled by stopAutoLock)
   state.isPaused = false
   state.lastActiveTime = Date.now() // Reset timer on resume
   state.warningFired = false
 
-  state.checkInterval = setInterval(() => {
-    if (!state.isEnabled) return
-
-    const timeSinceActive = Date.now() - state.lastActiveTime
-
-    if (timeSinceActive >= state.inactivityLimit) {
-      state.isEnabled = false  // Prevent re-entry while lock is processing
-      walletLogger.info('[AutoLock] Inactivity timeout reached, locking wallet')
-      try {
-        Promise.resolve(onLock()).catch(err => {
-          walletLogger.error('[AutoLock] Lock callback failed', err)
-        })
-      } catch (err) {
-        walletLogger.error('[AutoLock] Lock callback threw synchronously', err)
-      }
-    } else if (
-      onWarning &&
-      !state.warningFired &&
-      state.inactivityLimit > WARNING_BEFORE_LOCK_MS &&
-      timeSinceActive >= state.inactivityLimit - WARNING_BEFORE_LOCK_MS
-    ) {
-      state.warningFired = true
-      walletLogger.debug('[AutoLock] Warning: wallet will lock in ~30 seconds')
-      onWarning()
-    }
-  }, CHECK_INTERVAL_MS)
+  state.checkInterval = setInterval(createInactivityChecker(onLock, onWarning), CHECK_INTERVAL_MS)
 
   walletLogger.debug('[AutoLock] Resumed')
 }

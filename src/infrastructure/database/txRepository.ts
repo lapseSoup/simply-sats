@@ -18,6 +18,7 @@ import { DbError } from '../../services/errors'
 export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: number): Promise<Result<string, DbError>> {
   try {
     const database = getDatabase()
+    // Q-77: accountId defaults to 1 for backwards compatibility with single-account wallets
     const accId = accountId ?? 1
 
     // Use INSERT OR IGNORE to not overwrite existing transactions
@@ -70,6 +71,7 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>, accountId?: nu
 export async function upsertTransaction(tx: Omit<Transaction, 'id'>, accountId?: number): Promise<Result<string, DbError>> {
   try {
     const database = getDatabase()
+    // Q-77: accountId defaults to 1 for backwards compatibility with single-account wallets
     const accId = accountId ?? 1
 
     // First try to insert

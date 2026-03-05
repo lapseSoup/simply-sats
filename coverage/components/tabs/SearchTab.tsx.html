@@ -25,28 +25,28 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/104</span>
+                <span class='fraction'>0/112</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/101</span>
+                <span class='fraction'>0/109</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/34</span>
+                <span class='fraction'>0/35</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/93</span>
+                <span class='fraction'>0/99</span>
             </div>
         
             
@@ -358,7 +358,15 @@
 <a name='L293'></a><a href='#L293'>293</a>
 <a name='L294'></a><a href='#L294'>294</a>
 <a name='L295'></a><a href='#L295'>295</a>
-<a name='L296'></a><a href='#L296'>296</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L296'></a><a href='#L296'>296</a>
+<a name='L297'></a><a href='#L297'>297</a>
+<a name='L298'></a><a href='#L298'>298</a>
+<a name='L299'></a><a href='#L299'>299</a>
+<a name='L300'></a><a href='#L300'>300</a>
+<a name='L301'></a><a href='#L301'>301</a>
+<a name='L302'></a><a href='#L302'>302</a>
+<a name='L303'></a><a href='#L303'>303</a>
+<a name='L304'></a><a href='#L304'>304</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -373,7 +381,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -388,6 +396,9 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -395,7 +406,10 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -426,8 +440,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -653,11 +669,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useState, useEffect, useCallback, useRef } from 'react'
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { Search, X, ArrowDownLeft, ArrowUpRight, Circle } from 'lucide-react'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../services/database'
+import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../infrastructure/database'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 import { EmptyState, NoSearchResultsEmpty } from '../shared/EmptyState'
 &nbsp;
@@ -668,7 +684,7 @@ type SearchResult = {
   description?: string
 }
 &nbsp;
-export function <span class="fstat-no" title="function not covered" >SearchTab() {</span>
+export const <span class="cstat-no" title="statement not covered" >SearchTab = memo(function <span class="fstat-no" title="function not covered" >SearchTab() {</span></span>
   const { activeAccountId <span class="cstat-no" title="statement not covered" >} = useWalletState()</span>
   const { formatUSD <span class="cstat-no" title="statement not covered" >} = useUI()</span>
   const [query, setQuery<span class="cstat-no" title="statement not covered" >] = useState('')</span>
@@ -686,7 +702,13 @@ export function <span class="fstat-no" title="function not covered" >SearchTab()
   // Load all labels on mount
 <span class="cstat-no" title="statement not covered" >  useEffect(<span class="fstat-no" title="function not covered" >() =&gt; {</span></span>
 <span class="cstat-no" title="statement not covered" >    getAllLabels(activeAccountId ?? undefined)</span>
-      .then(setAllLabels)
+      .then(<span class="fstat-no" title="function not covered" >result =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >        if (result.ok) {</span>
+<span class="cstat-no" title="statement not covered" >          setAllLabels(result.value)</span>
+        } else {
+<span class="cstat-no" title="statement not covered" >          setAllLabels([])</span>
+        }
+      })
       .catch(<span class="fstat-no" title="function not covered" >() =&gt; <span class="cstat-no" title="statement not covered" >s</span>etAllLabels([]))</span>
   }, [activeAccountId])
 &nbsp;
@@ -716,14 +738,16 @@ export function <span class="fstat-no" title="function not covered" >SearchTab()
       let txs
 <span class="cstat-no" title="statement not covered" >      if (labels.length &gt; 0) {</span>
         // Multi-label AND search with optional freeText
-<span class="cstat-no" title="statement not covered" >        txs = await searchTransactionsByLabels(</span>
+        const result = <span class="cstat-no" title="statement not covered" >await searchTransactionsByLabels(</span>
           labels,
           freeText.trim() || undefined,
           activeAccountId ?? undefined
         )
+<span class="cstat-no" title="statement not covered" >        txs = result.ok ? result.value : []</span>
       } else {
         // Simple text search
-<span class="cstat-no" title="statement not covered" >        txs = await searchTransactions(freeText.trim(), activeAccountId ?? undefined)</span>
+        const result = <span class="cstat-no" title="statement not covered" >await searchTransactions(freeText.trim(), activeAccountId ?? undefined)</span>
+<span class="cstat-no" title="statement not covered" >        txs = result.ok ? result.value : []</span>
       }
 <span class="cstat-no" title="statement not covered" >      setResults(txs.map(<span class="fstat-no" title="function not covered" >tx =&gt; (<span class="cstat-no" title="statement not covered" >{</span></span></span>
         tx_hash: tx.txid,
@@ -908,7 +932,7 @@ export function <span class="fstat-no" title="function not covered" >SearchTab()
                 onClick={<span class="fstat-no" title="function not covered" >() =&gt; <span class="cstat-no" title="statement not covered" >s</span>etSelectedTx(tx)}</span>
                 role="listitem"
                 tabIndex={0}
-                onKeyDown={<span class="fstat-no" title="function not covered" >e =&gt; <span class="cstat-no" title="statement not covered" >e</span>.key === 'Enter' &amp;&amp; setSelectedTx(tx)}</span>
+                onKeyDown={<span class="fstat-no" title="function not covered" >e =&gt; {</span> <span class="cstat-no" title="statement not covered" >if (e.key === 'Enter' || e.key === ' ') { <span class="cstat-no" title="statement not covered" >e.preventDefault(); <span class="cstat-no" title="statement not covered" >s</span>etSelectedTx(tx) }</span> }</span>}
                 style={{ cursor: 'pointer' }}
               &gt;
                 &lt;div className="tx-icon" aria-hidden="true"&gt;{getTxIcon(tx.amount)}&lt;/div&gt;
@@ -947,7 +971,7 @@ export function <span class="fstat-no" title="function not covered" >SearchTab()
       )}
     &lt;/&gt;
   )
-}
+})
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -955,7 +979,7 @@ export function <span class="fstat-no" title="function not covered" >SearchTab()
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

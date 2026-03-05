@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/91</span>
+                <span class='fraction'>0/79</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/112</span>
+                <span class='fraction'>0/96</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/86</span>
+                <span class='fraction'>0/74</span>
             </div>
         
             
@@ -354,22 +354,8 @@
 <a name='L289'></a><a href='#L289'>289</a>
 <a name='L290'></a><a href='#L290'>290</a>
 <a name='L291'></a><a href='#L291'>291</a>
-<a name='L292'></a><a href='#L292'>292</a>
-<a name='L293'></a><a href='#L293'>293</a>
-<a name='L294'></a><a href='#L294'>294</a>
-<a name='L295'></a><a href='#L295'>295</a>
-<a name='L296'></a><a href='#L296'>296</a>
-<a name='L297'></a><a href='#L297'>297</a>
-<a name='L298'></a><a href='#L298'>298</a>
-<a name='L299'></a><a href='#L299'>299</a>
-<a name='L300'></a><a href='#L300'>300</a>
-<a name='L301'></a><a href='#L301'>301</a>
-<a name='L302'></a><a href='#L302'>302</a>
-<a name='L303'></a><a href='#L303'>303</a>
-<a name='L304'></a><a href='#L304'>304</a>
-<a name='L305'></a><a href='#L305'>305</a>
-<a name='L306'></a><a href='#L306'>306</a>
-<a name='L307'></a><a href='#L307'>307</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L292'></a><a href='#L292'>292</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -392,12 +378,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -424,22 +405,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -491,6 +457,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -677,7 +647,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { useState } from 'react'
 import { Lock, AlertTriangle } from 'lucide-react'
-import { useWallet } from '../../contexts/WalletContext'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateLockFee } from '../../services/wallet/fees'
 import { getTimelockScriptSize } from '../../services/wallet'
@@ -686,6 +656,7 @@ import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 import { isOk } from '../../domain/types'
 import { LOCK } from '../../config'
+import { formatTimeRemaining, AVERAGE_BLOCK_TIME_SECONDS } from '../../utils/timeFormatting'
 &nbsp;
 // Helper to calculate estimated unlock date - defined outside component to avoid render purity issues
 function <span class="fstat-no" title="function not covered" >calculateEstimatedUnlockDate(b</span>locks: number): Date | null {
@@ -698,13 +669,8 @@ interface LockModalProps {
 }
 &nbsp;
 export function <span class="fstat-no" title="function not covered" >LockModal({</span> onClose }: LockModalProps) {
-  const {
-    wallet,
-    balance,
-    utxos,
-    networkInfo,
-    handleLock
-<span class="cstat-no" title="statement not covered" >  } = useWallet()</span>
+  const { wallet, balance, utxos, networkInfo <span class="cstat-no" title="statement not covered" >} = useWalletState()</span>
+  const { handleLock, performSync, fetchData <span class="cstat-no" title="statement not covered" >} = useWalletActions()</span>
   const { displayInSats, showToast <span class="cstat-no" title="statement not covered" >} = useUI()</span>
 &nbsp;
   const [lockAmount, setLockAmount<span class="cstat-no" title="statement not covered" >] = useState('')</span>
@@ -728,25 +694,10 @@ export function <span class="fstat-no" title="function not covered" >LockModal({
   // Check if this is a long lock (&gt; 1 week)
   const isLongLock = <span class="cstat-no" title="statement not covered" >blocks &gt; LOCK.LONG_LOCK_WARNING_BLOCKS</span>
 &nbsp;
-  // Estimate unlock time (average 10 min per block)
-  const estimatedMinutes = <span class="cstat-no" title="statement not covered" >blocks * 10</span>
-  const estimatedHours = <span class="cstat-no" title="statement not covered" >Math.floor(estimatedMinutes / 60)</span>
-  const estimatedDays = <span class="cstat-no" title="statement not covered" >Math.floor(estimatedHours / 24)</span>
-  const estimatedWeeks = <span class="cstat-no" title="statement not covered" >Math.floor(estimatedDays / 7)</span>
-  const estimatedMonths = <span class="cstat-no" title="statement not covered" >Math.floor(estimatedDays / 30)</span>
-&nbsp;
-  let timeEstimate = <span class="cstat-no" title="statement not covered" >''</span>
-<span class="cstat-no" title="statement not covered" >  if (estimatedMonths &gt; 0) {</span>
-<span class="cstat-no" title="statement not covered" >    timeEstimate = `~${estimatedMonths} month${estimatedMonths &gt; 1 ? 's' : ''}`</span>
-<span class="cstat-no" title="statement not covered" >  } else if (estimatedWeeks &gt; 0) {</span>
-<span class="cstat-no" title="statement not covered" >    timeEstimate = `~${estimatedWeeks} week${estimatedWeeks &gt; 1 ? 's' : ''}`</span>
-<span class="cstat-no" title="statement not covered" >  } else if (estimatedDays &gt; 0) {</span>
-<span class="cstat-no" title="statement not covered" >    timeEstimate = `~${estimatedDays} day${estimatedDays &gt; 1 ? 's' : ''}`</span>
-<span class="cstat-no" title="statement not covered" >  } else if (estimatedHours &gt; 0) {</span>
-<span class="cstat-no" title="statement not covered" >    timeEstimate = `~${estimatedHours} hour${estimatedHours &gt; 1 ? 's' : ''}`</span>
-<span class="cstat-no" title="statement not covered" >  } else if (estimatedMinutes &gt; 0) {</span>
-<span class="cstat-no" title="statement not covered" >    timeEstimate = `~${estimatedMinutes} min`</span>
-  }
+  // Q-67: Use shared time formatting utility instead of duplicated inline logic
+  const timeEstimate = <span class="cstat-no" title="statement not covered" >blocks &gt; 0</span>
+    ? formatTimeRemaining(blocks * AVERAGE_BLOCK_TIME_SECONDS)
+    : ''
 &nbsp;
   // Format date for display
   const formatDate = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(d</span>ate: Date) =&gt; {</span>
@@ -797,7 +748,11 @@ export function <span class="fstat-no" title="function not covered" >LockModal({
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    if (isOk(result)) {</span>
 <span class="cstat-no" title="statement not covered" >      showToast(`Locked ${lockSats.toLocaleString()} sats for ${blocks} blocks!`)</span>
+      // Ensure Activity tab reflects the new lock transaction immediately
+<span class="cstat-no" title="statement not covered" >      await fetchData()</span>
 <span class="cstat-no" title="statement not covered" >      onClose()</span>
+      // Background sync to confirm balance from blockchain after local DB update
+<span class="cstat-no" title="statement not covered" >      void performSync()</span>
     } else {
 <span class="cstat-no" title="statement not covered" >      setLockError(result.error || 'Lock failed')</span>
     }
@@ -988,7 +943,7 @@ export function <span class="fstat-no" title="function not covered" >LockModal({
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

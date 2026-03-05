@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/80</span>
+                <span class='fraction'>0/83</span>
             </div>
         
             
@@ -39,14 +39,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/15</span>
+                <span class='fraction'>0/17</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/79</span>
+                <span class='fraction'>0/82</span>
             </div>
         
             
@@ -436,7 +436,31 @@
 <a name='L371'></a><a href='#L371'>371</a>
 <a name='L372'></a><a href='#L372'>372</a>
 <a name='L373'></a><a href='#L373'>373</a>
-<a name='L374'></a><a href='#L374'>374</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L374'></a><a href='#L374'>374</a>
+<a name='L375'></a><a href='#L375'>375</a>
+<a name='L376'></a><a href='#L376'>376</a>
+<a name='L377'></a><a href='#L377'>377</a>
+<a name='L378'></a><a href='#L378'>378</a>
+<a name='L379'></a><a href='#L379'>379</a>
+<a name='L380'></a><a href='#L380'>380</a>
+<a name='L381'></a><a href='#L381'>381</a>
+<a name='L382'></a><a href='#L382'>382</a>
+<a name='L383'></a><a href='#L383'>383</a>
+<a name='L384'></a><a href='#L384'>384</a>
+<a name='L385'></a><a href='#L385'>385</a>
+<a name='L386'></a><a href='#L386'>386</a>
+<a name='L387'></a><a href='#L387'>387</a>
+<a name='L388'></a><a href='#L388'>388</a>
+<a name='L389'></a><a href='#L389'>389</a>
+<a name='L390'></a><a href='#L390'>390</a>
+<a name='L391'></a><a href='#L391'>391</a>
+<a name='L392'></a><a href='#L392'>392</a>
+<a name='L393'></a><a href='#L393'>393</a>
+<a name='L394'></a><a href='#L394'>394</a>
+<a name='L395'></a><a href='#L395'>395</a>
+<a name='L396'></a><a href='#L396'>396</a>
+<a name='L397'></a><a href='#L397'>397</a>
+<a name='L398'></a><a href='#L398'>398</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -485,6 +509,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -651,6 +676,17 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -676,6 +712,18 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -818,7 +866,7 @@ import { SECURITY } from '../../config'
 import { validatePassword, getPasswordStrengthLabel, getPasswordStrengthColor } from '../../utils/passwordValidation'
 &nbsp;
 interface OnboardingFlowProps {
-  onCreateWallet: (password: string | null) =&gt; Promise&lt;string | null&gt;
+  onCreateWallet: (password: string | null, wordCount?: 12 | 24) =&gt; Promise&lt;string | null&gt;
   onRestoreClick: () =&gt; void
   onWalletCreated?: (mnemonic: string) =&gt; void
 }
@@ -857,6 +905,7 @@ export function <span class="fstat-no" title="function not covered" >OnboardingF
   const [confirmPassword, setConfirmPassword<span class="cstat-no" title="statement not covered" >] = useState('')</span>
   const [passwordError, setPasswordError<span class="cstat-no" title="statement not covered" >] = useState('')</span>
   const [showSkipWarning, setShowSkipWarning<span class="cstat-no" title="statement not covered" >] = useState(false)</span>
+  const [wordCount, setWordCount<span class="cstat-no" title="statement not covered" >] = useState&lt;12 | 24&gt;(12)</span>
   const { showToast <span class="cstat-no" title="statement not covered" >} = useUI()</span>
 &nbsp;
   // Password strength meter
@@ -926,7 +975,7 @@ export function <span class="fstat-no" title="function not covered" >OnboardingF
 <span class="cstat-no" title="statement not covered" >    setPasswordError('')</span>
 <span class="cstat-no" title="statement not covered" >    setCreating(true)</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
-      const mnemonic = <span class="cstat-no" title="statement not covered" >await onCreateWallet(password)</span>
+      const mnemonic = <span class="cstat-no" title="statement not covered" >await onCreateWallet(password, wordCount)</span>
 <span class="cstat-no" title="statement not covered" >      if (mnemonic) {</span>
 <span class="cstat-no" title="statement not covered" >        onWalletCreated?.(mnemonic)</span>
       } else {
@@ -942,7 +991,7 @@ export function <span class="fstat-no" title="function not covered" >OnboardingF
 <span class="cstat-no" title="statement not covered" >    setShowSkipWarning(false)</span>
 <span class="cstat-no" title="statement not covered" >    setCreating(true)</span>
 <span class="cstat-no" title="statement not covered" >    try {</span>
-      const mnemonic = <span class="cstat-no" title="statement not covered" >await onCreateWallet(null)</span>
+      const mnemonic = <span class="cstat-no" title="statement not covered" >await onCreateWallet(null, wordCount)</span>
 <span class="cstat-no" title="statement not covered" >      if (mnemonic) {</span>
 <span class="cstat-no" title="statement not covered" >        onWalletCreated?.(mnemonic)</span>
       } else {
@@ -1053,6 +1102,29 @@ export function <span class="fstat-no" title="function not covered" >OnboardingF
             &lt;p className="onboarding-action-subtitle"&gt;
               This password encrypts your wallet on this device.
             &lt;/p&gt;
+            &lt;div className="form-group" style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 4 }}&gt;
+              &lt;label className="form-label" style={{ marginBottom: 0 }}&gt;Seed phrase length&lt;/label&gt;
+              &lt;label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}&gt;
+                &lt;input
+                  type="radio"
+                  name="wordCount"
+                  value="12"
+                  checked={wordCount === 12}
+                  onChange={<span class="fstat-no" title="function not covered" >() =&gt; <span class="cstat-no" title="statement not covered" >s</span>etWordCount(12)}</span>
+                /&gt;
+                12 words
+              &lt;/label&gt;
+              &lt;label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}&gt;
+                &lt;input
+                  type="radio"
+                  name="wordCount"
+                  value="24"
+                  checked={wordCount === 24}
+                  onChange={<span class="fstat-no" title="function not covered" >() =&gt; <span class="cstat-no" title="statement not covered" >s</span>etWordCount(24)}</span>
+                /&gt;
+                24 words
+              &lt;/label&gt;
+            &lt;/div&gt;
             &lt;div className="onboarding-password-section"&gt;
               &lt;div className="form-group"&gt;
                 &lt;label className="form-label" htmlFor="create-password"&gt;Password&lt;/label&gt;
@@ -1189,7 +1261,7 @@ export function <span class="fstat-no" title="function not covered" >OnboardingF
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

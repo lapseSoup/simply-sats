@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">98.01% </span>
+                <span class="strong">93.81% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>99/101</span>
+                <span class='fraction'>91/97</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">90.9% </span>
+                <span class="strong">91.3% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>20/22</span>
+                <span class='fraction'>21/23</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">95.55% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>94/94</span>
+                <span class='fraction'>86/90</span>
             </div>
         
             
@@ -562,6 +562,16 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -839,7 +849,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">17x</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -848,7 +858,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">17x</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -858,12 +868,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">12x</span>
-<span class="cline-any cline-yes">12x</span>
-<span class="cline-any cline-yes">12x</span>
-<span class="cline-any cline-yes">12x</span>
-<span class="cline-any cline-yes">12x</span>
-<span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-yes">11x</span>
+<span class="cline-any cline-yes">11x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -875,17 +881,11 @@
 <span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1034,10 +1034,20 @@
  */
 &nbsp;
 import { getDatabase } from './database'
-import { PrivateKey, Hash, PublicKey, Signature } from '@bsv/sdk'
 import type { WalletKeys } from './wallet'
-import type { CertificateRow, SqlParams } from './database-types'
+import type { CertificateRow, SqlParams } from '../infrastructure/database/row-types'
 import { brc100Logger } from './logger'
+import { tauriInvoke } from '../utils/tauri'
+&nbsp;
+/** Safely parse JSON fields from a certificate row, returning empty object on failure */
+function safeParseFields(fields: string): Record&lt;string, string&gt; {
+  try {
+    return JSON.parse(fields)
+  } catch {
+<span class="cstat-no" title="statement not covered" >    brc100Logger.warn('Failed to parse certificate fields JSON', { fields: fields.slice(0, 50) })</span>
+<span class="cstat-no" title="statement not covered" >    return {}</span>
+  }
+}
 &nbsp;
 /**
  * Certificate types that can be issued
@@ -1182,7 +1192,7 @@ export async function getCertificatesBySubject(subject: string): Promise&lt;Cert
     subject: row.subject,
     certifier: row.certifier,
     serialNumber: row.serial_number,
-    fields: JSON.parse(row.fields),
+    fields: safeParseFields(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at ?? undefined,
@@ -1208,7 +1218,7 @@ export async function getCertificatesByCertifier(certifier: string): Promise&lt;
     subject: row.subject,
     certifier: row.certifier,
     serialNumber: row.serial_number,
-    fields: JSON.parse(row.fields),
+    fields: safeParseFields(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at ?? undefined,
@@ -1241,7 +1251,7 @@ export async function getCertificatesByType(type: CertificateType, subject?: str
     subject: row.subject,
     certifier: row.certifier,
     serialNumber: row.serial_number,
-    fields: JSON.parse(row.fields),
+    fields: safeParseFields(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at ?? undefined,
@@ -1270,7 +1280,7 @@ export async function getCertificateBySerial(serialNumber: string): Promise&lt;C
     subject: row.subject,
     certifier: row.certifier,
     serialNumber: row.serial_number,
-    fields: JSON.parse(row.fields),
+    fields: safeParseFields(row.fields),
     signature: row.signature,
     issuedAt: row.issued_at,
     expiresAt: row.expires_at ?? <span class="branch-1 cbranch-no" title="branch not covered" >undefined,</span>
@@ -1333,38 +1343,28 @@ function createCertificateSigningData(cert: Omit&lt;Certificate, 'id' | 'signatu
 /**
  * Sign a certificate as a certifier
  */
-export function signCertificate(
+export async function signCertificate(
   cert: Omit&lt;Certificate, 'id' | 'signature'&gt;,
   certifierWif: string
-): string {
-  const privateKey = PrivateKey.fromWif(certifierWif)
+): Promise&lt;string&gt; {
   const data = createCertificateSigningData(cert)
-  const hash = Hash.sha256(Array.from(new TextEncoder().encode(data))) as number[]
-  const signature = privateKey.sign(hash)
-  const sigBytes = signature.toDER() as number[]
-  return Buffer.from(sigBytes).toString('hex')
+  return tauriInvoke&lt;string&gt;('sign_message', { wif: certifierWif, message: data })
 }
 &nbsp;
 /**
  * Verify a certificate signature
  */
-export function verifyCertificateSignature(cert: Certificate): boolean {
+export async function verifyCertificateSignature(cert: Certificate): Promise&lt;boolean&gt; {
   try {
     const data = createCertificateSigningData(cert)
-    const hash = Hash.sha256(Array.from(new TextEncoder().encode(data))) as number[]
-&nbsp;
-    // Import certifier public key
-    const publicKey = PublicKey.fromString(cert.certifier)
-&nbsp;
-    // Import signature
-    const sigBytes = Buffer.from(cert.signature, 'hex')
-    const signature = Signature.fromDER(Array.from(sigBytes))
-&nbsp;
-    // Verify
-    return publicKey.verify(hash, signature)
+    return await tauriInvoke&lt;boolean&gt;('verify_signature', {
+      publicKeyHex: cert.certifier,
+      message: data,
+      signatureHex: cert.signature,
+    })
   } catch (error) {
-    brc100Logger.error('Certificate verification failed', error)
-    return false
+<span class="cstat-no" title="statement not covered" >    brc100Logger.error('Certificate verification failed', error)</span>
+<span class="cstat-no" title="statement not covered" >    return false</span>
   }
 }
 &nbsp;
@@ -1416,7 +1416,7 @@ export async function acquireCertificate(
   // Sign with identity key (self-signed)
   const { getWifForOperation } = await import('./wallet')
   const identityWif = await getWifForOperation('identity', 'acquireCertificate', keys)
-  const signature = signCertificate(certData, identityWif)
+  const signature = await signCertificate(certData, identityWif)
 &nbsp;
   const cert: Certificate = {
     ...certData,
@@ -1507,7 +1507,7 @@ export async function proveCertificate(args: {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T17:52:34.721Z
+                at 2026-03-04T18:10:18.953Z
             </div>
         <script src="../prettify.js"></script>
         <script>

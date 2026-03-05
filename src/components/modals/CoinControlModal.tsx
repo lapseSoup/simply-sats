@@ -69,7 +69,7 @@ export function CoinControlModal({ requiredAmount, onConfirm, onCancel }: CoinCo
   )
   const { utxos: rawUtxos, loading } = useUtxoManagement({ filter: spendableFilter })
   const utxos = useMemo(() => [...rawUtxos].sort((a, b) => b.satoshis - a.satoshis), [rawUtxos])
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
 
   // Toggle UTXO selection
   const handleToggle = useCallback((utxo: DatabaseUTXO) => {

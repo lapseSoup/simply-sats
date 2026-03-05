@@ -75,7 +75,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
   const [locks, setLocks] = useState<LockedUTXO[]>([])
   const locksRef = useRef(locks)
   useEffect(() => { locksRef.current = locks }, [locks])
-  const [knownUnlockedLocks, setKnownUnlockedLocks] = useState<Set<string>>(new Set())
+  const [knownUnlockedLocks, setKnownUnlockedLocks] = useState<Set<string>>(() => new Set())
   const knownUnlockedLocksRef = useRef(knownUnlockedLocks)
 
   // Keep ref in sync with state

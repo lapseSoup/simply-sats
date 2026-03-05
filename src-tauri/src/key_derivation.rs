@@ -132,7 +132,7 @@ fn mnemonic_to_seed(mnemonic_str: &str) -> Result<Vec<u8>, String> {
 /// The mnemonic and private keys exist ONLY in Rust memory during this call.
 #[tauri::command]
 pub fn derive_wallet_keys(mnemonic: String) -> Result<WalletKeys, String> {
-    derive_wallet_keys_for_account(mnemonic, 0)
+    derive_wallet_keys_for_account_inner(&mnemonic, 0)
 }
 
 /// Derive all wallet keys for a specific account index.
@@ -144,6 +144,16 @@ pub fn derive_wallet_keys(mnemonic: String) -> Result<WalletKeys, String> {
 #[tauri::command]
 pub fn derive_wallet_keys_for_account(
     mnemonic: String,
+    account_index: u32,
+) -> Result<WalletKeys, String> {
+    derive_wallet_keys_for_account_inner(&mnemonic, account_index)
+}
+
+/// Inner implementation that accepts `&str` to avoid cloning `Zeroizing<String>` wrappers.
+/// Both the Tauri command (which receives `String` from IPC) and the key_store module
+/// (which holds `Zeroizing<String>`) call this function.
+pub fn derive_wallet_keys_for_account_inner(
+    mnemonic: &str,
     account_index: u32,
 ) -> Result<WalletKeys, String> {
     let trimmed = mnemonic.trim();

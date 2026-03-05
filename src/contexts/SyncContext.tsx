@@ -86,7 +86,7 @@ interface SyncContextType {
   fetchData: (
     wallet: WalletKeys,
     activeAccountId: number | null,
-    knownUnlockedLocks: Set<string>,
+    getKnownUnlockedLocks: () => Set<string>,
     onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void,
     isCancelled?: () => boolean
   ) => Promise<void>
