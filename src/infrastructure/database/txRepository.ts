@@ -583,6 +583,33 @@ export async function getPendingTransactionTxids(accountId?: number): Promise<Re
 }
 
 /**
+ * Get pending transaction metadata for an account.
+ * Used by sync reconciliation to age out phantom pending transactions.
+ */
+export async function getPendingTransactions(
+  accountId?: number
+): Promise<Result<Array<{ txid: string; createdAt: number }>, DbError>> {
+  try {
+    const database = getDatabase()
+
+    let query = "SELECT txid, created_at FROM transactions WHERE status = 'pending'"
+    const params: SqlParams = []
+
+    if (accountId !== undefined) {
+      query += ' AND account_id = $1'
+      params.push(accountId)
+    }
+
+    query += ' ORDER BY created_at ASC'
+
+    const rows = await database.select<Array<{ txid: string; created_at: number }>>(query, params)
+    return ok(rows.map(r => ({ txid: r.txid, createdAt: r.created_at })))
+  } catch (e) {
+    return err(new DbError(`getPendingTransactions failed: ${e instanceof Error ? e.message : String(e)}`, 'QUERY_FAILED', e))
+  }
+}
+
+/**
  * Get all known transaction IDs for an account (or all accounts).
  * Used for incremental sync to skip already-fetched transactions.
  * @param accountId - If provided, only returns txids for this account

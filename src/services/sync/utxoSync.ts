@@ -9,6 +9,7 @@ import { BASKETS } from '../../domain/types'
 import type { LockedUTXO } from '../wallet/types'
 import {
   getSpendableUTXOs,
+  getPendingTransactionTxids,
   markUTXOSpent,
   upsertTransaction,
   type UTXO as DBUtxo
@@ -23,6 +24,17 @@ export {
   getPendingUtxos
 } from '../database'
 
+async function getPendingTxidSet(accountId?: number): Promise<Set<string>> {
+  const pendingTxidsResult = await getPendingTransactionTxids(accountId)
+  if (!pendingTxidsResult.ok) {
+    syncLogger.warn('[DB] Failed to query pending txids for spend filter', {
+      error: pendingTxidsResult.error.message
+    })
+    return new Set<string>()
+  }
+  return pendingTxidsResult.value
+}
+
 /**
  * Quick balance check - just sums current spendable UTXOs from database
  * Much faster than fetching from blockchain
@@ -35,7 +47,8 @@ export async function getBalanceFromDatabase(basket?: string, accountId?: number
     syncLogger.warn('[BALANCE] Failed to query spendable UTXOs', { error: utxosResult.error.message })
     return 0
   }
-  const utxos = utxosResult.value
+  const pendingTxids = await getPendingTxidSet(accountId)
+  const utxos = utxosResult.value.filter(u => !pendingTxids.has(u.txid))
 
   if (basket) {
     const filtered = utxos.filter(u => u.basket === basket)
@@ -62,8 +75,12 @@ export async function getSpendableUtxosFromDatabase(basket: string = BASKETS.DEF
     syncLogger.warn('[DB] Failed to query spendable UTXOs', { error: allUtxosResult.error.message })
     return []
   }
+  const pendingTxids = await getPendingTxidSet(accountId)
   return allUtxosResult.value
     .filter(u => u.basket === basket)
+    // Never spend outputs from wallet transactions that are still pending.
+    // This prevents chaining spends on local-only/phantom change outputs.
+    .filter(u => !pendingTxids.has(u.txid))
     .sort((a, b) => a.satoshis - b.satoshis)
 }
 

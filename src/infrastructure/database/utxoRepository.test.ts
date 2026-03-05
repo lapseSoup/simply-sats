@@ -27,6 +27,7 @@ import {
   toggleUtxoFrozen,
   repairUTXOs,
   clearUtxosForAccount,
+  deleteUtxosByTxid,
   getAllUTXOs,
 } from './utxoRepository'
 
@@ -714,6 +715,31 @@ describe('clearUtxosForAccount', () => {
 
     const result = await clearUtxosForAccount(3)
     expect(result.ok).toBe(false)
+  })
+})
+
+// ---------- deleteUtxosByTxid ----------
+
+describe('deleteUtxosByTxid', () => {
+  it('deletes txid-scoped UTXOs for account and returns rows affected', async () => {
+    mockDb.execute.mockResolvedValueOnce({ rowsAffected: 2 })
+
+    const result = await deleteUtxosByTxid('tx123', 7)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toBe(2)
+    expect(mockDb.execute).toHaveBeenCalledWith(
+      'DELETE FROM utxos WHERE txid = $1 AND account_id = $2',
+      ['tx123', 7]
+    )
+  })
+
+  it('returns 0 when no rows deleted', async () => {
+    mockDb.execute.mockResolvedValueOnce({ rowsAffected: 0 })
+
+    const result = await deleteUtxosByTxid('tx404', 1)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBe(0)
   })
 })
 

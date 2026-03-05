@@ -15,8 +15,9 @@ import {
   getPendingUtxos,
   rollbackPendingSpend,
   getLastSyncedHeight,
-  getPendingTransactionTxids,
+  getPendingTransactions,
   updateTransactionStatus,
+  deleteUtxosByTxid,
   getAllTransactions,
   getTransactionCount,
   updateTransactionAmount,
@@ -319,26 +320,49 @@ async function backfillNullAmounts(
  */
 async function resolvePendingTransactions(accountId?: number): Promise<void> {
   try {
-    const pendingResult = await getPendingTransactionTxids(accountId)
+    const pendingResult = await getPendingTransactions(accountId)
     if (!pendingResult.ok) {
-      syncLogger.warn('[RESOLVE_PENDING] Failed to query pending txids', { error: pendingResult.error.message })
+      syncLogger.warn('[RESOLVE_PENDING] Failed to query pending transactions', { error: pendingResult.error.message })
       return
     }
 
-    const pendingTxids = [...pendingResult.value]
-    if (pendingTxids.length === 0) return
+    const pendingTxs = pendingResult.value
+    if (pendingTxs.length === 0) return
 
-    syncLogger.debug(`[RESOLVE_PENDING] Checking ${pendingTxids.length} pending transaction(s)`)
+    syncLogger.debug(`[RESOLVE_PENDING] Checking ${pendingTxs.length} pending transaction(s)`)
 
     const wocClient = getWocClient()
+    const now = Date.now()
+    const stalePending404Ms = 30 * 60 * 1000
+    const scopedAccountId = accountId ?? 1
 
-    for (let _i = 0; _i < pendingTxids.length; _i++) {
-      const txid = pendingTxids[_i]!
+    for (let _i = 0; _i < pendingTxs.length; _i++) {
+      const pendingTx = pendingTxs[_i]!
+      const txid = pendingTx.txid
       // Rate-limit: 1.5s between requests to avoid WoC 429s
       if (_i > 0) await new Promise(resolve => setTimeout(resolve, 1500))
       try {
         const detailResult = await wocClient.getTransactionDetailsSafe(txid)
         if (!detailResult.ok) {
+          const ageMs = Math.max(0, now - pendingTx.createdAt)
+          if (detailResult.error.status === 404 && ageMs >= stalePending404Ms) {
+            await withTransaction(async () => {
+              const updateResult = await updateTransactionStatus(txid, 'failed', undefined, accountId)
+              if (!updateResult.ok) {
+                throw new Error(`status update failed: ${updateResult.error.message}`)
+              }
+              const deleteResult = await deleteUtxosByTxid(txid, scopedAccountId)
+              if (!deleteResult.ok) {
+                throw new Error(`UTXO cleanup failed: ${deleteResult.error.message}`)
+              }
+              syncLogger.warn('[RESOLVE_PENDING] Marked stale pending tx as failed after WoC 404', {
+                txid: txid.slice(0, 8) + '...',
+                ageMinutes: Math.floor(ageMs / 60_000),
+                deletedLocalUtxos: deleteResult.value
+              })
+            })
+            continue
+          }
           syncLogger.debug(`[RESOLVE_PENDING] Could not fetch details for ${txid.slice(0, 8)}... (non-fatal)`, { error: detailResult.error.message })
           continue
         }

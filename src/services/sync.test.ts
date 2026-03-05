@@ -34,6 +34,7 @@ vi.mock('./database', () => ({
   addUTXO: vi.fn().mockResolvedValue({ ok: true, value: 1 }),
   markUTXOSpent: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
   getSpendableUTXOs: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+  getPendingTransactionTxids: vi.fn().mockResolvedValue({ ok: true, value: new Set<string>() }),
   getLastSyncedHeight: vi.fn().mockResolvedValue({ ok: true, value: 0 }),
   updateSyncState: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
   upsertTransaction: vi.fn().mockResolvedValue({ ok: true, value: 'txid' }),
@@ -67,6 +68,7 @@ import { DbError } from './errors'
 
 import {
   getSpendableUTXOs,
+  getPendingTransactionTxids,
   getLastSyncedHeight,
   upsertTransaction,
   markUTXOSpent as dbMarkUTXOSpent
@@ -151,6 +153,21 @@ describe('Sync Service', () => {
       expect(balance).toBe(3500)
     })
 
+    it('should exclude outputs from pending transactions', async () => {
+      vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
+        createMockDBUtxo({ txid: 'confirmed_tx', satoshis: 1000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'pending_tx', satoshis: 2000, basket: 'default' })
+      ] })
+      vi.mocked(getPendingTransactionTxids).mockResolvedValueOnce({
+        ok: true,
+        value: new Set(['pending_tx'])
+      })
+
+      const balance = await getBalanceFromDatabase()
+
+      expect(balance).toBe(1000)
+    })
+
     it('should filter by basket when specified', async () => {
       vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
         createMockDBUtxo({ txid: 'tx1', satoshis: 1000, basket: 'default' }),
@@ -195,6 +212,22 @@ describe('Sync Service', () => {
       expect(utxos[0]!.satoshis).toBe(1000)
       expect(utxos[1]!.satoshis).toBe(3000)
       expect(utxos[2]!.satoshis).toBe(5000)
+    })
+
+    it('should exclude UTXOs from pending transactions', async () => {
+      vi.mocked(getSpendableUTXOs).mockResolvedValueOnce({ ok: true, value: [
+        createMockDBUtxo({ txid: 'pending_tx', satoshis: 1000, basket: 'default' }),
+        createMockDBUtxo({ txid: 'confirmed_tx', satoshis: 2000, basket: 'default' })
+      ] })
+      vi.mocked(getPendingTransactionTxids).mockResolvedValueOnce({
+        ok: true,
+        value: new Set(['pending_tx'])
+      })
+
+      const utxos = await getSpendableUtxosFromDatabase()
+
+      expect(utxos).toHaveLength(1)
+      expect(utxos[0]!.txid).toBe('confirmed_tx')
     })
 
     it('should filter by basket', async () => {

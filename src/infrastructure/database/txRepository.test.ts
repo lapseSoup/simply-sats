@@ -24,6 +24,7 @@ import {
   getTopLabels,
   searchTransactions,
   getPendingTransactionTxids,
+  getPendingTransactions,
   deleteTransactionsForAccount,
 } from './txRepository'
 
@@ -484,6 +485,37 @@ describe('getPendingTransactionTxids', () => {
     const result = await getPendingTransactionTxids()
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.value.size).toBe(0)
+  })
+})
+
+// ---------- getPendingTransactions ----------
+
+describe('getPendingTransactions', () => {
+  it('returns pending tx metadata ordered by created_at', async () => {
+    mockDb.select.mockResolvedValueOnce([
+      { txid: 'tx_old', created_at: 100 },
+      { txid: 'tx_new', created_at: 200 }
+    ])
+
+    const result = await getPendingTransactions(1)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).toEqual([
+      { txid: 'tx_old', createdAt: 100 },
+      { txid: 'tx_new', createdAt: 200 }
+    ])
+    const call = mockDb.select.mock.calls[0]!
+    expect(call[0]).toContain('created_at')
+    expect(call[0]).toContain('ORDER BY created_at ASC')
+    expect(call[1]).toEqual([1])
+  })
+
+  it('returns empty array when no pending transactions', async () => {
+    mockDb.select.mockResolvedValueOnce([])
+
+    const result = await getPendingTransactions()
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual([])
   })
 })
 

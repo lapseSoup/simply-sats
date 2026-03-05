@@ -691,6 +691,26 @@ export async function clearUtxosForAccount(accountId: number): Promise<Result<vo
 }
 
 /**
+ * Delete all UTXOs created by a specific transaction for one account.
+ * Used to clean up phantom local outputs when a pending tx is marked failed.
+ */
+export async function deleteUtxosByTxid(
+  txid: string,
+  accountId: number
+): Promise<Result<number, DbError>> {
+  try {
+    const database = getDatabase()
+    const result = await database.execute(
+      'DELETE FROM utxos WHERE txid = $1 AND account_id = $2',
+      [txid, accountId]
+    )
+    return ok(result.rowsAffected || 0)
+  } catch (error) {
+    return err(new DbError(toErrorMessage(error), 'QUERY_FAILED', error))
+  }
+}
+
+/**
  * Reassign ALL data from a legacy default account_id to the correct account.
  *
  * Before the accountId plumbing fix, lockBSV/unlockBSV and other operations

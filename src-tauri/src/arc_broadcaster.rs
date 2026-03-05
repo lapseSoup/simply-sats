@@ -3,7 +3,7 @@
 //! Tries GorillaPool ARC first (low-latency, status tracking), then falls
 //! back to the WhatsOnChain raw-tx endpoint if ARC is unavailable.
 
-use bsv_sdk::arc::{ArcClient, ArcConfig};
+use bsv_sdk::arc::{ArcClient, ArcConfig, ArcStatus};
 use bsv_sdk::transaction::Transaction as SdkTransaction;
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +18,9 @@ pub struct BroadcastResult {
     pub status: String,
 }
 
+/// ARC status code for "seen on network" (minimum reliable success signal).
+const ARC_SEEN_ON_NETWORK_STATUS: i32 = 8;
+
 // ---------------------------------------------------------------------------
 // Tauri command
 // ---------------------------------------------------------------------------
@@ -28,34 +31,57 @@ pub struct BroadcastResult {
 pub async fn broadcast_transaction(raw_hex: String) -> Result<BroadcastResult, String> {
     let tx = SdkTransaction::from_hex(&raw_hex)
         .map_err(|e| format!("Invalid transaction hex: {}", e))?;
+    let expected_txid = tx.tx_id_hex();
 
     // --- ARC attempt ---
     let config = ArcConfig {
         base_url: "https://arc.gorillapool.io/v1".into(),
+        wait_for_status: Some(ArcStatus::SeenOnNetwork),
+        max_timeout: Some(30),
         ..Default::default()
     };
 
     let client = ArcClient::new(config);
 
     match client.broadcast_async(&tx).await {
-        Ok(resp) => {
-            // "txn-already-known" is a success — mirrors existing WoC handling
+        Ok(resp) if is_arc_network_accepted(resp.status, resp.tx_status.as_deref()) => {
             Ok(BroadcastResult {
-                txid: resp.txid,
-                status: resp
-                    .tx_status
-                    .unwrap_or_else(|| "success".to_string()),
+                // Canonical txid from raw transaction bytes.
+                txid: expected_txid.clone(),
+                status: resp.tx_status.unwrap_or_else(|| "success".to_string()),
             })
+        }
+        Ok(resp) => {
+            // ARC accepted the request but did not confirm network propagation.
+            // Fall back to WoC and only report success if one backend confirms.
+            let arc_state = describe_arc_state(
+                resp.status,
+                resp.tx_status.as_deref(),
+                resp.detail.as_deref(),
+            );
+            broadcast_via_woc(&raw_hex, &expected_txid)
+                .await
+                .map_err(|woc_err| {
+                    format!(
+                        "Broadcast failed: {}",
+                        sanitize_broadcast_error(&format!(
+                            "ARC returned non-network status ({}), {}",
+                            arc_state, woc_err
+                        ))
+                    )
+                })
         }
         Err(arc_err) => {
             // --- WoC fallback ---
-            broadcast_via_woc(&raw_hex).await.map_err(|woc_err| {
-                // Sanitize: don't expose endpoint URLs in user-facing errors
-                format!(
-                    "Broadcast failed: {}",
-                    sanitize_broadcast_error(&format!("{}, {}", arc_err, woc_err))
-                )
-            })
+            broadcast_via_woc(&raw_hex, &expected_txid)
+                .await
+                .map_err(|woc_err| {
+                    // Sanitize: don't expose endpoint URLs in user-facing errors
+                    format!(
+                        "Broadcast failed: {}",
+                        sanitize_broadcast_error(&format!("{}, {}", arc_err, woc_err))
+                    )
+                })
         }
     }
 }
@@ -65,7 +91,7 @@ pub async fn broadcast_transaction(raw_hex: String) -> Result<BroadcastResult, S
 // ---------------------------------------------------------------------------
 
 /// Broadcast via WhatsOnChain's raw-tx POST endpoint.
-async fn broadcast_via_woc(raw_hex: &str) -> Result<BroadcastResult, String> {
+async fn broadcast_via_woc(raw_hex: &str, expected_txid: &str) -> Result<BroadcastResult, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -85,23 +111,57 @@ async fn broadcast_via_woc(raw_hex: &str) -> Result<BroadcastResult, String> {
 
     if status.is_success() {
         // WoC returns the txid as a quoted string
-        let txid = body.trim().trim_matches('"').to_string();
+        let txid = body.trim().trim_matches('"');
+        if txid.is_empty() {
+            return Err("WoC returned empty txid".to_string());
+        }
+        if !txid.eq_ignore_ascii_case(expected_txid) {
+            return Err(format!(
+                "WoC returned mismatched txid (expected {}, got {})",
+                expected_txid, txid
+            ));
+        }
         Ok(BroadcastResult {
-            txid,
+            txid: expected_txid.to_string(),
             status: "success".to_string(),
         })
     } else if body.contains("txn-already-known")
         || body.contains("Transaction already in the mempool")
     {
-        // Transaction exists — compute txid from the raw hex
-        let tx = SdkTransaction::from_hex(raw_hex)
-            .map_err(|e| format!("Parse error: {}", e))?;
         Ok(BroadcastResult {
-            txid: tx.tx_id_hex(),
+            txid: expected_txid.to_string(),
             status: "already-known".to_string(),
         })
     } else {
         Err(format!("WoC rejected: {}", body))
+    }
+}
+
+/// ARC statuses that indicate transaction propagation reached the network.
+fn is_arc_network_accepted(status: Option<i32>, tx_status: Option<&str>) -> bool {
+    if let Some(code) = status {
+        return code >= ARC_SEEN_ON_NETWORK_STATUS && code <= 10;
+    }
+    match tx_status.map(|s| s.trim().to_ascii_uppercase()) {
+        Some(s) => matches!(s.as_str(), "SEEN_ON_NETWORK" | "MINED" | "CONFIRMED"),
+        None => false,
+    }
+}
+
+fn describe_arc_state(
+    status: Option<i32>,
+    tx_status: Option<&str>,
+    detail: Option<&str>,
+) -> String {
+    let code = status
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let text = tx_status
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    match detail {
+        Some(d) if !d.is_empty() => format!("code={}, txStatus={}, detail={}", code, text, d),
+        _ => format!("code={}, txStatus={}", code, text),
     }
 }
 
@@ -166,5 +226,26 @@ mod tests {
         let result = broadcast_transaction("not_valid_hex".into()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid transaction hex"));
+    }
+
+    #[test]
+    fn test_arc_network_acceptance_gate() {
+        assert!(!is_arc_network_accepted(Some(1), Some("QUEUED")));
+        assert!(!is_arc_network_accepted(
+            Some(7),
+            Some("ACCEPTED_BY_NETWORK")
+        ));
+        assert!(is_arc_network_accepted(Some(8), Some("SEEN_ON_NETWORK")));
+        assert!(is_arc_network_accepted(Some(9), Some("MINED")));
+        assert!(is_arc_network_accepted(None, Some("confirmed")));
+        assert!(!is_arc_network_accepted(None, Some("stored")));
+    }
+
+    #[test]
+    fn test_describe_arc_state() {
+        let summary = describe_arc_state(Some(1), Some("QUEUED"), Some("awaiting propagation"));
+        assert!(summary.contains("code=1"));
+        assert!(summary.contains("txStatus=QUEUED"));
+        assert!(summary.contains("detail=awaiting propagation"));
     }
 }
