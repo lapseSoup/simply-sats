@@ -271,13 +271,17 @@ export async function upsertOrdinalCache(ordinal: CachedOrdinal): Promise<void> 
  * by batching into multi-row INSERT statements.
  *
  * Chunk size = 111 ordinals (floor(999 SQLite params / 9 params per row)).
+ *
+ * Returns the number of ordinals successfully written. Retries once on
+ * transient SQLITE_BUSY / database-is-locked errors per chunk.
  */
-export async function batchUpsertOrdinalCache(ordinals: CachedOrdinal[]): Promise<void> {
-  if (ordinals.length === 0) return
+export async function batchUpsertOrdinalCache(ordinals: CachedOrdinal[]): Promise<number> {
+  if (ordinals.length === 0) return 0
   const database = getDatabase()
 
   // 9 params per row, SQLite limit is 999 params
   const CHUNK_SIZE = 111
+  let successCount = 0
 
   for (let i = 0; i < ordinals.length; i += CHUNK_SIZE) {
     const chunk = ordinals.slice(i, i + CHUNK_SIZE)
@@ -304,9 +308,7 @@ export async function batchUpsertOrdinalCache(ordinals: CachedOrdinal[]): Promis
       )
     }
 
-    try {
-      await database.execute(
-        `INSERT INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height)
+    const sql = `INSERT INTO ordinal_cache (origin, txid, vout, satoshis, content_type, content_hash, account_id, fetched_at, block_height)
          VALUES ${valuePlaceholders.join(', ')}
          ON CONFLICT(origin) DO UPDATE SET
            txid = excluded.txid,
@@ -316,13 +318,33 @@ export async function batchUpsertOrdinalCache(ordinals: CachedOrdinal[]): Promis
            content_hash = COALESCE(excluded.content_hash, ordinal_cache.content_hash),
            account_id = COALESCE(excluded.account_id, ordinal_cache.account_id),
            fetched_at = excluded.fetched_at,
-           block_height = COALESCE(excluded.block_height, ordinal_cache.block_height)`,
-        params
-      )
-    } catch (e) {
-      dbLogger.error('Failed to batch upsert ordinal cache:', e)
+           block_height = COALESCE(excluded.block_height, ordinal_cache.block_height)`
+
+    let retries = 0
+    const MAX_RETRIES = 1
+    while (retries <= MAX_RETRIES) {
+      try {
+        await database.execute(sql, params)
+        successCount += chunk.length
+        break
+      } catch (e) {
+        const errMsg = String(e)
+        if (retries < MAX_RETRIES && (errMsg.includes('SQLITE_BUSY') || errMsg.includes('database is locked'))) {
+          retries++
+          await new Promise(r => setTimeout(r, 100 * retries))
+          continue
+        }
+        dbLogger.warn('batchUpsertOrdinalCache: chunk failed', {
+          chunkIndex: Math.floor(i / CHUNK_SIZE),
+          totalChunks: Math.ceil(ordinals.length / CHUNK_SIZE),
+          error: errMsg
+        })
+        break
+      }
     }
   }
+
+  return successCount
 }
 
 /**

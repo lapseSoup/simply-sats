@@ -363,6 +363,86 @@ describe('useSyncData', () => {
       expect(onLocksLoaded).not.toHaveBeenCalled()
     })
 
+    it('merges ordinal tx entries synchronously — setTxHistory called once with merged result', async () => {
+      // Setup: 1 DB transaction + 1 cached ordinal with a DIFFERENT txid
+      mockedGetAllTransactions.mockResolvedValue({
+        ok: true,
+        value: [
+          { txid: 'tx-1', blockHeight: 100, amount: 500, description: 'Payment', createdAt: 1000 },
+        ],
+      } as never)
+      mockedGetCachedOrdinals.mockResolvedValue([
+        { origin: 'ord-1', txid: 'ordinal-tx-1', vout: 0, satoshis: 1, contentType: 'image/png', contentHash: 'h1', accountId: 1, fetchedAt: 0, blockHeight: 200 },
+      ] as never)
+      // DB fallback returns empty (cache is the source of truth here)
+      mockedGetOrdinalsFromDatabase.mockResolvedValue([])
+
+      const opts = makeOptions()
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchDataFromDB(makeWalletKeys(), 1, vi.fn())
+      })
+
+      // setTxHistory should be called exactly ONCE with the merged result
+      // (no fire-and-forget second call that causes a visible count jump)
+      expect(opts.setTxHistory).toHaveBeenCalledTimes(1)
+      const history = opts.setTxHistory.mock.calls[0]![0] as TxHistoryItem[]
+      expect(history).toHaveLength(2) // 1 DB tx + 1 synthetic ordinal tx
+      expect(history.some(h => h.tx_hash === 'tx-1')).toBe(true)
+      expect(history.some(h => h.tx_hash === 'ordinal-tx-1')).toBe(true)
+    })
+
+    it('does not add duplicate synthetic entries for ordinals with same txid as existing tx', async () => {
+      mockedGetAllTransactions.mockResolvedValue({
+        ok: true,
+        value: [
+          { txid: 'shared-txid', blockHeight: 100, amount: 500, description: 'Payment', createdAt: 1000 },
+        ],
+      } as never)
+      mockedGetCachedOrdinals.mockResolvedValue([
+        { origin: 'ord-1', txid: 'shared-txid', vout: 0, satoshis: 1, contentType: null, contentHash: null, accountId: 1, fetchedAt: 0, blockHeight: 100 },
+      ] as never)
+      mockedGetOrdinalsFromDatabase.mockResolvedValue([])
+
+      const opts = makeOptions()
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchDataFromDB(makeWalletKeys(), 1, vi.fn())
+      })
+
+      expect(opts.setTxHistory).toHaveBeenCalledTimes(1)
+      const history = opts.setTxHistory.mock.calls[0]![0] as TxHistoryItem[]
+      // No synthetic entry added — ordinal txid already in transactions
+      expect(history).toHaveLength(1)
+    })
+
+    it('uses UTXOs-table ordinals when cache is incomplete (fewer entries)', async () => {
+      // Cache has 1 entry, UTXOs table has 3 — cache is incomplete
+      mockedGetCachedOrdinals.mockResolvedValue([
+        { origin: 'ord-1', txid: 'tx-1', vout: 0, satoshis: 1, contentType: null, contentHash: null, accountId: 1, fetchedAt: 0, blockHeight: 100 },
+      ] as never)
+      const dbOrdinals = [
+        { origin: 'ord-1', txid: 'tx-1', vout: 0, satoshis: 1 },
+        { origin: 'ord-2', txid: 'tx-2', vout: 0, satoshis: 1 },
+        { origin: 'ord-3', txid: 'tx-3', vout: 0, satoshis: 1 },
+      ]
+      mockedGetOrdinalsFromDatabase.mockResolvedValue(dbOrdinals as never)
+
+      const opts = makeOptions()
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchDataFromDB(makeWalletKeys(), 1, vi.fn())
+      })
+
+      // Should use UTXOs-table result (3 ordinals) instead of cache (1 ordinal)
+      expect(opts.setOrdinalsWithRef).toHaveBeenCalledTimes(1)
+      const ordinals = opts.setOrdinalsWithRef.mock.calls[0]![0] as Ordinal[]
+      expect(ordinals).toHaveLength(3)
+    })
+
     it('loads batch ordinal content and updates cache', async () => {
       mockedGetCachedOrdinals.mockResolvedValue([
         { origin: 'ord-1', txid: 'tx', vout: 0, satoshis: 1, contentType: null, contentHash: null, accountId: 1, fetchedAt: 0, blockHeight: 0 },

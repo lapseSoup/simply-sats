@@ -80,7 +80,7 @@ export function useSyncData({
 
     // Run all DB reads in parallel — they're independent queries and parallelizing
     // cuts total load time from ~200ms (sequential) to ~50ms (single bottleneck).
-    const [balanceResult, txResult, locksResult, ordinalsResult, utxoResult] = await Promise.allSettled([
+    const [balanceResult, txResult, locksResult, ordinalsResult, utxoResult, dbOrdinalsResult] = await Promise.allSettled([
       // Balance
       Promise.all([
         getBalanceFromDatabase('default', activeAccountId),
@@ -93,7 +93,9 @@ export function useSyncData({
       // Ordinals from cache
       getCachedOrdinals(activeAccountId),
       // UTXOs
-      getUTXOsFromDB(undefined, activeAccountId)
+      getUTXOsFromDB(undefined, activeAccountId),
+      // Ordinals from UTXOs table (fallback for incomplete cache)
+      getOrdinalsFromDatabase(activeAccountId)
     ])
 
     syncLogger.info('⏱ fetchDataFromDB: queries done', { elapsedMs: Math.round(performance.now() - _t0) })
@@ -120,8 +122,9 @@ export function useSyncData({
       syncLogger.warn('fetchDataFromDB: balance read failed', { error: String(balanceResult.reason) })
     }
 
-    // Transaction history — set immediately WITHOUT awaiting mergeOrdinalTxEntries.
-    // The merge adds synthetic ordinal-receive entries and runs in Phase 2.
+    // Transaction history — parsed here, but setTxHistory is deferred until after
+    // ordinals are resolved so we can merge synthetic ordinal-receive entries
+    // synchronously and call setTxHistory exactly once with the complete result.
     let dbTxHistory: TxHistoryItem[] = []
     if (txResult.status === 'fulfilled') {
       const dbTxs = txResult.value.ok ? txResult.value.value : []
@@ -133,7 +136,6 @@ export function useSyncData({
         createdAt: tx.createdAt
       }))
       dbTxHistory.sort(compareTxByHeight)
-      setTxHistory(dbTxHistory)
     } else {
       syncLogger.warn('fetchDataFromDB: tx history read failed', { error: String(txResult.reason) })
     }
@@ -146,13 +148,18 @@ export function useSyncData({
       syncLogger.warn('fetchDataFromDB: locks read failed', { error: String(locksResult.reason) })
     }
 
-    // Ordinals from cache — set the list immediately, content previews load in Phase 2.
+    // Ordinals — resolve from cache AND UTXOs table (both fetched in parallel above).
     // B-107: ALWAYS set ordinals in Phase 1 (even to []) to prevent stale data from a
-    // previous account persisting. If ordinal_cache is empty, fall back to UTXOs table
-    // SYNCHRONOUSLY (not fire-and-forget) so ordinals appear instantly on startup/switch.
+    // previous account persisting. Use whichever source has more results to handle
+    // incomplete cache (e.g. batchUpsertOrdinalCache partially failed).
     const cachedOrdinals = ordinalsResult.status === 'fulfilled' ? ordinalsResult.value : []
-    if (cachedOrdinals.length > 0) {
-      const ordinals: Ordinal[] = cachedOrdinals.map(cached => ({
+    const dbOrdinalsFallback: Ordinal[] = dbOrdinalsResult.status === 'fulfilled' ? dbOrdinalsResult.value : []
+
+    // Determine best ordinals source: cache (has contentType/contentHash) vs UTXOs table
+    let resolvedOrdinals: Ordinal[]
+    if (cachedOrdinals.length >= dbOrdinalsFallback.length && cachedOrdinals.length > 0) {
+      // Cache has equal or more entries — use it (richer metadata)
+      resolvedOrdinals = cachedOrdinals.map(cached => ({
         origin: cached.origin,
         txid: cached.txid,
         vout: cached.vout,
@@ -160,33 +167,19 @@ export function useSyncData({
         contentType: cached.contentType,
         content: cached.contentHash
       }))
-      setOrdinalsWithRef(ordinals)
-    } else if (ordinalsResult.status === 'rejected') {
-      syncLogger.warn('fetchDataFromDB: ordinals read failed', { error: String(ordinalsResult.reason) })
-      // Still try DB fallback even on cache read failure
-      try {
-        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
-        if (!isCancelled?.()) setOrdinalsWithRef(dbOrdinals)
-      } catch (e) {
-        syncLogger.warn('fetchDataFromDB: ordinals DB fallback also failed', { error: String(e) })
-        if (!isCancelled?.()) setOrdinalsWithRef([])
+    } else if (dbOrdinalsFallback.length > 0) {
+      // UTXOs table has more entries — cache is incomplete, use DB fallback
+      resolvedOrdinals = dbOrdinalsFallback
+      if (cachedOrdinals.length > 0) {
+        syncLogger.debug('fetchDataFromDB: cache incomplete, using UTXOs-table ordinals', {
+          cacheCount: cachedOrdinals.length,
+          dbCount: dbOrdinalsFallback.length
+        })
       }
     } else {
-      // Cache was empty (fulfilled but 0 results) — fall back to UTXOs table immediately.
-      // This handles first startup / restored wallets where ordinal_cache hasn't been
-      // populated yet but UTXOs table has ordinal-basket entries from blockchain sync.
-      try {
-        const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
-        if (!isCancelled?.()) {
-          setOrdinalsWithRef(dbOrdinals)
-          syncLogger.debug('fetchDataFromDB: used UTXOs-table ordinals fallback', { count: dbOrdinals.length })
-        }
-      } catch (e) {
-        syncLogger.warn('fetchDataFromDB: ordinals DB fallback failed', { error: String(e) })
-        // Set empty to clear any stale ordinals from previous account
-        if (!isCancelled?.()) setOrdinalsWithRef([])
-      }
+      resolvedOrdinals = []
     }
+    setOrdinalsWithRef(resolvedOrdinals)
 
     // UTXOs
     if (utxoResult.status === 'fulfilled') {
@@ -206,52 +199,37 @@ export function useSyncData({
     }
     setSyncError(null)
 
-    syncLogger.info('⏱ fetchDataFromDB: Phase 1 state setters done', { elapsedMs: Math.round(performance.now() - _t0) })
-
-    // ── PHASE 2: Background enrichment (fire-and-forget) ────────────────
-    // These operations add supplementary data (merged ordinal txs, content
-    // previews, empty-cache fallback). They're non-blocking so the UI
-    // shows cached data immediately while these complete in the background.
-
-    // Merge ordinal receives into tx history (uses already-fetched cachedOrdinals, no re-query)
-    if (dbTxHistory.length > 0 || cachedOrdinals.length > 0) {
-      ;(async () => {
-        try {
-          // Build ordinal txid→height map from the already-fetched cache (no DB round-trip)
-          const ordinalTxidHeights = new Map<string, number>()
-          if (cachedOrdinals.length > 0) {
-            for (const c of cachedOrdinals) ordinalTxidHeights.set(c.txid, c.blockHeight ?? -1)
-          } else {
-            // Cache was empty — fall back to UTXOs-table ordinals (also needs a query)
-            try {
-              const dbOrdinals = await getOrdinalsFromDatabase(activeAccountId)
-              for (const o of dbOrdinals) ordinalTxidHeights.set(o.txid, -1)
-            } catch { /* swallow */ }
-          }
-
-          if (isCancelled?.()) return
-
-          // B-67: Copy before mutating — dbTxHistory was already passed to
-          // setTxHistory above, so pushing onto it would mutate React state.
-          const mergedHistory = [...dbTxHistory]
-          const dbTxidSet = new Set(mergedHistory.map(tx => tx.tx_hash))
-          let added = 0
-          for (const [txid, height] of ordinalTxidHeights) {
-            if (!dbTxidSet.has(txid)) {
-              mergedHistory.push({ tx_hash: txid, height, amount: 1, createdAt: 0 })
-              added++
-            }
-          }
-
-          if (added > 0 && !isCancelled?.()) {
-            mergedHistory.sort(compareTxByHeight)
-            setTxHistory(mergedHistory)
-          }
-        } catch (e) {
-          syncLogger.warn('fetchDataFromDB: merge ordinal tx entries failed', { error: String(e) })
+    // ── Merge ordinal-receive entries into tx history SYNCHRONOUSLY ──────
+    // Ordinal receives (txids in ordinal data but not in the transactions table)
+    // need synthetic entries so the Activity tab shows the correct count.
+    // Previously this ran as fire-and-forget, causing a visible count jump
+    // (e.g. 54→674). Since the ordinal data is already in memory, no async
+    // I/O is needed — merge synchronously and call setTxHistory once.
+    if (resolvedOrdinals.length > 0 && txResult.status === 'fulfilled') {
+      const dbTxidSet = new Set(dbTxHistory.map(tx => tx.tx_hash))
+      const mergedHistory = [...dbTxHistory]
+      let added = 0
+      for (const ord of resolvedOrdinals) {
+        if (!dbTxidSet.has(ord.txid)) {
+          mergedHistory.push({ tx_hash: ord.txid, height: -1, amount: 1, createdAt: 0 })
+          dbTxidSet.add(ord.txid) // prevent duplicates from same txid
+          added++
         }
-      })()
+      }
+      if (added > 0) {
+        mergedHistory.sort(compareTxByHeight)
+        setTxHistory(mergedHistory)
+      } else {
+        setTxHistory(dbTxHistory)
+      }
+    } else {
+      // No ordinals to merge — set tx history as-is
+      if (txResult.status === 'fulfilled') {
+        setTxHistory(dbTxHistory)
+      }
     }
+
+    syncLogger.info('⏱ fetchDataFromDB: Phase 1 state setters done', { elapsedMs: Math.round(performance.now() - _t0) })
 
     // Content preview loading (ordinal list fallback moved to Phase 1 — B-107)
     if (ordinalsResult.status === 'fulfilled') {

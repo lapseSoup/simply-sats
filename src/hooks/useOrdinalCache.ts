@@ -53,8 +53,15 @@ export async function cacheOrdinalsInBackground(
       fetchedAt: now,
       blockHeight: ord.blockHeight
     }))
-    await batchUpsertOrdinalCache(cacheEntries)
-    syncLogger.debug('Cached ordinal metadata', { count: allOrdinals.length })
+    const inserted = await batchUpsertOrdinalCache(cacheEntries)
+    if (inserted < cacheEntries.length) {
+      syncLogger.warn('Incomplete ordinal cache write', {
+        expected: cacheEntries.length,
+        actual: inserted
+      })
+    } else {
+      syncLogger.debug('Cached ordinal metadata', { count: inserted })
+    }
 
     // 1b. Mark transferred ordinals -- only when ALL API calls succeeded.
     // If any call failed, allOrdinals is a PARTIAL list and marking missing origins
