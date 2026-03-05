@@ -182,6 +182,13 @@ export function AccountSwitcher({
     })
   }, [isOpen])
 
+  // Refresh account balance previews while the dropdown is open.
+  // This keeps values in sync when background discovery/sync updates account data.
+  useEffect(() => {
+    if (!isOpen || closing) return
+    onOpen?.()
+  }, [isOpen, closing, onOpen, accounts, activeAccountId])
+
   const activeAccount = useMemo(
     () => accounts.find(a => a.id === activeAccountId),
     [accounts, activeAccountId]
@@ -227,7 +234,7 @@ export function AccountSwitcher({
     <div className="account-switcher" ref={dropdownRef}>
       <button
         className="account-switcher-button"
-        onClick={() => { if (closing) return; if (!isOpen) onOpen?.(); setIsOpen(!isOpen) }}
+        onClick={() => { if (closing) return; setIsOpen(!isOpen) }}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={`Current account: ${activeAccount?.name || 'Account 1'}`}

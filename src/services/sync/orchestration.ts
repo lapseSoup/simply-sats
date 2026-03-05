@@ -401,14 +401,21 @@ export async function syncWallet(
   accountId?: number,
   walletPubKey?: string
 ): Promise<{ total: number; results: SyncResult[] } | undefined> {
+  // Start/cancel sync session BEFORE waiting on the mutex.
+  // If a stale sync is still running (e.g. pre-delete account), this ensures
+  // the new request can cancel it instead of waiting indefinitely on the lock.
+  const token = startNewSync()
+
   // Acquire sync lock to prevent database race conditions
   // This ensures only one sync runs at a time
   const releaseLock = await acquireSyncLock(accountId ?? 1)
 
-  // Start new sync (cancels any previous sync)
-  const token = startNewSync()
-
   try {
+    if (token.isCancelled) {
+      syncLogger.debug('[SYNC] Cancelled before starting (superseded while waiting for lock)')
+      return undefined
+    }
+
     // Recover any UTXOs stuck in 'pending' state for more than 5 minutes
     // These can occur when a broadcast fails after marking UTXOs as pending
     try {

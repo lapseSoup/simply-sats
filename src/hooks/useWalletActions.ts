@@ -23,6 +23,7 @@ import {
 import {
   clearDatabase
 } from '../infrastructure/database'
+import { cancelSync } from '../services/sync'
 import {
   clearAllSimplySatsStorage
 } from '../services/secureStorage'
@@ -241,6 +242,9 @@ export function useWalletActions({
   }, [setWallet, setSessionPassword, refreshAccounts, setActiveAccountState, storeKeysInRust])
 
   const handleDeleteWallet = useCallback(async () => {
+    // Stop any in-flight sync jobs tied to the old wallet state.
+    cancelSync()
+
     // 1. Stop auto-lock timer
     stopAutoLock()
 
