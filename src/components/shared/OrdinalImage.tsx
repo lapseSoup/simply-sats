@@ -68,6 +68,11 @@ export const OrdinalImage = memo(function OrdinalImage({
       onContentNeeded(origin, contentType)
     }
   }, [origin, cachedImageUrl, onContentNeeded, contentType])
+
+  useEffect(() => {
+    fetchAttemptedRef.current = false
+  }, [origin])
+
   useEffect(() => {
     // If the module-level cache already has a blob URL for this origin, skip entirely.
     // Ordinal content is immutable — once created, the blob URL never needs to change.
@@ -115,6 +120,20 @@ export const OrdinalImage = memo(function OrdinalImage({
   // B-62: Include cachedContent?.contentType so effect re-runs when the resolved
   // MIME type changes (e.g. from undefined to 'image/png' after DB fetch).
   }, [isImage, cachedContent?.contentData, cachedContent?.contentType, contentType, origin])
+
+  useEffect(() => {
+    if (isImage && cachedImageUrl) {
+      setStatus('loaded')
+      return
+    }
+    if ((isText || isJson) && cachedContent?.contentText) {
+      setStatus('loaded')
+      return
+    }
+    if (status === 'error' && (isImage || contentType === undefined)) {
+      setStatus('loading')
+    }
+  }, [cachedImageUrl, cachedContent?.contentText, isImage, isText, isJson, contentType, status])
 
   // Render text/JSON previews if we have cached content
   if ((isText || isJson) && cachedContent?.contentText) {
