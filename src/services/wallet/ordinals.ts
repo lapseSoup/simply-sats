@@ -6,7 +6,7 @@
 import type { UTXO, Ordinal, GpOrdinalItem, OrdinalDetails } from './types'
 import { gpOrdinalsApi } from '../../infrastructure/api/clients'
 import { getWocClient } from '../../infrastructure/api/wocClient'
-import { calculateTxFee } from './fees'
+import { calculateTxFee, getFeeRate } from './fees'
 import { executeBroadcast } from './transactions'
 import { getTransactionHistory, getTransactionDetails } from './balance'
 import {
@@ -14,7 +14,7 @@ import {
   confirmUtxosSpent
 } from '../sync'
 import { acquireSyncLock } from '../cancellation'
-import { markOrdinalTransferred } from '../../infrastructure/database'
+import { addUTXO, markOrdinalTransferred, withTransaction } from '../../infrastructure/database'
 import { walletLogger } from '../logger'
 import {
   mapGpItemToOrdinal,
@@ -26,6 +26,7 @@ import {
   isOneSatOutput,
   formatOrdinalOrigin
 } from '../../domain/ordinals'
+import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
 
 // Create a child logger for ordinals-specific logging
@@ -252,7 +253,8 @@ export async function transferOrdinal(
   toAddress: string,
   fundingWif: string,
   fundingUtxos: UTXO[],
-  accountId: number
+  accountId: number,
+  ordinalOrigin: string = formatOrdinalOrigin(ordinalUtxo.txid, ordinalUtxo.vout)
 ): Promise<string> {
   if (!isTauri()) {
     throw new Error('Ordinal transfers require Tauri runtime')
@@ -276,6 +278,7 @@ export async function transferOrdinal(
     if (totalFunding < estimatedFee) {
       throw new Error(`Insufficient funds for fee (need ~${estimatedFee} sats)`)
     }
+    const feeRate = getFeeRate()
 
     // Build and sign via Rust backend
     const built = await tauriInvoke<{
@@ -283,6 +286,7 @@ export async function transferOrdinal(
       txid: string
       fee: number
       change: number
+      changeAddress: string
       spentOutpoints: Array<{ txid: string; vout: number }>
     }>('build_ordinal_transfer_tx', {
       ordWif,
@@ -294,6 +298,7 @@ export async function transferOrdinal(
       },
       toAddress,
       fundingWif,
+      feeRate,
       fundingUtxos: fundingToUse.map(u => ({
         txid: u.txid,
         vout: u.vout,
@@ -310,34 +315,53 @@ export async function transferOrdinal(
 
     // Track transaction locally
     try {
-      // Embed the full ordinal origin (txid_vout) in the description so the
+      // Embed the canonical ordinal origin in the description so the
       // activity tab can look up the thumbnail from ordinalContentCache even
       // after the ordinal is transferred and removed from the ordinals array.
-      const ordinalOrigin = `${ordinalUtxo.txid}_${ordinalUtxo.vout}`
-
-      // Mark the ordinal as transferred in the DB cache immediately — this drops
-      // it from getCachedOrdinals() (owned count) while keeping the row so
-      // content data (thumbnails) remains available for historical display.
-      try {
+      await withTransaction(async () => {
+        // Mark the ordinal as transferred in the DB cache immediately — this drops
+        // it from getCachedOrdinals() (owned count) while keeping the row so
+        // content data (thumbnails) remains available for historical display.
         await markOrdinalTransferred(ordinalOrigin)
         ordLogger.debug('Marked ordinal as transferred in cache', { origin: ordinalOrigin })
-      } catch (e) {
-        ordLogger.warn('Failed to mark ordinal transferred in cache', { error: String(e) })
-      }
 
-      await recordSentTransaction(
-        txid,
-        built.rawTx,
-        `Transferred ordinal ${ordinalOrigin} to ${toAddress.slice(0, 8)}...`,
-        ['ordinal', 'transfer'],
-        -actualFee  // Fee sats only — the ordinal sat is not counted in BSV balance
-      )
+        await recordSentTransaction(
+          txid,
+          built.rawTx,
+          `Transferred ordinal ${ordinalOrigin} to ${toAddress.slice(0, 8)}...`,
+          ['ordinal', 'transfer'],
+          -actualFee,  // Fee sats only — the ordinal sat is not counted in BSV balance
+          accountId
+        )
 
-      // Confirm UTXOs as spent (updates from pending -> spent)
-      const confirmResult = await confirmUtxosSpent(utxosToSpend, txid)
-      if (!confirmResult.ok) {
-        ordLogger.warn('Failed to confirm UTXOs as spent', { txid, error: confirmResult.error.message })
-      }
+        // Confirm UTXOs as spent (updates from pending -> spent)
+        const confirmResult = await confirmUtxosSpent(utxosToSpend, txid)
+        if (!confirmResult.ok) {
+          throw new Error(`Failed to confirm UTXOs as spent: ${confirmResult.error.message}`)
+        }
+
+        // Track change immediately so the sender balance stays correct until the next sync.
+        if (built.change > 0) {
+          const addChangeResult = await addUTXO({
+            txid,
+            vout: 1,
+            satoshis: built.change,
+            lockingScript: p2pkhLockingScriptHex(built.changeAddress),
+            address: built.changeAddress,
+            basket: 'default',
+            spendable: true,
+            createdAt: Date.now()
+          }, accountId)
+          if (!addChangeResult.ok) {
+            const msg = addChangeResult.error.message
+            if (msg.includes('UNIQUE') || msg.includes('duplicate')) {
+              ordLogger.debug('Ordinal transfer change UTXO already tracked', { txid, change: built.change })
+            } else {
+              throw addChangeResult.error
+            }
+          }
+        }
+      })
 
       ordLogger.info('Ordinal transfer tracked locally', { txid })
     } catch (error) {

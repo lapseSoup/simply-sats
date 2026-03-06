@@ -326,7 +326,8 @@ export function useWalletSend({
         toAddress,
         fundingWif,
         fundingUtxos,
-        activeAccountId
+        activeAccountId,
+        ordinal.origin
       )
 
       // Optimistically remove the transferred ordinal from UI state immediately
@@ -334,11 +335,12 @@ export function useWalletSend({
       setOrdinals(getOrdinals().filter(o => !(o.txid === ordinal.txid && o.vout === ordinal.vout)))
 
       await fetchData()
+      syncInactiveAccountsBackground?.()
       return ok({ txid })
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Transfer failed')
     }
-  }, [wallet, activeAccountId, fetchData, setOrdinals, getOrdinals])
+  }, [wallet, activeAccountId, fetchData, setOrdinals, getOrdinals, syncInactiveAccountsBackground])
 
   const handleListOrdinal = useCallback(async (
     ordinal: Ordinal,

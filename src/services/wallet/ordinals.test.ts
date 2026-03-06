@@ -16,11 +16,13 @@ const {
   mockGpOrdinalsGet,
   mockGetUtxosSafe,
   mockCalculateTxFee,
+  mockGetFeeRate,
   mockExecuteBroadcast,
   mockGetTransactionHistory,
   mockGetTransactionDetails,
   mockRecordSentTransaction,
   mockConfirmUtxosSpent,
+  mockAddUTXO,
   mockMapGpItemToOrdinal,
   mockFilterOneSatOrdinals,
   mockIsOrdinalInscriptionScript,
@@ -32,15 +34,20 @@ const {
   mockAcquireSyncLock,
   mockIsTauri,
   mockTauriInvoke,
+  mockWithTransaction,
+  mockP2pkhLockingScriptHex,
+  mockMarkOrdinalTransferred,
 } = vi.hoisted(() => ({
   mockGpOrdinalsGet: vi.fn(),
   mockGetUtxosSafe: vi.fn(),
   mockCalculateTxFee: vi.fn(),
+  mockGetFeeRate: vi.fn(),
   mockExecuteBroadcast: vi.fn(),
   mockGetTransactionHistory: vi.fn(),
   mockGetTransactionDetails: vi.fn(),
   mockRecordSentTransaction: vi.fn(),
   mockConfirmUtxosSpent: vi.fn(),
+  mockAddUTXO: vi.fn(),
   mockMapGpItemToOrdinal: vi.fn(),
   mockFilterOneSatOrdinals: vi.fn(),
   mockIsOrdinalInscriptionScript: vi.fn(),
@@ -52,6 +59,9 @@ const {
   mockAcquireSyncLock: vi.fn(),
   mockIsTauri: vi.fn(),
   mockTauriInvoke: vi.fn(),
+  mockWithTransaction: vi.fn(),
+  mockP2pkhLockingScriptHex: vi.fn(),
+  mockMarkOrdinalTransferred: vi.fn(),
 }))
 
 // ---------------------------------------------------------------------------
@@ -70,6 +80,7 @@ vi.mock('../../infrastructure/api/wocClient', () => ({
 
 vi.mock('./fees', () => ({
   calculateTxFee: (...args: unknown[]) => mockCalculateTxFee(...args),
+  getFeeRate: () => mockGetFeeRate(),
 }))
 
 vi.mock('./transactions', () => ({
@@ -116,7 +127,13 @@ vi.mock('../../utils/tauri', () => ({
 }))
 
 vi.mock('../../infrastructure/database', () => ({
-  markOrdinalTransferred: vi.fn().mockResolvedValue(undefined),
+  addUTXO: (...args: unknown[]) => mockAddUTXO(...args),
+  markOrdinalTransferred: (...args: unknown[]) => mockMarkOrdinalTransferred(...args),
+  withTransaction: (...args: unknown[]) => mockWithTransaction(...args),
+}))
+
+vi.mock('../../domain/transaction/builder', () => ({
+  p2pkhLockingScriptHex: (...args: unknown[]) => mockP2pkhLockingScriptHex(...args),
 }))
 
 // ---------------------------------------------------------------------------
@@ -145,7 +162,12 @@ describe('Ordinals Service', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockCalculateTxFee.mockReturnValue(200)
+    mockGetFeeRate.mockReturnValue(0.001)
     mockFormatOrdinalOrigin.mockImplementation((txid: string, vout: number) => `${txid}_${vout}`)
+    mockWithTransaction.mockImplementation(async (callback: () => Promise<unknown>) => await callback())
+    mockP2pkhLockingScriptHex.mockImplementation((address: string) => `script_${address}`)
+    mockMarkOrdinalTransferred.mockResolvedValue(undefined)
+    mockAddUTXO.mockResolvedValue({ ok: true })
   })
 
   // =========================================================================
@@ -466,6 +488,7 @@ describe('Ordinals Service', () => {
         txid: 'mock-pending-txid',
         fee: 200,
         change: 9799,
+        changeAddress: '1ChangeAddr',
         spentOutpoints: [
           { txid: ordinalUtxo.txid, vout: 0 },
           { txid: fundingUtxos[0]!.txid, vout: 0 },
@@ -480,7 +503,7 @@ describe('Ordinals Service', () => {
       mockCalculateTxFee.mockReturnValue(200)
       mockExecuteBroadcast.mockResolvedValue(MOCK_TXID)
       mockRecordSentTransaction.mockResolvedValue(undefined)
-      mockConfirmUtxosSpent.mockResolvedValue(undefined)
+      mockConfirmUtxosSpent.mockResolvedValue({ ok: true })
       mockAcquireSyncLock.mockResolvedValue(vi.fn())
     })
 
@@ -492,6 +515,7 @@ describe('Ordinals Service', () => {
         ordWif,
         toAddress,
         fundingWif,
+        feeRate: 0.001,
       }))
       expect(mockExecuteBroadcast).toHaveBeenCalled()
       expect(mockRecordSentTransaction).toHaveBeenCalledWith(
@@ -499,9 +523,17 @@ describe('Ordinals Service', () => {
         'deadbeef',
         expect.stringContaining('Transferred ordinal'),
         ['ordinal', 'transfer'],
-        expect.any(Number)  // negative fee sats
+        expect.any(Number),  // negative fee sats
+        1
       )
       expect(mockConfirmUtxosSpent).toHaveBeenCalled()
+      expect(mockAddUTXO).toHaveBeenCalledWith(expect.objectContaining({
+        txid: MOCK_TXID,
+        vout: 1,
+        satoshis: 9799,
+        lockingScript: 'script_1ChangeAddr',
+        address: '1ChangeAddr',
+      }), 1)
     })
 
     it('should throw when insufficient funding UTXOs', async () => {
@@ -521,6 +553,22 @@ describe('Ordinals Service', () => {
       const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
+    })
+
+    it('should use the provided canonical origin for cache and activity tracking', async () => {
+      const canonicalOrigin = `${'cc'.repeat(32)}_7`
+
+      await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos, 42, canonicalOrigin)
+
+      expect(mockMarkOrdinalTransferred).toHaveBeenCalledWith(canonicalOrigin)
+      expect(mockRecordSentTransaction).toHaveBeenCalledWith(
+        MOCK_TXID,
+        'deadbeef',
+        `Transferred ordinal ${canonicalOrigin} to ${toAddress.slice(0, 8)}...`,
+        ['ordinal', 'transfer'],
+        -200,
+        42
+      )
     })
 
     it('should select minimal funding UTXOs', async () => {

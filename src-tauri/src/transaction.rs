@@ -447,6 +447,7 @@ pub fn build_ordinal_transfer_tx(
     to_address: String,
     funding_wif: String,
     funding_utxos: Vec<UtxoInput>,
+    fee_rate: f64,
 ) -> Result<BuiltTransactionResult, String> {
     let funding_address = sdk_address_from_wif(&funding_wif)?;
 
@@ -469,7 +470,7 @@ pub fn build_ordinal_transfer_tx(
     let total_funding: u64 = funding_utxos.iter().map(|u| u.satoshis).sum();
     let total_input = ordinal_utxo.satoshis + total_funding;
     // 1 ordinal input + N funding inputs, 2 outputs (ordinal + change)
-    let fee = calculate_tx_fee(1 + funding_utxos.len(), 2, 0.05);
+    let fee = calculate_tx_fee(1 + funding_utxos.len(), 2, fee_rate);
     let change = total_input
         .checked_sub(1) // ordinal output
         .and_then(|v| v.checked_sub(fee))
@@ -1539,6 +1540,7 @@ mod tests {
             "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
             funding_wif,
             vec![make_test_utxo("b", 10000)],
+            0.001,
         );
 
         assert!(result.is_ok(), "build_ordinal_transfer_tx failed: {:?}", result.err());
@@ -1568,6 +1570,7 @@ mod tests {
             "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
             funding_wif,
             vec![make_test_utxo("b", 1)], // only 1 sat — not enough for fee
+            0.01,
         );
 
         assert!(result.is_err());
