@@ -7,8 +7,10 @@
 //! All cryptographic operations that need private keys use `_from_store`
 //! command variants that read keys from this store.
 
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use zeroize::Zeroizing;
 
@@ -16,9 +18,9 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use zeroize::Zeroize;
 
-use crate::key_derivation;
 use crate::brc100_signing;
 use crate::bsv_sdk_adapter;
+use crate::key_derivation;
 use crate::transaction;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -77,9 +79,18 @@ impl KeyStoreInner {
     /// Returns `Zeroizing<String>` so the caller never holds a plain, non-zeroizing copy.
     pub fn get_wif(&self, key_type: &str) -> Result<Zeroizing<String>, String> {
         match key_type {
-            "wallet" => self.wallet_wif.clone().ok_or_else(|| "No wallet key stored".to_string()),
-            "ord" | "ordinals" => self.ord_wif.clone().ok_or_else(|| "No ordinals key stored".to_string()),
-            "identity" => self.identity_wif.clone().ok_or_else(|| "No identity key stored".to_string()),
+            "wallet" => self
+                .wallet_wif
+                .clone()
+                .ok_or_else(|| "No wallet key stored".to_string()),
+            "ord" | "ordinals" => self
+                .ord_wif
+                .clone()
+                .ok_or_else(|| "No ordinals key stored".to_string()),
+            "identity" => self
+                .identity_wif
+                .clone()
+                .ok_or_else(|| "No identity key stored".to_string()),
             _ => Err(format!("Invalid key type: {}", key_type)),
         }
     }
@@ -143,7 +154,10 @@ pub async fn store_keys(
     store.mnemonic = Some(mnemonic.clone());
     store.pub_keys = Some(pub_keys.clone());
 
-    log::info!("Keys stored in Rust key store (account_index: {:?})", account_index);
+    log::info!(
+        "Keys stored in Rust key store (account_index: {:?})",
+        account_index
+    );
     Ok(pub_keys)
 }
 
@@ -191,9 +205,7 @@ pub async fn store_keys_direct(
 
 /// Clear all keys from the store (call on lock/logout)
 #[tauri::command]
-pub async fn clear_keys(
-    key_store: tauri::State<'_, SharedKeyStore>,
-) -> Result<(), String> {
+pub async fn clear_keys(key_store: tauri::State<'_, SharedKeyStore>) -> Result<(), String> {
     let mut store = key_store.lock().await;
     store.clear();
     log::info!("Keys cleared from Rust key store");
@@ -211,45 +223,83 @@ pub async fn get_public_keys(
 
 /// Check if keys are currently stored
 #[tauri::command]
-pub async fn has_keys(
-    key_store: tauri::State<'_, SharedKeyStore>,
-) -> Result<bool, String> {
+pub async fn has_keys(key_store: tauri::State<'_, SharedKeyStore>) -> Result<bool, String> {
     let store = key_store.lock().await;
     Ok(store.has_keys())
 }
 
-/// Get mnemonic once for temporary display, then clear it from memory.
-/// Use this for one-time display operations (e.g., showing recovery phrase in UI).
-/// NOTE: Prefer `get_mnemonic` for most use cases — clearing on read breaks
-/// multi-function workflows in SettingsSecurity.
+/// Build an encrypted key-export payload from keys currently held in the Rust store.
+/// Plaintext key material stays in native memory and is never returned to JavaScript.
 #[tauri::command]
-pub async fn get_mnemonic_once(
+pub async fn build_encrypted_key_export_from_store(
     key_store: tauri::State<'_, SharedKeyStore>,
-) -> Result<Option<String>, String> {
-    log::warn!("Mnemonic retrieved via get_mnemonic_once command (will be cleared from store)");
-    let mut store = key_store.lock().await;
+    password: String,
+    wallet_address: String,
+    ord_address: String,
+    identity_pub_key: String,
+) -> Result<crate::crypto::EncryptedData, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wallet_wif = store.get_wif("wallet")?;
+    let ord_wif = store.get_wif("ordinals")?;
+    let identity_wif = store.get_wif("identity")?;
     let mnemonic = store.mnemonic.as_deref().cloned();
-    // Clear mnemonic from memory after retrieval (Zeroizing handles secure drop)
-    store.mnemonic = None;
-    Ok(mnemonic)
+    drop(store);
+
+    let payload = json!({
+        "format": "simply-sats",
+        "version": 1,
+        "mnemonic": mnemonic,
+        "keys": {
+            "identity": { "wif": &*identity_wif, "pubKey": identity_pub_key },
+            "payment": { "wif": &*wallet_wif, "address": wallet_address },
+            "ordinals": { "wif": &*ord_wif, "address": ord_address }
+        }
+    });
+
+    let plaintext = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+    crate::crypto::encrypt_data(plaintext, password)
 }
 
-/// Read mnemonic from store without clearing it.
-/// The mnemonic remains in Rust memory until wallet lock (`clear_keys`).
-/// Use this when the mnemonic may be needed by multiple operations in a session
-/// (e.g., export keys, show phrase, export with one-time password).
+/// Build an encrypted backup payload from keys in the Rust store plus a JS-provided DB snapshot.
 #[tauri::command]
-pub async fn get_mnemonic(
+pub async fn build_encrypted_backup_from_store(
     key_store: tauri::State<'_, SharedKeyStore>,
-) -> Result<Option<String>, String> {
-    log::warn!("Mnemonic retrieved via get_mnemonic command");
+    password: String,
+    wallet_address: String,
+    ord_address: String,
+    identity_pub_key: String,
+    database: serde_json::Value,
+) -> Result<crate::crypto::EncryptedData, String> {
     let store = key_store.lock().await;
-    Ok(store.mnemonic.as_deref().cloned())
+    require_keys(&store)?;
+    let wallet_wif = store.get_wif("wallet")?;
+    let ord_wif = store.get_wif("ordinals")?;
+    let identity_wif = store.get_wif("identity")?;
+    let mnemonic = store.mnemonic.as_deref().cloned();
+    drop(store);
+
+    let payload = json!({
+        "format": "simply-sats-full",
+        "wallet": {
+            "mnemonic": mnemonic,
+            "keys": {
+                "identity": { "wif": &*identity_wif, "pubKey": identity_pub_key },
+                "payment": { "wif": &*wallet_wif, "address": wallet_address },
+                "ordinals": { "wif": &*ord_wif, "address": ord_address }
+            }
+        },
+        "database": database
+    });
+
+    let plaintext = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+    crate::crypto::encrypt_data(plaintext, password)
 }
 
 /// Switch to a different account by re-deriving keys from the stored mnemonic.
 /// The mnemonic never leaves Rust memory — only public keys are returned.
-/// This replaces the old pattern of `get_mnemonic` → JS derivation → `store_keys`.
+/// This replaces the old JS-side account-switch flow that re-derived keys outside
+/// the native store and then wrote them back.
 #[tauri::command]
 pub async fn switch_account_from_store(
     key_store: tauri::State<'_, SharedKeyStore>,
@@ -257,10 +307,13 @@ pub async fn switch_account_from_store(
 ) -> Result<PublicWalletKeys, String> {
     let mut store = key_store.lock().await;
     // Borrow the stored mnemonic as &str — no cloning needed for derivation.
-    let mnemonic_ref = store.mnemonic.as_deref()
+    let mnemonic_ref = store
+        .mnemonic
+        .as_deref()
         .ok_or_else(|| "No mnemonic in key store — wallet may be locked".to_string())?;
 
-    let full_keys = key_derivation::derive_wallet_keys_for_account_inner(mnemonic_ref, account_index)?;
+    let full_keys =
+        key_derivation::derive_wallet_keys_for_account_inner(mnemonic_ref, account_index)?;
 
     let pub_keys = PublicWalletKeys {
         wallet_type: full_keys.wallet_type.clone(),
@@ -280,7 +333,10 @@ pub async fn switch_account_from_store(
     store.mnemonic = Some(Zeroizing::new(full_keys.mnemonic));
     store.pub_keys = Some(pub_keys.clone());
 
-    log::info!("Account switched in Rust key store (account_index: {})", account_index);
+    log::info!(
+        "Account switched in Rust key store (account_index: {})",
+        account_index
+    );
     Ok(pub_keys)
 }
 
@@ -299,6 +355,25 @@ fn require_keys(store: &KeyStoreInner) -> Result<(), String> {
         return Err("Wallet is locked — no keys available".to_string());
     }
     Ok(())
+}
+
+/// Reveal a private key for explicit user-facing display/export flows.
+///
+/// This is intentionally separate from the old generic WIF bridge: revealing a key
+/// in the UI is an explicit UX affordance, not a signing path.
+#[tauri::command]
+pub async fn reveal_private_key_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    key_type: String,
+) -> Result<String, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let wif = store.get_wif(&key_type)?;
+    log::warn!(
+        "Private key revealed to UI for explicit display/export (key_type: {})",
+        key_type
+    );
+    Ok((*wif).clone())
 }
 
 // ==================== Signing Commands (from store) ====================
@@ -365,6 +440,67 @@ pub async fn decrypt_ecies_from_store(
 
 // ==================== Transaction Commands (from store) ====================
 
+fn resolve_extended_utxos_from_store(
+    store: &KeyStoreInner,
+    selected_utxos: Vec<transaction::ResolvedUtxoInput>,
+    derived_signers: Vec<transaction::DerivedSignerInput>,
+) -> Result<Vec<transaction::ExtendedUtxoInput>, String> {
+    require_keys(store)?;
+
+    let wallet_wif = (*store.get_wif("wallet")?).clone();
+    let wallet_address = bsv_sdk_adapter::sdk_address_from_wif(&wallet_wif)?;
+    let identity_wif = (*store.get_wif("identity")?).clone();
+
+    let mut signer_wifs = HashMap::<String, String>::new();
+    signer_wifs.insert(wallet_address, wallet_wif.clone());
+
+    for signer in derived_signers {
+        let resolved_wif = if let Some(legacy_wif) = signer.legacy_wif {
+            legacy_wif
+        } else {
+            let sender_pub_key = signer.sender_pub_key.ok_or_else(|| {
+                format!(
+                    "Missing senderPubKey for derived address {}",
+                    signer.address
+                )
+            })?;
+            let invoice_number = signer.invoice_number.ok_or_else(|| {
+                format!(
+                    "Missing invoiceNumber for derived address {}",
+                    signer.address
+                )
+            })?;
+            crate::brc42_derivation::derive_child_key(
+                identity_wif.clone(),
+                sender_pub_key,
+                invoice_number,
+            )?
+            .wif
+        };
+        signer_wifs.insert(signer.address, resolved_wif);
+    }
+
+    selected_utxos
+        .into_iter()
+        .map(|utxo| {
+            let wif = signer_wifs.get(&utxo.address).cloned().ok_or_else(|| {
+                format!(
+                    "No signing key available for input address {}",
+                    utxo.address
+                )
+            })?;
+            Ok(transaction::ExtendedUtxoInput {
+                txid: utxo.txid,
+                vout: utxo.vout,
+                satoshis: utxo.satoshis,
+                script: utxo.script,
+                wif,
+                address: utxo.address,
+            })
+        })
+        .collect()
+}
+
 /// Build a P2PKH transaction using the wallet key from the store
 #[tauri::command]
 pub async fn build_p2pkh_tx_from_store(
@@ -379,7 +515,14 @@ pub async fn build_p2pkh_tx_from_store(
     require_keys(&store)?;
     let wif = store.get_wif("wallet")?;
     drop(store);
-    transaction::build_p2pkh_tx((*wif).clone(), to_address, satoshis, selected_utxos, total_input, fee_rate)
+    transaction::build_p2pkh_tx(
+        (*wif).clone(),
+        to_address,
+        satoshis,
+        selected_utxos,
+        total_input,
+        fee_rate,
+    )
 }
 
 /// Build a multi-key P2PKH transaction using the wallet key for change
@@ -396,7 +539,40 @@ pub async fn build_multi_key_p2pkh_tx_from_store(
     require_keys(&store)?;
     let wif = store.get_wif("wallet")?;
     drop(store);
-    transaction::build_multi_key_p2pkh_tx((*wif).clone(), to_address, satoshis, selected_utxos, total_input, fee_rate)
+    transaction::build_multi_key_p2pkh_tx(
+        (*wif).clone(),
+        to_address,
+        satoshis,
+        selected_utxos,
+        total_input,
+        fee_rate,
+    )
+}
+
+/// Build a multi-key P2PKH transaction, resolving derived-address keys inside Rust.
+#[tauri::command]
+pub async fn build_resolved_multi_key_p2pkh_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    to_address: String,
+    satoshis: u64,
+    selected_utxos: Vec<transaction::ResolvedUtxoInput>,
+    derived_signers: Vec<transaction::DerivedSignerInput>,
+    total_input: u64,
+    fee_rate: f64,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    let wallet_wif = (*store.get_wif("wallet")?).clone();
+    let resolved_utxos =
+        resolve_extended_utxos_from_store(&store, selected_utxos, derived_signers)?;
+    drop(store);
+    transaction::build_multi_key_p2pkh_tx(
+        wallet_wif,
+        to_address,
+        satoshis,
+        resolved_utxos,
+        total_input,
+        fee_rate,
+    )
 }
 
 /// Build a consolidation transaction using the wallet key from the store
@@ -489,6 +665,30 @@ pub async fn build_multi_output_p2pkh_tx_from_store(
     )
 }
 
+/// Build a multi-output P2PKH transaction, resolving derived-address keys inside Rust.
+#[tauri::command]
+pub async fn build_resolved_multi_output_p2pkh_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    outputs: Vec<transaction::OutputDescriptor>,
+    selected_utxos: Vec<transaction::ResolvedUtxoInput>,
+    derived_signers: Vec<transaction::DerivedSignerInput>,
+    total_input: u64,
+    fee_rate: f64,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    let wallet_wif = (*store.get_wif("wallet")?).clone();
+    let resolved_utxos =
+        resolve_extended_utxos_from_store(&store, selected_utxos, derived_signers)?;
+    drop(store);
+    transaction::build_multi_key_output_p2pkh_tx(
+        wallet_wif,
+        outputs,
+        resolved_utxos,
+        total_input,
+        fee_rate,
+    )
+}
+
 /// Build a custom-output transaction using the wallet key from the store.
 /// Used by BRC-100 createAction for outputs with arbitrary locking scripts.
 #[tauri::command]
@@ -536,6 +736,30 @@ pub async fn build_inscription_tx_from_store(
     )
 }
 
+/// Build an ordinal transfer transaction using keys from the store
+#[tauri::command]
+pub async fn build_ordinal_transfer_tx_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    ordinal_utxo: transaction::UtxoInput,
+    to_address: String,
+    funding_utxos: Vec<transaction::UtxoInput>,
+    fee_rate: f64,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let ord_wif = store.get_wif("ordinals")?;
+    let funding_wif = store.get_wif("wallet")?;
+    drop(store);
+    transaction::build_ordinal_transfer_tx(
+        (*ord_wif).clone(),
+        ordinal_utxo,
+        to_address,
+        (*funding_wif).clone(),
+        funding_utxos,
+        fee_rate,
+    )
+}
+
 /// Build a token transfer transaction using keys from the store
 #[tauri::command]
 pub async fn build_token_transfer_tx_from_store(
@@ -564,6 +788,76 @@ pub async fn build_token_transfer_tx_from_store(
         ticker,
         protocol,
         change_address,
+    )
+}
+
+/// Create an ordinal listing using keys from the store
+#[tauri::command]
+pub async fn create_ordinal_listing_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    ordinal_utxo: transaction::UtxoInput,
+    payment_utxos: Vec<transaction::UtxoInput>,
+    pay_address: String,
+    ord_address: String,
+    price_sats: u64,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let ord_wif = store.get_wif("ordinals")?;
+    let payment_wif = store.get_wif("wallet")?;
+    drop(store);
+    crate::ordinals::create_ordinal_listing(
+        (*ord_wif).clone(),
+        ordinal_utxo,
+        (*payment_wif).clone(),
+        payment_utxos,
+        pay_address,
+        ord_address,
+        price_sats,
+    )
+}
+
+/// Cancel an ordinal listing using keys from the store
+#[tauri::command]
+pub async fn cancel_ordinal_listing_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    listing_utxo: transaction::UtxoInput,
+    payment_utxos: Vec<transaction::UtxoInput>,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let ord_wif = store.get_wif("ordinals")?;
+    let payment_wif = store.get_wif("wallet")?;
+    drop(store);
+    crate::ordinals::cancel_ordinal_listing(
+        (*ord_wif).clone(),
+        listing_utxo,
+        (*payment_wif).clone(),
+        payment_utxos,
+    )
+}
+
+/// Purchase an ordinal listing using the wallet key from the store
+#[tauri::command]
+pub async fn purchase_ordinal_from_store(
+    key_store: tauri::State<'_, SharedKeyStore>,
+    payment_utxos: Vec<transaction::UtxoInput>,
+    ord_address: String,
+    listing_utxo: transaction::UtxoInput,
+    payout: String,
+    price_sats: u64,
+) -> Result<transaction::BuiltTransactionResult, String> {
+    let store = key_store.lock().await;
+    require_keys(&store)?;
+    let payment_wif = store.get_wif("wallet")?;
+    drop(store);
+    crate::ordinals::purchase_ordinal(
+        (*payment_wif).clone(),
+        payment_utxos,
+        ord_address,
+        listing_utxo,
+        payout,
+        price_sats,
     )
 }
 
@@ -614,7 +908,11 @@ pub async fn find_derived_key_from_store(
     let wif = store.get_wif(&key_type)?;
     drop(store);
     crate::brc42_derivation::find_derived_key_for_address(
-        (*wif).clone(), target_address, sender_pub_key, invoice_numbers, max_numeric,
+        (*wif).clone(),
+        target_address,
+        sender_pub_key,
+        invoice_numbers,
+        max_numeric,
     )
 }
 
@@ -710,33 +1008,6 @@ pub async fn hmac_with_derived_key_from_store(
 /// Retrieve a WIF from the store for operations that cannot yet be performed
 /// entirely in Rust (lock/unlock sCrypt, ordinals, tokens, BRC-42 derivation).
 ///
-/// SECURITY NOTE: This is an intermediate migration step. The WIF is returned to
-/// the frontend for the duration of a single operation, rather than being stored
-/// persistently in React state. The caller MUST NOT persist the returned WIF.
-///
-/// Future: Each operation using this command should be migrated to a dedicated
-/// `_from_store` Rust command that never exposes the WIF to JavaScript.
-///
-/// `operation` is a free-text label used for audit logging only (e.g. "lockBSV",
-/// "transferOrdinal", "sendToken"). It does not affect behaviour.
-#[tauri::command]
-pub async fn get_wif_for_operation(
-    key_store: tauri::State<'_, SharedKeyStore>,
-    key_type: String,
-    operation: String,
-) -> Result<String, String> {
-    let store = key_store.lock().await;
-    require_keys(&store)?;
-    let wif = store.get_wif(&key_type)?;
-    log::warn!(
-        "WIF retrieved for JS operation '{}' (key_type: {}). \
-         This is a transitional bridge — migrate to a _from_store command.",
-        operation, key_type
-    );
-    // Extract the inner String for IPC — this is the only place a plain copy is needed
-    Ok((*wif).clone())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

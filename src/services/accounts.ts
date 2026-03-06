@@ -17,30 +17,17 @@ import { accountLogger } from './logger'
 import { SECURITY } from '../config'
 import { STORAGE_KEYS } from '../infrastructure/storage/localStorage'
 import { type Result, ok, err } from '../domain/types'
+import type { Account, AccountSettings } from '../domain/accounts'
 import { DbError } from './errors'
+export type { Account, AccountSettings }
 
-// Account type
-export interface Account {
-  id?: number
-  name: string
-  identityAddress: string
+// Secret-bearing account row shape. Keep this behind the account service boundary.
+interface EncryptedAccountRecord extends Account {
   encryptedKeys: string
-  isActive: boolean
-  createdAt: number
-  lastAccessedAt?: number
-  derivationIndex?: number
-}
-
-// Account settings type
-export interface AccountSettings {
-  displayInSats: boolean
-  feeRateKB: number
-  autoLockMinutes: number
-  trustedOrigins: string[]
 }
 
 /** Map a database row to an Account object */
-function mapRowToAccount(row: AccountRow): Account {
+function mapRowToEncryptedAccountRecord(row: AccountRow): EncryptedAccountRecord {
   return {
     id: row.id,
     name: row.name,
@@ -51,6 +38,11 @@ function mapRowToAccount(row: AccountRow): Account {
     lastAccessedAt: row.last_accessed_at ?? undefined,
     derivationIndex: row.derivation_index ?? undefined
   }
+}
+
+function toAccountSummary(account: EncryptedAccountRecord): Account {
+  const { encryptedKeys: _encryptedKeys, ...summary } = account
+  return summary
 }
 
 // Default settings for new accounts
@@ -164,13 +156,7 @@ export async function createAccount(
   }
 }
 
-/**
- * Get all accounts
- *
- * S-40: Note: Returns encryptedKeys for all accounts. Callers that only need
- * account metadata should use a dedicated summary query to minimize exposure.
- */
-export async function getAllAccounts(): Promise<Account[]> {
+async function getAllEncryptedAccountRecords(): Promise<EncryptedAccountRecord[]> {
   const database = getDatabase()
 
   try {
@@ -178,12 +164,22 @@ export async function getAllAccounts(): Promise<Account[]> {
       'SELECT * FROM accounts ORDER BY last_accessed_at DESC'
     )
 
-    return rows.map(mapRowToAccount)
+    return rows.map(mapRowToEncryptedAccountRecord)
   } catch (e) {
     // Table may not exist yet, or database query failed
     accountLogger.error('Failed to load accounts', e)
     return []
   }
+}
+
+/**
+ * Get all accounts.
+ *
+ * Returns metadata only; encrypted key payloads remain behind account-service APIs.
+ */
+export async function getAllAccounts(): Promise<Account[]> {
+  const accounts = await getAllEncryptedAccountRecords()
+  return accounts.map(toAccountSummary)
 }
 
 /**
@@ -199,7 +195,7 @@ export async function getActiveAccount(): Promise<Account | null> {
 
     if (rows.length === 0) return null
 
-    return mapRowToAccount(rows[0]!)
+    return toAccountSummary(mapRowToEncryptedAccountRecord(rows[0]!))
   } catch (e) {
     accountLogger.warn('Failed to get active account', { error: String(e) })
     return null
@@ -210,6 +206,11 @@ export async function getActiveAccount(): Promise<Account | null> {
  * Get an account by ID
  */
 export async function getAccountById(accountId: number): Promise<Account | null> {
+  const account = await getEncryptedAccountRecordById(accountId)
+  return account ? toAccountSummary(account) : null
+}
+
+async function getEncryptedAccountRecordById(accountId: number): Promise<EncryptedAccountRecord | null> {
   const database = getDatabase()
 
   try {
@@ -220,7 +221,7 @@ export async function getAccountById(accountId: number): Promise<Account | null>
 
     if (rows.length === 0) return null
 
-    return mapRowToAccount(rows[0]!)
+    return mapRowToEncryptedAccountRecord(rows[0]!)
   } catch (e) {
     accountLogger.warn('Failed to get account by ID', { error: String(e) })
     return null
@@ -241,7 +242,7 @@ export async function getAccountByIdentity(identityAddress: string): Promise<Acc
 
     if (rows.length === 0) return null
 
-    return mapRowToAccount(rows[0]!)
+    return toAccountSummary(mapRowToEncryptedAccountRecord(rows[0]!))
   } catch (e) {
     accountLogger.warn('Failed to get account by identity', { error: String(e) })
     return null
@@ -316,11 +317,22 @@ export async function switchAccount(accountId: number): Promise<boolean> {
  * Decrypt and retrieve wallet keys for an account
  */
 export async function getAccountKeys(
-  account: Account,
+  account: Account | EncryptedAccountRecord,
   password: string | null
 ): Promise<WalletKeys | null> {
   try {
-    const parsed = JSON.parse(account.encryptedKeys)
+    const storedAccount = 'encryptedKeys' in account
+      ? account
+      : account.id != null
+        ? await getEncryptedAccountRecordById(account.id)
+        : null
+
+    if (!storedAccount) {
+      accountLogger.error('Failed to resolve stored account for key access', { accountId: account.id })
+      return null
+    }
+
+    const parsed = JSON.parse(storedAccount.encryptedKeys)
 
     // Check for unprotected format first
     if (isUnprotectedData(parsed)) {
@@ -337,16 +349,16 @@ export async function getAccountKeys(
     const keysJson = await decrypt(encryptedData, password)
 
     // Lazy PBKDF2 migration: re-encrypt with current iterations if outdated
-    if (encryptedData.iterations < SECURITY.PBKDF2_ITERATIONS && account.id) {
+    if (encryptedData.iterations < SECURITY.PBKDF2_ITERATIONS && storedAccount.id) {
       try {
         const newEncrypted = await encrypt(keysJson, password)
         const database = getDatabase()
         await database.execute(
           'UPDATE accounts SET encrypted_keys = $1 WHERE id = $2',
-          [JSON.stringify(newEncrypted), account.id]
+          [JSON.stringify(newEncrypted), storedAccount.id]
         )
         accountLogger.info('Migrated PBKDF2 iterations', {
-          accountId: account.id,
+          accountId: storedAccount.id,
           from: encryptedData.iterations,
           to: newEncrypted.iterations
         })
@@ -591,13 +603,6 @@ export async function getNextAccountNumber(): Promise<number> {
 }
 
 /**
- * Export all accounts (for backup)
- */
-export async function exportAllAccounts(): Promise<Account[]> {
-  return getAllAccounts()
-}
-
-/**
  * Check if account system is initialized
  */
 export async function isAccountSystemInitialized(): Promise<boolean> {
@@ -616,7 +621,7 @@ export async function encryptAllAccounts(password: string): Promise<Result<void,
     return err(new DbError(validation.errors.join('. '), 'CONSTRAINT'))
   }
 
-  const accounts = await getAllAccounts()
+  const accounts = await getAllEncryptedAccountRecords()
   const updates: { accountId: number; encryptedKeysStr: string }[] = []
 
   // Phase 1: Encrypt all unprotected accounts (no DB writes yet)

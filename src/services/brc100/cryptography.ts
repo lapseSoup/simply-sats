@@ -5,7 +5,7 @@
  * All crypto operations run in the Tauri backend — WIF keys never leave Rust.
  */
 
-import type { WalletKeys } from '../wallet'
+import type { ActiveWallet } from '../wallet'
 import { tauriInvoke } from '../../utils/tauri'
 
 /**
@@ -13,7 +13,7 @@ import { tauriInvoke } from '../../utils/tauri'
  * Uses the Tauri key store — WIF never leaves Rust.
  */
 export async function encryptECIES(
-  keys: WalletKeys,
+  keys: ActiveWallet,
   plaintext: string,
   recipientPubKey: string
 ): Promise<{ ciphertext: string; senderPublicKey: string }> {
@@ -30,7 +30,7 @@ export async function encryptECIES(
  * Uses the Tauri key store — WIF never leaves Rust.
  */
 export async function decryptECIES(
-  _keys: WalletKeys,
+  _keys: ActiveWallet,
   ciphertextBytes: number[],
   senderPubKey: string
 ): Promise<string> {

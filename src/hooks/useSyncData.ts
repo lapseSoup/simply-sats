@@ -5,7 +5,7 @@
  */
 
 import { useCallback, type MutableRefObject } from 'react'
-import type { WalletKeys, UTXO, Ordinal, LockedUTXO } from '../services/wallet'
+import type { ActiveWallet, UTXO, Ordinal, LockedUTXO } from '../services/wallet'
 import { getBalance, getUTXOs, getOrdinals, getUTXOsFromDB } from '../services/wallet'
 import {
   getAllTransactions,
@@ -43,13 +43,13 @@ interface UseSyncDataOptions {
 
 interface UseSyncDataReturn {
   fetchDataFromDB: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     onLocksLoaded: (locks: LockedUTXO[]) => void,
     isCancelled?: () => boolean
   ) => Promise<void>
   fetchData: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     getKnownUnlockedLocks: () => Set<string>,
     onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: LockedUTXO[] }) => void,
@@ -72,7 +72,7 @@ export function useSyncData({
 
   // Load all data from local DB only -- no API calls. Completes fast for instant switching.
   const fetchDataFromDB = useCallback(async (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     onLocksLoaded: (locks: LockedUTXO[]) => void,
     isCancelled?: () => boolean
@@ -260,7 +260,7 @@ export function useSyncData({
 
   // Fetch data from database and API
   const fetchData = useCallback(async (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     getKnownUnlockedLocks: () => Set<string>,
     onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: LockedUTXO[] }) => void,

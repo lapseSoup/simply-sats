@@ -71,8 +71,7 @@ pub fn sdk_privkey_to_wif(privkey_bytes: &[u8; 32]) -> Result<String, String> {
 /// Build P2PKH locking script from address string
 pub fn sdk_p2pkh_locking_script(address: &str) -> Result<Vec<u8>, String> {
     let addr = Address::from_string(address).map_err(|e| format!("SDK address error: {}", e))?;
-    let script =
-        p2pkh::lock(&addr).map_err(|e| format!("SDK P2PKH lock error: {}", e))?;
+    let script = p2pkh::lock(&addr).map_err(|e| format!("SDK P2PKH lock error: {}", e))?;
     Ok(script.to_bytes().to_vec())
 }
 
@@ -147,8 +146,8 @@ pub fn sdk_derive_child_pubkey(
 
 /// Convert a compressed public key hex to a P2PKH address.
 pub fn sdk_pubkey_to_address(pubkey_hex: &str) -> Result<String, String> {
-    let pubkey = SdkPublicKey::from_hex(pubkey_hex)
-        .map_err(|e| format!("SDK pubkey error: {}", e))?;
+    let pubkey =
+        SdkPublicKey::from_hex(pubkey_hex).map_err(|e| format!("SDK pubkey error: {}", e))?;
     Ok(pubkey.to_address())
 }
 
@@ -163,8 +162,8 @@ pub fn sdk_validate_address(address: &str) -> bool {
 /// will migrate to k256 or SDK native ECDH when secp256k1 is removed in Phase 2.4).
 pub fn sdk_ecdh_shared_key(wif: &str, pubkey_hex: &str) -> Result<[u8; 32], String> {
     let privkey = sdk_privkey_from_wif(wif)?;
-    let pubkey = SdkPublicKey::from_hex(pubkey_hex)
-        .map_err(|e| format!("SDK pubkey error: {}", e))?;
+    let pubkey =
+        SdkPublicKey::from_hex(pubkey_hex).map_err(|e| format!("SDK pubkey error: {}", e))?;
 
     let privkey_bytes = privkey.to_bytes();
     let pubkey_bytes = pubkey.to_compressed();
@@ -249,10 +248,14 @@ mod tests {
         let master = bip32::XPrv::new(seed).unwrap();
         // m/44'/236'/0'/1/0
         let child = master
-            .derive_child(bip32::ChildNumber::new(44, true).unwrap()).unwrap()
-            .derive_child(bip32::ChildNumber::new(236, true).unwrap()).unwrap()
-            .derive_child(bip32::ChildNumber::new(0, true).unwrap()).unwrap()
-            .derive_child(bip32::ChildNumber::new(1, false).unwrap()).unwrap()
+            .derive_child(bip32::ChildNumber::new(44, true).unwrap())
+            .unwrap()
+            .derive_child(bip32::ChildNumber::new(236, true).unwrap())
+            .unwrap()
+            .derive_child(bip32::ChildNumber::new(0, true).unwrap())
+            .unwrap()
+            .derive_child(bip32::ChildNumber::new(1, false).unwrap())
+            .unwrap()
             .derive_child(bip32::ChildNumber::new(0, false).unwrap());
         let privkey_bytes: [u8; 32] = child.unwrap().to_bytes().into();
         // Hand-compute WIF
@@ -397,7 +400,10 @@ mod tests {
         let privkey_bytes = sdk_wif_to_bytes(&wif).unwrap();
         let roundtrip = sdk_privkey_to_wif(&privkey_bytes).unwrap();
 
-        assert_eq!(wif, roundtrip, "WIF roundtrip must produce identical string");
+        assert_eq!(
+            wif, roundtrip,
+            "WIF roundtrip must produce identical string"
+        );
     }
 
     #[test]
@@ -411,9 +417,7 @@ mod tests {
             .unwrap();
         let sk = secp256k1::SecretKey::from_slice(&decoded[1..33]).unwrap();
         let secp = secp256k1::Secp256k1::new();
-        let existing = hex::encode(
-            secp256k1::PublicKey::from_secret_key(&secp, &sk).serialize(),
-        );
+        let existing = hex::encode(secp256k1::PublicKey::from_secret_key(&secp, &sk).serialize());
 
         // SDK
         let sdk_result = sdk_pubkey_hex_from_wif(&wif).unwrap();
@@ -431,10 +435,7 @@ mod tests {
         let address = sdk_address_from_wif(&wif).unwrap();
 
         // Existing: manual script construction
-        let decoded = bs58::decode(&address)
-            .with_check(None)
-            .into_vec()
-            .unwrap();
+        let decoded = bs58::decode(&address).with_check(None).into_vec().unwrap();
         let mut pkh = [0u8; 20];
         pkh.copy_from_slice(&decoded[1..21]);
         let mut existing = Vec::with_capacity(25);
@@ -488,8 +489,7 @@ mod tests {
         let secp = secp256k1::Secp256k1::new();
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
 
-        let sig =
-            secp256k1::ecdsa::Signature::from_der(&sig_der).expect("DER should parse");
+        let sig = secp256k1::ecdsa::Signature::from_der(&sig_der).expect("DER should parse");
         let msg = secp256k1::Message::from_digest(msg_hash);
 
         assert!(
@@ -518,10 +518,7 @@ mod tests {
         // Verify with SDK
         let pubkey_hex = sdk_pubkey_hex_from_wif(&wif).unwrap();
         let valid = sdk_verify_signature(&pubkey_hex, &msg_hash, &sig_der).unwrap();
-        assert!(
-            valid,
-            "Existing secp256k1 signature must verify with SDK"
-        );
+        assert!(valid, "Existing secp256k1 signature must verify with SDK");
     }
 
     #[test]
@@ -614,11 +611,7 @@ mod tests {
 
         // Check last 4 bytes = locktime (00000000)
         let len = raw_bytes.len();
-        assert_eq!(
-            &raw_bytes[len - 4..],
-            &[0, 0, 0, 0],
-            "Locktime should be 0"
-        );
+        assert_eq!(&raw_bytes[len - 4..], &[0, 0, 0, 0], "Locktime should be 0");
     }
 
     // -----------------------------------------------------------------------
@@ -661,7 +654,11 @@ mod tests {
 
             // Convert using SDK
             let sdk_wif = sdk_privkey_to_wif(&privkey_bytes).unwrap();
-            assert_eq!(existing_wif, sdk_wif, "WIF should match for account {}", account);
+            assert_eq!(
+                existing_wif, sdk_wif,
+                "WIF should match for account {}",
+                account
+            );
 
             // Address should also match
             let existing_address = {

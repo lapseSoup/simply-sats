@@ -481,7 +481,7 @@ describe('Ordinals Service', () => {
       { txid: 'bb'.repeat(32), vout: 0, satoshis: 10000, script: '76a914...88ac' },
     ]
 
-    /** Default result from the Tauri build_ordinal_transfer_tx command */
+    /** Default result from the Tauri build_ordinal_transfer_tx_from_store command */
     function makeBuiltOrdinalTx(overrides: Record<string, unknown> = {}) {
       return {
         rawTx: 'deadbeef',
@@ -511,10 +511,8 @@ describe('Ordinals Service', () => {
       const txid = await transferOrdinal(ordWif, ordinalUtxo, toAddress, fundingWif, fundingUtxos, 1)
 
       expect(txid).toBe(MOCK_TXID)
-      expect(mockTauriInvoke).toHaveBeenCalledWith('build_ordinal_transfer_tx', expect.objectContaining({
-        ordWif,
+      expect(mockTauriInvoke).toHaveBeenCalledWith('build_ordinal_transfer_tx_from_store', expect.objectContaining({
         toAddress,
-        fundingWif,
         feeRate: 0.001,
       }))
       expect(mockExecuteBroadcast).toHaveBeenCalled()

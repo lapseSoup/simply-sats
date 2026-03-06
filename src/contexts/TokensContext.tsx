@@ -2,22 +2,25 @@ import { createContext, useContext, useState, useCallback, useRef, useMemo, type
 import {
   type TokenBalance,
   syncTokenBalances,
-  sendToken
+  sendToken,
+  sendTokenFromStore
 } from '../services/tokens'
-import type { WalletKeys } from '../domain/types'
-import { getUTXOs, getWifForOperation } from '../services/wallet'
+import type { ActiveWallet } from '../domain/types'
+import { hasPrivateKeyMaterial } from '../domain/types'
+import { getUTXOs } from '../services/wallet'
+import { isTauri } from '../utils/tauri'
 import { tokenLogger } from '../services/logger'
 import { err, type Result } from '../domain/types'
 import { acquireSyncLock } from '../services/cancellation'
-import { useAccounts } from './AccountsContext'
+import { useAccountsState } from './AccountsContext'
 
 interface TokensContextType {
   tokenBalances: TokenBalance[]
   tokensSyncing: boolean
   resetTokens: () => void
-  refreshTokens: (wallet: WalletKeys, accountId: number) => Promise<void>
+  refreshTokens: (wallet: ActiveWallet, accountId: number) => Promise<void>
   sendTokenAction: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     ticker: string,
     protocol: 'bsv20' | 'bsv21',
     amount: string,
@@ -41,7 +44,7 @@ interface TokensProviderProps {
 }
 
 export function TokensProvider({ children }: TokensProviderProps) {
-  const { activeAccountId } = useAccounts()
+  const { activeAccountId } = useAccountsState()
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([])
   const [tokensSyncing, setTokensSyncing] = useState(false)
   const tokensSyncingRef = useRef(false)
@@ -54,7 +57,7 @@ export function TokensProvider({ children }: TokensProviderProps) {
     lastRequestedAccountRef.current = null
   }, [])
 
-  const refreshTokens = useCallback(async (wallet: WalletKeys, accountId: number) => {
+  const refreshTokens = useCallback(async (wallet: ActiveWallet, accountId: number) => {
     // Use ref to avoid stale closure — prevents callback recreation on every toggle
     if (tokensSyncingRef.current) return
 
@@ -83,7 +86,7 @@ export function TokensProvider({ children }: TokensProviderProps) {
   }, [])
 
   const sendTokenAction = useCallback(async (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     ticker: string,
     protocol: 'bsv20' | 'bsv21',
     amount: string,
@@ -97,20 +100,32 @@ export function TokensProvider({ children }: TokensProviderProps) {
         return err('No funding UTXOs available for transfer fee')
       }
 
-      const walletWif = await getWifForOperation('wallet', 'sendToken', wallet)
-      const ordWif = await getWifForOperation('ordinals', 'sendToken', wallet)
-
-      const result = await sendToken(
-        wallet.walletAddress,
-        wallet.ordAddress,
-        walletWif,
-        ordWif,
-        fundingUtxos,
-        ticker,
-        protocol,
-        amount,
-        toAddress
-      )
+      const result = isTauri()
+        ? await sendTokenFromStore(
+          wallet.walletAddress,
+          wallet.ordAddress,
+          fundingUtxos,
+          ticker,
+          protocol,
+          amount,
+          toAddress
+        )
+        : await (async () => {
+          if (!hasPrivateKeyMaterial(wallet)) {
+            return err('Private keys are unavailable in this session')
+          }
+          return sendToken(
+            wallet.walletAddress,
+            wallet.ordAddress,
+            wallet.walletWif,
+            wallet.ordWif,
+            fundingUtxos,
+            ticker,
+            protocol,
+            amount,
+            toAddress
+          )
+        })()
 
       return result
     } catch (e) {

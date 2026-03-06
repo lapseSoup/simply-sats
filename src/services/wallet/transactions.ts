@@ -14,6 +14,26 @@ interface TransactionLike {
   toHex(): string
   id(format: string): string
 }
+
+export interface StoreBackedExtendedUTXO extends UTXO {
+  address: string
+}
+
+export interface DerivedSignerDescriptor {
+  address: string
+  senderPubkey?: string
+  invoiceNumber?: string
+  legacyWif?: string | null
+}
+
+interface BuiltStoreTransaction {
+  rawTx: string
+  txid: string
+  fee: number
+  change: number
+  changeAddress: string
+  spentOutpoints: { txid: string; vout: number }[]
+}
 import { isValidBSVAddress } from '../../domain/wallet/validation'
 import { selectCoins, selectCoinsMultiKey } from '../../domain/transaction/coinSelection'
 import {
@@ -27,12 +47,9 @@ import {
   recordSentTransaction,
   markUtxosPendingSpend,
   confirmUtxosSpent,
-  rollbackPendingSpend,
-  getSpendableUtxosFromDatabase,
-  BASKETS
+  rollbackPendingSpend
 } from '../sync'
-import { getDerivedAddresses, withTransaction, addUTXO } from '../database'
-import { deriveChildKey } from '../keyDerivation'
+import { withTransaction, addUTXO } from '../database'
 import { walletLogger } from '../logger'
 import { resetInactivityTimer } from '../autoLock'
 import { acquireSyncLock } from '../cancellation'
@@ -79,6 +96,25 @@ export async function broadcastTransaction(txOrHex: TransactionLike | string): P
  */
 /** Maximum satoshis (21M BSV) — prevents accidental astronomical sends */
 const MAX_SATOSHIS = 21_000_000_00_000_000
+
+function toResolvedUtxoInput(utxo: StoreBackedExtendedUTXO) {
+  return {
+    txid: utxo.txid,
+    vout: utxo.vout,
+    satoshis: utxo.satoshis,
+    script: utxo.script,
+    address: utxo.address,
+  }
+}
+
+function toDerivedSignerInput(signer: DerivedSignerDescriptor) {
+  return {
+    address: signer.address,
+    senderPubKey: signer.senderPubkey,
+    invoiceNumber: signer.invoiceNumber,
+    legacyWif: signer.legacyWif ?? undefined,
+  }
+}
 
 function validateSendRequest(toAddress: string, satoshis: number): Result<void, AppError> {
   if (!Number.isFinite(satoshis) || satoshis <= 0) {
@@ -285,94 +321,6 @@ export async function sendBSV(
 }
 
 /**
- * Get all spendable UTXOs from both default and derived baskets
- * Returns UTXOs with their associated WIFs for signing
- *
- * @param walletWif - WIF of the main wallet key (for default basket UTXOs)
- * @param accountId - Account ID to scope derived address lookup
- * @param identityWif - WIF of the identity key, used to re-derive child keys
- *   for derived-address UTXOs (S-19: WIFs are no longer stored in the DB).
- *   When omitted, falls back to legacy stored WIF for backward compatibility.
- */
-export async function getAllSpendableUTXOs(walletWif: string, accountId?: number, identityWif?: string): Promise<ExtendedUTXO[]> {
-  const result: ExtendedUTXO[] = []
-
-  // B-94: Pass accountId to scope UTXO queries to the correct account
-  const defaultUtxos = await getSpendableUtxosFromDatabase(BASKETS.DEFAULT, accountId)
-
-  for (const u of defaultUtxos) {
-    result.push({
-      txid: u.txid,
-      vout: u.vout,
-      satoshis: u.satoshis,
-      script: u.lockingScript,
-      wif: walletWif,
-      address: u.address || ''
-    })
-  }
-
-  // Get UTXOs from derived basket with their WIFs — scoped to current account
-  const derivedUtxos = await getSpendableUtxosFromDatabase(BASKETS.DERIVED, accountId)
-  const derivedAddresses = await getDerivedAddresses(accountId)
-
-  // Build a map of derived address → WIF using re-derivation (S-19)
-  const derivedWifMap = new Map<string, string>()
-  for (const d of derivedAddresses) {
-    if (identityWif && d.senderPubkey && d.invoiceNumber) {
-      // Re-derive the child private key from (identityKey + senderPubkey + invoiceNumber)
-      // so we never rely on the WIF stored in the database
-      try {
-        const childKey = await deriveChildKey(
-          identityWif,
-          d.senderPubkey,
-          d.invoiceNumber
-        )
-        derivedWifMap.set(d.address, childKey.wif)
-      } catch (e) {
-        walletLogger.warn('getAllSpendableUTXOs: failed to re-derive child key', {
-          address: d.address,
-          error: toErrorMessage(e)
-        })
-      }
-    } else if (d.privateKeyWif) {
-      // Legacy: support old records that still have WIF stored
-      derivedWifMap.set(d.address, d.privateKeyWif)
-    }
-  }
-
-  for (const u of derivedUtxos) {
-    // Find the derived address entry that matches this UTXO's locking script
-    const derivedAddr = derivedAddresses.find(d => {
-      return p2pkhLockingScriptHex(d.address) === u.lockingScript
-    })
-
-    if (derivedAddr) {
-      const wif = derivedWifMap.get(derivedAddr.address)
-      if (!wif) {
-        // Cannot determine WIF — skip this UTXO rather than error with a bad key
-        walletLogger.warn('getAllSpendableUTXOs: no WIF available for derived address, skipping UTXO', {
-          address: derivedAddr.address,
-          txid: u.txid,
-          vout: u.vout
-        })
-        continue
-      }
-      result.push({
-        txid: u.txid,
-        vout: u.vout,
-        satoshis: u.satoshis,
-        script: u.lockingScript,
-        wif,
-        address: derivedAddr.address
-      })
-    }
-  }
-
-  // Sort by satoshis (smallest first for efficient coin selection)
-  return result.sort((a, b) => a.satoshis - b.satoshis)
-}
-
-/**
  * Send BSV using UTXOs from multiple addresses/keys, then broadcast and record
  * Supports spending from both default wallet and derived addresses
  */
@@ -413,6 +361,76 @@ export async function sendBSVMultiKey(
       return err(AppError.fromUnknown(buildError, ErrorCodes.INTERNAL_ERROR))
     }
     const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
+
+    resetInactivityTimer()
+    let txid: string
+    try {
+      txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    } catch (broadcastError) {
+      return err(AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED))
+    }
+    try {
+      await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, `Sent ${satoshis} sats to ${toAddress}`, ['send'], -(satoshis + fee), change, changeAddress, spentOutpoints, accountId)
+    } catch (recordError) {
+      return err(AppError.fromUnknown(recordError, ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED))
+    }
+    resetInactivityTimer()
+    return ok({ txid })
+  } finally {
+    releaseLock()
+  }
+}
+
+/**
+ * Send BSV using wallet/derived-address inputs while resolving private keys in Rust.
+ *
+ * The frontend supplies only input addresses plus derivation metadata. Rust resolves
+ * the correct signing key for each input from the wallet store.
+ */
+export async function sendBSVMultiKeyFromStore(
+  toAddress: string,
+  satoshis: number,
+  utxos: StoreBackedExtendedUTXO[],
+  derivedSigners: DerivedSignerDescriptor[],
+  accountId?: number
+): Promise<Result<{ txid: string }, AppError>> {
+  if (!isTauri()) {
+    return err(new AppError('Store-backed sends require Tauri runtime', ErrorCodes.INVALID_STATE))
+  }
+
+  const validation = validateSendRequest(toAddress, satoshis)
+  if (!validation.ok) return validation
+
+  if (accountId === undefined) {
+    return err(new AppError('accountId is required to send BSV (multi-key)', ErrorCodes.INVALID_STATE, { toAddress, satoshis }))
+  }
+
+  resetInactivityTimer()
+
+  const releaseLock = await acquireSyncLock(accountId)
+  try {
+    const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, satoshis)
+    if (!sufficient) {
+      return err(new InsufficientFundsError(satoshis, totalInput))
+    }
+
+    const feeRate = getFeeRate()
+    let built: BuiltStoreTransaction
+    try {
+      built = await tauriInvoke<BuiltStoreTransaction>('build_resolved_multi_key_p2pkh_tx_from_store', {
+        toAddress,
+        satoshis,
+        selectedUtxos: inputsToUse.map(toResolvedUtxoInput),
+        derivedSigners: derivedSigners.map(toDerivedSignerInput),
+        totalInput,
+        feeRate,
+      })
+    } catch (buildError) {
+      return err(AppError.fromUnknown(buildError, ErrorCodes.INTERNAL_ERROR))
+    }
+
+    const { rawTx, txid: pendingTxid, fee, change, changeAddress, spentOutpoints } = built
+    const numOutputs = change > 0 ? 2 : 1
 
     resetInactivityTimer()
     let txid: string
@@ -568,6 +586,84 @@ export async function sendBSVMultiOutput(
       return err(AppError.fromUnknown(buildError, ErrorCodes.INTERNAL_ERROR))
     }
     const { rawTx, txid: pendingTxid, fee, change, changeAddress, numOutputs, spentOutpoints } = built
+
+    resetInactivityTimer()
+    let txid: string
+    try {
+      txid = await executeBroadcast(rawTx, pendingTxid, spentOutpoints)
+    } catch (broadcastError) {
+      return err(AppError.fromUnknown(broadcastError, ErrorCodes.BROADCAST_FAILED))
+    }
+    try {
+      const description = `Sent ${totalSent} sats to ${outputs.length} recipients`
+      await recordTransactionResult(rawTx, numOutputs, txid, pendingTxid, description, ['send'], -(totalSent + fee), change, changeAddress, spentOutpoints, accountId)
+    } catch (recordError) {
+      return err(AppError.fromUnknown(recordError, ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED))
+    }
+    resetInactivityTimer()
+    return ok({ txid })
+  } finally {
+    releaseLock()
+  }
+}
+
+/**
+ * Multi-recipient send variant that resolves per-input keys entirely in Rust.
+ */
+export async function sendBSVMultiOutputFromStore(
+  outputs: RecipientOutput[],
+  utxos: StoreBackedExtendedUTXO[],
+  derivedSigners: DerivedSignerDescriptor[],
+  accountId?: number
+): Promise<Result<{ txid: string }, AppError>> {
+  if (!isTauri()) {
+    return err(new AppError('Store-backed sends require Tauri runtime', ErrorCodes.INVALID_STATE))
+  }
+
+  if (outputs.length === 0) {
+    return err(new AppError('Must specify at least one recipient output', ErrorCodes.INVALID_STATE, { outputs }))
+  }
+
+  if (outputs.length > 100) {
+    return err(new AppError(`Too many outputs: ${outputs.length} (max 100)`, ErrorCodes.INVALID_PARAMS, { count: outputs.length }))
+  }
+
+  for (const output of outputs) {
+    const validation = validateSendRequest(output.address, output.satoshis)
+    if (!validation.ok) return validation
+  }
+
+  const totalSent = outputs.reduce((sum, o) => sum + o.satoshis, 0)
+
+  if (accountId === undefined) {
+    return err(new AppError('accountId is required to send BSV (multi-output)', ErrorCodes.INVALID_STATE, { outputs }))
+  }
+
+  resetInactivityTimer()
+
+  const releaseLock = await acquireSyncLock(accountId)
+  try {
+    const { selected: inputsToUse, total: totalInput, sufficient } = selectCoins(utxos, totalSent)
+    if (!sufficient) {
+      return err(new InsufficientFundsError(totalSent, totalInput))
+    }
+
+    const feeRate = getFeeRate()
+    let built: BuiltStoreTransaction
+    try {
+      built = await tauriInvoke<BuiltStoreTransaction>('build_resolved_multi_output_p2pkh_tx_from_store', {
+        outputs,
+        selectedUtxos: inputsToUse.map(toResolvedUtxoInput),
+        derivedSigners: derivedSigners.map(toDerivedSignerInput),
+        totalInput,
+        feeRate,
+      })
+    } catch (buildError) {
+      return err(AppError.fromUnknown(buildError, ErrorCodes.INTERNAL_ERROR))
+    }
+
+    const { rawTx, txid: pendingTxid, fee, change, changeAddress, spentOutpoints } = built
+    const numOutputs = outputs.length + (change > 0 ? 1 : 0)
 
     resetInactivityTimer()
     let txid: string

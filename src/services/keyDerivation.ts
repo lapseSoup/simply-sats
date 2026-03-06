@@ -84,6 +84,18 @@ export async function deriveSenderAddress(
   return result.address
 }
 
+/**
+ * Derive the sender-facing address using a key already held in the Rust store.
+ */
+export async function deriveSenderAddressFromStore(
+  keyType: string,
+  senderPubKeyHex: string,
+  invoiceNumber: string
+): Promise<string> {
+  const result = await deriveChildKeyFromStore(keyType, senderPubKeyHex, invoiceNumber)
+  return result.address
+}
+
 // ---------------------------------------------------------------------------
 // Known Senders
 // ---------------------------------------------------------------------------
@@ -271,6 +283,25 @@ export async function findDerivedKeyForAddress(
 }
 
 /**
+ * Find the invoice number that produces a target address using a key from the Rust store.
+ */
+export async function findDerivedKeyForAddressFromStore(
+  keyType: string,
+  targetAddress: string,
+  senderPubKeyHex: string,
+  invoiceNumbers: string[] = getLazyCommonInvoiceNumbers(),
+  maxNumeric = 100
+): Promise<DerivedKeyResult | null> {
+  return tauriInvoke<DerivedKeyResult | null>('find_derived_key_from_store', {
+    keyType,
+    targetAddress,
+    senderPubKey: senderPubKeyHex,
+    invoiceNumbers,
+    maxNumeric,
+  })
+}
+
+/**
  * Debug function to find the invoice number that produces a target address.
  * Brute-forces through many possible invoice numbers.
  *
@@ -335,6 +366,64 @@ export async function debugFindInvoiceNumber(
   return result ? { found: true } : { found: false }
 }
 
+/**
+ * Store-backed variant of debugFindInvoiceNumber().
+ * Keeps the identity key inside Rust while brute-forcing invoice candidates.
+ */
+export async function debugFindInvoiceNumberFromStore(
+  keyType: string,
+  senderPubKeyHex: string,
+  targetAddress: string
+): Promise<{ found: boolean; invoiceNumber?: string }> {
+  if (!import.meta.env.DEV) {
+    throw new Error('debugFindInvoiceNumberFromStore is only available in development builds')
+  }
+
+  const extendedInvoices = [...getLazyCommonInvoiceNumbers()]
+
+  for (let i = 0; i <= 1000; i++) {
+    extendedInvoices.push(String(i))
+  }
+
+  for (let i = 0; i <= 100; i++) {
+    for (let j = 0; j <= 10; j++) {
+      extendedInvoices.push(`2-3241645161d8-${i} ${j}`)
+    }
+  }
+
+  const protocols = ['wallet', 'payment', 'send', 'bsv', 'p2pkh', 'simple', 'default', 'babbage', 'authrite']
+  for (const proto of protocols) {
+    for (let sec = 1; sec <= 2; sec++) {
+      for (let key = 0; key <= 10; key++) {
+        extendedInvoices.push(`${sec}-${proto}-${key}`)
+      }
+    }
+  }
+
+  const debugSuffixes = ['legacy', 'payment', 'send', 'default', 'wallet', '0', '1', 'wallet-funding']
+  const dates = getRecentDates(60)
+  for (const date of dates) {
+    for (const suf of debugSuffixes) {
+      extendedInvoices.push(`${toBase64(date)} ${toBase64(suf)}`)
+    }
+  }
+  for (const date of dates.slice(0, 14)) {
+    for (const suf of debugSuffixes) {
+      extendedInvoices.push(`${toBase64(date)}${toBase64(suf)}`)
+    }
+  }
+
+  const result = await findDerivedKeyForAddressFromStore(
+    keyType,
+    targetAddress,
+    senderPubKeyHex,
+    extendedInvoices,
+    1000
+  )
+
+  return result ? { found: true } : { found: false }
+}
+
 // ---------------------------------------------------------------------------
 // Tagged Key Derivation (BRC-43 Compatible)
 // ---------------------------------------------------------------------------
@@ -385,4 +474,3 @@ export async function deriveTaggedKeyFromStore(
     domain: tag.domain,
   })
 }
-

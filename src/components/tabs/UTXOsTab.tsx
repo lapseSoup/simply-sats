@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, memo } from 'react'
 import { Flame, Snowflake, Clock, Lightbulb, ArrowUp, ArrowDown } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
+import type { DBUtxo } from '../../domain/types'
 import { useUtxoManagement } from '../../hooks/useUtxoManagement'
 import { ConsolidateModal } from '../modals/ConsolidateModal'
 import { uiLogger } from '../../services/logger'
@@ -21,10 +21,10 @@ const UTXORow = memo(function UTXORow({
   onToggleFreeze,
   formatUSD
 }: {
-  utxo: DatabaseUTXO
+  utxo: DBUtxo
   isSelected: boolean
-  onSelect: (utxo: DatabaseUTXO) => void
-  onToggleFreeze: (utxo: DatabaseUTXO) => void
+  onSelect: (utxo: DBUtxo) => void
+  onToggleFreeze: (utxo: DBUtxo) => void
   formatUSD: (sats: number) => string
 }) {
   const isFrozen = !utxo.spendable
@@ -83,10 +83,10 @@ export const UTXOsTab = memo(function UTXOsTab() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [filterBasket, setFilterBasket] = useState<string>('all')
   const [showFrozen, setShowFrozen] = useState(true)
-  const [consolidateUtxos, setConsolidateUtxos] = useState<DatabaseUTXO[] | null>(null)
+  const [consolidateUtxos, setConsolidateUtxos] = useState<DBUtxo[] | null>(null)
 
   // Unspent UTXO filter (stable reference)
-  const unspentFilter = useCallback((u: DatabaseUTXO) => !u.spentAt, [])
+  const unspentFilter = useCallback((u: DBUtxo) => !u.spentAt, [])
 
   // Load all UTXOs via hook (routes through service layer)
   const { utxos: allUtxos, loading: loadingAll, reload: loadAllUtxos, toggleFreeze } = useUtxoManagement({
@@ -159,7 +159,7 @@ export const UTXOsTab = memo(function UTXOsTab() {
   }, [displayUtxos])
 
   // Selection handlers
-  const handleSelect = useCallback((utxo: DatabaseUTXO) => {
+  const handleSelect = useCallback((utxo: DBUtxo) => {
     const key = `${utxo.txid}:${utxo.vout}`
     setSelectedUtxos(prev => {
       const next = new Set(prev)
@@ -182,7 +182,7 @@ export const UTXOsTab = memo(function UTXOsTab() {
   }, [filteredUtxos, selectedUtxos.size])
 
   // Toggle freeze handler — routes through useUtxoManagement hook
-  const handleToggleFreeze = useCallback(async (utxo: DatabaseUTXO) => {
+  const handleToggleFreeze = useCallback(async (utxo: DBUtxo) => {
     await toggleFreeze(utxo.txid, utxo.vout, utxo.spendable)
     await fetchData() // Also refresh wallet context
     uiLogger.info(`UTXO ${utxo.spendable ? 'frozen' : 'unfrozen'}: ${utxo.txid.slice(0, 8)}`)

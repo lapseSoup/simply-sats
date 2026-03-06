@@ -9,7 +9,7 @@
  */
 
 import { brc100Logger } from '../logger'
-import type { WalletKeys } from '../wallet'
+import type { ActiveWallet } from '../wallet'
 import { getUTXOs, calculateTxFee } from '../wallet'
 import {
   addUTXO,
@@ -36,7 +36,7 @@ import { BRC } from '../../config'
 // Build and broadcast a transaction from createAction request
 // Transaction building requires the Tauri runtime (Rust backend).
 export async function buildAndBroadcastAction(
-  keys: WalletKeys,
+  keys: ActiveWallet,
   actionRequest: CreateActionRequest
 ): Promise<Result<{ txid: string; beef?: string }, string>> {
   if (!isTauri()) {

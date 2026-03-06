@@ -6,7 +6,7 @@
  */
 
 import { brc100Logger } from '../logger'
-import type { WalletKeys } from '../wallet'
+import type { ActiveWallet } from '../wallet'
 import {
   getBalanceFromDB,
   recordActionRequest,
@@ -20,7 +20,6 @@ import {
   type GetPublicKeyParams
 } from './types'
 import { getRequestManager } from './RequestManager'
-import { getWalletKeys } from './state'
 import { getBlockHeight } from './utils'
 import { resolvePublicKey, resolveListOutputs } from './outputs'
 import { getPendingRequests, executeApprovedRequest } from './handlers'
@@ -33,10 +32,11 @@ import { getPendingRequests, executeApprovedRequest } from './handlers'
 function queueApprovalRequest(
   request: BRC100Request,
   pendingRequests: ReturnType<typeof getPendingRequests>,
-  requestManager: ReturnType<typeof getRequestManager>
+  requestManager: ReturnType<typeof getRequestManager>,
+  expectedIdentityPubKey: string | null
 ): Promise<BRC100Response> {
   return new Promise<BRC100Response>((resolve, reject) => {
-    pendingRequests.set(request.id, { request, resolve, reject })
+    pendingRequests.set(request.id, { request, resolve, reject, expectedIdentityPubKey })
     const handler = requestManager.getRequestHandler()
     if (handler) {
       handler(request)
@@ -51,7 +51,7 @@ function queueApprovalRequest(
 // Handle incoming BRC-100 request
 export async function handleBRC100Request(
   request: BRC100Request,
-  keys: WalletKeys,
+  keys: ActiveWallet,
   autoApprove: boolean = false
 ): Promise<BRC100Response> {
   const pendingRequests = getPendingRequests()
@@ -122,7 +122,7 @@ export async function handleBRC100Request(
       // createSignature: auto-approve executes directly, otherwise queue
       case 'createSignature': {
         if (!autoApprove) {
-          return queueApprovalRequest(request, pendingRequests, requestManager)
+          return queueApprovalRequest(request, pendingRequests, requestManager, keys.identityPubKey)
         }
         try {
           return await executeApprovedRequest(request, keys)
@@ -144,13 +144,13 @@ export async function handleBRC100Request(
       case 'getTaggedKeys':
       case 'encrypt':
       case 'decrypt': {
-        return queueApprovalRequest(request, pendingRequests, requestManager)
+        return queueApprovalRequest(request, pendingRequests, requestManager, keys.identityPubKey)
       }
 
       // All other approval-required types: queue if not auto-approve, execute directly if auto-approve
       default: {
         if (!autoApprove) {
-          return queueApprovalRequest(request, pendingRequests, requestManager)
+          return queueApprovalRequest(request, pendingRequests, requestManager, keys.identityPubKey)
         }
         try {
           return await executeApprovedRequest(request, keys)
@@ -176,28 +176,25 @@ export async function handleBRC100Request(
 }
 
 // Approve a pending request
-export async function approveRequest(requestId: string, keys: WalletKeys): Promise<void> {
+export async function approveRequest(requestId: string, keys: ActiveWallet | null): Promise<void> {
   const pendingRequests = getPendingRequests()
   const pending = pendingRequests.get(requestId)
   if (!pending) return
 
-  // B6: Re-fetch current keys to guard against wallet re-lock or account switch
-  // between when the approval dialog opened and the user clicking "Approve".
-  const freshKeys = getWalletKeys()
-  if (freshKeys && freshKeys.identityPubKey === keys.identityPubKey) {
-    keys = freshKeys
-  } else if (freshKeys && freshKeys.identityPubKey !== keys.identityPubKey) {
-    pending.resolve({
-      id: requestId,
-      error: { code: -32002, message: 'Wallet state has changed since approval was initiated' }
-    })
-    pendingRequests.delete(requestId)
-    return
-  } else {
-    // No wallet loaded at all
+  if (!keys) {
     pending.resolve({
       id: requestId,
       error: { code: -32002, message: 'No wallet loaded' }
+    })
+    pendingRequests.delete(requestId)
+    return
+  }
+
+  // Bind approval to the wallet identity that was active when the request was queued.
+  if (pending.expectedIdentityPubKey && pending.expectedIdentityPubKey !== keys.identityPubKey) {
+    pending.resolve({
+      id: requestId,
+      error: { code: -32002, message: 'Wallet state has changed since approval was initiated' }
     })
     pendingRequests.delete(requestId)
     return

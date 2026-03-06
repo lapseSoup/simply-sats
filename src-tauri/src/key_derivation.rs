@@ -99,7 +99,11 @@ fn derive_keypair(seed: &[u8], path: &str) -> Result<KeyPair, String> {
     let address = sdk_address_from_wif(&wif)?;
     let pub_key = sdk_pubkey_hex_from_wif(&wif)?;
 
-    Ok(KeyPair { wif, address, pub_key })
+    Ok(KeyPair {
+        wif,
+        address,
+        pub_key,
+    })
 }
 
 /// Parse and validate a mnemonic, returning the 64-byte BIP-39 seed.
@@ -107,7 +111,10 @@ fn mnemonic_to_seed(mnemonic_str: &str) -> Result<Vec<u8>, String> {
     // Validate word count before parsing (BIP-39 allows 12, 15, 18, 21, 24)
     let word_count = mnemonic_str.split_whitespace().count();
     if !matches!(word_count, 12 | 15 | 18 | 21 | 24) {
-        return Err(format!("Invalid mnemonic: expected 12, 15, 18, 21, or 24 words, got {}", word_count));
+        return Err(format!(
+            "Invalid mnemonic: expected 12, 15, 18, 21, or 24 words, got {}",
+            word_count
+        ));
     }
 
     let mn: Mnemonic = mnemonic_str
@@ -256,21 +263,35 @@ mod tests {
         assert_eq!(keys.mnemonic, TEST_MNEMONIC);
 
         // Addresses should be valid P2PKH (start with '1')
-        assert!(keys.wallet_address.starts_with('1'), "wallet: {}", keys.wallet_address);
-        assert!(keys.ord_address.starts_with('1'), "ord: {}", keys.ord_address);
-        assert!(keys.identity_address.starts_with('1'), "identity: {}", keys.identity_address);
+        assert!(
+            keys.wallet_address.starts_with('1'),
+            "wallet: {}",
+            keys.wallet_address
+        );
+        assert!(
+            keys.ord_address.starts_with('1'),
+            "ord: {}",
+            keys.ord_address
+        );
+        assert!(
+            keys.identity_address.starts_with('1'),
+            "identity: {}",
+            keys.identity_address
+        );
 
         // WIFs should start with 'K' or 'L' (compressed mainnet)
         assert!(
             keys.wallet_wif.starts_with('K') || keys.wallet_wif.starts_with('L'),
-            "wallet WIF: {}", keys.wallet_wif
+            "wallet WIF: {}",
+            keys.wallet_wif
         );
 
         // Public keys should be 33-byte compressed (66 hex chars)
         assert_eq!(keys.wallet_pub_key.len(), 66);
         assert!(
             keys.wallet_pub_key.starts_with("02") || keys.wallet_pub_key.starts_with("03"),
-            "pubkey: {}", keys.wallet_pub_key
+            "pubkey: {}",
+            keys.wallet_pub_key
         );
     }
 
@@ -311,7 +332,13 @@ mod tests {
     fn generate_mnemonic_produces_valid_12_words() {
         let mn = generate_mnemonic().unwrap();
         let words: Vec<&str> = mn.split_whitespace().collect();
-        assert_eq!(words.len(), 12, "Expected 12 words, got {}: {}", words.len(), mn);
+        assert_eq!(
+            words.len(),
+            12,
+            "Expected 12 words, got {}: {}",
+            words.len(),
+            mn
+        );
         assert!(validate_mnemonic(mn).unwrap());
     }
 
@@ -336,7 +363,11 @@ mod tests {
     fn supports_24_word_mnemonic() {
         let mn24 = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
         let result = derive_wallet_keys(mn24.to_string());
-        assert!(result.is_ok(), "24-word mnemonic should be supported: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "24-word mnemonic should be supported: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -360,7 +391,8 @@ mod tests {
     #[test]
     fn wrong_wif_prefix_fails() {
         // A WIF with testnet prefix (0xef) should be rejected
-        let result = keys_from_wif("cNYfRxoekNJFJx5H7jiEJFHk9XAZVxZDJHFTApRdzBBr1L8MwNRL".to_string());
+        let result =
+            keys_from_wif("cNYfRxoekNJFJx5H7jiEJFHk9XAZVxZDJHFTApRdzBBr1L8MwNRL".to_string());
         assert!(result.is_err());
     }
 }

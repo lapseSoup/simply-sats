@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react'
 import { saveFileDialog, openFileDialog } from '../../../utils/dialog'
 import { writeFile, readFile } from '../../../utils/fs'
-import { tauriInvoke } from '../../../utils/tauri'
 import {
   Save,
   Download,
@@ -10,9 +9,10 @@ import {
 import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { logger } from '../../../services/logger'
-import { exportDatabase, exportDatabaseFull, importDatabase, type DatabaseBackup } from '../../../infrastructure/database'
-import { encrypt, decrypt, type EncryptedData } from '../../../services/crypto'
-import { NO_PASSWORD } from '../../../services/sessionPasswordStore'
+import {
+  useSettingsBackupActions,
+  type SettingsDatabaseBackup
+} from '../../../hooks/useSettingsBackupActions'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'
 import { PasswordInput } from '../../shared/PasswordInput'
 import { BackupRecoveryModal } from '../BackupRecoveryModal'
@@ -23,10 +23,16 @@ export function SettingsBackup() {
   const { wallet, sessionPassword } = useWalletState()
   const { performSync } = useWalletActions()
   const { showToast } = useUI()
+  const {
+    sessionNeedsBackupPassword,
+    buildEncryptedBackupJson,
+    parseImportedBackupJson,
+    importBackupData,
+  } = useSettingsBackupActions()
 
   const [showBackupRecovery, setShowBackupRecovery] = useState(false)
   const [showImportConfirm, setShowImportConfirm] = useState<{ utxos: number; transactions: number } | null>(null)
-  const [pendingImportBackup, setPendingImportBackup] = useState<DatabaseBackup | null>(null)
+  const [pendingImportBackup, setPendingImportBackup] = useState<SettingsDatabaseBackup | null>(null)
   const [showBackupPasswordPrompt, setShowBackupPasswordPrompt] = useState(false)
   const [backupPassword, setBackupPassword] = useState('')
   const [confirmBackupPassword, setConfirmBackupPassword] = useState('')
@@ -34,39 +40,9 @@ export function SettingsBackup() {
   const [pendingBackupType, setPendingBackupType] = useState<'essential' | 'full' | null>(null)
 
   const executeBackupWithPassword = useCallback(async (password: string, type: 'essential' | 'full') => {
-    let identityWif = ''
-    let walletWif = ''
-    let ordWif = ''
-    let mnemonic: string | null = ''
     try {
       if (type === 'full') showToast('Exporting full backup (including ordinal content)...')
-      const dbBackup = type === 'full' ? await exportDatabaseFull() : await exportDatabase()
-      const { getWifForOperation } = await import('../../../services/wallet')
-      const operationName = type === 'full' ? 'exportFullBackup' : 'exportBackup'
-      identityWif = await getWifForOperation('identity', operationName, wallet!)
-      walletWif = await getWifForOperation('wallet', operationName, wallet!)
-      ordWif = await getWifForOperation('ordinals', operationName, wallet!)
-      mnemonic = await tauriInvoke<string | null>('get_mnemonic')
-
-      const fullBackup = {
-        format: 'simply-sats-full',
-        wallet: {
-          mnemonic: mnemonic || null,
-          keys: {
-            identity: { wif: identityWif, pubKey: wallet!.identityPubKey },
-            payment: { wif: walletWif, address: wallet!.walletAddress },
-            ordinals: { wif: ordWif, address: wallet!.ordAddress }
-          }
-        },
-        database: dbBackup
-      }
-      const encrypted = await encrypt(JSON.stringify(fullBackup), password)
-      const encryptedBackup = {
-        format: 'simply-sats-backup-encrypted',
-        version: 1,
-        encrypted
-      }
-      const backupJson = JSON.stringify(encryptedBackup, null, 2)
+      const backupJson = await buildEncryptedBackupJson(wallet!, password, type)
       const suffix = type === 'full' ? 'full' : 'essential'
       const filePath = await saveFileDialog({
         defaultPath: `simply-sats-backup-${suffix}-${new Date().toISOString().split('T')[0]}.json`,
@@ -79,34 +55,28 @@ export function SettingsBackup() {
     } catch (err) {
       logger.error('Backup failed', err)
       showToast(`Backup failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
-    } finally {
-      // Overwrite sensitive interim variables to shorten their in-memory lifespan
-      identityWif = '0'.repeat(identityWif.length)
-      walletWif = '0'.repeat(walletWif.length)
-      ordWif = '0'.repeat(ordWif.length)
-      mnemonic = '0'.repeat(mnemonic?.length ?? 0)
     }
-  }, [wallet, showToast])
+  }, [wallet, showToast, buildEncryptedBackupJson])
 
   const handleExportEssentialBackup = useCallback(async () => {
     if (!wallet) return
-    if (sessionPassword === null || sessionPassword === NO_PASSWORD) {
+    if (sessionNeedsBackupPassword(sessionPassword)) {
       setPendingBackupType('essential')
       setShowBackupPasswordPrompt(true)
       return
     }
     await executeBackupWithPassword(sessionPassword, 'essential')
-  }, [wallet, sessionPassword, executeBackupWithPassword])
+  }, [wallet, sessionPassword, executeBackupWithPassword, sessionNeedsBackupPassword])
 
   const handleExportFullBackup = useCallback(async () => {
     if (!wallet) return
-    if (sessionPassword === null || sessionPassword === NO_PASSWORD) {
+    if (sessionNeedsBackupPassword(sessionPassword)) {
       setPendingBackupType('full')
       setShowBackupPasswordPrompt(true)
       return
     }
     await executeBackupWithPassword(sessionPassword, 'full')
-  }, [wallet, sessionPassword, executeBackupWithPassword])
+  }, [wallet, sessionPassword, executeBackupWithPassword, sessionNeedsBackupPassword])
 
   const handleBackupWithPassword = useCallback(async () => {
     if (backupPassword.length < SECURITY.MIN_PASSWORD_LENGTH) {
@@ -134,46 +104,29 @@ export function SettingsBackup() {
       })
       if (!filePath) return
       const json = await readFile(filePath)
-      const raw = JSON.parse(json)
-
-      let backup
-      if (raw.format === 'simply-sats-backup-encrypted' && raw.encrypted) {
-        if (sessionPassword === null) {
-          showToast('Session password not available \u2014 try locking and unlocking first', 'warning')
-          return
-        }
-        try {
-          const decrypted = await decrypt(raw.encrypted as EncryptedData, sessionPassword)
-          backup = JSON.parse(decrypted)
-        } catch {
-          showToast('Failed to decrypt backup \u2014 wrong password?', 'error')
-          return
-        }
-      } else {
-        backup = raw
-      }
-
-      if (backup.format !== 'simply-sats-full' || !backup.database) {
-        showToast('Invalid backup format', 'error')
+      const parsed = await parseImportedBackupJson(json, sessionPassword)
+      if (!parsed.ok) {
+        showToast(parsed.error, parsed.error.includes('Session password') ? 'warning' : 'error')
         return
       }
-      setPendingImportBackup(backup.database as DatabaseBackup)
-      setShowImportConfirm({ utxos: backup.database.utxos.length, transactions: backup.database.transactions.length })
+
+      setPendingImportBackup(parsed.backup)
+      setShowImportConfirm(parsed.stats)
     } catch (err) {
       logger.error('Import failed', err)
       showToast(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
-  }, [sessionPassword, showToast])
+  }, [sessionPassword, showToast, parseImportedBackupJson])
 
   const executeImportBackup = useCallback(async () => {
     if (pendingImportBackup) {
-      await importDatabase(pendingImportBackup)
+      await importBackupData(pendingImportBackup)
       showToast('Backup imported!')
       performSync(false)
       setPendingImportBackup(null)
     }
     setShowImportConfirm(null)
-  }, [pendingImportBackup, performSync, showToast])
+  }, [pendingImportBackup, performSync, showToast, importBackupData])
 
   if (!wallet) return null
 

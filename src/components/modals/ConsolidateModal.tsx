@@ -3,29 +3,32 @@ import { CircleCheck, AlertTriangle } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { consolidateUtxos, calculateTxFee } from '../../services/wallet'
-import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
+import { calculateTxFee, DEFAULT_FEE_RATE } from '../../domain/transaction/fees'
+import type { DBUtxo } from '../../domain/types'
 import { toWalletUtxo } from '../../domain/types'
+import { useUtxoConsolidation } from '../../hooks/useUtxoConsolidation'
 import { uiLogger } from '../../services/logger'
 
 interface ConsolidateModalProps {
-  utxos: DatabaseUTXO[]
+  utxos: DBUtxo[]
   onClose: () => void
   onSuccess: (txid: string) => void
 }
 
 export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModalProps) {
-  const { wallet, activeAccountId } = useWalletState()
+  const { wallet, activeAccountId, feeRateKB } = useWalletState()
   const { fetchData, performSync } = useWalletActions()
   const { formatUSD } = useUI()
+  const { consolidate } = useUtxoConsolidation()
   const [status, setStatus] = useState<'preview' | 'confirming' | 'success' | 'error'>('preview')
   const [error, setError] = useState<string | null>(null)
   const [txid, setTxid] = useState<string | null>(null)
+  const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : DEFAULT_FEE_RATE
 
   // Calculate totals
   const summary = useMemo(() => {
     const totalInput = utxos.reduce((sum, u) => sum + u.satoshis, 0)
-    const fee = calculateTxFee(utxos.length, 1)
+    const fee = calculateTxFee(utxos.length, 1, feeRate)
     const output = totalInput - fee
 
     return {
@@ -35,7 +38,7 @@ export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModal
       output,
       savings: `${utxos.length - 1} fewer UTXOs`
     }
-  }, [utxos])
+  }, [utxos, feeRate])
 
   const handleConsolidate = async () => {
     if (!wallet) {
@@ -51,7 +54,7 @@ export function ConsolidateModal({ utxos, onClose, onSuccess }: ConsolidateModal
 
     // S-21: Transaction is built and signed entirely in Rust via the key store.
     // No WIF is retrieved or passed through the JS context.
-    const result = await consolidateUtxos(utxoIds, activeAccountId ?? undefined)
+    const result = await consolidate(utxoIds, activeAccountId ?? undefined)
     if (!result.ok) {
       uiLogger.error('Consolidation failed', result.error)
       setError(result.error.message)

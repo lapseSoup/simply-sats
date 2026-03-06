@@ -2,25 +2,19 @@ import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { Search, X, ArrowDownLeft, ArrowUpRight, Circle } from 'lucide-react'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { searchTransactions, searchTransactionsByLabels, getAllLabels } from '../../infrastructure/database'
+import type { TxHistoryItem } from '../../domain/types'
+import { useTransactionSearch } from '../../hooks/useTransactionSearch'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 import { EmptyState, NoSearchResultsEmpty } from '../shared/EmptyState'
 import { TransactionItemRow } from '../shared/TransactionItemRow'
-
-type SearchResult = {
-  tx_hash: string
-  amount?: number
-  height: number
-  description?: string
-}
 
 export const SearchTab = memo(function SearchTab() {
   const { activeAccountId } = useWalletState()
   const { formatUSD, displayInSats, formatBSVShort } = useUI()
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SearchResult[]>([])
+  const [results, setResults] = useState<TxHistoryItem[]>([])
   const [searching, setSearching] = useState(false)
-  const [selectedTx, setSelectedTx] = useState<SearchResult | null>(null)
+  const [selectedTx, setSelectedTx] = useState<TxHistoryItem | null>(null)
   const [allLabels, setAllLabels] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
@@ -28,19 +22,28 @@ export const SearchTab = memo(function SearchTab() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
+  const { loadLabels, searchTransactions } = useTransactionSearch(activeAccountId)
 
   // Load all labels on mount
   useEffect(() => {
-    getAllLabels(activeAccountId ?? undefined)
-      .then(result => {
-        if (result.ok) {
-          setAllLabels(result.value)
-        } else {
+    let cancelled = false
+
+    void loadLabels()
+      .then((labels) => {
+        if (!cancelled) {
+          setAllLabels(labels)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
           setAllLabels([])
         }
       })
-      .catch(() => setAllLabels([]))
-  }, [activeAccountId])
+
+    return () => {
+      cancelled = true
+    }
+  }, [loadLabels])
 
   // Filter suggestions: match query text, exclude already-selected labels
   const filteredLabels = query.trim()
@@ -65,32 +68,14 @@ export const SearchTab = memo(function SearchTab() {
 
     setSearching(true)
     try {
-      let txs
-      if (labels.length > 0) {
-        // Multi-label AND search with optional freeText
-        const result = await searchTransactionsByLabels(
-          labels,
-          freeText.trim() || undefined,
-          activeAccountId ?? undefined
-        )
-        txs = result.ok ? result.value : []
-      } else {
-        // Simple text search
-        const result = await searchTransactions(freeText.trim(), activeAccountId ?? undefined)
-        txs = result.ok ? result.value : []
-      }
-      setResults(txs.map(tx => ({
-        tx_hash: tx.txid,
-        amount: tx.amount,
-        height: tx.blockHeight || 0,
-        description: tx.description
-      })))
+      const txs = await searchTransactions(freeText, labels)
+      setResults(txs)
     } catch {
       setResults([])
     } finally {
       setSearching(false)
     }
-  }, [activeAccountId])
+  }, [searchTransactions])
 
   // Debounced search — triggers on query or selectedLabels change
   useEffect(() => {

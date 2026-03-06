@@ -8,6 +8,7 @@
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { brc100Logger } from '../logger'
+import type { ActiveWallet } from '../wallet'
 import { getCurrentBlockHeight } from '../sync'
 import { getLocks as getLocksFromDB } from '../database'
 import {
@@ -21,7 +22,6 @@ import {
 } from './types'
 import { getRequestManager } from './RequestManager'
 import { getPendingRequests } from './actions'
-import { getWalletKeys } from './state'
 import { resolvePublicKey, resolveListOutputs, formatLockedOutput } from './outputs'
 import { getActiveAccount } from '../accounts'
 
@@ -43,8 +43,10 @@ const WALLET_REQUIRED_TYPES = [
   'relinquishCertificate'
 ] as const
 
+type WalletGetter = () => ActiveWallet | null
+
 // Set up listener for HTTP server requests via Tauri events
-export async function setupHttpServerListener(): Promise<() => void> {
+export async function setupHttpServerListener(getWallet: WalletGetter = () => null): Promise<() => void> {
   const requestManager = getRequestManager()
 
   const pendingRequests = getPendingRequests()
@@ -79,8 +81,8 @@ export async function setupHttpServerListener(): Promise<() => void> {
           origin: event.payload.origin
         }
 
-        // Resolve wallet keys once at the handler boundary
-        const keys = getWalletKeys()
+        // Resolve wallet from the caller boundary instead of module-level global state.
+        const keys = getWallet()
 
         // If no wallet is loaded, return error for requests that need it
         if (!keys) {
@@ -249,6 +251,7 @@ export async function setupHttpServerListener(): Promise<() => void> {
         // Store as pending and notify UI for requests that need approval
         pendingRequests.set(request.id, {
           request,
+          expectedIdentityPubKey: keys?.identityPubKey ?? null,
           resolve: async (response) => {
             // Send response back to Tauri backend
             try {

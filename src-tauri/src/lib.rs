@@ -1,21 +1,21 @@
-use std::sync::Arc;
-use std::collections::HashSet;
-use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
-use tauri_plugin_sql::{Migration, MigrationKind};
+use hmac::{Hmac, Mac};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use hmac::{Hmac, Mac};
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
+use tauri_plugin_sql::{Migration, MigrationKind};
+use tokio::sync::Mutex;
 
 type HmacSha256 = Hmac<Sha256>;
 
 mod arc_broadcaster;
 mod auth;
-mod brc42_derivation;
 mod brc100_signing;
+mod brc42_derivation;
 mod bsv_sdk_adapter;
 mod crypto;
 mod http_server;
@@ -28,16 +28,14 @@ mod spv;
 mod transaction;
 
 use rate_limiter::{
-    SharedRateLimitManager, RateLimitManager,
-    check_unlock_rate_limit, record_failed_unlock,
-    record_successful_unlock, get_remaining_unlock_attempts,
-    load_persisted_state, get_or_create_integrity_key,
+    check_unlock_rate_limit, get_or_create_integrity_key, get_remaining_unlock_attempts,
+    load_persisted_state, record_failed_unlock, record_successful_unlock, RateLimitManager,
+    SharedRateLimitManager,
 };
 
 use secure_storage::{
-    secure_storage_save, secure_storage_load,
-    secure_storage_exists, secure_storage_clear,
-    secure_storage_migrate
+    secure_storage_clear, secure_storage_exists, secure_storage_load, secure_storage_migrate,
+    secure_storage_save,
 };
 
 // CSRF/Replay protection constants
@@ -271,7 +269,8 @@ fn configure_database(app_data_dir: &std::path::Path) {
     // runner. These are idempotent: ALTER TABLE ADD COLUMN fails harmlessly if the column
     // already exists. This covers edge cases where _sqlx_migrations recorded the migration
     // as applied but the ALTER TABLE never actually ran.
-    let _ = conn.execute_batch("ALTER TABLE ordinal_cache ADD COLUMN transferred INTEGER DEFAULT 0;");
+    let _ =
+        conn.execute_batch("ALTER TABLE ordinal_cache ADD COLUMN transferred INTEGER DEFAULT 0;");
     let _ = conn.execute_batch("ALTER TABLE ordinal_cache ADD COLUMN block_height INTEGER;");
 }
 
@@ -521,7 +520,8 @@ fn include_migrations() -> Vec<Migration> {
 // Shared state for BRC-100 requests
 #[derive(Default)]
 pub struct BRC100State {
-    pub pending_responses: std::collections::HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>,
+    pub pending_responses:
+        std::collections::HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>,
 }
 
 pub type SharedBRC100State = Arc<Mutex<BRC100State>>;
@@ -598,16 +598,14 @@ async fn check_address_balance(address: String) -> Result<i64, String> {
         .send()
         .await
     {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(data) => {
-                    let confirmed = data["confirmed"].as_i64().unwrap_or(0);
-                    let unconfirmed = data["unconfirmed"].as_i64().unwrap_or(0);
-                    Ok(confirmed + unconfirmed)
-                }
-                Err(e) => Err(format!("Failed to parse balance response: {}", e)),
+        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+            Ok(data) => {
+                let confirmed = data["confirmed"].as_i64().unwrap_or(0);
+                let unconfirmed = data["unconfirmed"].as_i64().unwrap_or(0);
+                Ok(confirmed + unconfirmed)
             }
-        }
+            Err(e) => Err(format!("Failed to parse balance response: {}", e)),
+        },
         Ok(resp) => Err(format!("Balance API returned HTTP {}", resp.status())),
         Err(e) => Err(format!("Balance API request failed: {}", e)),
     }
@@ -622,7 +620,9 @@ async fn respond_to_brc100(
 ) -> Result<(), String> {
     let mut state = state.lock().await;
     if let Some(sender) = state.pending_responses.remove(&request_id) {
-        sender.send(response).map_err(|_| "Failed to send response")?;
+        sender
+            .send(response)
+            .map_err(|_| "Failed to send response")?;
     }
     Ok(())
 }
@@ -669,14 +669,18 @@ async fn generate_csrf_nonce(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let expired: Vec<String> = session.nonce_timestamps.iter()
+    let expired: Vec<String> = session
+        .nonce_timestamps
+        .iter()
         .filter(|(_, ts)| now > *ts + NONCE_EXPIRY_SECS)
         .map(|(n, _)| n.clone())
         .collect();
     for nonce in &expired {
         session.used_nonces.remove(nonce);
     }
-    session.nonce_timestamps.retain(|(_, ts)| now <= *ts + NONCE_EXPIRY_SECS);
+    session
+        .nonce_timestamps
+        .retain(|(_, ts)| now <= *ts + NONCE_EXPIRY_SECS);
     if session.nonce_timestamps.len() >= MAX_USED_NONCES * 4 / 5 {
         return Err("Too many outstanding nonces — try again later".into());
     }
@@ -686,8 +690,7 @@ async fn generate_csrf_nonce(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize structured logging (RUST_LOG env var controls level, default: info)
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // Pre-initialize database for fresh installs BEFORE Tauri builder runs.
     // Must happen before tauri_plugin_sql plugin init, which runs migrations.
@@ -706,7 +709,8 @@ pub fn run() {
     let session_state_for_server = session_state.clone();
 
     // Key store — holds WIFs in Rust-only memory (never exposed to JS)
-    let key_store: key_store::SharedKeyStore = Arc::new(Mutex::new(key_store::KeyStoreInner::new()));
+    let key_store: key_store::SharedKeyStore =
+        Arc::new(Mutex::new(key_store::KeyStoreInner::new()));
     let key_store_for_server = key_store.clone();
 
     // Auth state — BRC-31 authenticated messaging (peer + transport)
@@ -728,7 +732,10 @@ pub fn run() {
             }
         };
         // State will be loaded from disk in setup() once the app handle is available
-        Arc::new(RateLimitManager::new(integrity_key, rate_limiter::RateLimitState::new()))
+        Arc::new(RateLimitManager::new(
+            integrity_key,
+            rate_limiter::RateLimitState::new(),
+        ))
     };
     let rate_limit_manager_for_setup = rate_limit_manager.clone();
 
@@ -738,9 +745,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_sql::Builder::new()
-            .add_migrations("sqlite:simplysats.db", include_migrations())
-            .build())
+        .plugin(
+            tauri_plugin_sql::Builder::new()
+                .add_migrations("sqlite:simplysats.db", include_migrations())
+                .build(),
+        )
         .manage(brc100_state)
         .manage(session_state)
         .manage(rate_limit_manager)
@@ -788,8 +797,9 @@ pub fn run() {
             key_store::clear_keys,
             key_store::get_public_keys,
             key_store::has_keys,
-            key_store::get_mnemonic_once,
-            key_store::get_mnemonic,
+            key_store::build_encrypted_key_export_from_store,
+            key_store::build_encrypted_backup_from_store,
+            key_store::reveal_private_key_from_store,
             key_store::switch_account_from_store,
             key_store::sign_message_from_store,
             key_store::sign_data_from_store,
@@ -797,14 +807,19 @@ pub fn run() {
             key_store::decrypt_ecies_from_store,
             key_store::build_p2pkh_tx_from_store,
             key_store::build_multi_key_p2pkh_tx_from_store,
+            key_store::build_resolved_multi_key_p2pkh_tx_from_store,
             key_store::build_consolidation_tx_from_store,
             key_store::build_lock_tx_from_store,
             key_store::build_unlock_tx_from_store,
             key_store::build_multi_output_p2pkh_tx_from_store,
+            key_store::build_resolved_multi_output_p2pkh_tx_from_store,
             key_store::build_custom_output_tx_from_store,
             key_store::build_inscription_tx_from_store,
+            key_store::build_ordinal_transfer_tx_from_store,
             key_store::build_token_transfer_tx_from_store,
-            key_store::get_wif_for_operation,
+            key_store::create_ordinal_listing_from_store,
+            key_store::cancel_ordinal_listing_from_store,
+            key_store::purchase_ordinal_from_store,
             key_store::derive_child_key_from_store,
             key_store::get_derived_addresses_from_store,
             key_store::find_derived_key_from_store,
@@ -850,7 +865,14 @@ pub fn run() {
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
-                    if let Err(e) = http_server::start_server(app_handle, brc100_state, session_state, key_store).await {
+                    if let Err(e) = http_server::start_server(
+                        app_handle,
+                        brc100_state,
+                        session_state,
+                        key_store,
+                    )
+                    .await
+                    {
                         log::error!("HTTP server error: {}", e);
                     }
                 });

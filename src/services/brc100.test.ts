@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // ---------------------------------------------------------------------------
 // Mock the Tauri runtime so that key derivation works in the test environment.
@@ -57,10 +57,8 @@ import {
   generateRequestId,
   formatIdentityKey,
   getIdentityKeyForApp,
-  setWalletKeys,
-  getWalletKeys,
-  assertKeysMatchAccount,
   getPendingRequests,
+  resetRequestManager,
   setRequestHandler,
   BRC100_REQUEST_TYPES,
   isValidBRC100RequestType,
@@ -99,45 +97,11 @@ async function getTestKeys(): Promise<WalletKeys> {
 describe('BRC-100 Service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    setWalletKeys(null)
+    resetRequestManager()
   })
 
-  describe('Wallet Keys Management', () => {
-    describe('setWalletKeys / getWalletKeys', () => {
-      it('should set and get wallet keys', async () => {
-        expect(getWalletKeys()).toBeNull()
-
-        setWalletKeys(await getTestKeys())
-
-        expect(getWalletKeys()).toEqual(await getTestKeys())
-      })
-
-      it('should allow clearing wallet keys', async () => {
-        setWalletKeys(await getTestKeys())
-        setWalletKeys(null)
-
-        expect(getWalletKeys()).toBeNull()
-      })
-    })
-
-    describe('assertKeysMatchAccount', () => {
-      it('returns true when no keys are loaded (locked state)', () => {
-        expect(getWalletKeys()).toBeNull()
-        expect(assertKeysMatchAccount('1AnyAddress')).toBe(true)
-      })
-
-      it('returns true when keys match the expected identity address', async () => {
-        const keys = await getTestKeys()
-        setWalletKeys(keys)
-        expect(assertKeysMatchAccount(keys.identityAddress)).toBe(true)
-      })
-
-      it('returns false when keys belong to a different account (divergence)', async () => {
-        const keys = await getTestKeys()
-        setWalletKeys(keys)
-        expect(assertKeysMatchAccount('1WrongAccountAddress')).toBe(false)
-      })
-    })
+  afterEach(() => {
+    resetRequestManager()
   })
 
   describe('Request Management', () => {

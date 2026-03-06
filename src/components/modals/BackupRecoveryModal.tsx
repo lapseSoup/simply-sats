@@ -7,7 +7,7 @@
  * - Sweep Funds: Transfer all funds to current wallet address
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { openFileDialog } from '../../utils/dialog'
 import { CircleCheck } from 'lucide-react'
 import { Modal } from '../shared/Modal'
@@ -19,8 +19,9 @@ import {
   decryptAllAccounts,
   fetchAllBalances,
   calculateSweepEstimate,
-  addRecoveredAccount,
-  executeSweep,
+  addRecoveredAccountFromSession,
+  executeRecoveredAccountSweep,
+  clearRecoveredAccountSession,
   type RecoveredAccount,
   type SweepEstimate
 } from '../../services/backupRecovery'
@@ -64,6 +65,12 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
   // Action result state
   const [resultMessage, setResultMessage] = useState('')
   const [resultTxid, setResultTxid] = useState<string | null>(null)
+
+  useEffect(() => {
+    return () => {
+      clearRecoveredAccountSession()
+    }
+  }, [])
 
   // ============================================
   // Handlers
@@ -149,7 +156,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
 
   const handleAddAccount = useCallback(async () => {
     const account = accounts[selectedAccountIndex]
-    if (!account?.decryptedKeys || !currentPassword) {
+    if (!account || !currentPassword) {
       setError('Unable to add account. Please enter your wallet password.')
       return
     }
@@ -158,8 +165,8 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
     setError('')
 
     try {
-      await addRecoveredAccount(
-        account.decryptedKeys,
+      await addRecoveredAccountFromSession(
+        account.id,
         account.name,
         currentPassword
       )
@@ -179,7 +186,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
 
   const handleSweep = useCallback(async () => {
     const account = accounts[selectedAccountIndex]
-    if (!account?.decryptedKeys || !account.liveUtxos || !wallet?.walletAddress) {
+    if (!account?.liveUtxos || !wallet?.walletAddress) {
       setError('Unable to sweep. Missing required data.')
       return
     }
@@ -194,8 +201,8 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
     setError('')
 
     try {
-      const txid = await executeSweep(
-        account.decryptedKeys,
+      const txid = await executeRecoveredAccountSweep(
+        account.id,
         wallet.walletAddress,
         account.liveUtxos
       )
@@ -344,6 +351,7 @@ export function BackupRecoveryModal({ onClose }: BackupRecoveryModalProps) {
           type="button"
           className="btn btn-secondary"
           onClick={() => {
+            clearRecoveredAccountSession()
             setAccounts([])
             setBackupPassword('')
             setStep('enter_password')

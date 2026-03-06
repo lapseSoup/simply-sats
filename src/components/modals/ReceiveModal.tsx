@@ -4,15 +4,7 @@ import { Copy } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { Modal } from '../shared/Modal'
-import {
-  addDerivedAddress,
-  addContact,
-  getContacts,
-  getNextInvoiceNumber
-} from '../../infrastructure/database'
-import { deriveSenderAddress } from '../../services/keyDerivation'
-import { uiLogger } from '../../services/logger'
-import { BRC100 } from '../../config'
+import { useReceiveAddressing } from '../../hooks/useReceiveAddressing'
 
 interface ReceiveModalProps {
   onClose: () => void
@@ -24,6 +16,12 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
   const { wallet, contacts, activeAccountId } = useWalletState()
   const { refreshContacts } = useWalletActions()
   const { copyToClipboard, showToast } = useUI()
+  const {
+    deriveReceiveAddress: deriveReceiveAddressFromStore,
+    saveDerivedAddress,
+    fetchNextInvoiceNumber,
+    saveContact
+  } = useReceiveAddressing(activeAccountId, refreshContacts, showToast)
 
   const [receiveType, setReceiveType] = useState<ReceiveType>('wallet')
   const [showDeriveMode, setShowDeriveMode] = useState(false)
@@ -40,38 +38,10 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
     if (!wallet) return ''
     setDerivationError(null)
     try {
-      const { getWifForOperation } = await import('../../services/wallet')
-      const identityWif = await getWifForOperation('identity', 'deriveReceiveAddress', wallet)
-      const invoiceNumber = `${BRC100.INVOICE_PREFIX} ${invoiceIndex}`
-      return deriveSenderAddress(identityWif, senderPubKey, invoiceNumber)
-    } catch (e) {
-      uiLogger.error('Failed to derive address:', e)
+      return await deriveReceiveAddressFromStore(senderPubKey, invoiceIndex)
+    } catch {
       setDerivationError('Failed to derive address. Check the sender public key.')
       return ''
-    }
-  }
-
-  const saveDerivedAddress = async (
-    senderPubKey: string,
-    address: string,
-    invoiceIndex: number,
-    label?: string
-  ): Promise<boolean> => {
-    if (!wallet) return false
-    try {
-      const invoiceNumber = `${BRC100.INVOICE_PREFIX} ${invoiceIndex}`
-
-      await addDerivedAddress({
-        address,
-        senderPubkey: senderPubKey,
-        invoiceNumber,
-        label: label || `From ${senderPubKey.substring(0, 8)}...`,
-        createdAt: Date.now()
-      }, activeAccountId ?? undefined)
-      return true
-    } catch (e) {
-      uiLogger.error('Failed to save derived address:', e)
-      return false
     }
   }
 
@@ -81,7 +51,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
       const contact = localContacts.find(c => c.id === id)
       if (contact) {
         setSenderPubKeyInput(contact.pubkey)
-        const nextIndex = await getNextInvoiceNumber(contact.pubkey)
+        const nextIndex = await fetchNextInvoiceNumber(contact.pubkey)
         setCurrentInvoiceIndex(nextIndex)
         setDerivedReceiveAddress(await deriveReceiveAddress(contact.pubkey, nextIndex))
       }
@@ -97,7 +67,7 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
     setSenderPubKeyInput(val)
     setSelectedContactId(null)
     if (val.length >= 66) {
-      const nextIndex = await getNextInvoiceNumber(val)
+      const nextIndex = await fetchNextInvoiceNumber(val)
       setCurrentInvoiceIndex(nextIndex)
       setDerivedReceiveAddress(await deriveReceiveAddress(val, nextIndex))
     } else {
@@ -109,25 +79,11 @@ export function ReceiveModal({ onClose }: ReceiveModalProps) {
 
   const handleSaveContact = async () => {
     if (newContactLabel.trim()) {
-      try {
-        await addContact({
-          pubkey: senderPubKeyInput,
-          label: newContactLabel.trim(),
-          createdAt: Date.now()
-        })
-        const updatedResult = await getContacts()
-        if (!updatedResult.ok) {
-          uiLogger.error('Failed to reload contacts', updatedResult.error)
-        } else {
-          setLocalContacts(updatedResult.value)
-        }
-        await refreshContacts()
+      const updatedContacts = await saveContact(senderPubKeyInput, newContactLabel.trim())
+      if (updatedContacts) {
+        setLocalContacts(updatedContacts)
         setShowAddContact(false)
         setNewContactLabel('')
-        showToast('Contact saved!')
-      } catch (e) {
-        uiLogger.error('Failed to save contact', e)
-        showToast('Failed to save contact', 'error')
       }
     }
   }

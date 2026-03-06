@@ -7,7 +7,8 @@ import { useLabeledTransactions } from '../../hooks/useTransactionLabels'
 import { TransactionDetailModal } from '../modals/TransactionDetailModal'
 import { NoTransactionsEmpty } from '../shared/EmptyState'
 import { ActivityListSkeleton } from '../shared/Skeleton'
-import { TransactionItemRow, type TxHistoryItem } from '../shared/TransactionItemRow'
+import { TransactionItemRow } from '../shared/TransactionItemRow'
+import type { TxHistoryItem } from '../shared/transactionItem'
 
 const VIRTUALIZATION_THRESHOLD = 50
 const TX_ITEM_HEIGHT = 80 // ~68px item + 12px gap

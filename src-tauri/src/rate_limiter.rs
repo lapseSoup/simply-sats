@@ -6,14 +6,14 @@
 //! This module stores state in memory (protected by Mutex) rather than
 //! localStorage, preventing bypass through browser storage clearing.
 
+use hmac::{Hmac, Mac};
+use rand::Rng;
+use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreExt;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use rand::Rng;
+use tokio::sync::Mutex;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -137,8 +137,7 @@ struct PersistedRateLimitState {
 /// Compute HMAC-SHA256 over serialized state JSON
 fn compute_state_hmac(state: &RateLimitState, key: &[u8]) -> String {
     let json = serde_json::to_string(state).unwrap_or_default();
-    let mut mac = HmacSha256::new_from_slice(key)
-        .expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
     mac.update(json.as_bytes());
     hex::encode(mac.finalize().into_bytes())
 }
@@ -165,7 +164,12 @@ pub fn load_persisted_state(app: &tauri::AppHandle, key: &[u8]) -> RateLimitStat
                 let expected_hmac = compute_state_hmac(&wrapper.state, key);
                 // S-108: Use constant-time comparison to prevent timing-based HMAC forgery
                 use subtle::ConstantTimeEq;
-                if wrapper.hmac.as_bytes().ct_eq(expected_hmac.as_bytes()).into() {
+                if wrapper
+                    .hmac
+                    .as_bytes()
+                    .ct_eq(expected_hmac.as_bytes())
+                    .into()
+                {
                     return wrapper.state;
                 }
                 log::warn!("[Security] Rate limit state HMAC mismatch — resetting to fresh state");
@@ -196,7 +200,10 @@ pub fn get_or_create_integrity_key(app_data_dir: &std::path::Path) -> Vec<u8> {
         if key_bytes.len() == 32 {
             return key_bytes;
         }
-        log::warn!("[Security] Rate limit integrity key has unexpected length ({}), regenerating", key_bytes.len());
+        log::warn!(
+            "[Security] Rate limit integrity key has unexpected length ({}), regenerating",
+            key_bytes.len()
+        );
     }
 
     // Generate new random 32-byte key
@@ -212,8 +219,14 @@ pub fn get_or_create_integrity_key(app_data_dir: &std::path::Path) -> Vec<u8> {
     std::fs::write(&key_path, &key).unwrap_or_else(|e| {
         // Failing to persist the integrity key is security-critical: without it,
         // the rate limiter resets on every launch, enabling brute-force attacks.
-        log::error!("[Security] FATAL: Cannot persist rate limit integrity key: {}", e);
-        panic!("Cannot persist rate limit integrity key to {:?}: {}", key_path, e);
+        log::error!(
+            "[Security] FATAL: Cannot persist rate limit integrity key: {}",
+            e
+        );
+        panic!(
+            "Cannot persist rate limit integrity key to {:?}: {}",
+            key_path, e
+        );
     });
 
     key
@@ -274,11 +287,17 @@ pub async fn record_failed_unlock(
     let (is_locked, lockout_ms, attempts_remaining) = rate_limit.record_failed();
 
     if is_locked {
-        log::warn!("[Security] Unlock locked out due to {} failed attempts, lockout: {}ms",
-                  rate_limit.attempts, lockout_ms);
+        log::warn!(
+            "[Security] Unlock locked out due to {} failed attempts, lockout: {}ms",
+            rate_limit.attempts,
+            lockout_ms
+        );
     } else {
-        log::info!("[Security] Failed unlock attempt {}/{}",
-                  rate_limit.attempts, MAX_ATTEMPTS);
+        log::info!(
+            "[Security] Failed unlock attempt {}/{}",
+            rate_limit.attempts,
+            MAX_ATTEMPTS
+        );
     }
 
     persist_state(&app, &rate_limit, &manager.integrity_key);
@@ -367,6 +386,9 @@ mod tests {
         assert_eq!(RateLimitState::calculate_lockout_duration(6), 2000); // 2s
         assert_eq!(RateLimitState::calculate_lockout_duration(7), 4000); // 4s
         assert_eq!(RateLimitState::calculate_lockout_duration(10), 32000); // 32s
-        assert_eq!(RateLimitState::calculate_lockout_duration(20), MAX_LOCKOUT_MS); // capped at max
+        assert_eq!(
+            RateLimitState::calculate_lockout_duration(20),
+            MAX_LOCKOUT_MS
+        ); // capped at max
     }
 }

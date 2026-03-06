@@ -1,6 +1,6 @@
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { handleBRC100Request, generateRequestId, type BRC100Request, type BRC100Response } from './brc100'
-import type { WalletKeys } from './wallet'
+import type { ActiveWallet } from './wallet'
 import { logger } from './logger'
 
 /**
@@ -128,7 +128,7 @@ export async function setupDeepLinkListener(
 // Handle a deep link with the wallet (auto-respond for some requests)
 export async function handleDeepLink(
   url: string,
-  wallet: WalletKeys,
+  wallet: ActiveWallet,
   autoApprove: boolean = false
 ): Promise<BRC100Response> {
   const request = parseDeepLink(url)

@@ -5,16 +5,21 @@
  */
 
 import { useCallback } from 'react'
-import type { WalletKeys, UTXO, Ordinal, ExtendedUTXO } from '../services/wallet'
+import type { ActiveWallet, UTXO, Ordinal, ExtendedUTXO } from '../services/wallet'
 import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import {
   getUTXOs,
   getUTXOLockingScript,
   sendBSVMultiKey,
-  transferOrdinal,
-  getWifForOperation
+  transferOrdinal
 } from '../services/wallet'
-import { sendBSVMultiOutput } from '../services/wallet/transactions'
+import {
+  sendBSVMultiKeyFromStore,
+  sendBSVMultiOutput,
+  sendBSVMultiOutputFromStore,
+  type StoreBackedExtendedUTXO,
+  type DerivedSignerDescriptor
+} from '../services/wallet/transactions'
 import { listOrdinal } from '../services/wallet/marketplace'
 import {
   getDerivedAddresses,
@@ -30,9 +35,10 @@ import {
 import { findLocalAccountIdByAddress } from '../services/accounts'
 import { audit } from '../services/auditLog'
 import { walletLogger } from '../services/logger'
-import { ok, err, type Result, type WalletResult } from '../domain/types'
+import { hasPrivateKeyMaterial, ok, err, type Result, type WalletResult, type WalletKeys } from '../domain/types'
 import { ErrorCodes, AppError } from '../services/errors'
 import type { RecipientOutput } from '../domain/transaction/builder'
+import { isTauri } from '../utils/tauri'
 
 /** Safely extract txid from an error context object */
 function extractTxidFromContext(context: unknown): string {
@@ -43,33 +49,41 @@ function extractTxidFromContext(context: unknown): string {
   return 'unknown'
 }
 
+function requireBrowserSendKeys(wallet: ActiveWallet, operationLabel: string): WalletKeys {
+  if (!hasPrivateKeyMaterial(wallet)) {
+    throw new Error(`No private keys available for browser ${operationLabel}`)
+  }
+
+  return wallet
+}
+
 /**
- * Build an array of ExtendedUTXOs with correct per-address WIFs for multi-key spending.
+ * Build an array of ExtendedUTXOs for the browser/test send fallback.
  * Resolves derived address child keys via BRC-42 key derivation and optionally
  * fetches live UTXOs for derived addresses (skipped in coin-control mode).
  *
  * Shared by handleSend and handleSendMulti to eliminate duplicated key resolution logic.
  */
-async function buildExtendedUtxos(
-  wallet: WalletKeys,
+async function buildBrowserSendInputs(
+  wallet: ActiveWallet,
   activeAccountId: number | null,
   operationLabel: string,
   selectedUtxos?: DatabaseUTXO[]
 ): Promise<{ extendedUtxos: ExtendedUTXO[]; walletWif: string; derivedMap: Map<string, string> }> {
+  const browserKeys = requireBrowserSendKeys(wallet, operationLabel)
   const derivedMap = new Map<string, string>() // address -> WIF
 
   const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
 
   // Build a map of derived address -> WIF for correct per-UTXO signing
   const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
-  const identityWif = await getWifForOperation('identity', operationLabel, wallet)
   for (const d of derivedAddrs) {
     if (d.senderPubkey && d.invoiceNumber) {
       // Re-derive the child private key from (identityKey + senderPubkey + invoiceNumber)
       // so we never need the WIF stored in the database
       try {
         const childKey = await deriveChildKey(
-          identityWif,
+          browserKeys.identityWif,
           d.senderPubkey,
           d.invoiceNumber
         )
@@ -86,7 +100,7 @@ async function buildExtendedUtxos(
     }
   }
 
-  const walletWif = await getWifForOperation('wallet', operationLabel, wallet)
+  const walletWif = browserKeys.walletWif
 
   const extendedUtxos: ExtendedUTXO[] = spendableUtxos.map(u => {
     // Look up the correct WIF: derived address WIF, or fall back to wallet WIF
@@ -138,15 +152,84 @@ async function buildExtendedUtxos(
   return { extendedUtxos: deduplicatedUtxos, walletWif, derivedMap }
 }
 
+async function buildStoreBackedSendInputs(
+  wallet: ActiveWallet,
+  activeAccountId: number | null,
+  selectedUtxos?: DatabaseUTXO[]
+): Promise<{ utxos: StoreBackedExtendedUTXO[]; derivedSigners: DerivedSignerDescriptor[] }> {
+  const derivedSigners = new Map<string, DerivedSignerDescriptor>()
+  const spendableUtxos = selectedUtxos || await getSpendableUtxosFromDatabase('default', activeAccountId ?? undefined)
+  const derivedAddrs = await getDerivedAddresses(activeAccountId ?? undefined)
+
+  for (const derived of derivedAddrs) {
+    if (derived.senderPubkey && derived.invoiceNumber) {
+      derivedSigners.set(derived.address, {
+        address: derived.address,
+        senderPubkey: derived.senderPubkey,
+        invoiceNumber: derived.invoiceNumber
+      })
+    } else if (derived.privateKeyWif) {
+      derivedSigners.set(derived.address, {
+        address: derived.address,
+        legacyWif: derived.privateKeyWif
+      })
+    }
+  }
+
+  const utxos: StoreBackedExtendedUTXO[] = spendableUtxos.map(u => ({
+    txid: u.txid,
+    vout: u.vout,
+    satoshis: u.satoshis,
+    script: u.lockingScript || '',
+    address: u.address || wallet.walletAddress
+  }))
+
+  if (!selectedUtxos) {
+    for (const derived of derivedAddrs) {
+      if (!derivedSigners.has(derived.address)) continue
+      try {
+        const derivedUtxos = await getUTXOs(derived.address)
+        for (const utxo of derivedUtxos) {
+          utxos.push({
+            txid: utxo.txid,
+            vout: utxo.vout,
+            satoshis: utxo.satoshis,
+            script: utxo.script ?? '',
+            address: derived.address
+          })
+        }
+      } catch (e) {
+        walletLogger.warn('Failed to fetch derived address UTXOs, skipping', {
+          address: derived.address,
+          error: e instanceof Error ? e.message : String(e)
+        })
+      }
+    }
+  }
+
+  const seen = new Set<string>()
+  const deduplicatedUtxos = utxos.filter(utxo => {
+    const key = `${utxo.txid}:${utxo.vout}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  return {
+    utxos: deduplicatedUtxos,
+    derivedSigners: [...derivedSigners.values()]
+  }
+}
+
 interface UseWalletSendOptions {
-  wallet: WalletKeys | null
+  wallet: ActiveWallet | null
   activeAccountId: number | null
   fetchData: () => Promise<void>
   refreshTokens: () => Promise<void>
   setOrdinals: (ordinals: Ordinal[]) => void
   getOrdinals: () => Ordinal[]
   sendTokenAction: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     ticker: string,
     protocol: 'bsv20' | 'bsv21',
     amount: string,
@@ -265,10 +348,16 @@ export function useWalletSend({
 
     let derivedMap: Map<string, string> | undefined
     try {
-      const result = await buildExtendedUtxos(wallet, activeAccountId, 'sendBSV', selectedUtxos)
-      derivedMap = result.derivedMap
-
-      const sendResult = await sendBSVMultiKey(result.walletWif, address, amountSats, result.extendedUtxos, activeAccountId ?? undefined)
+      const sendResult = isTauri()
+        ? await (async () => {
+          const result = await buildStoreBackedSendInputs(wallet, activeAccountId, selectedUtxos)
+          return sendBSVMultiKeyFromStore(address, amountSats, result.utxos, result.derivedSigners, activeAccountId ?? undefined)
+        })()
+        : await (async () => {
+          const result = await buildBrowserSendInputs(wallet, activeAccountId, 'sendBSV', selectedUtxos)
+          derivedMap = result.derivedMap
+          return sendBSVMultiKey(result.walletWif, address, amountSats, result.extendedUtxos, activeAccountId ?? undefined)
+        })()
       if (!sendResult.ok) {
         // Q-65: Use error code instead of fragile string matching for broadcast-succeeded-but-DB-failed
         if (sendResult.error.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
@@ -302,11 +391,17 @@ export function useWalletSend({
 
     let derivedMap: Map<string, string> | undefined
     try {
-      const result = await buildExtendedUtxos(wallet, activeAccountId, 'sendBSVMulti', selectedUtxos)
-      derivedMap = result.derivedMap
-
       const totalSent = recipients.reduce((sum, r) => sum + r.satoshis, 0)
-      const sendResult = await sendBSVMultiOutput(result.walletWif, recipients, result.extendedUtxos, activeAccountId ?? undefined)
+      const sendResult = isTauri()
+        ? await (async () => {
+          const result = await buildStoreBackedSendInputs(wallet, activeAccountId, selectedUtxos)
+          return sendBSVMultiOutputFromStore(recipients, result.utxos, result.derivedSigners, activeAccountId ?? undefined)
+        })()
+        : await (async () => {
+          const result = await buildBrowserSendInputs(wallet, activeAccountId, 'sendBSVMulti', selectedUtxos)
+          derivedMap = result.derivedMap
+          return sendBSVMultiOutput(result.walletWif, recipients, result.extendedUtxos, activeAccountId ?? undefined)
+        })()
       if (!sendResult.ok) {
         if (sendResult.error.code === ErrorCodes.BROADCAST_SUCCEEDED_DB_FAILED) {
           const txid = extractTxidFromContext(sendResult.error.context)
@@ -359,14 +454,11 @@ export function useWalletSend({
       // B-24: Guard against null activeAccountId during initialization
       if (!activeAccountId) return err('No active account — cannot transfer ordinal')
 
-      const ordWif = await getWifForOperation('ordinals', 'transferOrdinal', wallet)
-      const fundingWif = await getWifForOperation('wallet', 'transferOrdinal', wallet)
-
       const txid = await transferOrdinal(
-        ordWif,
+        '',
         ordinalUtxo,
         toAddress,
-        fundingWif,
+        '',
         fundingUtxos,
         activeAccountId,
         ordinal.origin
@@ -405,13 +497,8 @@ export function useWalletSend({
         script: ''
       }
 
-      const ordWif = await getWifForOperation('ordinals', 'listOrdinal', wallet)
-      const paymentWif = await getWifForOperation('wallet', 'listOrdinal', wallet)
-
       const listResult = await listOrdinal(
-        ordWif,
         ordinalUtxo,
-        paymentWif,
         fundingUtxos,
         wallet.walletAddress,
         wallet.ordAddress,

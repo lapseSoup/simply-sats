@@ -6,7 +6,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode, type SetStateAction, type MutableRefObject } from 'react'
-import type { WalletKeys, LockedUTXO } from '../domain/types'
+import type { ActiveWallet, LockedUTXO } from '../domain/types'
 import { getUTXOsFromDB, lockBSV, unlockBSV, detectLockedUtxos } from '../services/wallet'
 import { ok, err, type WalletResult } from '../domain/types'
 import { useNetworkInfo } from './NetworkContext'
@@ -28,7 +28,7 @@ interface LocksContextType {
 
   // Actions
   handleLock: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     amountSats: number,
     blocks: number,
     activeAccountId: number | null,
@@ -36,7 +36,7 @@ interface LocksContextType {
   ) => Promise<WalletResult>
 
   handleUnlock: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     lock: LockedUTXO,
     activeAccountId: number | null,
     onComplete: () => Promise<void>
@@ -44,7 +44,7 @@ interface LocksContextType {
 
   // Detection helper (called from SyncContext)
   detectLocks: (
-    wallet: WalletKeys
+    wallet: ActiveWallet
   ) => Promise<LockedUTXO[]>
 }
 
@@ -102,7 +102,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
   // Detect locked UTXOs
   const detectLocks = useCallback(async (
-    wallet: WalletKeys
+    wallet: ActiveWallet
   ): Promise<LockedUTXO[]> => {
     try {
       const detectedLocks = await detectLockedUtxos(
@@ -119,7 +119,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
   // Lock BSV for a number of blocks
   const handleLock = useCallback(async (
-    _wallet: WalletKeys,
+    _wallet: ActiveWallet,
     amountSats: number,
     blocks: number,
     activeAccountId: number | null,
@@ -166,7 +166,7 @@ export function LocksProvider({ children }: LocksProviderProps) {
 
   // Unlock a time-locked UTXO
   const handleUnlock = useCallback(async (
-    _wallet: WalletKeys,
+    _wallet: ActiveWallet,
     lock: LockedUTXO,
     activeAccountId: number | null,
     onComplete: () => Promise<void>

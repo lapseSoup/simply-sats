@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, memo } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, memo } from 'react'
 import { Image, FileText, Braces, Diamond } from 'lucide-react'
 import { getOrdinalContentUrl, isImageOrdinal } from '../../utils/ordinals'
 
@@ -73,7 +73,7 @@ export const OrdinalImage = memo(function OrdinalImage({
     fetchAttemptedRef.current = false
   }, [origin])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // If the module-level cache already has a blob URL for this origin, skip entirely.
     // Ordinal content is immutable — once created, the blob URL never needs to change.
     // This prevents flicker when contentCacheSnapshot rebuilds cause new Uint8Array
@@ -105,35 +105,24 @@ export const OrdinalImage = memo(function OrdinalImage({
           }
           blobUrlCache.set(origin, blobUrl)
         }
-        // Q-83: Intentional setState in effect — blob URL is owned by the module-level
-        // blobUrlCache (not this effect), so there's no cleanup function. The setState
-        // syncs React state with the cache for the current render cycle.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCachedImageUrl(blobUrl)
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Layout effect must align the in-memory blob URL cache with the rendered <img> before paint to avoid thumbnail flicker.
+        setCachedImageUrl(current => current === blobUrl ? current : blobUrl)
       } catch {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCachedImageUrl(undefined)
+        setCachedImageUrl(current => current === undefined ? current : undefined)
       }
     } else if (!origin || !blobUrlCache.has(origin)) {
-      setCachedImageUrl(undefined)
+      setCachedImageUrl(current => current === undefined ? current : undefined)
     }
   // B-62: Include cachedContent?.contentType so effect re-runs when the resolved
   // MIME type changes (e.g. from undefined to 'image/png' after DB fetch).
   }, [isImage, cachedContent?.contentData, cachedContent?.contentType, contentType, origin])
 
-  useEffect(() => {
-    if (isImage && cachedImageUrl) {
-      setStatus('loaded')
-      return
-    }
-    if ((isText || isJson) && cachedContent?.contentText) {
-      setStatus('loaded')
-      return
-    }
-    if (status === 'error' && (isImage || contentType === undefined)) {
-      setStatus('loading')
-    }
-  }, [cachedImageUrl, cachedContent?.contentText, isImage, isText, isJson, contentType, status])
+  const effectiveStatus =
+    (isImage && cachedImageUrl) || ((isText || isJson) && cachedContent?.contentText)
+      ? 'loaded'
+      : status === 'error' && (isImage || contentType === undefined)
+        ? 'loading'
+        : status
 
   // Render text/JSON previews if we have cached content
   if ((isText || isJson) && cachedContent?.contentText) {
@@ -164,10 +153,10 @@ export const OrdinalImage = memo(function OrdinalImage({
 
   return (
     <div className={`ordinal-img-wrapper ordinal-img-${size}`}>
-      {status === 'loading' && (
+      {effectiveStatus === 'loading' && (
         <div className="ordinal-img-loading" />
       )}
-      {status === 'error' ? (
+      {effectiveStatus === 'error' ? (
         <div className={`ordinal-img-fallback ordinal-img-${size}`}>
           <FallbackIcon contentType={contentType} size={size} />
         </div>
@@ -178,7 +167,7 @@ export const OrdinalImage = memo(function OrdinalImage({
           loading={lazy ? 'lazy' : undefined}
           onLoad={handleLoad}
           onError={handleError}
-          className={`ordinal-img ${status === 'loaded' ? 'ordinal-img-visible' : ''}`}
+          className={`ordinal-img ${effectiveStatus === 'loaded' ? 'ordinal-img-visible' : ''}`}
         />
       )}
     </div>

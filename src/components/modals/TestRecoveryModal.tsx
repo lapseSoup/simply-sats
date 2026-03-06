@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, CircleCheck, XCircle } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { MnemonicInput } from '../forms/MnemonicInput'
-import { verifyMnemonicMatchesWallet } from '../../services/wallet'
+import { useRecoveryVerification } from '../../hooks/useRecoveryVerification'
 import { uiLogger } from '../../services/logger'
 
 interface TestRecoveryModalProps {
@@ -17,6 +17,7 @@ export function TestRecoveryModal({ expectedAddress, onClose }: TestRecoveryModa
   const [status, setStatus] = useState<VerificationStatus>('idle')
   const [derivedAddress, setDerivedAddress] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { verifyRecoveryPhrase } = useRecoveryVerification(expectedAddress)
 
   const handleVerify = async () => {
     if (!mnemonic.trim()) {
@@ -34,7 +35,7 @@ export function TestRecoveryModal({ expectedAddress, onClose }: TestRecoveryModa
     setError(null)
 
     try {
-      const result = await verifyMnemonicMatchesWallet(mnemonic.trim(), expectedAddress)
+      const result = await verifyRecoveryPhrase(mnemonic.trim())
       setDerivedAddress(result.derivedAddress)
       setStatus(result.valid ? 'success' : 'failure')
     } catch (err) {

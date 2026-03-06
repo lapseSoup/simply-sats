@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useCallback } from 'react'
 import { AlertTriangle, ChevronRight, Crosshair, Settings, ScanLine, X } from 'lucide-react'
-import { useWalletState, useWalletActions, useAccounts } from '../../contexts'
+import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { calculateExactFee, calculateTxFee, calculateMaxSend, P2PKH_INPUT_SIZE, P2PKH_OUTPUT_SIZE, TX_OVERHEAD, MIN_FEE_RATE, MAX_FEE_RATE } from '../../domain/transaction/fees'
 import { useAddressValidation } from '../../hooks/useAddressValidation'
@@ -10,12 +10,12 @@ import { ConfirmationModal, SEND_CONFIRMATION_THRESHOLD, HIGH_VALUE_THRESHOLD } 
 import { AddressPicker } from '../shared/AddressPicker'
 import { CoinControlModal } from './CoinControlModal'
 import { QRScannerModal } from './QRScannerModal'
-import { saveAddress } from '../../infrastructure/database'
-import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
+import type { DBUtxo } from '../../domain/types'
 import { toWalletUtxo } from '../../domain/types'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
 import { formatSatoshis } from '../../utils/formatting'
 import type { RecipientOutput } from '../../domain/transaction/builder'
+import { useAddressBook } from '../../hooks/useAddressBook'
 
 /**
  * Parse a user-entered amount string to satoshis based on display mode.
@@ -33,10 +33,10 @@ interface SendModalProps {
 }
 
 export function SendModal({ onClose }: SendModalProps) {
-  const { wallet, balance, utxos, feeRateKB } = useWalletState()
+  const { wallet, balance, utxos, feeRateKB, activeAccountId } = useWalletState()
   const { handleSend, handleSendMulti, performSync } = useWalletActions()
-  const { activeAccountId } = useAccounts()
   const { displayInSats, showToast, formatUSD } = useUI()
+  const { saveRecentAddress } = useAddressBook(activeAccountId)
 
   const [sendAddress, setSendAddress] = useState('')
   const [sendAmount, setSendAmount] = useState('')
@@ -47,7 +47,7 @@ export function SendModal({ onClose }: SendModalProps) {
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showCoinControl, setShowCoinControl] = useState(false)
   const [showQRScanner, setShowQRScanner] = useState(false)
-  const [selectedUtxos, setSelectedUtxos] = useState<DatabaseUTXO[] | null>(null)
+  const [selectedUtxos, setSelectedUtxos] = useState<DBUtxo[] | null>(null)
 
   // Fee rate input in sats/KB (user-facing unit)
   const [feeRateDisplay, setFeeRateDisplay] = useState(() =>
@@ -154,12 +154,11 @@ export function SendModal({ onClose }: SendModalProps) {
 
   // Hooks must be called before any conditional returns
   const recordSentAddress = useCallback(async (address: string) => {
-    if (!activeAccountId) return
-    const result = await saveAddress(address, '', activeAccountId)
-    if (!result.ok) {
+    const result = await saveRecentAddress(address, '')
+    if (result && !result.ok) {
       console.warn('Failed to save address to book:', result.error.message)
     }
-  }, [activeAccountId])
+  }, [saveRecentAddress])
 
   const handleQRScan = useCallback((address: string) => {
     setSendAddress(address)

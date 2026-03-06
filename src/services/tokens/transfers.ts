@@ -18,6 +18,53 @@ import { getTokenUtxosForSend } from './fetching'
 import { p2pkhLockingScriptHex } from '../../domain/transaction/builder'
 import { isTauri, tauriInvoke } from '../../utils/tauri'
 
+interface BuiltTokenTransferResult {
+  rawTx: string
+  txid: string
+  fee: number
+  change: number
+}
+
+async function finalizeTokenTransfer(
+  txResult: BuiltTokenTransferResult,
+  fundingToUse: UTXO[],
+  tokenInputsUsed: TokenUTXO[],
+  amount: string,
+  ticker: string,
+  toAddress: string
+): Promise<Result<{ txid: string }, string>> {
+  const bsvChange = txResult.change
+
+  // Broadcast the signed raw transaction
+  const txid = await broadcastTransaction(txResult.rawTx)
+
+  // B-42: Track spent UTXOs and record transaction locally
+  // Mark funding and token UTXOs as spent to prevent double-spend on rapid follow-up sends
+  try {
+    const spentFundingOutpoints = fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
+    await markUtxosSpent(spentFundingOutpoints, txid)
+
+    const spentTokenOutpoints = tokenInputsUsed.map(u => ({ txid: u.txid, vout: u.vout }))
+    await markUtxosSpent(spentTokenOutpoints, txid)
+
+    // Record the transaction so it appears in Activity tab immediately
+    await recordSentTransaction(
+      txid,
+      txResult.rawTx,
+      `Token transfer: ${amount} ${ticker}`,
+      ['token-transfer'],
+      bsvChange < 0 ? 0 : bsvChange
+    )
+  } catch (trackingError) {
+    // Non-critical: next sync will discover the transaction
+    tokenLogger.warn('Failed to track token transfer locally', { txid, error: String(trackingError) })
+  }
+
+  tokenLogger.info('Token transfer completed', { amount, ticker, toAddress, txid })
+
+  return ok({ txid })
+}
+
 /**
  * Transfer BSV20/BSV21 tokens to another address
  *
@@ -140,39 +187,107 @@ export async function transferToken(
       changeAddress
     })
 
-    const bsvChange = txResult.change
-
-    // Broadcast the signed raw transaction
-    const txid = await broadcastTransaction(txResult.rawTx)
-
-    // B-42: Track spent UTXOs and record transaction locally
-    // Mark funding and token UTXOs as spent to prevent double-spend on rapid follow-up sends
-    try {
-      const spentFundingOutpoints = fundingToUse.map(u => ({ txid: u.txid, vout: u.vout }))
-      await markUtxosSpent(spentFundingOutpoints, txid)
-
-      const spentTokenOutpoints = tokenInputsUsed.map(u => ({ txid: u.txid, vout: u.vout }))
-      await markUtxosSpent(spentTokenOutpoints, txid)
-
-      // Record the transaction so it appears in Activity tab immediately
-      await recordSentTransaction(
-        txid,
-        txResult.rawTx,
-        `Token transfer: ${amount} ${ticker}`,
-        ['token-transfer'],
-        bsvChange < 0 ? 0 : bsvChange
-      )
-    } catch (trackingError) {
-      // Non-critical: next sync will discover the transaction
-      tokenLogger.warn('Failed to track token transfer locally', { txid, error: String(trackingError) })
-    }
-
-    tokenLogger.info('Token transfer completed', { amount, ticker, toAddress, txid })
-
-    return ok({ txid })
+    return await finalizeTokenTransfer(txResult, fundingToUse, tokenInputsUsed, amount, ticker, toAddress)
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : 'Token transfer failed'
     tokenLogger.error('Transfer error', e)
+    return err(errorMsg)
+  }
+}
+
+/**
+ * Store-backed token transfer builder.
+ * Keeps wallet/ordinal WIFs inside the Rust key store in Tauri.
+ */
+export async function transferTokenFromStore(
+  tokenKeyType: 'wallet' | 'ordinals',
+  tokenUtxos: TokenUTXO[],
+  ticker: string,
+  protocol: 'bsv20' | 'bsv21',
+  amount: string,
+  toAddress: string,
+  fundingUtxos: UTXO[],
+  changeAddress: string
+): Promise<Result<{ txid: string }, string>> {
+  if (!isValidBSVAddress(toAddress)) {
+    return err(`Invalid recipient address: ${toAddress}`)
+  }
+  if (!/^\d+$/.test(amount) || amount === '0') {
+    return err(`Invalid amount: must be a positive whole number, got "${amount}"`)
+  }
+  if (!isTauri()) {
+    return err('Token transfer transaction building requires Tauri runtime')
+  }
+
+  try {
+    let totalTokensAvailable = 0n
+    for (const utxo of tokenUtxos) {
+      totalTokensAvailable += BigInt(utxo.amt)
+    }
+
+    const amountToSend = BigInt(amount)
+    if (amountToSend > totalTokensAvailable) {
+      return err(`Insufficient token balance. Have ${totalTokensAvailable}, need ${amountToSend}`)
+    }
+
+    let tokensAdded = 0n
+    const tokenInputsUsed: TokenUTXO[] = []
+    for (const utxo of tokenUtxos) {
+      if (tokensAdded >= amountToSend) break
+      tokensAdded += BigInt(utxo.amt)
+      tokenInputsUsed.push(utxo)
+    }
+
+    const tokenChange = tokensAdded - amountToSend
+    const numOutputs = tokenChange > 0n ? 3 : 2
+
+    const fundingToUse: UTXO[] = []
+    let totalFunding = 0
+    let estimatedFee = calculateTxFee(tokenInputsUsed.length + Math.min(fundingUtxos.length, 2), numOutputs)
+
+    for (const utxo of fundingUtxos) {
+      fundingToUse.push(utxo)
+      totalFunding += utxo.satoshis
+      if (totalFunding >= estimatedFee + 100) break
+    }
+
+    estimatedFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, numOutputs)
+    while (totalFunding < estimatedFee + 100 && fundingToUse.length < fundingUtxos.length) {
+      const next = fundingUtxos[fundingToUse.length]!
+      fundingToUse.push(next)
+      totalFunding += next.satoshis
+      estimatedFee = calculateTxFee(tokenInputsUsed.length + fundingToUse.length, numOutputs)
+    }
+
+    if (totalFunding < estimatedFee) {
+      return err(`Insufficient BSV for fee (need ~${estimatedFee} sats)`)
+    }
+
+    const txResult = await tauriInvoke<BuiltTokenTransferResult>('build_token_transfer_tx_from_store', {
+      tokenKeyType,
+      tokenUtxos: tokenInputsUsed.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script ?? p2pkhLockingScriptHex(changeAddress)
+      })),
+      fundingUtxos: fundingToUse.map(u => ({
+        txid: u.txid,
+        vout: u.vout,
+        satoshis: u.satoshis,
+        script: u.script ?? ''
+      })),
+      recipient: toAddress,
+      amount,
+      ticker,
+      protocol: protocol === 'bsv21' ? 'bsv-21' : 'bsv-20',
+      changeAddress
+    })
+
+    return await finalizeTokenTransfer(txResult, fundingToUse, tokenInputsUsed, amount, ticker, toAddress)
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : 'Token transfer failed'
+    tokenLogger.error('Transfer-from-store error', e)
     return err(errorMsg)
   }
 }
@@ -268,5 +383,75 @@ export async function sendToken(
     const errorMsg = e instanceof Error ? e.message : 'Token send failed'
     tokenLogger.error('Send error', e)
     return err(errorMsg)
+  }
+}
+
+/**
+ * Tauri-first token send path that never requests raw WIFs over IPC.
+ */
+export async function sendTokenFromStore(
+  walletAddress: string,
+  ordAddress: string,
+  fundingUtxos: UTXO[],
+  ticker: string,
+  protocol: 'bsv20' | 'bsv21',
+  amount: string,
+  toAddress: string
+): Promise<Result<{ txid: string }, string>> {
+  try {
+    const [walletTokenUtxos, ordTokenUtxos] = await Promise.all([
+      getTokenUtxosForSend(walletAddress, ticker, protocol),
+      getTokenUtxosForSend(ordAddress, ticker, protocol)
+    ])
+
+    const allTokenUtxos = [...walletTokenUtxos, ...ordTokenUtxos]
+      .sort((a, b) => Number(BigInt(b.amt) - BigInt(a.amt)))
+
+    if (allTokenUtxos.length === 0) {
+      return err('No token UTXOs found')
+    }
+
+    const walletTotal = walletTokenUtxos.reduce((sum, u) => sum + BigInt(u.amt), 0n)
+    const ordTotal = ordTokenUtxos.reduce((sum, u) => sum + BigInt(u.amt), 0n)
+
+    const useOrdWallet = ordTotal > walletTotal
+    const tokenKeyType = useOrdWallet ? 'ordinals' : 'wallet'
+    const changeAddress = useOrdWallet ? ordAddress : walletAddress
+    const tokenUtxos = useOrdWallet ? ordTokenUtxos : walletTokenUtxos
+
+    if (tokenUtxos.length === 0) {
+      const fallbackTokenKeyType = useOrdWallet ? 'wallet' : 'ordinals'
+      const fallbackChangeAddress = useOrdWallet ? walletAddress : ordAddress
+      const fallbackTokenUtxos = useOrdWallet ? walletTokenUtxos : ordTokenUtxos
+
+      if (fallbackTokenUtxos.length === 0) {
+        return err('No token UTXOs found')
+      }
+
+      return transferTokenFromStore(
+        fallbackTokenKeyType,
+        fallbackTokenUtxos,
+        ticker,
+        protocol,
+        amount,
+        toAddress,
+        fundingUtxos,
+        fallbackChangeAddress
+      )
+    }
+
+    return transferTokenFromStore(
+      tokenKeyType,
+      tokenUtxos,
+      ticker,
+      protocol,
+      amount,
+      toAddress,
+      fundingUtxos,
+      changeAddress
+    )
+  } catch (e) {
+    tokenLogger.error('Token send-from-store failed', e)
+    return err(e instanceof Error ? e.message : 'Token transfer failed')
   }
 }

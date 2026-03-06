@@ -1,5 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
-import { tauriInvoke } from '../../../utils/tauri'
+import { useState, useCallback } from 'react'
 import {
   Lock,
   FileText,
@@ -10,10 +9,7 @@ import {
 import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { logger } from '../../../services/logger'
-import { hasPassword } from '../../../services/wallet'
-import { encryptAllAccounts } from '../../../services/accounts'
-import { exportKeysToFile } from '../../../services/keyExport'
-import { NO_PASSWORD, setSessionPassword as setModuleSessionPassword } from '../../../services/sessionPasswordStore'
+import { useSecurityActions } from '../../../hooks/useSecurityActions'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'
 import { PasswordInput } from '../../shared/PasswordInput'
 import { TestRecoveryModal } from '../TestRecoveryModal'
@@ -28,10 +24,14 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
   const { wallet, sessionPassword, autoLockMinutes } = useWalletState()
   const { setAutoLockMinutes, lockWallet, setSessionPassword } = useWalletActions()
   const { showToast } = useUI()
+  const {
+    isPasswordlessWallet,
+    sessionNeedsExportPassword,
+    exportPrivateKeys,
+    enableWalletPassword,
+  } = useSecurityActions()
 
   const [showKeysWarning, setShowKeysWarning] = useState(false)
-  const [showMnemonicWarning, setShowMnemonicWarning] = useState(false)
-  const [mnemonicToShow, setMnemonicToShow] = useState<string | null>(null)
   const [showTestRecovery, setShowTestRecovery] = useState(false)
   const [showSetPassword, setShowSetPassword] = useState(false)
   const [newPassword, setNewPassword] = useState('')
@@ -42,33 +42,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
   const [exportPassword, setExportPassword] = useState('')
   const [confirmExportPassword, setConfirmExportPassword] = useState('')
   const [exportPasswordError, setExportPasswordError] = useState('')
-  const isPasswordless = !hasPassword()
-
-  // Overwrite mnemonic state with zeros before clearing (security hygiene).
-  // JS strings are immutable so this replaces the React state slot's reference with
-  // a zeros string, then immediately sets to null.  React 18+ batches both updates
-  // so only null is committed and the useEffect timer is not re-triggered.
-  const clearMnemonic = useCallback(() => {
-    setMnemonicToShow(prev => (prev ? '0'.repeat(prev.length) : prev))
-    setMnemonicToShow(null)
-  }, [])
-
-  // Auto-clear mnemonic from memory after 60 seconds (security)
-  useEffect(() => {
-    if (!mnemonicToShow) return
-    const timer = setTimeout(() => {
-      clearMnemonic()
-    }, SECURITY.MNEMONIC_AUTO_CLEAR_MS)
-    return () => clearTimeout(timer)
-  }, [mnemonicToShow, clearMnemonic])
-
-  // Overwrite mnemonic on unmount so it doesn't linger in React fiber tree
-  useEffect(() => {
-    return () => {
-      clearMnemonic()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const isPasswordless = isPasswordlessWallet()
 
   const handleExportKeys = useCallback(() => {
     setShowKeysWarning(true)
@@ -81,7 +55,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
     }
 
     // Passwordless -- need one-time export password
-    if (sessionPassword === null || sessionPassword === NO_PASSWORD) {
+    if (sessionNeedsExportPassword(sessionPassword)) {
       setShowKeysWarning(false)
       setShowExportPasswordPrompt(true)
       return
@@ -89,33 +63,13 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
 
     // Has password -- use sessionPassword for encryption
     try {
-      await exportKeysToFile(wallet, sessionPassword, showToast)
+      await exportPrivateKeys(wallet, sessionPassword, showToast)
     } catch (err) {
       logger.error('Key export failed', err)
       showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
     setShowKeysWarning(false)
-  }, [wallet, sessionPassword, showToast])
-
-  const handleShowMnemonic = useCallback(() => {
-    setShowMnemonicWarning(true)
-  }, [])
-
-  const executeShowMnemonic = useCallback(async () => {
-    setShowMnemonicWarning(false)
-    try {
-      // Fetch mnemonic from Rust key store (remains available until wallet lock)
-      const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
-      if (mnemonic) {
-        setMnemonicToShow(mnemonic)
-      } else {
-        showToast('Mnemonic not available — wallet may have been imported without one', 'warning')
-      }
-    } catch (err) {
-      logger.error('Failed to retrieve mnemonic', err)
-      showToast('Failed to retrieve recovery phrase', 'error')
-    }
-  }, [showToast])
+  }, [wallet, sessionPassword, showToast, sessionNeedsExportPassword, exportPrivateKeys])
 
   const handleLockNow = useCallback(() => {
     lockWallet()
@@ -133,15 +87,11 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
     }
     setSettingPassword(true)
     try {
-      const result = await encryptAllAccounts(newPassword)
+      const result = await enableWalletPassword(newPassword, setSessionPassword, setAutoLockMinutes)
       if (!result.ok) {
-        setSetPasswordErrorState(result.error.message)
+        setSetPasswordErrorState(result.error)
         return
       }
-      // encryptAllAccounts already re-encrypts secure storage and sets HAS_PASSWORD
-      setModuleSessionPassword(newPassword)
-      setSessionPassword(newPassword)
-      setAutoLockMinutes(10) // Enable auto-lock at default
 
       showToast('Password set! Lock screen and auto-lock are now enabled.')
       setShowSetPassword(false)
@@ -152,7 +102,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
     } finally {
       setSettingPassword(false)
     }
-  }, [newPassword, confirmNewPassword, showToast, setAutoLockMinutes, setSessionPassword])
+  }, [newPassword, confirmNewPassword, showToast, setAutoLockMinutes, setSessionPassword, enableWalletPassword])
 
   const handleExportWithOneTimePassword = useCallback(async () => {
     if (exportPassword.length < SECURITY.MIN_PASSWORD_LENGTH) {
@@ -164,7 +114,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
       return
     }
     try {
-      await exportKeysToFile(wallet!, exportPassword, showToast)
+      await exportPrivateKeys(wallet!, exportPassword, showToast)
     } catch (err) {
       logger.error('Key export failed', err)
       showToast(`Export failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
@@ -173,7 +123,7 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
     setExportPassword('')
     setConfirmExportPassword('')
     setExportPasswordError('')
-  }, [exportPassword, confirmExportPassword, wallet, showToast])
+  }, [exportPassword, confirmExportPassword, wallet, showToast, exportPrivateKeys])
 
   if (!wallet) return null
 
@@ -251,18 +201,16 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
             </div>
           )}
 
-          {/* Show recovery phrase option — mnemonic fetched on-demand from Rust key store */}
           {wallet && (
             <>
-              <div className="settings-row" role="button" tabIndex={0} onClick={handleShowMnemonic} onKeyDown={handleKeyDown(handleShowMnemonic)} aria-label="View recovery phrase">
+              <div className="settings-row" aria-label="Recovery phrase display policy">
                 <div className="settings-row-left">
                   <div className="settings-row-icon" aria-hidden="true"><FileText size={16} strokeWidth={1.75} /></div>
                   <div className="settings-row-content">
                     <div className="settings-row-label">Recovery Phrase</div>
-                    <div className="settings-row-value">12 words</div>
+                    <div className="settings-row-value">Direct display disabled for security</div>
                   </div>
                 </div>
-                <span className="settings-row-arrow" aria-hidden="true"><ChevronRight size={16} strokeWidth={1.75} /></span>
               </div>
               <div className="settings-row" role="button" tabIndex={0} onClick={() => setShowTestRecovery(true)} onKeyDown={handleKeyDown(() => setShowTestRecovery(true))} aria-label="Test recovery phrase">
                 <div className="settings-row-left">
@@ -309,33 +257,6 @@ export function SettingsSecurity({ onClose }: SettingsSecurityProps) {
           cancelText="Cancel"
           onConfirm={executeExportKeys}
           onCancel={() => setShowKeysWarning(false)}
-        />
-      )}
-
-      {/* Show Mnemonic Warning */}
-      {showMnemonicWarning && (
-        <ConfirmationModal
-          title="View Recovery Phrase"
-          message="Make sure no one can see your screen! Your recovery phrase gives full access to your wallet."
-          type="warning"
-          confirmText="Show Phrase"
-          cancelText="Cancel"
-          onConfirm={executeShowMnemonic}
-          onCancel={() => setShowMnemonicWarning(false)}
-        />
-      )}
-
-      {/* Mnemonic Display Modal */}
-      {mnemonicToShow && (
-        <ConfirmationModal
-          title="Recovery Phrase"
-          message="Write these 12 words down and store them safely. Never share them!"
-          details={mnemonicToShow}
-          type="warning"
-          confirmText="Done"
-          cancelText=""
-          onConfirm={clearMnemonic}
-          onCancel={clearMnemonic}
         />
       )}
 

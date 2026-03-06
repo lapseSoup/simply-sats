@@ -57,7 +57,7 @@ fn derive_key(password: &str, salt: &[u8], iterations: u32) -> [u8; KEY_LENGTH] 
 /// base64 encoding of ciphertext (which includes the 16-byte auth tag
 /// appended by AES-GCM, matching Web Crypto's default behavior).
 #[tauri::command]
-pub fn encrypt_data(plaintext: String, password: String) -> Result<EncryptedData, String> {
+pub fn encrypt_data(mut plaintext: String, mut password: String) -> Result<EncryptedData, String> {
     if plaintext.len() > MAX_INPUT_SIZE {
         return Err("Input too large".into());
     }
@@ -69,6 +69,7 @@ pub fn encrypt_data(plaintext: String, password: String) -> Result<EncryptedData
 
     // Derive key
     let mut key = derive_key(&password, &salt, PBKDF2_ITERATIONS);
+    password.zeroize();
 
     // Encrypt with AES-256-GCM
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
@@ -77,6 +78,7 @@ pub fn encrypt_data(plaintext: String, password: String) -> Result<EncryptedData
     let ciphertext = cipher
         .encrypt(nonce, plaintext.as_bytes())
         .map_err(|e| format!("Encryption failed: {}", e))?;
+    plaintext.zeroize();
 
     Ok(EncryptedData {
         version: CURRENT_VERSION,
@@ -89,10 +91,7 @@ pub fn encrypt_data(plaintext: String, password: String) -> Result<EncryptedData
 
 /// Decrypt data encrypted by `encrypt_data` (or the TypeScript equivalent).
 #[tauri::command]
-pub fn decrypt_data(
-    encrypted_data: EncryptedData,
-    password: String,
-) -> Result<String, String> {
+pub fn decrypt_data(encrypted_data: EncryptedData, mut password: String) -> Result<String, String> {
     if encrypted_data.ciphertext.len() > MAX_INPUT_SIZE * 2 {
         return Err("Input too large".into());
     }
@@ -108,11 +107,16 @@ pub fn decrypt_data(
         .map_err(|e| format!("Invalid salt base64: {}", e))?;
 
     if iv.len() != IV_LENGTH {
-        return Err(format!("Invalid IV length: expected {}, got {}", IV_LENGTH, iv.len()));
+        return Err(format!(
+            "Invalid IV length: expected {}, got {}",
+            IV_LENGTH,
+            iv.len()
+        ));
     }
 
     // Derive key using stored iterations for forward compatibility
     let mut key = derive_key(&password, &salt, encrypted_data.iterations);
+    password.zeroize();
 
     // Decrypt with AES-256-GCM
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
@@ -155,8 +159,7 @@ mod tests {
 
     #[test]
     fn wrong_password_fails() {
-        let encrypted =
-            encrypt_data("secret".to_string(), "correctpassword1".to_string()).unwrap();
+        let encrypted = encrypt_data("secret".to_string(), "correctpassword1".to_string()).unwrap();
         let result = decrypt_data(encrypted, "wrongpassword123".to_string());
 
         assert!(result.is_err());
@@ -177,8 +180,7 @@ mod tests {
 
     #[test]
     fn version_and_iterations_correct() {
-        let encrypted =
-            encrypt_data("data".to_string(), "testpassword123456".to_string()).unwrap();
+        let encrypted = encrypt_data("data".to_string(), "testpassword123456".to_string()).unwrap();
         assert_eq!(encrypted.version, CURRENT_VERSION);
         assert_eq!(encrypted.iterations, PBKDF2_ITERATIONS);
     }

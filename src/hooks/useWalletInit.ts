@@ -5,9 +5,10 @@
  */
 
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
-import type { WalletKeys, PublicWalletKeys } from '../services/wallet'
+import type { ActiveWallet, PublicWalletKeys } from '../services/wallet'
 import type { Contact } from '../infrastructure/database'
 import {
+  toSessionWallet,
   loadWallet,
   hasWallet
 } from '../services/wallet'
@@ -33,13 +34,13 @@ import { setSessionPassword as setModuleSessionPassword } from '../services/sess
 import { hasPassword } from '../services/wallet/storage'
 
 interface UseWalletInitOptions {
-  setWallet: (wallet: WalletKeys | null) => void
+  setWallet: (wallet: ActiveWallet | null) => void
   setIsLocked: Dispatch<SetStateAction<boolean>>
   setSessionPassword: (password: string | null) => void
   refreshAccounts: () => Promise<void>
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
   /** Pre-load cached DB data (balance, txs, ordinals, etc.) so it's visible the moment the loading spinner disappears. */
-  preloadDataFromDB: (wallet: WalletKeys, accountId: number) => Promise<void>
+  preloadDataFromDB: (wallet: ActiveWallet, accountId: number) => Promise<void>
 }
 
 interface UseWalletInitReturn {
@@ -167,7 +168,7 @@ export function useWalletInit({
             if (keys) {
               // Determine if we need to switch to a different account's keys.
               // loadWallet always returns Account 1 keys from secure storage.
-              let walletKeys = keys
+              let walletKeys: ActiveWallet = keys
               const accountId = activeAccount?.id ?? 1
               let needsAccountSwitch = false
 
@@ -184,20 +185,7 @@ export function useWalletInit({
                   lap('storeKeysInRust (for account switch)')
                   try {
                     const pubKeys = await tauriInvoke<PublicWalletKeys>('switch_account_from_store', { accountIndex: targetIndex })
-                    walletKeys = {
-                      mnemonic: '',
-                      walletType: pubKeys.walletType as 'yours',
-                      walletWif: '',
-                      walletAddress: pubKeys.walletAddress,
-                      walletPubKey: pubKeys.walletPubKey,
-                      ordWif: '',
-                      ordAddress: pubKeys.ordAddress,
-                      ordPubKey: pubKeys.ordPubKey,
-                      identityWif: '',
-                      identityAddress: pubKeys.identityAddress,
-                      identityPubKey: pubKeys.identityPubKey,
-                      accountIndex: targetIndex
-                    }
+                    walletKeys = toSessionWallet(pubKeys, targetIndex)
                     lap('switch_account_from_store')
                   } catch (rustErr) {
                     walletLogger.warn('Failed to derive active account keys — falling back to stored keys', { error: String(rustErr) })
@@ -207,7 +195,7 @@ export function useWalletInit({
 
               // Pre-load ALL cached data BEFORE the spinner disappears.
               try {
-                await preloadDataFromDB({ ...walletKeys, mnemonic: '' }, accountId)
+                await preloadDataFromDB(walletKeys, accountId)
                 lap('preloadDataFromDB')
               } catch (e) {
                 walletLogger.warn('Pre-load from DB failed (non-critical)', { error: String(e) })
@@ -215,7 +203,7 @@ export function useWalletInit({
 
               // Set wallet state — data is already loaded, so when the spinner
               // disappears the wallet UI has data from the very first frame.
-              setWallet({ ...walletKeys, mnemonic: '' })
+              setWallet(walletKeys)
               // S-73: Empty string is the NO_PASSWORD sentinel — intentionally falsy.
               // sessionPasswordStore uses `=== null` checks, not truthiness.
               // getAccountKeys() handles '' correctly for passwordless wallets.
@@ -255,7 +243,7 @@ export function useWalletInit({
             if (!mounted) return
             const keys = legacyResult.ok ? legacyResult.value : null
             if (keys) {
-              setWallet({ ...keys, mnemonic: '' })
+              setWallet(keys)
               setSessionPassword('')
               setModuleSessionPassword('')
               walletLogger.info('Migrating to multi-account system')

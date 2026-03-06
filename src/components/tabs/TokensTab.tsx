@@ -6,8 +6,8 @@
 
 import { useState, memo, useCallback, useMemo } from 'react'
 import { Search, RefreshCw } from 'lucide-react'
-import type { TokenBalance } from '../../services/tokens'
-import { formatTokenAmount } from '../../services/tokens'
+import type { TokenBalance } from '../../domain/tokens'
+import { formatTokenAmount } from '../../domain/tokens'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { Modal } from '../shared/Modal'

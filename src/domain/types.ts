@@ -101,10 +101,12 @@ export function flatMapResult<T, U, E>(
 // ============================================
 
 /**
- * @security S-131/S-132 PLANNED MIGRATION: This type includes WIF fields that are stored
- * in React state for the session lifetime. The planned fix is to create a PublicWalletKeys
- * type (already exists at services/wallet/types.ts) for React state, and route all WIF
- * access through getWifForOperation() or Rust _from_store commands.
+ * @security Full wallet material used for creation, import, backup, and browser/test flows.
+ * In the Tauri desktop app, mnemonic/WIF fields are sanitized before long-lived React state
+ * updates; native operations read secrets from the Rust key store instead.
+ *
+ * Long-term, UI state should move fully to a public-only shape and reserve WalletKeys for
+ * transient import/export boundaries.
  */
 export interface WalletKeys {
   mnemonic: string
@@ -119,6 +121,45 @@ export interface WalletKeys {
   identityAddress: string
   identityPubKey: string
   accountIndex?: number
+}
+
+/**
+ * Public-only wallet keys — safe to keep in long-lived UI state.
+ * Mirrors the Rust key-store response shape and contains no secrets.
+ */
+export interface PublicWalletKeys {
+  walletType: string
+  walletAddress: string
+  walletPubKey: string
+  ordAddress: string
+  ordPubKey: string
+  identityAddress: string
+  identityPubKey: string
+}
+
+/**
+ * Wallet shape used in the running session/UI.
+ * Desktop/Tauri sanitizes to this shape; browser/test flows may still hold WalletKeys.
+ */
+export interface SessionWallet extends PublicWalletKeys {
+  accountIndex?: number
+}
+
+/**
+ * Active wallet visible to read-side hooks.
+ * Browser/test environments may still carry full WalletKeys for JS-only fallbacks.
+ */
+export type ActiveWallet = WalletKeys | SessionWallet
+
+/**
+ * Narrow an active wallet to the full secret-bearing WalletKeys shape.
+ */
+export function hasPrivateKeyMaterial(wallet: ActiveWallet | null | undefined): wallet is WalletKeys {
+  return !!wallet &&
+    typeof (wallet as Partial<WalletKeys>).mnemonic === 'string' &&
+    typeof (wallet as Partial<WalletKeys>).walletWif === 'string' &&
+    typeof (wallet as Partial<WalletKeys>).ordWif === 'string' &&
+    typeof (wallet as Partial<WalletKeys>).identityWif === 'string'
 }
 
 export interface KeyPair {

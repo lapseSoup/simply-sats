@@ -272,21 +272,6 @@ export class TauriAdapter implements PlatformAdapter {
     await invoke('rotate_session_for_account', { accountId })
   }
 
-  async getWifForOperation(): Promise<string> {
-    const { invoke } = await import('@tauri-apps/api/core')
-    return invoke<string>('get_wif_for_operation')
-  }
-
-  async getMnemonicOnce(): Promise<string> {
-    const { invoke } = await import('@tauri-apps/api/core')
-    return invoke<string>('get_mnemonic_once')
-  }
-
-  async getMnemonic(): Promise<string> {
-    const { invoke } = await import('@tauri-apps/api/core')
-    return invoke<string>('get_mnemonic')
-  }
-
   async clearKeys(): Promise<void> {
     const { invoke } = await import('@tauri-apps/api/core')
     await invoke('clear_keys')

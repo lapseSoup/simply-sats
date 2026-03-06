@@ -1,179 +1,149 @@
-/**
- * Hook for ordinal content caching: background caching and lazy content fetching.
- *
- * Extracted from SyncContext to reduce god-object complexity.
- */
-
 import { useCallback, type MutableRefObject } from 'react'
-import type { Ordinal } from '../services/wallet'
+import type { Ordinal } from '../domain/types'
+import type { OrdinalContentEntry } from '../contexts/SyncContext'
+import type { CachedOrdinal } from '../services/ordinalCache'
 import {
   batchUpsertOrdinalCache,
-  markOrdinalTransferred,
-  getCachedOrdinalContent,
-  upsertOrdinalContent,
-  hasOrdinalContent,
-  getCachedOrdinals,
   ensureOrdinalCacheRowForTransferred,
-  type CachedOrdinal
+  getCachedOrdinalContent,
+  getCachedOrdinals,
+  hasOrdinalContent,
+  markOrdinalTransferred,
+  upsertOrdinalContent,
 } from '../services/ordinalCache'
 import { fetchOrdinalContent } from '../services/wallet/ordinalContent'
 import { syncLogger } from '../services/logger'
-import type { OrdinalContentEntry } from '../contexts/SyncContext'
-
-/**
- * Background task: save ordinal metadata to DB and fetch missing content.
- * Non-blocking -- runs after ordinals are displayed to user.
- *
- * This is a standalone async function (not a hook) because it is called
- * imperatively from useSyncData's fetchData callback.
- */
-export async function cacheOrdinalsInBackground(
-  allOrdinals: Ordinal[],
-  activeAccountId: number | null,
-  contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>,
-  bumpCacheVersion: () => void,
-  isCancelled: () => boolean,
-  allApiCallsSucceeded: boolean
-): Promise<void> {
-  // Guard: don't cache ordinals without a valid account ID (prevents cross-account contamination)
-  if (!activeAccountId) return
-
-  try {
-    // 1. Save metadata to DB (Q-25: batched INSERT for performance)
-    if (isCancelled()) return
-    const now = Date.now()
-    const cacheEntries: CachedOrdinal[] = allOrdinals.map(ord => ({
-      origin: ord.origin,
-      txid: ord.txid,
-      vout: ord.vout,
-      satoshis: ord.satoshis,
-      contentType: ord.contentType,
-      contentHash: ord.content,
-      accountId: activeAccountId,
-      fetchedAt: now,
-      blockHeight: ord.blockHeight
-    }))
-    const inserted = await batchUpsertOrdinalCache(cacheEntries)
-    if (inserted < cacheEntries.length) {
-      syncLogger.warn('Incomplete ordinal cache write', {
-        expected: cacheEntries.length,
-        actual: inserted
-      })
-    } else {
-      syncLogger.debug('Cached ordinal metadata', { count: inserted })
-    }
-
-    // 1b. Mark transferred ordinals -- only when ALL API calls succeeded.
-    // If any call failed, allOrdinals is a PARTIAL list and marking missing origins
-    // as transferred would corrupt the cache (e.g. marking 619 of 620 as transferred
-    // because only one address's API call succeeded). The next full sync will handle it.
-    if (allApiCallsSucceeded) {
-      if (isCancelled()) return
-      const currentOrigins = new Set(allOrdinals.map(o => o.origin))
-      const ownedCachedRows = await getCachedOrdinals(activeAccountId)
-      for (const row of ownedCachedRows) {
-        if (!currentOrigins.has(row.origin)) {
-          await markOrdinalTransferred(row.origin)
-          syncLogger.debug('Marked ordinal as transferred in cache', { origin: row.origin })
-        }
-      }
-    } else {
-      syncLogger.info('Skipping transfer marking -- not all ordinal API calls succeeded', {
-        ordinalCount: allOrdinals.length
-      })
-    }
-
-    // 2. Fetch missing content (up to 50 per cycle)
-    if (isCancelled()) return
-    const toFetch: Ordinal[] = []
-    for (const ord of allOrdinals) {
-      if (contentCacheRef.current.has(ord.origin)) continue
-      const hasCached = await hasOrdinalContent(ord.origin)
-      if (!hasCached) {
-        toFetch.push(ord)
-      }
-      if (toFetch.length >= 50) break
-    }
-
-    if (toFetch.length === 0) return
-
-    syncLogger.debug('Fetching ordinal content', { count: toFetch.length })
-
-    let contentAdded = false
-    for (const ord of toFetch) {
-      if (isCancelled()) return
-      const content = await fetchOrdinalContent(ord.origin, ord.contentType)
-      if (content) {
-        // Save to DB (also update content_type if resolved from response header)
-        await upsertOrdinalContent(ord.origin, content.contentData, content.contentText, content.contentType)
-        // Update in-memory cache
-        contentCacheRef.current.set(ord.origin, content)
-        contentAdded = true
-      }
-    }
-
-    // Trigger a single re-render with all new content
-    if (contentAdded) {
-      bumpCacheVersion()
-      syncLogger.debug('Ordinal content fetched and cached', { fetched: toFetch.length })
-    }
-  } catch (e) {
-    syncLogger.warn('Background ordinal caching failed (non-critical)', { error: String(e) })
-  }
-}
 
 interface UseOrdinalCacheOptions {
   contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>
   bumpCacheVersion: () => void
 }
 
-interface UseOrdinalCacheReturn {
-  /**
-   * Fetch and cache ordinal content if not already in the in-memory cache.
-   * Used by ActivityTab to lazily load thumbnails for transferred ordinals
-   * that are missing from the cache after a fresh seed restore.
-   */
-  fetchOrdinalContentIfMissing: (origin: string, contentType?: string, accountId?: number) => Promise<void>
+function toCachedOrdinal(ordinal: Ordinal, accountId: number): CachedOrdinal {
+  return {
+    origin: ordinal.origin,
+    txid: ordinal.txid,
+    vout: ordinal.vout,
+    satoshis: ordinal.satoshis,
+    contentType: ordinal.contentType,
+    contentHash: ordinal.content,
+    accountId,
+    fetchedAt: Date.now(),
+    blockHeight: ordinal.blockHeight,
+  }
 }
 
-export function useOrdinalCache({
-  contentCacheRef,
-  bumpCacheVersion
-}: UseOrdinalCacheOptions): UseOrdinalCacheReturn {
+function hasRenderableContent(entry: { contentData?: Uint8Array; contentText?: string; contentType?: string } | null): entry is OrdinalContentEntry {
+  return !!entry && (!!entry.contentData || !!entry.contentText)
+}
 
-  // Lazily fetch ordinal content for transferred ordinals missing from the cache.
-  // Called by ActivityTab when displaying transfer history items after a fresh restore
-  // where ordinal_cache may be empty (content was never fetched for the new wallet).
-  const fetchOrdinalContentIfMissing = useCallback(async (origin: string, contentType?: string, accountId?: number) => {
-    if (contentCacheRef.current.has(origin)) return  // already in memory
+export async function cacheOrdinalsInBackground(
+  ordinals: Ordinal[],
+  activeAccountId: number | null,
+  contentCacheRef: MutableRefObject<Map<string, OrdinalContentEntry>>,
+  bumpCacheVersion: () => void,
+  isCancelled: () => boolean,
+  allOrdinalApiCallsSucceeded: boolean
+): Promise<void> {
+  if (!activeAccountId) return
+
+  try {
+    if (isCancelled()) return
+
+    await batchUpsertOrdinalCache(ordinals.map(ordinal => toCachedOrdinal(ordinal, activeAccountId)))
+
+    if (isCancelled()) return
+
+    if (allOrdinalApiCallsSucceeded) {
+      const cachedOrdinals = await getCachedOrdinals(activeAccountId)
+      const currentOrigins = new Set(ordinals.map(ordinal => ordinal.origin))
+      for (const cached of cachedOrdinals) {
+        if (!currentOrigins.has(cached.origin)) {
+          await markOrdinalTransferred(cached.origin)
+        }
+      }
+    }
+
+    let fetchedAnyContent = false
+    let fetchCount = 0
+
+    for (const ordinal of ordinals) {
+      if (fetchCount >= 50) break
+      if (!ordinal.origin || contentCacheRef.current.has(ordinal.origin)) continue
+
+      let existsInDb = false
+      try {
+        existsInDb = await hasOrdinalContent(ordinal.origin)
+      } catch (error) {
+        syncLogger.warn('Failed to check ordinal content presence during background cache', {
+          origin: ordinal.origin,
+          error: String(error)
+        })
+        continue
+      }
+
+      if (existsInDb) continue
+
+      const content = await fetchOrdinalContent(ordinal.origin, ordinal.contentType)
+      fetchCount++
+
+      if (!hasRenderableContent(content)) continue
+
+      await upsertOrdinalContent(
+        ordinal.origin,
+        content.contentData,
+        content.contentText,
+        content.contentType
+      )
+      contentCacheRef.current.set(ordinal.origin, content)
+      fetchedAnyContent = true
+    }
+
+    if (fetchedAnyContent) {
+      bumpCacheVersion()
+    }
+  } catch (error) {
+    syncLogger.warn('Background ordinal cache update failed', { error: String(error) })
+  }
+}
+
+export function useOrdinalCache({ contentCacheRef, bumpCacheVersion }: UseOrdinalCacheOptions) {
+  const fetchOrdinalContentIfMissing = useCallback(async (
+    origin: string,
+    contentType?: string,
+    accountId?: number
+  ): Promise<void> => {
+    if (!origin || contentCacheRef.current.has(origin)) return
 
     try {
-      // Check if content exists in DB first (cheapest path)
-      const hasCached = await hasOrdinalContent(origin)
-      if (hasCached) {
-        const content = await getCachedOrdinalContent(origin)
-        if (content && (content.contentData || content.contentText)) {
-          contentCacheRef.current.set(origin, content)
+      const existsInDb = await hasOrdinalContent(origin)
+      if (existsInDb) {
+        const cached = await getCachedOrdinalContent(origin)
+        if (hasRenderableContent(cached)) {
+          contentCacheRef.current.set(origin, cached)
           bumpCacheVersion()
         }
         return
       }
 
-      // Fetch from API (GorillaPool)
       const content = await fetchOrdinalContent(origin, contentType)
-      if (content) {
-        // Ensure a row exists with the correct account_id so it's found by
-        // account-scoped DB queries on subsequent launches.
+      if (!hasRenderableContent(content)) return
+
+      if (accountId !== undefined) {
         await ensureOrdinalCacheRowForTransferred(origin, accountId)
-        await upsertOrdinalContent(origin, content.contentData, content.contentText, content.contentType)
-        contentCacheRef.current.set(origin, content)
-        bumpCacheVersion()
-        syncLogger.debug('Fetched transferred ordinal content', { origin })
       }
-    } catch (e) {
-      syncLogger.warn('fetchOrdinalContentIfMissing failed (non-critical)', { origin, error: String(e) })
+      await upsertOrdinalContent(origin, content.contentData, content.contentText, content.contentType)
+      contentCacheRef.current.set(origin, content)
+      bumpCacheVersion()
+    } catch (error) {
+      syncLogger.warn('Failed to fetch ordinal content on demand', {
+        origin,
+        error: String(error)
+      })
     }
   }, [contentCacheRef, bumpCacheVersion])
 
-  return { fetchOrdinalContentIfMissing }
+  return {
+    fetchOrdinalContentIfMissing,
+  }
 }

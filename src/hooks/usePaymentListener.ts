@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import type { WalletKeys } from '../services/wallet'
+import type { ActiveWallet } from '../services/wallet'
 import type { PaymentNotification } from '../services/messageBox'
 import { loadNotifications, startPaymentListenerFromStore, resetMessageBoxAuth } from '../services/messageBox'
 import { logger } from '../services/logger'
@@ -15,7 +15,7 @@ import type { ToastType } from '../contexts/UIContext'
 import { useLatestRef } from './useLatestRef'
 
 interface UsePaymentListenerOptions {
-  wallet: WalletKeys | null
+  wallet: ActiveWallet | null
   fetchData: () => Promise<void>
   showToast: (message: string, type?: ToastType) => void
 }

@@ -8,7 +8,7 @@
  */
 
 import { brc100Logger as _brc100Logger } from '../logger'
-import type { WalletKeys, LockedUTXO } from '../wallet'
+import type { ActiveWallet, LockedUTXO } from '../wallet'
 import { lockBSV as walletLockBSV, unlockBSV as walletUnlockBSV } from '../wallet'
 import {
   getSpendableUTXOs,
@@ -29,7 +29,7 @@ import {
   type GetTaggedKeysParams
 } from './types'
 import { getActiveAccount } from '../accounts'
-import { getRequestManager } from './RequestManager'
+import { getRequestManager, type PendingRequest } from './RequestManager'
 import { signData, verifyDataSignature } from './signing'
 import { encryptECIES, decryptECIES } from './cryptography'
 import { getBlockHeight } from './utils'
@@ -72,9 +72,20 @@ function setError(response: BRC100Response, code: number, message: string): void
 export function getPendingRequests() {
   const requestManager = getRequestManager()
   return {
-    get: (id: string) => requestManager.get(id),
-    set: (id: string, value: { request: BRC100Request; resolve: (r: BRC100Response) => void; reject: (e: Error) => void }) => {
-      requestManager.add(id, value.request, value.resolve, value.reject)
+    get: (id: string): PendingRequest | undefined => requestManager.get(id),
+    set: (id: string, value: {
+      request: BRC100Request
+      resolve: (r: BRC100Response) => void
+      reject: (e: Error) => void
+      expectedIdentityPubKey?: string | null
+    }) => {
+      requestManager.add(
+        id,
+        value.request,
+        value.resolve,
+        value.reject,
+        value.expectedIdentityPubKey ?? null
+      )
     },
     delete: (id: string) => requestManager.remove(id),
     get size() { return requestManager.getAll().length },
@@ -93,7 +104,7 @@ export function getPendingRequests() {
  * Execute an already-approved BRC-100 request and return the response.
  * Called either directly (autoApprove) or after user approval (approveRequest).
  */
-export async function executeApprovedRequest(request: BRC100Request, keys: WalletKeys): Promise<BRC100Response> {
+export async function executeApprovedRequest(request: BRC100Request, keys: ActiveWallet): Promise<BRC100Response> {
   const response: BRC100Response = { id: request.id }
 
   switch (request.type) {

@@ -1,24 +1,24 @@
+use crate::key_store::SharedKeyStore;
+use crate::{SharedBRC100State, SharedSessionState};
 use axum::{
-    routing::post,
-    http::{StatusCode, Method, HeaderValue, Request},
     body::Body,
-    middleware::{self, Next},
-    response::{Response, IntoResponse},
-    Json, Router,
     extract::State,
+    http::{HeaderValue, Method, Request, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::post,
+    Json, Router,
 };
-use tower_http::cors::CorsLayer;
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
 use governor::{Quota, RateLimiter};
+use hmac::{Hmac, Mac};
+use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::num::NonZeroU32;
+use std::path::PathBuf;
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use crate::{SharedBRC100State, SharedSessionState};
-use crate::key_store::SharedKeyStore;
-use std::path::PathBuf;
+use tauri::{AppHandle, Emitter};
+use tower_http::cors::CorsLayer;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -31,7 +31,13 @@ const PORT: u16 = 3322; // Simply Sats uses 3322 (Metanet Desktop uses 3321)
 const RATE_LIMIT_PER_MINUTE: u32 = 60;
 
 // Type alias for the rate limiter
-type SharedRateLimiter = Arc<RateLimiter<governor::state::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>;
+type SharedRateLimiter = Arc<
+    RateLimiter<
+        governor::state::NotKeyed,
+        governor::state::InMemoryState,
+        governor::clock::DefaultClock,
+    >,
+>;
 
 // Allowed hosts for DNS rebinding protection (matched case-insensitively)
 const ALLOWED_HOSTS: &[&str] = &[
@@ -48,23 +54,23 @@ const ALLOWED_HOSTS: &[&str] = &[
 #[cfg(debug_assertions)]
 const ALLOWED_ORIGINS: &[&str] = &[
     "http://localhost",
-    "http://localhost:1420",      // Vite dev server
-    "http://localhost:3000",      // Next.js dev server (Wrootz)
-    "http://localhost:3001",      // Next.js alternate port
+    "http://localhost:1420", // Vite dev server
+    "http://localhost:3000", // Next.js dev server (Wrootz)
+    "http://localhost:3001", // Next.js alternate port
     "http://127.0.0.1",
     "http://127.0.0.1:1420",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
-    "tauri://localhost",          // Tauri webview on macOS/Linux
-    "https://tauri.localhost",    // Tauri webview on Windows
+    "tauri://localhost",       // Tauri webview on macOS/Linux
+    "https://tauri.localhost", // Tauri webview on Windows
 ];
 
 #[cfg(not(debug_assertions))]
 const ALLOWED_ORIGINS: &[&str] = &[
     "http://localhost",
     "http://127.0.0.1",
-    "tauri://localhost",          // Tauri webview on macOS/Linux
-    "https://tauri.localhost",    // Tauri webview on Windows
+    "tauri://localhost",       // Tauri webview on macOS/Linux
+    "https://tauri.localhost", // Tauri webview on Windows
 ];
 
 #[derive(Clone)]
@@ -128,20 +134,22 @@ struct AuthHandshakeResponse {
 }
 
 /// Middleware to validate Host header for DNS rebinding protection
-async fn validate_host_header(
-    request: Request<Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    let host = request.headers()
-        .get("Host")
-        .and_then(|v| v.to_str().ok());
+async fn validate_host_header(request: Request<Body>, next: Next) -> Result<Response, StatusCode> {
+    let host = request.headers().get("Host").and_then(|v| v.to_str().ok());
 
     match host {
-        Some(h) if ALLOWED_HOSTS.iter().any(|allowed| h.eq_ignore_ascii_case(allowed)) => {
+        Some(h)
+            if ALLOWED_HOSTS
+                .iter()
+                .any(|allowed| h.eq_ignore_ascii_case(allowed)) =>
+        {
             Ok(next.run(request).await)
         }
         _ => {
-            log::warn!("[Security] Rejected request: invalid Host header: {:?}", host);
+            log::warn!(
+                "[Security] Rejected request: invalid Host header: {:?}",
+                host
+            );
             Err(StatusCode::FORBIDDEN)
         }
     }
@@ -165,8 +173,8 @@ async fn validate_session_token(
             // Use constant-time comparison to prevent timing attacks
             let token_bytes = token.as_bytes();
             let session_bytes = session.token.as_bytes();
-            let is_valid = token_bytes.len() == session_bytes.len()
-                && token_bytes.ct_eq(session_bytes).into();
+            let is_valid =
+                token_bytes.len() == session_bytes.len() && token_bytes.ct_eq(session_bytes).into();
             let is_expired = session.is_token_expired();
 
             drop(session);
@@ -189,19 +197,28 @@ async fn validate_session_token(
                             }
                         }
                         Ok(response)
-                    },
+                    }
                     Err(_) => {
-                        log::warn!("[Rate Limit] Request to {} exceeded rate limit", request.uri().path());
+                        log::warn!(
+                            "[Rate Limit] Request to {} exceeded rate limit",
+                            request.uri().path()
+                        );
                         Err(StatusCode::TOO_MANY_REQUESTS)
                     }
                 }
             } else {
-                log::warn!("Rejected request to {}: invalid session token", request.uri().path());
+                log::warn!(
+                    "Rejected request to {}: invalid session token",
+                    request.uri().path()
+                );
                 Err(StatusCode::UNAUTHORIZED)
             }
         }
         None => {
-            log::warn!("Rejected request to {}: missing session token", request.uri().path());
+            log::warn!(
+                "Rejected request to {}: missing session token",
+                request.uri().path()
+            );
             Err(StatusCode::UNAUTHORIZED)
         }
     }
@@ -253,14 +270,18 @@ pub async fn start_server(
         ]);
 
     // Security response headers middleware
-    let security_headers = axum::middleware::from_fn(|request: Request<Body>, next: Next| async move {
-        let mut response = next.run(request).await;
-        let headers = response.headers_mut();
-        headers.insert("X-Content-Type-Options", HeaderValue::from_static("nosniff"));
-        headers.insert("X-Frame-Options", HeaderValue::from_static("DENY"));
-        headers.insert("Cache-Control", HeaderValue::from_static("no-store"));
-        response
-    });
+    let security_headers =
+        axum::middleware::from_fn(|request: Request<Body>, next: Next| async move {
+            let mut response = next.run(request).await;
+            let headers = response.headers_mut();
+            headers.insert(
+                "X-Content-Type-Options",
+                HeaderValue::from_static("nosniff"),
+            );
+            headers.insert("X-Frame-Options", HeaderValue::from_static("DENY"));
+            headers.insert("Cache-Control", HeaderValue::from_static("no-store"));
+            response
+        });
 
     // Response HMAC signing middleware — signs response body with session token
     let sign_state = state.clone();
@@ -301,7 +322,10 @@ pub async fn start_server(
     let public_routes = Router::new()
         .route("/getVersion", post(handle_get_version))
         .route("/isAuthenticated", post(handle_is_authenticated))
-        .route("/waitForAuthentication", post(handle_wait_for_authentication))
+        .route(
+            "/waitForAuthentication",
+            post(handle_wait_for_authentication),
+        )
         .route("/.well-known/auth", post(handle_auth_request));
 
     // Protected routes — require a valid session token
@@ -316,15 +340,19 @@ pub async fn start_server(
         .route("/lockBSV", post(handle_lock_bsv))
         .route("/unlockBSV", post(handle_unlock_bsv))
         .route("/listLocks", post(handle_list_locks))
-        .layer(middleware::from_fn_with_state(state.clone(), validate_session_token));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            validate_session_token,
+        ));
 
     // Legacy routes at root (backward compat) + versioned routes under /v1
     let app = Router::new()
         .merge(public_routes.clone())
         .merge(protected_routes.clone())
-        .nest("/v1", Router::new()
-            .merge(public_routes)
-            .merge(protected_routes))
+        .nest(
+            "/v1",
+            Router::new().merge(public_routes).merge(protected_routes),
+        )
         .layer(response_signing)
         .layer(middleware::from_fn(validate_host_header))
         .layer(security_headers)
@@ -406,16 +434,22 @@ async fn handle_auth_request(
 ) -> Response {
     // Validate inputs
     if req.identity_key.is_empty() || req.nonce.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32602,
-            "message": "Missing identityKey or nonce"
-        }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "isError": true,
+                "code": -32602,
+                "message": "Missing identityKey or nonce"
+            })),
+        )
+            .into_response();
     }
 
     // 1. Generate response nonce (32 random bytes, hex-encoded)
     //    Uses OsRng (CSPRNG, Send-safe) — same pattern as SessionState::new() in lib.rs
-    let nonce_bytes: Vec<u8> = (0..32).map(|_| rand::Rng::gen::<u8>(&mut rand::rngs::OsRng)).collect();
+    let nonce_bytes: Vec<u8> = (0..32)
+        .map(|_| rand::Rng::gen::<u8>(&mut rand::rngs::OsRng))
+        .collect();
     let response_nonce = hex::encode(&nonce_bytes);
 
     // 2. Calculate expiry
@@ -446,22 +480,30 @@ async fn handle_auth_request(
     }).await;
 
     match db_result {
-        Ok(Ok(())) => {},
+        Ok(Ok(())) => {}
         Ok(Err(e)) => {
             log::error!("[Auth] {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "isError": true,
-                "code": -32000,
-                "message": "Internal error"
-            }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32000,
+                    "message": "Internal error"
+                })),
+            )
+                .into_response();
         }
         Err(e) => {
             log::error!("[Auth] Database task panicked: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "isError": true,
-                "code": -32000,
-                "message": "Internal error"
-            }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32000,
+                    "message": "Internal error"
+                })),
+            )
+                .into_response();
         }
     }
 
@@ -472,21 +514,33 @@ async fn handle_auth_request(
             Some(keys) => keys.identity_pub_key.clone(),
             None => {
                 log::warn!("[Auth] No identity key in key store — wallet may be locked");
-                return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-                    "isError": true,
-                    "code": -32003,
-                    "message": "Wallet is locked"
-                }))).into_response();
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(serde_json::json!({
+                        "isError": true,
+                        "code": -32003,
+                        "message": "Wallet is locked"
+                    })),
+                )
+                    .into_response();
             }
         }
     };
 
-    log::info!("[Auth] Session created for peer {:.16}... (expires in {}s)", req.identity_key, AUTH_SESSION_TTL_SECS);
+    log::info!(
+        "[Auth] Session created for peer {:.16}... (expires in {}s)",
+        req.identity_key,
+        AUTH_SESSION_TTL_SECS
+    );
 
-    (StatusCode::OK, Json(AuthHandshakeResponse {
-        identity_key: server_identity_key,
-        nonce: response_nonce,
-    })).into_response()
+    (
+        StatusCode::OK,
+        Json(AuthHandshakeResponse {
+            identity_key: server_identity_key,
+            nonce: response_nonce,
+        }),
+    )
+        .into_response()
 }
 
 async fn handle_get_height(Json(_args): Json<EmptyArgs>) -> Json<HeightResponse> {
@@ -506,7 +560,11 @@ async fn handle_get_height(Json(_args): Json<EmptyArgs>) -> Json<HeightResponse>
             let genesis_time: u64 = 1231006505; // Jan 3, 2009
             let avg_block_time: u64 = 600; // 10 minutes in seconds
             let estimated = ((now - genesis_time) / avg_block_time) as u32;
-            log::warn!("Failed to fetch block height: {}, using estimated: {}", e, estimated);
+            log::warn!(
+                "Failed to fetch block height: {}, using estimated: {}",
+                e,
+                estimated
+            );
             estimated
         }
     };
@@ -524,34 +582,35 @@ async fn fetch_block_height() -> Result<u32, Box<dyn std::error::Error + Send + 
         .await?;
 
     let data: serde_json::Value = response.json().await?;
-    let height = data["blocks"]
-        .as_u64()
-        .ok_or("Missing blocks field")? as u32;
+    let height = data["blocks"].as_u64().ok_or("Missing blocks field")? as u32;
 
     Ok(height)
 }
 
-async fn handle_get_public_key(
-    State(state): State<AppState>,
-    request: Request<Body>,
-) -> Response {
+async fn handle_get_public_key(State(state): State<AppState>, request: Request<Body>) -> Response {
     let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
         Err(e) => return e,
     };
 
-    let parsed: GetPublicKeyArgs = serde_json::from_value(args)
-        .unwrap_or_default();
+    let parsed: GetPublicKeyArgs = serde_json::from_value(args).unwrap_or_default();
 
     log::debug!("getPublicKey request: {:?}", parsed);
-    forward_to_frontend(state, "getPublicKey", serde_json::json!({
-        "identityKey": parsed.identity_key.unwrap_or(false),
-    }), origin).await
+    forward_to_frontend(
+        state,
+        "getPublicKey",
+        serde_json::json!({
+            "identityKey": parsed.identity_key.unwrap_or(false),
+        }),
+        origin,
+    )
+    .await
 }
 
 /// Extract origin from request headers
 fn extract_origin(request: &Request<Body>) -> Option<String> {
-    request.headers()
+    request
+        .headers()
         .get("Origin")
         .or_else(|| request.headers().get("Referer"))
         .and_then(|v| v.to_str().ok())
@@ -578,27 +637,39 @@ fn validate_origin(origin: &Option<String>) -> Result<(), Response> {
     match origin {
         Some(ref o) if ALLOWED_ORIGINS.iter().any(|allowed| o == *allowed) => Ok(()),
         Some(ref o) => {
-            log::warn!("[Security] Rejected request: origin not in whitelist: {}", o);
-            Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
-                "isError": true,
-                "code": -32002,
-                "message": "Origin not allowed"
-            }))).into_response())
+            log::warn!(
+                "[Security] Rejected request: origin not in whitelist: {}",
+                o
+            );
+            Err((
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32002,
+                    "message": "Origin not allowed"
+                })),
+            )
+                .into_response())
         }
         None => {
             log::warn!("[Security] Rejected request: missing Origin header");
-            Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
-                "isError": true,
-                "code": -32002,
-                "message": "Missing Origin header"
-            }))).into_response())
+            Err((
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32002,
+                    "message": "Missing Origin header"
+                })),
+            )
+                .into_response())
         }
     }
 }
 
 /// Extract CSRF nonce from request headers
 fn extract_nonce(request: &Request<Body>) -> Option<String> {
-    request.headers()
+    request
+        .headers()
         .get(CSRF_NONCE_HEADER)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
@@ -613,20 +684,28 @@ async fn validate_nonce(state: &AppState, nonce: Option<String>) -> Result<(), R
                 Ok(())
             } else {
                 log::warn!("Invalid or expired CSRF nonce");
-                Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
-                    "isError": true,
-                    "code": -32001,
-                    "message": "Invalid or expired CSRF nonce"
-                }))).into_response())
+                Err((
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({
+                        "isError": true,
+                        "code": -32001,
+                        "message": "Invalid or expired CSRF nonce"
+                    })),
+                )
+                    .into_response())
             }
         }
         None => {
             log::warn!("Missing CSRF nonce header");
-            Err((StatusCode::FORBIDDEN, Json(serde_json::json!({
-                "isError": true,
-                "code": -32001,
-                "message": "Missing CSRF nonce"
-            }))).into_response())
+            Err((
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32001,
+                    "message": "Missing CSRF nonce"
+                })),
+            )
+                .into_response())
         }
     }
 }
@@ -657,22 +736,32 @@ async fn validate_and_parse_request_readonly(
 }
 
 /// Parse JSON body from request (shared between full and readonly validation).
-async fn parse_request_body(
-    request: Request<Body>,
-) -> Result<serde_json::Value, Response> {
-    let body_bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024).await
-        .map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid request body"
-        }))).into_response())?;
+async fn parse_request_body(request: Request<Body>) -> Result<serde_json::Value, Response> {
+    let body_bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32700,
+                    "message": "Invalid request body"
+                })),
+            )
+                .into_response()
+        })?;
 
-    let args: serde_json::Value = serde_json::from_slice(&body_bytes)
-        .map_err(|_| (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "isError": true,
-            "code": -32700,
-            "message": "Invalid JSON"
-        }))).into_response())?;
+    let args: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "isError": true,
+                "code": -32700,
+                "message": "Invalid JSON"
+            })),
+        )
+            .into_response()
+    })?;
 
     Ok(args)
 }
@@ -689,10 +778,7 @@ async fn handle_create_signature(
     forward_to_frontend_with_rotation(state, "createSignature", args, origin).await
 }
 
-async fn handle_create_action(
-    State(state): State<AppState>,
-    request: Request<Body>,
-) -> Response {
+async fn handle_create_action(State(state): State<AppState>, request: Request<Body>) -> Response {
     let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
         Err(e) => return e,
@@ -701,10 +787,7 @@ async fn handle_create_action(
     forward_to_frontend_with_rotation(state, "createAction", args, origin).await
 }
 
-async fn handle_list_outputs(
-    State(state): State<AppState>,
-    request: Request<Body>,
-) -> Response {
+async fn handle_list_outputs(State(state): State<AppState>, request: Request<Body>) -> Response {
     // S-27: Read-only operation — skip CSRF nonce validation (SDK doesn't send nonces for reads)
     let (args, origin) = match validate_and_parse_request_readonly(request).await {
         Ok(v) => v,
@@ -714,10 +797,7 @@ async fn handle_list_outputs(
     forward_to_frontend(state, "listOutputs", args, origin).await
 }
 
-async fn handle_lock_bsv(
-    State(state): State<AppState>,
-    request: Request<Body>,
-) -> Response {
+async fn handle_lock_bsv(State(state): State<AppState>, request: Request<Body>) -> Response {
     let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
         Err(e) => return e,
@@ -726,10 +806,7 @@ async fn handle_lock_bsv(
     forward_to_frontend_with_rotation(state, "lockBSV", args, origin).await
 }
 
-async fn handle_unlock_bsv(
-    State(state): State<AppState>,
-    request: Request<Body>,
-) -> Response {
+async fn handle_unlock_bsv(State(state): State<AppState>, request: Request<Body>) -> Response {
     let (args, origin) = match validate_and_parse_request(&state, request).await {
         Ok(v) => v,
         Err(e) => return e,
@@ -738,10 +815,7 @@ async fn handle_unlock_bsv(
     forward_to_frontend_with_rotation(state, "unlockBSV", args, origin).await
 }
 
-async fn handle_list_locks(
-    State(state): State<AppState>,
-    request: Request<Body>,
-) -> Response {
+async fn handle_list_locks(State(state): State<AppState>, request: Request<Body>) -> Response {
     // S-27: Read-only operation — skip CSRF nonce validation (SDK doesn't send nonces for reads)
     let (args, origin) = match validate_and_parse_request_readonly(request).await {
         Ok(v) => v,
@@ -781,7 +855,9 @@ async fn forward_to_frontend_impl(
 
     {
         let mut brc100_state = state.brc100_state.lock().await;
-        brc100_state.pending_responses.insert(internal_id.clone(), tx);
+        brc100_state
+            .pending_responses
+            .insert(internal_id.clone(), tx);
     }
 
     // Use actual origin from request, default to "unknown" if not provided
@@ -803,11 +879,15 @@ async fn forward_to_frontend_impl(
 
     if let Err(e) = state.app_handle.emit("brc100-request", frontend_request) {
         log::error!("Failed to emit brc100-request event: {}", e);
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-            "isError": true,
-            "code": -32000,
-            "message": "Internal error"
-        }))).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "isError": true,
+                "code": -32000,
+                "message": "Internal error"
+            })),
+        )
+            .into_response();
     }
 
     match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
@@ -839,22 +919,28 @@ async fn forward_to_frontend_impl(
                 (StatusCode::OK, json_body).into_response()
             }
         }
-        Ok(Err(_)) => {
-            (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+        Ok(Err(_)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
                 "isError": true,
                 "code": -32003,
                 "message": "Request cancelled"
-            }))).into_response()
-        }
+            })),
+        )
+            .into_response(),
         Err(_) => {
             let mut brc100_state = state.brc100_state.lock().await;
             brc100_state.pending_responses.remove(&internal_id);
 
-            (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-                "isError": true,
-                "code": -32000,
-                "message": "Request timeout"
-            }))).into_response()
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "isError": true,
+                    "code": -32000,
+                    "message": "Request timeout"
+                })),
+            )
+                .into_response()
         }
     }
 }

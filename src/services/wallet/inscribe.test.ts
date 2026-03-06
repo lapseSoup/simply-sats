@@ -40,7 +40,6 @@ describe('buildInscriptionTx', () => {
 
     const content = new Uint8Array([0x48, 0x65, 0x6c, 0x6c, 0x6f])
     const result = await buildInscriptionTx({
-      paymentWif: 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy7Y',
       paymentUtxos: [{ txid: 'aaa', vout: 0, satoshis: 10000, script: '76a91400' }],
       content,
       contentType: 'text/plain',
@@ -48,8 +47,7 @@ describe('buildInscriptionTx', () => {
     })
 
     expect(result).toBe('abc123')
-    expect(tauriInvoke).toHaveBeenCalledWith('build_inscription_tx', {
-      wif: 'KwDiBf89QgGbjEhKnhXJuH7LrciVrZi3qYjgd9M7rFU73NUBBy7Y',
+    expect(tauriInvoke).toHaveBeenCalledWith('build_inscription_tx_from_store', {
       content: [0x48, 0x65, 0x6c, 0x6c, 0x6f],
       contentType: 'text/plain',
       destAddress: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
@@ -74,7 +72,6 @@ describe('buildInscriptionTx', () => {
     const utxo = { txid: 'bbb', vout: 1, satoshis: 5000 }
 
     await buildInscriptionTx({
-      paymentWif: 'L1secret',
       paymentUtxos: [utxo as import('./types').UTXO],
       content: new Uint8Array([1]),
       contentType: 'application/octet-stream',

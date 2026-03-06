@@ -91,13 +91,24 @@ vi.mock('./cryptography', () => ({
 }))
 
 // Mock RequestManager as a simple in-memory store
-const requestStore = new Map<string, { request: unknown; resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+const requestStore = new Map<string, {
+  request: unknown
+  resolve: (v: unknown) => void
+  reject: (e: Error) => void
+  expectedIdentityPubKey: string | null
+}>()
 
 vi.mock('./RequestManager', () => ({
   getRequestManager: () => ({
     get: (id: string) => requestStore.get(id),
-    add: (id: string, request: unknown, resolve: (v: unknown) => void, reject: (e: Error) => void) => {
-      requestStore.set(id, { request, resolve, reject })
+    add: (
+      id: string,
+      request: unknown,
+      resolve: (v: unknown) => void,
+      reject: (e: Error) => void,
+      expectedIdentityPubKey: string | null = null
+    ) => {
+      requestStore.set(id, { request, resolve, reject, expectedIdentityPubKey })
     },
     remove: (id: string) => requestStore.delete(id),
     getAll: () => Array.from(requestStore.values()).map(v => v.request),
@@ -114,7 +125,6 @@ vi.mock('../wallet', () => ({
   calculateTxFee: vi.fn().mockReturnValue(200),
   lockBSV: vi.fn(),
   unlockBSV: vi.fn(),
-  getWifForOperation: vi.fn().mockResolvedValue('L1testWif'),
 }))
 
 vi.mock('../database', () => ({
@@ -180,7 +190,7 @@ vi.mock('../brc/adapter', () => ({
 // Import under test
 // ---------------------------------------------------------------------------
 
-import { handleBRC100Request, rejectRequest } from './actions'
+import { handleBRC100Request, approveRequest, rejectRequest } from './actions'
 import type { WalletKeys } from '../wallet'
 
 // ---------------------------------------------------------------------------
@@ -449,6 +459,7 @@ describe('BRC-100 Actions', () => {
 
       // Resolve it manually
       const pending = requestStore.get('req9')!
+      expect(pending.expectedIdentityPubKey).toBe(mockKeys.identityPubKey)
       pending.resolve({ id: 'req9', result: { signature: [1, 2, 3] } })
 
       const response = await responsePromise
@@ -476,6 +487,7 @@ describe('BRC-100 Actions', () => {
 
       // Resolve manually
       const pending = requestStore.get('req10')!
+      expect(pending.expectedIdentityPubKey).toBe(mockKeys.identityPubKey)
       pending.resolve({ id: 'req10', result: { txid: 'abc123' } })
 
       const response = await responsePromise
@@ -506,6 +518,63 @@ describe('BRC-100 Actions', () => {
   })
 
   // =========================================================================
+  // approveRequest
+  // =========================================================================
+
+  describe('approveRequest', () => {
+    it('rejects approval when no wallet is loaded at approval time', async () => {
+      let resolvedResponse: unknown = null
+      const promise = new Promise<void>((resolve) => {
+        requestStore.set('req-approve-no-wallet', {
+          request: { id: 'req-approve-no-wallet', type: 'createAction', params: { description: 'Test' } },
+          resolve: (response: unknown) => {
+            resolvedResponse = response
+            resolve()
+          },
+          reject: vi.fn(),
+          expectedIdentityPubKey: mockKeys.identityPubKey,
+        })
+      })
+
+      await approveRequest('req-approve-no-wallet', null)
+      await promise
+
+      expect(resolvedResponse).toEqual({
+        id: 'req-approve-no-wallet',
+        error: { code: -32002, message: 'No wallet loaded' },
+      })
+      expect(requestStore.has('req-approve-no-wallet')).toBe(false)
+    })
+
+    it('rejects approval when the active wallet has changed since queuing', async () => {
+      let resolvedResponse: unknown = null
+      const promise = new Promise<void>((resolve) => {
+        requestStore.set('req-approve-changed-wallet', {
+          request: { id: 'req-approve-changed-wallet', type: 'createAction', params: { description: 'Test' } },
+          resolve: (response: unknown) => {
+            resolvedResponse = response
+            resolve()
+          },
+          reject: vi.fn(),
+          expectedIdentityPubKey: mockKeys.identityPubKey,
+        })
+      })
+
+      await approveRequest('req-approve-changed-wallet', {
+        ...mockKeys,
+        identityPubKey: '02' + 'd'.repeat(64),
+      })
+      await promise
+
+      expect(resolvedResponse).toEqual({
+        id: 'req-approve-changed-wallet',
+        error: { code: -32002, message: 'Wallet state has changed since approval was initiated' },
+      })
+      expect(requestStore.has('req-approve-changed-wallet')).toBe(false)
+    })
+  })
+
+  // =========================================================================
   // rejectRequest
   // =========================================================================
 
@@ -515,12 +584,13 @@ describe('BRC-100 Actions', () => {
       const promise = new Promise<void>((resolve) => {
         requestStore.set('req-to-reject', {
           request: { id: 'req-to-reject', type: 'createAction', params: {} },
-          resolve: (response: unknown) => {
-            resolvedResponse = response
-            resolve()
-          },
-          reject: vi.fn(),
-        })
+        resolve: (response: unknown) => {
+          resolvedResponse = response
+          resolve()
+        },
+        reject: vi.fn(),
+        expectedIdentityPubKey: null,
+      })
       })
 
       await rejectRequest('req-to-reject')
@@ -542,6 +612,7 @@ describe('BRC-100 Actions', () => {
         request: { id: 'req-audit', type: 'createAction', params: { description: 'Test' } },
         resolve: vi.fn(),
         reject: vi.fn(),
+        expectedIdentityPubKey: null,
       })
 
       await rejectRequest('req-audit')

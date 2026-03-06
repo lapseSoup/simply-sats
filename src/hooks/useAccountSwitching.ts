@@ -10,8 +10,9 @@
  */
 
 import { useCallback, useRef, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
-import type { WalletKeys, LockedUTXO, PublicWalletKeys } from '../services/wallet'
-import type { Account } from '../services/accounts'
+import type { Account } from '../domain/accounts'
+import type { ActiveWallet, WalletKeys, LockedUTXO, PublicWalletKeys, SessionWallet } from '../services/wallet'
+import { toSessionWallet } from '../services/wallet'
 import { getActiveAccount, getAccountById, switchAccount as switchAccountDb } from '../services/accounts'
 import { discoverAccounts } from '../services/accountDiscovery'
 import {
@@ -46,7 +47,7 @@ interface UseAccountSwitchingOptions {
   accountsImportAccount: (name: string, mnemonic: string, password: string | null) => Promise<{ keys: WalletKeys; accountId: number } | null>
   accountsDeleteAccount: (accountId: number) => Promise<boolean>
   getKeysForAccount: (account: Account, password: string | null) => Promise<WalletKeys | null>
-  setWallet: (wallet: WalletKeys | null) => void
+  setWallet: (wallet: ActiveWallet | null) => void
   setIsLocked: Dispatch<SetStateAction<boolean>>
   setLocks: (locks: LockedUTXO[]) => void
   resetSync: (initialBalance?: number) => void
@@ -59,12 +60,12 @@ interface UseAccountSwitchingOptions {
   applyCachedAccountSnapshot: (accountId: number) => boolean
   /** DB-only data loader from SyncContext — loads all cached data without API calls */
   fetchDataFromDB: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     onLocksLoaded: (locks: LockedUTXO[]) => void,
     isCancelled?: () => boolean
   ) => Promise<void>
-  wallet: WalletKeys | null
+  wallet: ActiveWallet | null
   accounts: Account[]
 }
 
@@ -76,37 +77,16 @@ interface UseAccountSwitchingReturn {
 }
 
 /**
- * Map PublicWalletKeys (from Rust) to WalletKeys (for React state).
- * WIFs are left empty — all signing goes through Rust _from_store commands.
- */
-function pubKeysToWalletKeys(pubKeys: PublicWalletKeys, accountIndex: number): WalletKeys {
-  return {
-    mnemonic: '',
-    walletType: pubKeys.walletType as 'yours',
-    walletWif: '',
-    walletAddress: pubKeys.walletAddress,
-    walletPubKey: pubKeys.walletPubKey,
-    ordWif: '',
-    ordAddress: pubKeys.ordAddress,
-    ordPubKey: pubKeys.ordPubKey,
-    identityWif: '',
-    identityAddress: pubKeys.identityAddress,
-    identityPubKey: pubKeys.identityPubKey,
-    accountIndex
-  }
-}
-
-/**
  * Switch account keys entirely in Rust — mnemonic never leaves native memory.
  * Returns null if mnemonic is not available (wallet locked or cleared).
  */
-async function deriveKeysFromRust(account: Account): Promise<WalletKeys | null> {
+async function deriveKeysFromRust(account: Account): Promise<SessionWallet | null> {
   try {
     const accountIndex = account.derivationIndex ?? ((account.id ?? 1) - 1)
     _lastSwitchDiag = `Rust: calling switch_account_from_store idx=${accountIndex}...`
 
     const pubKeys = await tauriInvoke<PublicWalletKeys>('switch_account_from_store', { accountIndex })
-    const keys = pubKeysToWalletKeys(pubKeys, accountIndex)
+    const keys = toSessionWallet(pubKeys, accountIndex)
 
     _lastSwitchDiag = `Rust: OK addr=${keys.walletAddress?.substring(0, 8)}`
     return keys
@@ -144,7 +124,7 @@ export function useAccountSwitching({
   const pendingSwitchRef = useRef<number | null>(null)
 
   const loadAccountDataFromDB = useCallback(async (
-    keys: WalletKeys,
+    keys: ActiveWallet,
     accountId: number,
     clearOnFailure: boolean
   ): Promise<boolean> => {
@@ -271,7 +251,7 @@ export function useAccountSwitching({
         // keys from the old account, loading wrong data. By setting wallet first,
         // checkSync won't fire until activeAccountId also changes — at which point
         // both values are correct.
-        setWallet({ ...keys, mnemonic: '' })
+        setWallet(keys)
         setIsLocked(false)
 
         const hydratedFromCache = applyCachedAccountSnapshot(accountId)
@@ -334,7 +314,7 @@ export function useAccountSwitching({
         switchAccount(pendingId).catch(e => walletLogger.error('Queued switch failed', e))
       }
     }
-  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, resetKnownUnlockedLocks, storeKeysInRust, setIsLocked, applyCachedAccountSnapshot, loadAccountDataFromDB])
+  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, resetKnownUnlockedLocks, storeKeysInRust, setIsLocked, applyCachedAccountSnapshot, loadAccountDataFromDB, fetchVersionRef])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     if (switchingRef.current) {
@@ -379,7 +359,7 @@ export function useAccountSwitching({
       }
 
       // CRITICAL ORDER: set wallet first, then activeAccountId, to prevent one-behind sync writes.
-      setWallet({ ...keys, mnemonic: '' })
+      setWallet(keys)
       setIsLocked(false)
 
       // Preload DB-scoped data before exposing the new active account in UI.
@@ -468,7 +448,7 @@ export function useAccountSwitching({
       }
 
       // CRITICAL ORDER: set wallet first, then activeAccountId, to prevent one-behind sync writes.
-      setWallet({ ...keys, mnemonic: '' })
+      setWallet(keys)
       setIsLocked(false)
 
       // Preload DB-scoped data before exposing the new active account in UI.
@@ -545,8 +525,7 @@ export function useAccountSwitching({
           }
         }
         if (keys) {
-          // Strip mnemonic from React state (mnemonic lives in Rust key store)
-          setWallet({ ...keys, mnemonic: '' })
+          setWallet(keys)
           await refreshAccounts()
           setActiveAccountState(active, active.id ?? null)
         } else {

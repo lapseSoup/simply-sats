@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, memo, useCallback, type CSSProper
 import { Search, LayoutGrid, List as ListIcon, ChevronRight, PenLine } from 'lucide-react'
 import { List } from 'react-window'
 import { useWalletState, useSyncContext } from '../../contexts'
-import type { Ordinal } from '../../services/wallet'
+import type { Ordinal } from '../../domain/types'
 import { EmptyState, NoOrdinalsEmpty } from '../shared/EmptyState'
 import { OrdinalsGridSkeleton } from '../shared/Skeleton'
 import { OrdinalImage } from '../shared/OrdinalImage'

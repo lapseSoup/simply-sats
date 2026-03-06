@@ -232,15 +232,6 @@ export interface PlatformAdapter {
   /** Rotate session credentials for an account */
   rotateSessionForAccount(accountId: string): Promise<void>
 
-  /** Get the wallet WIF for a one-time operation */
-  getWifForOperation(): Promise<string>
-
-  /** Get the mnemonic once (consumed after read) */
-  getMnemonicOnce(): Promise<string>
-
-  /** Get the mnemonic without clearing it from the store */
-  getMnemonic(): Promise<string>
-
   /** Clear all keys from the store */
   clearKeys(): Promise<void>
 

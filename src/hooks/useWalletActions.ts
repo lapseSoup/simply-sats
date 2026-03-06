@@ -5,7 +5,8 @@
  */
 
 import { useCallback, useRef, type MutableRefObject } from 'react'
-import type { WalletKeys } from '../services/wallet'
+import type { Account } from '../domain/accounts'
+import type { ActiveWallet } from '../services/wallet'
 import {
   createWallet,
   restoreWallet,
@@ -15,7 +16,6 @@ import {
   clearWallet
 } from '../services/wallet'
 import { tauriInvoke } from '../utils/tauri'
-import type { Account } from '../services/accounts'
 import {
   getActiveAccount,
   migrateToMultiAccount
@@ -34,7 +34,7 @@ import { audit } from '../services/auditLog'
 import { setSessionPassword as setModuleSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
 
 interface UseWalletActionsOptions {
-  setWallet: (wallet: WalletKeys | null) => void
+  setWallet: (wallet: ActiveWallet | null) => void
   setIsLocked: (locked: boolean) => void
   setSessionPassword: (password: string | null) => void
   setContacts: (contacts: []) => void
@@ -109,8 +109,8 @@ export function useWalletActions({
       if (activeAccForCreate) {
         setActiveAccountState(activeAccForCreate, activeAccForCreate.id ?? null)
       }
-      // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
-      setWallet({ ...keys, mnemonic: '' })
+      // WalletProvider sanitizes long-lived session state for desktop/Tauri.
+      setWallet(keys)
       const sessionPwd = password ?? ''
       setSessionPassword(sessionPwd)
       setModuleSessionPassword(sessionPwd)
@@ -153,9 +153,8 @@ export function useWalletActions({
       // have propagated it before onSuccess() closes the modal. Explicitly setting it here
       // avoids a race where wallet is set but activeAccountId is still null.
       const activeAcc = await getActiveAccount()
-      // Populate the Rust key store so operations requiring a WIF (lockBSV, sign, etc.)
-      // work immediately after restore — without this, get_wif_for_operation returns
-      // "Wallet is locked" because the key store is only populated on unlock/startup.
+      // Populate the Rust key store so store-backed signing/build flows work
+      // immediately after restore instead of waiting for unlock/startup.
       await storeKeysInRust(mnemonic.trim(), activeAcc?.derivationIndex ?? 0)
       // Queue account discovery BEFORE any React state setters fire.
       // setActiveAccountState + setWallet trigger App.tsx's checkSync effect.
@@ -165,8 +164,8 @@ export function useWalletActions({
       if (activeAcc) {
         setActiveAccountState(activeAcc, activeAcc.id ?? null)
       }
-      // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
-      setWallet({ ...keys, mnemonic: '' })
+      // WalletProvider sanitizes long-lived session state for desktop/Tauri.
+      setWallet(keys)
       const sessionPwd = password ?? ''
       setSessionPassword(sessionPwd)
       setModuleSessionPassword(sessionPwd)
@@ -229,8 +228,8 @@ export function useWalletActions({
       if (activeAccForImport) {
         setActiveAccountState(activeAccForImport, activeAccForImport.id ?? null)
       }
-      // Store keys in React state WITHOUT mnemonic (mnemonic lives in Rust key store)
-      setWallet({ ...keys, mnemonic: '' })
+      // WalletProvider sanitizes long-lived session state for desktop/Tauri.
+      setWallet(keys)
       const sessionPwd = password ?? ''
       setSessionPassword(sessionPwd)
       setModuleSessionPassword(sessionPwd)

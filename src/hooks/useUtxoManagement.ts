@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { getAllUTXOs, toggleUtxoFrozen } from '../infrastructure/database'
-import type { UTXO } from '../infrastructure/database'
+import type { DBUtxo } from '../domain/types'
 import { uiLogger } from '../services/logger'
 
 interface UseUtxoManagementOptions {
@@ -15,11 +15,11 @@ interface UseUtxoManagementOptions {
   /** Only load on mount (default: true) */
   autoLoad?: boolean
   /** Filter function applied after loading */
-  filter?: (utxo: UTXO) => boolean
+  filter?: (utxo: DBUtxo) => boolean
 }
 
 interface UseUtxoManagementResult {
-  utxos: UTXO[]
+  utxos: DBUtxo[]
   loading: boolean
   reload: () => Promise<void>
   toggleFreeze: (txid: string, vout: number, currentlySpendable: boolean) => Promise<void>
@@ -31,7 +31,7 @@ interface UseUtxoManagementResult {
  */
 export function useUtxoManagement(options: UseUtxoManagementOptions = {}): UseUtxoManagementResult {
   const { accountId, autoLoad = true, filter } = options
-  const [utxos, setUtxos] = useState<UTXO[]>([])
+  const [utxos, setUtxos] = useState<DBUtxo[]>([])
   const [loading, setLoading] = useState(false)
 
   const reload = useCallback(async () => {

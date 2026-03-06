@@ -8,13 +8,13 @@
  */
 
 import { createContext, useContext } from 'react'
-import type { WalletKeys, LockedUTXO, Ordinal } from '../domain/types'
+import type { ActiveWallet, LockedUTXO, Ordinal } from '../domain/types'
 import type { UTXO as DatabaseUTXO } from '../infrastructure/database'
 import type { WalletResult } from '../domain/types'
 import type { RecipientOutput } from '../domain/transaction/builder'
 
 export interface WalletActionsContextType {
-  setWallet: (wallet: WalletKeys | null) => void
+  setWallet: (wallet: ActiveWallet | null) => void
   setSessionPassword: (password: string | null) => void
 
   // Account actions

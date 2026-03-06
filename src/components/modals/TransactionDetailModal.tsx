@@ -3,13 +3,10 @@ import { useUI } from '../../contexts/UIContext'
 import { openExternalUrl } from '../../utils/opener'
 import { openViewerWindow } from '../../utils/window'
 import { ExternalLink } from 'lucide-react'
-import { getTransactionByTxid } from '../../infrastructure/database'
 import { useWalletState } from '../../contexts'
-import { getWocClient } from '../../infrastructure/api/wocClient'
-import { btcToSatoshis } from '../../utils/satoshiConversion'
+import { useTransactionDetails } from '../../hooks/useTransactionDetails'
 import { useTransactionLabels } from '../../hooks/useTransactionLabels'
 import { Modal } from '../shared/Modal'
-import { resolveInscriptionOrigin } from '../../services/wallet/ordinalContent'
 
 // Default label suggestions (always shown as fallback)
 const DEFAULT_LABELS = ['personal', 'business', 'exchange']
@@ -22,33 +19,6 @@ function parseFee(amount?: number, description?: string): number | null {
   const primaryAmount = parseInt(match[1]!, 10)
   const fee = Math.abs(amount) - primaryAmount
   return fee > 0 ? fee : null
-}
-
-// Slow path: compute fee from blockchain (sum inputs - sum outputs)
-async function computeFeeFromBlockchain(txid: string): Promise<number | null> {
-  try {
-    const wocClient = getWocClient()
-    const tx = await wocClient.getTransactionDetails(txid)
-    if (!tx) return null
-
-    const totalOut = tx.vout.reduce((sum, o) => sum + btcToSatoshis(o.value), 0)
-
-    let totalIn = 0
-    for (const vin of tx.vin) {
-      if (vin.coinbase) return null // coinbase txs have no user-paid fee
-      if (vin.txid && vin.vout !== undefined) {
-        const prevTx = await wocClient.getTransactionDetails(vin.txid)
-        if (prevTx?.vout?.[vin.vout]) {
-          totalIn += btcToSatoshis(prevTx.vout[vin.vout]!.value)
-        }
-      }
-    }
-
-    const fee = totalIn - totalOut
-    return fee > 0 ? fee : null
-  } catch {
-    return null
-  }
 }
 
 interface TransactionDetailModalProps {
@@ -69,6 +39,11 @@ export function TransactionDetailModal({
 }: TransactionDetailModalProps) {
   const { copyToClipboard, showToast, formatUSD, displayInSats, formatBSVShort } = useUI()
   const { activeAccountId, ordinals } = useWalletState()
+  const {
+    loadTransactionRecord,
+    computeFeeFromBlockchain,
+    resolveOrdinalOrigin,
+  } = useTransactionDetails(activeAccountId)
 
   // Extract ordinal origin from description if this is an ordinal transfer
   // New format: "Transferred ordinal {txid}_{vout} to {addr}..."
@@ -92,7 +67,7 @@ export function TransactionDetailModal({
     if (!effectiveOrdinalOrigin) return
     // Resolve the inscription origin — the outpoint in the tx description may
     // differ from the inscription origin that GorillaPool's /content/ endpoint expects.
-    const resolvedOrigin = await resolveInscriptionOrigin(effectiveOrdinalOrigin) || effectiveOrdinalOrigin
+    const resolvedOrigin = await resolveOrdinalOrigin(effectiveOrdinalOrigin) || effectiveOrdinalOrigin
     const label = `ordinal-${resolvedOrigin.slice(0, 12).replace(/[^a-zA-Z0-9-_]/g, '_')}`
     const imageUrl = `https://ordinals.gorillapool.io/content/${resolvedOrigin}`
     const viewerUrl = `${window.location.origin}/ordinal-viewer.html?src=${encodeURIComponent(imageUrl)}`
@@ -104,7 +79,7 @@ export function TransactionDetailModal({
       width: 800,
       height: 800,
     })
-  }, [effectiveOrdinalOrigin])
+  }, [effectiveOrdinalOrigin, resolveOrdinalOrigin])
 
   // Labels via hook (handles loading, optimistic updates, suggestions)
   const { labels, suggestedLabels: hookSuggestions, loading: labelsLoading, addLabel, removeLabel } = useTransactionLabels({
@@ -128,34 +103,58 @@ export function TransactionDetailModal({
 
   // Load fee and address data (labels handled by hook)
   useEffect(() => {
+    let cancelled = false
+
     const loadFeeData = async () => {
       try {
+        setFee(null)
+        setRecipientAddress(null)
+
         if (!activeAccountId) return
-        const dbRecordResult = await getTransactionByTxid(transaction.tx_hash, activeAccountId)
-        const dbRecord = dbRecordResult.ok ? dbRecordResult.value : null
+
+        const dbRecord = await loadTransactionRecord(transaction.tx_hash)
+        if (cancelled) return
 
         const effectiveAmount = transaction.amount ?? dbRecord?.amount
         const effectiveDescription = transaction.description ?? dbRecord?.description
 
         // Extract recipient address from description (e.g. "Sent 25 sats to 1ABC...")
         const addrMatch = effectiveDescription?.match(/to\s+([A-Za-z0-9]+)$/)
-        if (addrMatch?.[1]) setRecipientAddress(addrMatch[1])
+        if (!cancelled) {
+          setRecipientAddress(addrMatch?.[1] ?? null)
+        }
 
         const descFee = parseFee(effectiveAmount, effectiveDescription)
 
         if (descFee !== null) {
-          setFee(descFee)
+          if (!cancelled) {
+            setFee(descFee)
+          }
         } else if (effectiveAmount !== undefined && effectiveAmount < 0) {
           // Slow path: compute from blockchain for outgoing txs
           const blockchainFee = await computeFeeFromBlockchain(transaction.tx_hash)
-          if (blockchainFee !== null) setFee(blockchainFee)
+          if (!cancelled && blockchainFee !== null) {
+            setFee(blockchainFee)
+          }
         }
       } catch {
         // Fee data is non-critical
       }
     }
-    loadFeeData()
-  }, [transaction.tx_hash, transaction.amount, transaction.description, activeAccountId])
+
+    void loadFeeData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    transaction.tx_hash,
+    transaction.amount,
+    transaction.description,
+    activeAccountId,
+    loadTransactionRecord,
+    computeFeeFromBlockchain,
+  ])
 
   const openOnWoC = () => {
     openExternalUrl(`https://whatsonchain.com/tx/${transaction.tx_hash}`)

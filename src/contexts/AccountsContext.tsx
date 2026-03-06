@@ -14,13 +14,13 @@ import {
 } from '../services/accounts'
 import { accountLogger } from '../services/logger'
 
-interface AccountsContextType {
-  // Account state
+interface AccountsStateContextType {
   accounts: Account[]
   activeAccount: Account | null
   activeAccountId: number | null
+}
 
-  // Account actions
+interface AccountOperationsContextType {
   switchAccount: (accountId: number, password: string | null) => Promise<WalletKeys | null>
   createNewAccount: (name: string, password: string | null) => Promise<{ keys: WalletKeys; accountId: number } | null>
   importAccount: (name: string, mnemonic: string, password: string | null) => Promise<{ keys: WalletKeys; accountId: number } | null>
@@ -38,13 +38,23 @@ interface AccountsContextType {
   getKeysForAccount: (account: Account, password: string | null) => Promise<WalletKeys | null>
 }
 
-const AccountsContext = createContext<AccountsContextType | null>(null)
+const AccountsStateContext = createContext<AccountsStateContextType | null>(null)
+const AccountOperationsContext = createContext<AccountOperationsContextType | null>(null)
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function useAccounts() {
-  const context = useContext(AccountsContext)
+export function useAccountsState() {
+  const context = useContext(AccountsStateContext)
   if (!context) {
-    throw new Error('useAccounts must be used within an AccountsProvider')
+    throw new Error('useAccountsState must be used within an AccountsProvider')
+  }
+  return context
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useAccountOperations() {
+  const context = useContext(AccountOperationsContext)
+  if (!context) {
+    throw new Error('useAccountOperations must be used within an AccountsProvider')
   }
   return context
 }
@@ -245,10 +255,13 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     }
   }, [refreshAccounts])
 
-  const value: AccountsContextType = useMemo(() => ({
+  const stateValue: AccountsStateContextType = useMemo(() => ({
     accounts,
     activeAccount,
-    activeAccountId,
+    activeAccountId
+  }), [accounts, activeAccount, activeAccountId])
+
+  const operationsValue: AccountOperationsContextType = useMemo(() => ({
     switchAccount,
     createNewAccount,
     importAccount,
@@ -258,11 +271,13 @@ export function AccountsProvider({ children }: AccountsProviderProps) {
     resetAccounts,
     setActiveAccountState,
     getKeysForAccount
-  }), [accounts, activeAccount, activeAccountId, switchAccount, createNewAccount, importAccount, deleteAccount, renameAccount, refreshAccounts, resetAccounts, setActiveAccountState, getKeysForAccount])
+  }), [switchAccount, createNewAccount, importAccount, deleteAccount, renameAccount, refreshAccounts, resetAccounts, setActiveAccountState, getKeysForAccount])
 
   return (
-    <AccountsContext.Provider value={value}>
-      {children}
-    </AccountsContext.Provider>
+    <AccountsStateContext.Provider value={stateValue}>
+      <AccountOperationsContext.Provider value={operationsValue}>
+        {children}
+      </AccountOperationsContext.Provider>
+    </AccountsStateContext.Provider>
   )
 }

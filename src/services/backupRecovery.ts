@@ -25,16 +25,24 @@ import { isTauri, tauriInvoke } from '../utils/tauri'
 // ============================================
 
 /**
- * Account data recovered from an external backup
+ * Encrypted account record read from an external backup.
  */
-export interface RecoveredAccount {
+export interface RecoveredBackupAccount {
   id: number
   name: string
   identityAddress: string
   encryptedKeys: string
   createdAt: number
-  /** Populated after password validation */
-  decryptedKeys?: WalletKeys
+}
+
+/**
+ * Sanitized recovered account summary exposed to the UI.
+ */
+export interface RecoveredAccount {
+  id: number
+  name: string
+  identityAddress: string
+  createdAt: number
   /** Populated after blockchain query */
   liveUtxos?: UTXO[]
   /** Sum of live UTXOs in satoshis */
@@ -64,6 +72,27 @@ export interface SweepEstimate {
 import type { SqlJsStatic } from 'sql.js'
 
 let sqlInstance: SqlJsStatic | null = null
+const recoveredAccountKeySession = new Map<number, WalletKeys>()
+
+function setRecoveredAccountKeys(accountId: number, keys: WalletKeys): void {
+  recoveredAccountKeySession.set(accountId, keys)
+}
+
+function getRecoveredAccountKeys(accountId: number): WalletKeys | null {
+  return recoveredAccountKeySession.get(accountId) ?? null
+}
+
+function requireRecoveredAccountKeys(accountId: number): WalletKeys {
+  const keys = getRecoveredAccountKeys(accountId)
+  if (!keys) {
+    throw new Error('Recovered account keys are no longer available. Re-open the backup and decrypt it again.')
+  }
+  return keys
+}
+
+export function clearRecoveredAccountSession(): void {
+  recoveredAccountKeySession.clear()
+}
 
 /**
  * Initialize sql.js WebAssembly SQLite library
@@ -89,7 +118,7 @@ async function getSqlJs(): Promise<SqlJsStatic> {
  * @param dbPath - Absolute path to the .db file
  * @returns Array of recovered account metadata (encrypted keys not yet decrypted)
  */
-export async function readExternalDatabase(dbPath: string): Promise<RecoveredAccount[]> {
+export async function readExternalDatabase(dbPath: string): Promise<RecoveredBackupAccount[]> {
   walletLogger.info('Reading external database', { path: dbPath })
 
   const SQL = await getSqlJs()
@@ -113,7 +142,7 @@ export async function readExternalDatabase(dbPath: string): Promise<RecoveredAcc
     }
 
     type AccountRow = [number, string, string, string, number]
-    const accounts: RecoveredAccount[] = results[0]!.values.map((row: unknown[]) => {
+    const accounts: RecoveredBackupAccount[] = results[0]!.values.map((row: unknown[]) => {
       const [id, name, identityAddress, encryptedKeys, createdAt] = row as AccountRow
       return { id, name, identityAddress, encryptedKeys, createdAt }
     })
@@ -131,7 +160,7 @@ export async function readExternalDatabase(dbPath: string): Promise<RecoveredAcc
  * @param folderPath - Path to the .wallet folder
  * @returns Array of recovered accounts
  */
-export async function readBackupFolder(folderPath: string): Promise<RecoveredAccount[]> {
+export async function readBackupFolder(folderPath: string): Promise<RecoveredBackupAccount[]> {
   // The .wallet folder contains simplysats.db
   // Strip any trailing separator, then use the platform's native separator
   const cleanPath = folderPath.replace(/[/\\]+$/, '')
@@ -160,7 +189,7 @@ export async function readBackupFolder(folderPath: string): Promise<RecoveredAcc
  * @throws Error if password is incorrect or data is corrupted
  */
 export async function decryptBackupAccount(
-  account: RecoveredAccount,
+  account: RecoveredBackupAccount,
   password: string
 ): Promise<WalletKeys> {
   walletLogger.debug('Decrypting account', { name: account.name })
@@ -207,21 +236,29 @@ export async function decryptBackupAccount(
 /**
  * Decrypt all accounts in a backup with the same password
  *
- * @param accounts - Array of recovered accounts
+ * @param accounts - Array of recovered backup accounts
  * @param password - Password for decryption
- * @returns Accounts with decryptedKeys populated
+ * @returns Sanitized recovered accounts; decrypted keys are held only in the recovery session.
  */
 export async function decryptAllAccounts(
-  accounts: RecoveredAccount[],
+  accounts: RecoveredBackupAccount[],
   password: string
 ): Promise<RecoveredAccount[]> {
+  clearRecoveredAccountSession()
   const results: RecoveredAccount[] = []
 
   for (const account of accounts) {
     try {
       const decryptedKeys = await decryptBackupAccount(account, password)
-      results.push({ ...account, decryptedKeys })
+      setRecoveredAccountKeys(account.id, decryptedKeys)
+      results.push({
+        id: account.id,
+        name: account.name,
+        identityAddress: account.identityAddress,
+        createdAt: account.createdAt
+      })
     } catch (error) {
+      clearRecoveredAccountSession()
       walletLogger.error('Failed to decrypt account', { name: account.name, error })
       throw new Error(`Failed to decrypt account "${account.name}": ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
@@ -277,13 +314,14 @@ export async function fetchAllBalances(
   const results: RecoveredAccount[] = []
 
   for (const account of accounts) {
-    if (!account.decryptedKeys) {
+    const recoveredKeys = getRecoveredAccountKeys(account.id)
+    if (!recoveredKeys) {
       results.push(account)
       continue
     }
 
     try {
-      const liveUtxos = await fetchLiveUtxos(account.decryptedKeys)
+      const liveUtxos = await fetchLiveUtxos(recoveredKeys)
       const liveBalance = liveUtxos.reduce((sum, u) => sum + u.satoshis, 0)
 
       results.push({
@@ -376,6 +414,18 @@ export async function addRecoveredAccount(
   return accountId
 }
 
+export async function addRecoveredAccountFromSession(
+  accountId: number,
+  originalName: string,
+  currentPassword: string
+): Promise<number> {
+  return addRecoveredAccount(
+    requireRecoveredAccountKeys(accountId),
+    originalName,
+    currentPassword
+  )
+}
+
 // ============================================
 // Sweep Transaction
 // ============================================
@@ -460,4 +510,18 @@ export async function executeSweep(
   })
 
   return txid
+}
+
+export async function executeRecoveredAccountSweep(
+  accountId: number,
+  destinationAddress: string,
+  utxos: UTXO[],
+  feeRate: number = DEFAULT_FEE_RATE
+): Promise<string> {
+  return executeSweep(
+    requireRecoveredAccountKeys(accountId),
+    destinationAddress,
+    utxos,
+    feeRate
+  )
 }

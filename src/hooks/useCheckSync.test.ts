@@ -45,7 +45,7 @@ import { getAccountKeys, getAllAccounts } from '../services/accounts'
 import { getSessionPassword } from '../services/sessionPasswordStore'
 import { switchJustCompleted } from './useAccountSwitching'
 import type { WalletKeys } from '../services/wallet'
-import type { Account } from '../services/accounts'
+import type { Account } from '../domain/accounts'
 
 const mockedNeedsInitialSync = vi.mocked(needsInitialSync)
 const mockedGetLastSyncTimeForAccount = vi.mocked(getLastSyncTimeForAccount)
@@ -79,7 +79,6 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     id: 1,
     name: 'Test Account',
     identityAddress: '1TestIdentity',
-    encryptedKeys: '{}',
     isActive: true,
     createdAt: Date.now(),
     derivationIndex: 0,

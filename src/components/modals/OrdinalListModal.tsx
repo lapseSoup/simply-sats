@@ -9,10 +9,10 @@ import { CircleCheck, AlertTriangle } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { OrdinalImage } from '../shared/OrdinalImage'
-import type { Ordinal } from '../../services/wallet'
+import type { Ordinal } from '../../domain/types'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { calculateTxFee } from '../../services/wallet/fees'
+import { calculateTxFee, DEFAULT_FEE_RATE } from '../../domain/transaction/fees'
 import { isOk } from '../../domain/types'
 
 interface OrdinalListModalProps {
@@ -29,7 +29,8 @@ export function OrdinalListModal({
   const { showToast } = useUI()
 
   // Listing fee: 1 ordinal input + 1-2 funding inputs, 2 outputs (locked ordinal + change)
-  const estimatedFee = calculateTxFee(2, 2)
+  const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : DEFAULT_FEE_RATE
+  const estimatedFee = calculateTxFee(2, 2, feeRate)
   const [priceSats, setPriceSats] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

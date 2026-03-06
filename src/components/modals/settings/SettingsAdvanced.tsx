@@ -9,9 +9,7 @@ import {
 } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
-// TODO(A-45): Deep service imports — expose via context hook or barrel when available
-import { addKnownSender, getKnownSenders, debugFindInvoiceNumber } from '../../../services/keyDerivation'
-import { checkForPayments, getPaymentNotifications } from '../../../services/messageBox'
+import { useSettingsAdvancedTools } from '../../../hooks/useSettingsAdvancedTools'
 import { ConfirmationModal } from '../../shared/ConfirmationModal'
 import { UTXOsTab } from '../../tabs/UTXOsTab'
 import { handleKeyDown } from './settingsKeyDown'
@@ -20,6 +18,8 @@ export function SettingsAdvanced() {
   const { wallet } = useWalletState()
   const { performSync, fetchData } = useWalletActions()
   const { showToast } = useUI()
+  const { addSender, checkMessageBox, debugSearch, getPaymentNotifications, getKnownSenders } =
+    useSettingsAdvancedTools(wallet?.identityPubKey, fetchData, showToast)
 
   const [showSenderInput, setShowSenderInput] = useState(false)
   const [senderInput, setSenderInput] = useState('')
@@ -35,63 +35,34 @@ export function SettingsAdvanced() {
   const [showUtxoExplorer, setShowUtxoExplorer] = useState(false)
 
   const handleAddKnownSender = useCallback(() => {
-    if (senderInput.length === 66) {
-      addKnownSender(senderInput)
+    if (addSender(senderInput)) {
       setSenderInput('')
       setShowSenderInput(false)
-      fetchData()
-      showToast('Sender added!')
-    } else {
-      showToast('Invalid: must be 66 hex chars', 'warning')
     }
-  }, [senderInput, fetchData, showToast])
+  }, [addSender, senderInput])
 
   const handleCheckMessageBox = useCallback(async () => {
-    if (!wallet) return
     try {
-      const { getWifForOperation } = await import('../../../services/wallet')
-      const identityWif = await getWifForOperation('identity', 'checkMessageBox', wallet)
-      const newPayments = await checkForPayments(identityWif)
-      setPaymentNotifications(getPaymentNotifications())
-      if (newPayments.length > 0) {
-        showToast(`Found ${newPayments.length} new payment(s)!`)
-        fetchData()
-      } else {
-        showToast('No new payments')
-      }
+      const notifications = await checkMessageBox()
+      if (notifications) setPaymentNotifications(notifications)
     } catch (_e) {
       showToast('MessageBox check failed', 'error')
     }
-  }, [wallet, fetchData, showToast])
+  }, [checkMessageBox, showToast])
 
   const handleDebugSearch = useCallback(() => {
     if (!debugAddressInput || !wallet) return
-    const senders = getKnownSenders()
-    if (senders.length === 0) {
-      setDebugResult('No known senders')
-      return
-    }
     setDebugSearching(true)
     setDebugResult('Searching...')
     setTimeout(async () => {
       try {
-        const { getWifForOperation } = await import('../../../services/wallet')
-        const identityWif = await getWifForOperation('identity', 'debugInvoiceFinder', wallet)
-        for (const sender of senders) {
-          const result = await debugFindInvoiceNumber(identityWif, sender, debugAddressInput)
-          if (result.found) {
-            setDebugResult(`Found: "${result.invoiceNumber}"`)
-            setDebugSearching(false)
-            return
-          }
-        }
-        setDebugResult('Not found')
+        setDebugResult(await debugSearch(debugAddressInput))
       } catch (_e) {
         setDebugResult('Error')
       }
       setDebugSearching(false)
     }, 100)
-  }, [debugAddressInput, wallet])
+  }, [debugAddressInput, debugSearch, wallet])
 
   const handleResetAndResync = useCallback(() => {
     setShowResyncConfirm(true)

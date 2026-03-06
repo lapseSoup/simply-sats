@@ -26,10 +26,7 @@ pub struct EncryptedData {
 
 /// Save encrypted wallet data to secure storage
 #[tauri::command]
-pub async fn secure_storage_save(
-    app: AppHandle,
-    data: EncryptedData,
-) -> Result<(), String> {
+pub async fn secure_storage_save(app: AppHandle, data: EncryptedData) -> Result<(), String> {
     let store = app
         .store(WALLET_STORE_PATH)
         .map_err(|e| format!("Failed to open store: {}", e))?;
@@ -37,7 +34,7 @@ pub async fn secure_storage_save(
     // set() returns () - just call it
     store.set(
         WALLET_KEY.to_string(),
-        serde_json::to_value(&data).map_err(|e| e.to_string())?
+        serde_json::to_value(&data).map_err(|e| e.to_string())?,
     );
 
     // save() returns Result<()>
@@ -50,9 +47,7 @@ pub async fn secure_storage_save(
 
 /// Load encrypted wallet data from secure storage
 #[tauri::command]
-pub async fn secure_storage_load(
-    app: AppHandle,
-) -> Result<Option<EncryptedData>, String> {
+pub async fn secure_storage_load(app: AppHandle) -> Result<Option<EncryptedData>, String> {
     let store = app
         .store(WALLET_STORE_PATH)
         .map_err(|e| format!("Failed to open store: {}", e))?;
@@ -69,9 +64,7 @@ pub async fn secure_storage_load(
 
 /// Check if wallet data exists in secure storage
 #[tauri::command]
-pub async fn secure_storage_exists(
-    app: AppHandle,
-) -> Result<bool, String> {
+pub async fn secure_storage_exists(app: AppHandle) -> Result<bool, String> {
     let store = app
         .store(WALLET_STORE_PATH)
         .map_err(|e| format!("Failed to open store: {}", e))?;
@@ -81,9 +74,7 @@ pub async fn secure_storage_exists(
 
 /// Clear wallet data from secure storage
 #[tauri::command]
-pub async fn secure_storage_clear(
-    app: AppHandle,
-) -> Result<(), String> {
+pub async fn secure_storage_clear(app: AppHandle) -> Result<(), String> {
     let store = app
         .store(WALLET_STORE_PATH)
         .map_err(|e| format!("Failed to open store: {}", e))?;
@@ -102,10 +93,7 @@ pub async fn secure_storage_clear(
 /// Migrate data from localStorage to secure storage
 /// Returns true if migration occurred, false if already migrated or no data to migrate
 #[tauri::command]
-pub async fn secure_storage_migrate(
-    app: AppHandle,
-    legacy_data: String,
-) -> Result<bool, String> {
+pub async fn secure_storage_migrate(app: AppHandle, legacy_data: String) -> Result<bool, String> {
     // Check if we already have secure storage data
     let store = app
         .store(WALLET_STORE_PATH)
@@ -123,7 +111,7 @@ pub async fn secure_storage_migrate(
     // Save to secure storage - set() returns ()
     store.set(
         WALLET_KEY.to_string(),
-        serde_json::to_value(&encrypted).map_err(|e| e.to_string())?
+        serde_json::to_value(&encrypted).map_err(|e| e.to_string())?,
     );
 
     // save() returns Result<()>

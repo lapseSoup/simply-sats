@@ -235,14 +235,13 @@ describe('handleRestoreWallet', () => {
     expect(mockSaveWallet).not.toHaveBeenCalled()
   })
 
-  it('stores keys in React state WITHOUT mnemonic', async () => {
+  it('passes restored keys to WalletProvider for session sanitization', async () => {
     mockRestoreWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
     const { handleRestoreWallet } = useMakeActions()
     await handleRestoreWallet(VALID_MNEMONIC, VALID_PASSWORD)
 
-    // Mnemonic must not be stored in React state (it lives in Rust key store)
-    expect(mockSetWallet).toHaveBeenCalledWith({ ...testKeys, mnemonic: '' })
+    expect(mockSetWallet).toHaveBeenCalledWith(testKeys)
   })
 
   it('sets session password after successful restore', async () => {
@@ -415,13 +414,13 @@ describe('handleCreateWallet', () => {
     expect(mockCreateWallet).not.toHaveBeenCalled()
   })
 
-  it('stores keys in React state WITHOUT mnemonic', async () => {
+  it('passes created keys to WalletProvider for session sanitization', async () => {
     mockCreateWallet.mockResolvedValueOnce({ ok: true, value: testKeys })
 
     const { handleCreateWallet } = useMakeActions()
     await handleCreateWallet(VALID_PASSWORD)
 
-    expect(mockSetWallet).toHaveBeenCalledWith({ ...testKeys, mnemonic: '' })
+    expect(mockSetWallet).toHaveBeenCalledWith(testKeys)
   })
 
   it('returns null when createWallet fails', async () => {

@@ -5,7 +5,7 @@
  */
 
 import { useCallback } from 'react'
-import type { WalletKeys } from '../services/wallet'
+import type { ActiveWallet } from '../services/wallet'
 import { getAllTransactions } from '../infrastructure/database'
 import {
   syncWallet,
@@ -27,7 +27,7 @@ interface UseSyncOrchestrationOptions {
 
 interface UseSyncOrchestrationReturn {
   performSync: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     isRestore?: boolean,
     forceReset?: boolean,
@@ -48,7 +48,7 @@ export function useSyncOrchestration({
   // When silent=true, the syncing indicator is suppressed (used for background sync)
   // When isCancelled is provided, state updates are skipped if the account changed mid-sync
   const performSync = useCallback(async (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     isRestore = false,
     forceReset = false,

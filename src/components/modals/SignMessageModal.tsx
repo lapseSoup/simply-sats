@@ -2,8 +2,9 @@ import { useState, useCallback } from 'react'
 import { Modal } from '../shared/Modal'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { tauriInvoke } from '../../utils/tauri'
+import { isTauri, tauriInvoke } from '../../utils/tauri'
 import { walletLogger } from '../../services/logger'
+import { hasPrivateKeyMaterial } from '../../domain/types'
 
 interface SignMessageModalProps {
   onClose: () => void
@@ -22,10 +23,20 @@ export function SignMessageModal({ onClose }: SignMessageModalProps) {
   const handleSign = useCallback(async () => {
     if (!wallet) return
     try {
-      const sig = await tauriInvoke<string>('sign_message', {
-        wif: wallet.walletWif,
-        message,
-      })
+      const sig = isTauri()
+        ? await tauriInvoke<string>('sign_message_from_store', {
+          message,
+          keyType: 'wallet',
+        })
+        : await (async () => {
+          if (!hasPrivateKeyMaterial(wallet)) {
+            throw new Error('Private key is unavailable in this session')
+          }
+          return tauriInvoke<string>('sign_message', {
+            wif: wallet.walletWif,
+            message,
+          })
+        })()
       setSignature(sig)
       showToast('Message signed')
     } catch (err) {

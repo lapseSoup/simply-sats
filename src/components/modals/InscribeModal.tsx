@@ -9,7 +9,7 @@ import { CircleCheck, Upload } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { useWalletState } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { buildInscriptionTx } from '../../services/wallet/inscribe'
+import { useInscribeBuilder } from '../../hooks/useInscribeBuilder'
 
 const MAX_FILE_BYTES = 100 * 1024 // 100 KB
 
@@ -31,6 +31,7 @@ function formatBytes(bytes: number): string {
 export function InscribeModal({ onClose }: InscribeModalProps) {
   const { wallet, utxos } = useWalletState()
   const { showToast } = useUI()
+  const { inscribe } = useInscribeBuilder()
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
@@ -76,8 +77,7 @@ export function InscribeModal({ onClose }: InscribeModalProps) {
         throw new Error('No payment UTXOs available. Your wallet needs a balance to pay inscription fees.')
       }
 
-      const inscribedTxid = await buildInscriptionTx({
-        paymentWif: wallet.walletWif,
+      const inscribedTxid = await inscribe({
         paymentUtxos,
         content,
         contentType: selectedFile.type || 'application/octet-stream',
@@ -91,7 +91,7 @@ export function InscribeModal({ onClose }: InscribeModalProps) {
     } finally {
       setLoading(false)
     }
-  }, [selectedFile, wallet, utxos, showToast])
+  }, [selectedFile, wallet, utxos, showToast, inscribe])
 
   const handleClose = useCallback(() => {
     setSelectedFile(null)

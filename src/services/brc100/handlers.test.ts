@@ -78,7 +78,6 @@ vi.mock('./RequestManager', () => ({
 vi.mock('../wallet', () => ({
   lockBSV: vi.fn(async () => ({ ok: true, value: { txid: 'abc', lockedUtxo: {} } })),
   unlockBSV: vi.fn(async () => ({ ok: true, value: 'txid123' })),
-  getWifForOperation: vi.fn(async () => 'L1RrrnXkcKut5DEMwtDthjwRcTTwED36thyL1DebVrKuwvohjMNi'),
 }))
 
 vi.mock('../sync', () => ({

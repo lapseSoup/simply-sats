@@ -23,6 +23,7 @@ vi.mock('../../contexts', () => ({
       walletAddress: '1TestAddress123',
       walletWif: 'testWif'
     },
+    activeAccountId: 1,
     balance: 100000, // 100,000 sats
     utxos: [
       { txid: 'abc123', vout: 0, satoshis: 50000, script: 'script1' },
@@ -32,9 +33,6 @@ vi.mock('../../contexts', () => ({
   }),
   useWalletActions: () => ({
     handleSend: mockHandleSend
-  }),
-  useAccounts: () => ({
-    activeAccountId: 1
   })
 }))
 

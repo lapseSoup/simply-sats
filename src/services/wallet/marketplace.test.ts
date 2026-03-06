@@ -28,13 +28,11 @@ const dummyUtxo = { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' }
 const dummyPaymentUtxo = { txid: 'b'.repeat(64), vout: 0, satoshis: 100000, script: '' }
 
 describe('listOrdinal', () => {
-  it('invokes create_ordinal_listing and returns txid on success', async () => {
+  it('invokes create_ordinal_listing_from_store and returns txid on success', async () => {
     mockTauriInvoke.mockResolvedValue({ rawTx: 'deadbeef', txid: 'abc123' })
 
     const result = await listOrdinal(
-      'ordWif',
       dummyUtxo,
-      'payWif',
       [dummyPaymentUtxo],
       'payAddr',
       'ordAddr',
@@ -42,10 +40,8 @@ describe('listOrdinal', () => {
     )
 
     expect(result).toEqual({ ok: true, value: 'abc123' })
-    expect(mockTauriInvoke).toHaveBeenCalledWith('create_ordinal_listing', {
-      ordWif: 'ordWif',
+    expect(mockTauriInvoke).toHaveBeenCalledWith('create_ordinal_listing_from_store', {
       ordinalUtxo: { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' },
-      paymentWif: 'payWif',
       paymentUtxos: [{ txid: 'b'.repeat(64), vout: 0, satoshis: 100000, script: '' }],
       payAddress: 'payAddr',
       ordAddress: 'ordAddr',
@@ -57,9 +53,7 @@ describe('listOrdinal', () => {
     mockTauriInvoke.mockRejectedValue(new Error('signing failed'))
 
     const result = await listOrdinal(
-      'ordWif',
       dummyUtxo,
-      'payWif',
       [],
       'payAddr',
       'ordAddr',
@@ -73,9 +67,7 @@ describe('listOrdinal', () => {
     mockIsTauri.mockReturnValue(false)
 
     const result = await listOrdinal(
-      'ordWif',
       dummyUtxo,
-      'payWif',
       [],
       'payAddr',
       'ordAddr',
@@ -90,9 +82,7 @@ describe('listOrdinal', () => {
     mockIsValidBSVAddress.mockReturnValue(false)
 
     const result = await listOrdinal(
-      'ordWif',
       dummyUtxo,
-      'payWif',
       [dummyPaymentUtxo],
       'invalidAddr',
       'ordAddr',
@@ -105,9 +95,7 @@ describe('listOrdinal', () => {
 
   it('returns err for invalid price (S-70)', async () => {
     const result = await listOrdinal(
-      'ordWif',
       dummyUtxo,
-      'payWif',
       [dummyPaymentUtxo],
       'payAddr',
       'ordAddr',
@@ -120,21 +108,14 @@ describe('listOrdinal', () => {
 })
 
 describe('cancelOrdinalListing', () => {
-  it('invokes cancel_ordinal_listing and returns Result with txid', async () => {
+  it('invokes cancel_ordinal_listing_from_store and returns Result with txid', async () => {
     mockTauriInvoke.mockResolvedValue({ rawTx: 'cafebabe', txid: 'def456' })
 
-    const result = await cancelOrdinalListing(
-      'ordWif',
-      dummyUtxo,
-      'payWif',
-      [dummyPaymentUtxo],
-    )
+    const result = await cancelOrdinalListing(dummyUtxo, [dummyPaymentUtxo])
 
     expect(result).toEqual({ ok: true, value: 'def456' })
-    expect(mockTauriInvoke).toHaveBeenCalledWith('cancel_ordinal_listing', {
-      ordWif: 'ordWif',
+    expect(mockTauriInvoke).toHaveBeenCalledWith('cancel_ordinal_listing_from_store', {
       listingUtxo: { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' },
-      paymentWif: 'payWif',
       paymentUtxos: [{ txid: 'b'.repeat(64), vout: 0, satoshis: 100000, script: '' }],
     })
   })
@@ -142,7 +123,7 @@ describe('cancelOrdinalListing', () => {
   it('returns err when not in Tauri runtime (B-55)', async () => {
     mockIsTauri.mockReturnValue(false)
 
-    const result = await cancelOrdinalListing('ordWif', dummyUtxo, 'payWif', [])
+    const result = await cancelOrdinalListing(dummyUtxo, [])
 
     expect(result).toEqual({ ok: false, error: 'Marketplace requires Tauri runtime' })
   })
@@ -150,18 +131,17 @@ describe('cancelOrdinalListing', () => {
   it('returns err when Tauri invoke fails', async () => {
     mockTauriInvoke.mockRejectedValue(new Error('unlock failed'))
 
-    const result = await cancelOrdinalListing('ordWif', dummyUtxo, 'payWif', [dummyPaymentUtxo])
+    const result = await cancelOrdinalListing(dummyUtxo, [dummyPaymentUtxo])
 
     expect(result).toEqual({ ok: false, error: 'unlock failed' })
   })
 })
 
 describe('purchaseOrdinal', () => {
-  it('invokes purchase_ordinal and returns Result with txid', async () => {
+  it('invokes purchase_ordinal_from_store and returns Result with txid', async () => {
     mockTauriInvoke.mockResolvedValue({ rawTx: 'baadf00d', txid: 'ghi789' })
 
     const result = await purchaseOrdinal({
-      paymentWif: 'payWif',
       paymentUtxos: [dummyPaymentUtxo],
       ordAddress: '1BuyerOrdAddress',
       listingUtxo: dummyUtxo,
@@ -170,8 +150,7 @@ describe('purchaseOrdinal', () => {
     })
 
     expect(result).toEqual({ ok: true, value: 'ghi789' })
-    expect(mockTauriInvoke).toHaveBeenCalledWith('purchase_ordinal', {
-      paymentWif: 'payWif',
+    expect(mockTauriInvoke).toHaveBeenCalledWith('purchase_ordinal_from_store', {
       paymentUtxos: [{ txid: 'b'.repeat(64), vout: 0, satoshis: 100000, script: '' }],
       ordAddress: '1BuyerOrdAddress',
       listingUtxo: { txid: 'a'.repeat(64), vout: 0, satoshis: 1, script: '' },
@@ -184,7 +163,6 @@ describe('purchaseOrdinal', () => {
     mockIsTauri.mockReturnValue(false)
 
     const result = await purchaseOrdinal({
-      paymentWif: 'payWif',
       paymentUtxos: [],
       ordAddress: '1Addr',
       listingUtxo: dummyUtxo,
@@ -199,7 +177,6 @@ describe('purchaseOrdinal', () => {
     mockIsValidBSVAddress.mockReturnValue(false)
 
     const result = await purchaseOrdinal({
-      paymentWif: 'payWif',
       paymentUtxos: [dummyPaymentUtxo],
       ordAddress: 'badAddr',
       listingUtxo: dummyUtxo,
@@ -212,7 +189,6 @@ describe('purchaseOrdinal', () => {
 
   it('returns err for invalid price (S-70)', async () => {
     const result = await purchaseOrdinal({
-      paymentWif: 'payWif',
       paymentUtxos: [dummyPaymentUtxo],
       ordAddress: '1Addr',
       listingUtxo: dummyUtxo,
@@ -227,7 +203,6 @@ describe('purchaseOrdinal', () => {
     mockTauriInvoke.mockRejectedValue(new Error('purchase failed'))
 
     const result = await purchaseOrdinal({
-      paymentWif: 'payWif',
       paymentUtxos: [dummyPaymentUtxo],
       ordAddress: '1Addr',
       listingUtxo: dummyUtxo,

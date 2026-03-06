@@ -10,7 +10,7 @@
 
 import { broadcastTransaction as infraBroadcast } from '../wallet/transactions'
 import { brc100Logger } from '../logger'
-import type { WalletKeys } from '../wallet'
+import type { ActiveWallet } from '../wallet'
 import { getUTXOs, calculateTxFee } from '../wallet'
 import {
   addUTXO,
@@ -68,7 +68,7 @@ export async function removeLockFromDatabase(lockId: number): Promise<void> {
 // Create a time-locked transaction
 // Transaction building requires the Tauri runtime (Rust backend).
 export async function createLockTransaction(
-  keys: WalletKeys,
+  keys: ActiveWallet,
   satoshis: number,
   blocks: number,
   ordinalOrigin?: string

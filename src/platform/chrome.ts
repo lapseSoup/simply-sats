@@ -255,22 +255,6 @@ export class ChromeAdapter implements PlatformAdapter {
     // No-op in Chrome extension — session management is handled by service worker
   }
 
-  async getWifForOperation(): Promise<string> {
-    return getWifForKeyType('wallet')
-  }
-
-  async getMnemonicOnce(): Promise<string> {
-    if (!keyStore.mnemonic) throw new Error('No mnemonic loaded')
-    const mnemonic = keyStore.mnemonic
-    // Don't clear — Chrome extension may need it for account switching
-    return mnemonic
-  }
-
-  async getMnemonic(): Promise<string> {
-    if (!keyStore.mnemonic) throw new Error('No mnemonic loaded')
-    return keyStore.mnemonic
-  }
-
   // S-128: JS strings are immutable — setting to null is the best we can do.
   // The original values may persist in V8 heap until garbage collection.
   // For true zeroization, use the Tauri desktop platform which uses Rust's Zeroizing<String>.

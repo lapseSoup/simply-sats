@@ -1,60 +1,58 @@
 import { saveFileDialog } from '../utils/dialog'
 import { writeFile } from '../utils/fs'
-import { tauriInvoke } from '../utils/tauri'
-import { encrypt } from './crypto'
+import { isTauri, tauriInvoke } from '../utils/tauri'
 import type { ToastType } from '../contexts/UIContext'
-import type { WalletKeys } from '../domain/types'
+import type { ActiveWallet } from '../domain/types'
+import { buildBrowserEncryptedKeyExport } from './browserSecretExports'
 
 /**
  * Fetch wallet keys, encrypt, and save to a JSON file.
  * Used by both password-based and one-time-password export flows.
  *
- * Sensitive interim variables (WIFs, mnemonic) are overwritten after use
- * to reduce their lifespan in memory.  JS strings are immutable so this
- * creates new strings and lets the originals be GC'd -- not perfect, but
- * better than leaving named references pointing at secrets indefinitely.
+ * Browser-only secret handling is delegated to browserSecretExports.ts so the
+ * JS-side private-key path stays confined to explicit export boundaries.
  */
 export async function exportKeysToFile(
-  wallet: WalletKeys,
+  wallet: ActiveWallet,
   password: string,
   showToast: (msg: string, type?: ToastType) => void
 ): Promise<void> {
-  const { getWifForOperation } = await import('./wallet')
-  let identityWif = await getWifForOperation('identity', 'exportKeys', wallet)
-  let walletWif = await getWifForOperation('wallet', 'exportKeys', wallet)
-  let ordWif = await getWifForOperation('ordinals', 'exportKeys', wallet)
-  let mnemonic = await tauriInvoke<string | null>('get_mnemonic')
+  if (isTauri()) {
+    const encrypted = await tauriInvoke<{
+      version: number
+      ciphertext: string
+      iv: string
+      salt: string
+      iterations: number
+    }>('build_encrypted_key_export_from_store', {
+      password,
+      walletAddress: wallet.walletAddress,
+      ordAddress: wallet.ordAddress,
+      identityPubKey: wallet.identityPubKey
+    })
 
-  try {
-    const keyData = {
-      format: 'simply-sats',
-      version: 1,
-      mnemonic: mnemonic || null,
-      keys: {
-        identity: { wif: identityWif, pubKey: wallet.identityPubKey },
-        payment: { wif: walletWif, address: wallet.walletAddress },
-        ordinals: { wif: ordWif, address: wallet.ordAddress }
-      }
-    }
-    const encrypted = await encrypt(JSON.stringify(keyData), password)
-    const encryptedExport = {
-      format: 'simply-sats-keys-encrypted',
-      version: 1,
-      encrypted
-    }
     const filePath = await saveFileDialog({
       defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
     if (filePath) {
-      await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))
+      await writeFile(filePath, JSON.stringify({
+        format: 'simply-sats-keys-encrypted',
+        version: 1,
+        encrypted
+      }, null, 2))
       showToast('Encrypted keys saved to file!')
     }
-  } finally {
-    // Overwrite sensitive interim variables to shorten their in-memory lifespan
-    identityWif = '0'.repeat(identityWif.length)
-    walletWif = '0'.repeat(walletWif.length)
-    ordWif = '0'.repeat(ordWif.length)
-    mnemonic = '0'.repeat(mnemonic?.length ?? 0)
+    return
+  }
+
+  const encryptedExport = await buildBrowserEncryptedKeyExport(wallet, password)
+  const filePath = await saveFileDialog({
+    defaultPath: `simply-sats-keys-${new Date().toISOString().split('T')[0]}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }]
+  })
+  if (filePath) {
+    await writeFile(filePath, JSON.stringify(encryptedExport, null, 2))
+    showToast('Encrypted keys saved to file!')
   }
 }

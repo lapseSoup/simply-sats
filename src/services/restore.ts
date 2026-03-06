@@ -10,11 +10,10 @@ import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { readTextFile } from '@tauri-apps/plugin-fs'
 import { ok, err, type Result } from '../domain/types'
-import type { WalletKeys } from '../domain/types'
-import { restoreWallet, importFromJSON, saveWallet, saveWalletUnprotected } from './wallet'
+import type { SessionWallet } from '../domain/types'
+import { restoreWallet, importFromJSON, saveWallet, saveWalletUnprotected, toSessionWallet } from './wallet'
 import { importDatabase, type DatabaseBackup } from '../infrastructure/database'
 import { decrypt, type EncryptedData } from './crypto'
-import { setWalletKeys } from './brc100'
 import { migrateToMultiAccount, getActiveAccount } from './accounts'
 import { discoverAccounts } from './accountDiscovery'
 import { setSessionPassword as setModuleSessionPassword } from './sessionPasswordStore'
@@ -31,10 +30,7 @@ export interface FullBackup {
   database?: DatabaseBackup
 }
 
-export interface RestoreCallbacks {
-  setWallet: (keys: WalletKeys) => void
-  setSessionPassword: (pwd: string) => void
-  performSync: (force: boolean) => void
+export interface RestoreImportCallbacks {
   refreshAccounts: () => Promise<void>
   showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void
 }
@@ -95,7 +91,7 @@ export async function openAndParseBackupFile(
 export async function restoreWalletFromBackup(
   backup: FullBackup,
   password: string | null
-): Promise<Result<WalletKeys, string>> {
+): Promise<Result<SessionWallet, string>> {
   const sessionPwd = password ?? ''
 
   if (backup.wallet.mnemonic) {
@@ -119,11 +115,9 @@ export async function restoreWalletFromBackup(
       // B-89: Non-fatal but logged — unlock will re-populate Rust key store
       walletLogger.warn('Failed to store keys in Rust key store during restore', { error: e instanceof Error ? e.message : String(e) })
     }
-    // Return keys with mnemonic cleared (mnemonic lives in Rust key store)
-    const safeKeys = { ...keys, mnemonic: '' }
-    setWalletKeys(safeKeys)
+    const sessionWallet = toSessionWallet(keys, keys.accountIndex)
     setModuleSessionPassword(sessionPwd)
-    return ok(safeKeys)
+    return ok(sessionWallet)
   }
 
   if (backup.wallet.keys) {
@@ -162,9 +156,9 @@ export async function restoreWalletFromBackup(
       // B-89: Non-fatal but logged — unlock will re-populate Rust key store
       walletLogger.warn('Failed to store keys in Rust key store during restore', { error: e instanceof Error ? e.message : String(e) })
     }
-    setWalletKeys(keys)
+    const sessionWallet = toSessionWallet(keys, keys.accountIndex)
     setModuleSessionPassword(sessionPwd)
-    return ok(keys)
+    return ok(sessionWallet)
   }
 
   return err('Backup does not contain wallet keys.')
@@ -177,7 +171,7 @@ export async function restoreWalletFromBackup(
 export async function importBackupDatabase(
   backup: FullBackup,
   password: string | null,
-  callbacks: Pick<RestoreCallbacks, 'refreshAccounts' | 'showToast'>
+  callbacks: RestoreImportCallbacks
 ): Promise<RestoreStats> {
   const stats: RestoreStats = { utxoCount: 0, txCount: 0, discoveredAccounts: 0 }
 

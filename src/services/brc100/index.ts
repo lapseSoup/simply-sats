@@ -5,7 +5,6 @@
  * The module has been split into focused files:
  * - types.ts: Type definitions
  * - RequestManager.ts: Pending request management
- * - state.ts: Wallet keys state
  * - signing.ts: Signature operations
  * - cryptography.ts: Encrypt/decrypt
  * - script.ts: Script building utilities
@@ -44,9 +43,6 @@ export {
 
 // Re-export RequestManager
 export { RequestManager, getRequestManager, resetRequestManager } from './RequestManager'
-
-// Re-export state management
-export { setWalletKeys, getWalletKeys, hasWalletKeys, assertKeysMatchAccount } from './state'
 
 // Re-export signing operations
 export { signMessage, signData, verifySignature, verifyDataSignature } from './signing'

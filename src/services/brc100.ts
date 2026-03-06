@@ -9,7 +9,6 @@
  * Submodules:
  *  - types.ts:         Type definitions & validation
  *  - RequestManager.ts: Pending request queue
- *  - state.ts:         Wallet keys state
  *  - signing.ts:       Signature operations
  *  - cryptography.ts:  Encrypt/decrypt (ECIES)
  *  - script.ts:        Script building utilities
@@ -50,8 +49,8 @@ export type {
   DiscoveredOutput
 } from './brc100/types'
 
-// State management
-export { setWalletKeys, getWalletKeys, assertKeysMatchAccount } from './brc100/state'
+// Request manager
+export { RequestManager, getRequestManager, resetRequestManager } from './brc100/RequestManager'
 
 // Signing
 export { signMessage, signData, verifySignature, verifyDataSignature } from './brc100/signing'

@@ -288,8 +288,7 @@ export async function transferOrdinal(
       change: number
       changeAddress: string
       spentOutpoints: Array<{ txid: string; vout: number }>
-    }>('build_ordinal_transfer_tx', {
-      ordWif,
+    }>('build_ordinal_transfer_tx_from_store', {
       ordinalUtxo: {
         txid: ordinalUtxo.txid,
         vout: ordinalUtxo.vout,
@@ -297,7 +296,6 @@ export async function transferOrdinal(
         script: ordinalUtxo.script ?? '',
       },
       toAddress,
-      fundingWif,
       feeRate,
       fundingUtxos: fundingToUse.map(u => ({
         txid: u.txid,

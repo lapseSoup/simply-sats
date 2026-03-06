@@ -5,8 +5,9 @@
  */
 
 import { useState, useRef, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
-import type { WalletKeys } from '../services/wallet'
-import type { Account } from '../services/accounts'
+import type { Account } from '../domain/accounts'
+import type { ActiveWallet, WalletKeys } from '../services/wallet'
+import { sanitizeWalletForSession } from '../services/wallet'
 import { getAllAccounts, getActiveAccount } from '../services/accounts'
 import {
   initAutoLock,
@@ -20,7 +21,6 @@ import {
   recordSuccessfulUnlock,
   formatLockoutTime
 } from '../services/rateLimiter'
-import { setWalletKeys } from '../services/brc100'
 import { walletLogger } from '../services/logger'
 import { audit } from '../services/auditLog'
 import { tauriInvoke } from '../utils/tauri'
@@ -35,9 +35,9 @@ interface UseWalletLockOptions {
   getKeysForAccount: (account: Account, password: string | null) => Promise<WalletKeys | null>
   refreshAccounts: () => Promise<void>
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
-  setWalletState: Dispatch<SetStateAction<WalletKeys | null>>
+  setWalletState: Dispatch<SetStateAction<ActiveWallet | null>>
   /** Pre-load cached DB data (balance, txs, ordinals, etc.) BEFORE closing lock screen so data is visible the instant the lock screen unmounts. */
-  preloadDataFromDB: (wallet: WalletKeys, accountId: number) => Promise<void>
+  preloadDataFromDB: (wallet: ActiveWallet, accountId: number) => Promise<void>
 }
 
 interface UseWalletLockReturn {
@@ -102,7 +102,6 @@ export function useWalletLock({
     // "locked" UI state until after Rust keys are actually cleared, so the user
     // never sees the lock screen while keys still exist in native memory.
     setWalletState(null)
-    setWalletKeys(null)
     setSessionPassword(null)
     clearSessionPassword()
     clearSessionKey()
@@ -190,12 +189,12 @@ export function useWalletLock({
       if (!hasPassword()) {
         const keys = await getKeysForAccount(account, null)
         if (keys) {
+          const sessionWallet = sanitizeWalletForSession(keys)
           // Pre-load cached data BEFORE closing lock screen so UI has data from first frame
           // B-70: Log warning when account.id is null — fallback to 1 may load wrong account
           const acctId = account.id ?? (() => { walletLogger.warn('B-70: account.id is null during unlock, falling back to 1'); return 1 })()
-          try { await preloadDataFromDB({ ...keys, mnemonic: '' }, acctId) } catch (_e) { walletLogger.warn('Pre-load from DB failed during unlock (non-critical)', { error: String(_e) }) }
-          setWalletState(keys)
-          setWalletKeys(keys)
+          try { await preloadDataFromDB(sessionWallet, acctId) } catch (_e) { walletLogger.warn('Pre-load from DB failed during unlock (non-critical)', { error: String(_e) }) }
+          setWalletState(sessionWallet)
           setIsLocked(false)
           setSessionPassword(NO_PASSWORD)
           setModuleSessionPassword(NO_PASSWORD)
@@ -210,12 +209,12 @@ export function useWalletLock({
 
       const keys = await getKeysForAccount(account, password)
       if (keys) {
+        const sessionWallet = sanitizeWalletForSession(keys)
         await recordSuccessfulUnlock()
         // Pre-load ALL cached data BEFORE closing lock screen.
         // This ensures balance, txs, ordinals appear instantly when lock screen unmounts.
-        try { await preloadDataFromDB({ ...keys, mnemonic: '' }, account.id ?? 1) } catch (_e) { walletLogger.warn('Pre-load from DB failed during unlock (non-critical)', { error: String(_e) }) }
-        setWalletState(keys)
-        setWalletKeys(keys)
+        try { await preloadDataFromDB(sessionWallet, account.id ?? 1) } catch (_e) { walletLogger.warn('Pre-load from DB failed during unlock (non-critical)', { error: String(_e) }) }
+        setWalletState(sessionWallet)
         setIsLocked(false)
         setSessionPassword(password)
         setModuleSessionPassword(password)

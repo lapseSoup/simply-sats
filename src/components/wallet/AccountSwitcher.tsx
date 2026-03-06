@@ -7,7 +7,7 @@
 
 import { useState, useRef, useEffect, memo, useCallback, useMemo } from 'react'
 import { Check, ChevronDown, Plus, Download, Settings } from 'lucide-react'
-import type { Account } from '../../services/accounts'
+import type { Account } from '../../domain/accounts'
 
 // Memoized account item to prevent unnecessary re-renders
 const AccountItem = memo(function AccountItem({

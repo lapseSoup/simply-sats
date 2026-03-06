@@ -52,7 +52,7 @@ import { switchAccount as switchAccountDb, getActiveAccount, getAccountById } fr
 import { discoverAccounts } from '../services/accountDiscovery'
 import { cancelSync } from '../services/sync'
 import { getSessionPassword, clearSessionPassword } from '../services/sessionPasswordStore'
-import type { Account } from '../services/accounts'
+import type { Account } from '../domain/accounts'
 import type { WalletKeys, PublicWalletKeys } from '../services/wallet'
 
 const mockedTauriInvoke = vi.mocked(tauriInvoke)
@@ -71,7 +71,6 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
     id: 1,
     name: 'Test Account',
     identityAddress: '1TestIdentity',
-    encryptedKeys: '{}',
     isActive: true,
     createdAt: Date.now(),
     derivationIndex: 0,
@@ -164,9 +163,9 @@ describe('useAccountSwitching', () => {
       expect(mockedTauriInvoke).toHaveBeenCalledWith('switch_account_from_store', { accountIndex: 1 })
       expect(mockedSwitchAccountDb).toHaveBeenCalledWith(2)
       expect(opts.setWallet).toHaveBeenCalledTimes(1)
-      // Wallet keys should have mnemonic cleared
-      const walletArg = vi.mocked(opts.setWallet).mock.calls[0]![0] as WalletKeys
-      expect(walletArg.mnemonic).toBe('')
+      // Rust-first switching now passes the public/session wallet shape into setWallet.
+      const walletArg = vi.mocked(opts.setWallet).mock.calls[0]![0] as Record<string, unknown>
+      expect(walletArg).not.toHaveProperty('mnemonic')
       expect(walletArg.walletAddress).toBe('1WalletAddress')
       expect(opts.setIsLocked).toHaveBeenCalledWith(false)
       expect(opts.setActiveAccountState).toHaveBeenCalled()
@@ -535,9 +534,9 @@ describe('useAccountSwitching', () => {
         expect.any(Function)
       )
       expect(opts.setActiveAccountState).toHaveBeenCalledWith(expect.objectContaining({ id: 3 }), 3)
-      // Wallet should have mnemonic cleared
+      // Hook passes full keys to WalletProvider, which sanitizes long-lived session state.
       const walletArg = vi.mocked(opts.setWallet).mock.calls[0]![0] as WalletKeys
-      expect(walletArg.mnemonic).toBe('')
+      expect(walletArg.mnemonic).toBe(newKeys.mnemonic)
     })
 
     it('returns false when no session password', async () => {
@@ -727,7 +726,7 @@ describe('useAccountSwitching', () => {
       })
 
       expect(opts.getKeysForAccount).toHaveBeenCalledWith(remainingAccount, 'testpassword')
-      expect(opts.setWallet).toHaveBeenCalledWith({ ...fallbackKeys, mnemonic: '' })
+      expect(opts.setWallet).toHaveBeenCalledWith(fallbackKeys)
     })
   })
 

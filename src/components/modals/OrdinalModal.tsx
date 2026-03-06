@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { Ordinal } from '../../services/wallet'
+import type { Ordinal } from '../../domain/types'
 import { useUI } from '../../contexts/UIContext'
 import { openExternalUrl } from '../../utils/opener'
 import { openViewerWindow } from '../../utils/window'

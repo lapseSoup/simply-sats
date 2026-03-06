@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react'
-import type { Account } from '../../services/accounts'
+import type { Account } from '../../domain/accounts'
 
 interface AccountManageListProps {
   accounts: Account[]

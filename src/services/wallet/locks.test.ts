@@ -23,11 +23,15 @@ const { mockDbState } = vi.hoisted(() => {
 vi.mock('../../utils/tauri', () => ({
   isTauri: () => true,
   tauriInvoke: async (cmd: string, _args?: Record<string, unknown>) => {
-    if (cmd === 'keys_from_wif') {
+    if (cmd === 'get_public_keys') {
       return {
-        wif: 'L1RMEbBkMJ3JKzn3e3cE9Fm4XLKP5Pmjbsci7dqASiJVTCTxhsWi',
-        address: '1MockAddress',
-        pubKey: '02abcdef0102030405060708090a0b0c0d0e0f1011'
+        walletType: 'yours',
+        walletAddress: '1MockAddress',
+        walletPubKey: '02abcdef0102030405060708090a0b0c0d0e0f1011',
+        ordAddress: '1MockOrdAddress',
+        ordPubKey: '03abcdef0102030405060708090a0b0c0d0e0f1011',
+        identityAddress: '1MockIdentityAddress',
+        identityPubKey: '04abcdef0102030405060708090a0b0c0d0e0f1011'
       }
     }
     if (cmd === 'pubkey_to_hash160') {
@@ -138,15 +142,6 @@ vi.mock('../logger', () => ({
     debug: vi.fn()
   }
 }))
-
-// ─── Mock getWifForOperation (./types) ─────────────────────────────
-vi.mock('./types', async () => {
-  const actual = await vi.importActual<typeof import('./types')>('./types')
-  return {
-    ...actual,
-    getWifForOperation: vi.fn().mockResolvedValue('L1RMEbBkMJ3JKzn3e3cE9Fm4XLKP5Pmjbsci7dqASiJVTCTxhsWi')
-  }
-})
 
 // ─── Mock brc100/script ─────────────────────────────────────────────
 vi.mock('../brc100/script', () => ({

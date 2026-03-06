@@ -10,7 +10,7 @@ import { Modal } from '../shared/Modal'
 import { AccountCreateForm } from './AccountCreateForm'
 import { AccountImportForm } from './AccountImportForm'
 import { AccountManageList } from './AccountManageList'
-import type { Account } from '../../services/accounts'
+import type { Account } from '../../domain/accounts'
 
 type ModalMode = 'create' | 'import' | 'manage' | 'settings'
 

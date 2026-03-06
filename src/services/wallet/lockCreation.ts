@@ -8,8 +8,7 @@
  * Private keys never enter the JavaScript heap.
  */
 
-import type { UTXO, LockedUTXO } from './types'
-import { getWifForOperation } from './types'
+import type { UTXO, LockedUTXO, PublicWalletKeys } from './types'
 import { calculateLockFee } from './fees'
 import { executeBroadcast } from './transactions'
 import {
@@ -108,13 +107,24 @@ export async function lockBSV(
     throw new Error('Lock transaction building requires Tauri runtime')
   }
 
-  // Derive keys via Tauri (WIF never persisted in JS state)
-  const wif = await getWifForOperation('wallet', 'lockBSV')
+  let keyInfo: PublicWalletKeys
+  try {
+    const keys = await tauriInvoke<PublicWalletKeys | null>('get_public_keys')
+    if (!keys) {
+      return err(new AppError(
+        'Wallet is locked — no public keys available',
+        ErrorCodes.INVALID_STATE
+      ))
+    }
+    keyInfo = keys
+  } catch (keyErr) {
+    const message = keyErr instanceof Error ? keyErr.message : String(keyErr)
+    walletLogger.error('Failed to retrieve public keys for lock transaction', { error: message })
+    return err(new AppError(message, ErrorCodes.INVALID_STATE))
+  }
 
-  // Derive address and public key from WIF via Rust
-  const keyInfo = await tauriInvoke<{ wif: string; address: string; pubKey: string }>('keys_from_wif', { wif })
-  const fromAddress = keyInfo.address
-  const publicKeyHex = keyInfo.pubKey
+  const fromAddress = keyInfo.walletAddress
+  const publicKeyHex = keyInfo.walletPubKey
 
   // Get public key hash via Rust
   const publicKeyHashHex = await tauriInvoke<string>('pubkey_to_hash160', { pubKeyHex: publicKeyHex })

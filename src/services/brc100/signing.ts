@@ -5,14 +5,14 @@
  * All crypto operations run in the Tauri backend — WIF keys never leave Rust.
  */
 
-import type { WalletKeys } from '../wallet'
+import type { ActiveWallet } from '../wallet'
 import { tauriInvoke } from '../../utils/tauri'
 
 /**
  * Sign a message with the identity key.
  * Uses the Tauri key store — WIF never leaves Rust.
  */
-export async function signMessage(_keys: WalletKeys, message: string): Promise<string> {
+export async function signMessage(_keys: ActiveWallet, message: string): Promise<string> {
   return tauriInvoke<string>('sign_message_from_store', { message, keyType: 'identity' })
 }
 
@@ -21,7 +21,7 @@ export async function signMessage(_keys: WalletKeys, message: string): Promise<s
  * Uses the Tauri key store — WIF never leaves Rust.
  */
 export async function signData(
-  _keys: WalletKeys,
+  _keys: ActiveWallet,
   data: number[],
   keyType: 'identity' | 'wallet' | 'ordinals' = 'identity'
 ): Promise<string> {

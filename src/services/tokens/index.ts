@@ -63,5 +63,7 @@ export {
 // --- Transfers ---
 export {
   transferToken,
-  sendToken
+  transferTokenFromStore,
+  sendToken,
+  sendTokenFromStore
 } from './transfers'

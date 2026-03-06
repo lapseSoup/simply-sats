@@ -1,13 +1,13 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import { RefreshCw, Settings } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
 import { useSyncStatus } from '../../contexts/NetworkContext'
 import { SimplySatsLogo } from '../shared/SimplySatsLogo'
 import { AccountSwitcher } from './AccountSwitcher'
-import { getBalanceFromDB } from '../../infrastructure/database'
 import { walletLogger } from '../../services/logger'
 import { getLastSwitchDiag } from '../../hooks/useAccountSwitching'
+import { useAccountBalances } from '../../hooks/useAccountBalances'
 import { formatSatoshis } from '../../utils/formatting'
 
 interface HeaderProps {
@@ -25,38 +25,7 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
   // Track manual sync separately for button animation
   const [manualSyncing, setManualSyncing] = useState(false)
 
-  // Store balances for all accounts
-  const [accountBalances, setAccountBalances] = useState<Record<number, number>>({})
-
-  // Q-111: Lazy-fetch balances only when the AccountSwitcher dropdown opens,
-  // instead of eagerly fetching for ALL accounts on every activeAccountId change.
-  // B-130: Use a ref guard to prevent concurrent fetches (the old `cancelled`
-  // variable inside useCallback was dead code — the cleanup was never invoked).
-  const fetchingRef = useRef(false)
-  const fetchAccountBalances = useCallback(async () => {
-    if (accounts.length === 0) return
-    if (fetchingRef.current) return
-    fetchingRef.current = true
-    try {
-      const balances: Record<number, number> = {}
-      for (const account of accounts) {
-        if (account.id) {
-          try {
-            const defaultResult = await getBalanceFromDB('default', account.id)
-            const derivedResult = await getBalanceFromDB('derived', account.id)
-            const defaultBal = defaultResult.ok ? defaultResult.value : 0
-            const derivedBal = derivedResult.ok ? derivedResult.value : 0
-            balances[account.id] = defaultBal + derivedBal
-          } catch {
-            balances[account.id] = 0
-          }
-        }
-      }
-      setAccountBalances(balances)
-    } finally {
-      fetchingRef.current = false
-    }
-  }, [accounts])
+  const { accountBalances, fetchAccountBalances } = useAccountBalances()
 
   const handleSync = useCallback(async () => {
     setManualSyncing(true)
@@ -111,7 +80,7 @@ export function Header({ onSettingsClick, onAccountModalOpen, onAccountSwitch }:
               onManageAccounts={() => onAccountModalOpen('manage')}
               formatBalance={formatBalance}
               accountBalances={accountBalances}
-              onOpen={fetchAccountBalances}
+              onOpen={() => fetchAccountBalances(accounts)}
             />
           ) : (
             <div className="logo">

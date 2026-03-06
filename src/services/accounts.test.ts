@@ -21,6 +21,7 @@ import {
   encryptAllAccounts,
   DEFAULT_ACCOUNT_SETTINGS
 } from './accounts'
+import { exportEncryptedAccountsForBackup } from './accountBackup'
 import type { WalletKeys } from './wallet'
 
 // Use vi.hoisted to define variables that can be used in mocks
@@ -193,6 +194,11 @@ function createMockWalletKeys(suffix = '1'): WalletKeys {
   }
 }
 
+async function findEncryptedAccountById(accountId: number) {
+  const accounts = await exportEncryptedAccountsForBackup()
+  return accounts.find(account => account.id === accountId) ?? null
+}
+
 describe('Account Management Service', () => {
   beforeEach(() => {
     // Reset mock database before each test
@@ -222,7 +228,7 @@ describe('Account Management Service', () => {
       expect(accountId).toBeGreaterThan(0)
 
       // Verify the stored format is unprotected
-      const account = await getAccountById(accountId)
+      const account = await findEncryptedAccountById(accountId)
       const parsed = JSON.parse(account!.encryptedKeys)
       expect(parsed.version).toBe(0)
       expect(parsed.mode).toBe('unprotected')
@@ -259,6 +265,7 @@ describe('Account Management Service', () => {
       expect(accounts[0]!.name).toBe('Test Account')
       expect(accounts[0]!.identityAddress).toBe('identity-address-1')
       expect(accounts[0]!.isActive).toBe(true)
+      expect(accounts[0]).not.toHaveProperty('encryptedKeys')
     })
 
     it('should deactivate existing accounts when creating new one', async () => {
@@ -322,6 +329,7 @@ describe('Account Management Service', () => {
       expect(active).not.toBeNull()
       expect(active!.name).toBe('Active Account')
       expect(active!.isActive).toBe(true)
+      expect(active).not.toHaveProperty('encryptedKeys')
     })
   })
 
@@ -341,6 +349,7 @@ describe('Account Management Service', () => {
       expect(account).not.toBeNull()
       expect(account!.id).toBe(accountId)
       expect(account!.name).toBe('My Account')
+      expect(account).not.toHaveProperty('encryptedKeys')
     })
   })
 
@@ -403,7 +412,7 @@ describe('Account Management Service', () => {
       expect(r.ok).toBe(true)
       const accountId = r.ok ? r.value : 0
 
-      const account = await getAccountById(accountId)
+      const account = await findEncryptedAccountById(accountId)
       const decryptedKeys = await getAccountKeys(account!, 'password12345')
 
       expect(decryptedKeys).not.toBeNull()
@@ -418,7 +427,7 @@ describe('Account Management Service', () => {
       expect(r.ok).toBe(true)
       const accountId = r.ok ? r.value : 0
 
-      const account = await getAccountById(accountId)
+      const account = await findEncryptedAccountById(accountId)
       const decryptedKeys = await getAccountKeys(account!, null)
 
       expect(decryptedKeys).not.toBeNull()
@@ -432,7 +441,7 @@ describe('Account Management Service', () => {
       expect(r.ok).toBe(true)
       const accountId = r.ok ? r.value : 0
 
-      const account = await getAccountById(accountId)
+      const account = await findEncryptedAccountById(accountId)
       // Attempting to get keys without password should return null
       const result = await getAccountKeys(account!, null)
       expect(result).toBeNull()
@@ -597,7 +606,7 @@ describe('Account Management Service', () => {
       await createAccount('Account 2', keys2, null)
 
       // Verify they are unprotected
-      let accounts = await getAllAccounts()
+      let accounts = await exportEncryptedAccountsForBackup()
       for (const account of accounts) {
         const parsed = JSON.parse(account.encryptedKeys)
         expect(parsed.version).toBe(0)
@@ -608,7 +617,7 @@ describe('Account Management Service', () => {
       await encryptAllAccounts('StrongPassword1!')
 
       // Verify they are now encrypted
-      accounts = await getAllAccounts()
+      accounts = await exportEncryptedAccountsForBackup()
       for (const account of accounts) {
         const parsed = JSON.parse(account.encryptedKeys)
         expect(parsed.version).toBe(1)
@@ -624,13 +633,13 @@ describe('Account Management Service', () => {
       await createAccount('Encrypted', keys1, 'password12345', true)
       await createAccount('Unprotected', keys2, null)
 
-      const accountsBefore = await getAllAccounts()
+      const accountsBefore = await exportEncryptedAccountsForBackup()
       const encryptedBefore = accountsBefore.find(a => a.name === 'Encrypted')!
       const originalEncryptedKeys = encryptedBefore.encryptedKeys
 
       await encryptAllAccounts('StrongPassword1!')
 
-      const accountsAfter = await getAllAccounts()
+      const accountsAfter = await exportEncryptedAccountsForBackup()
       const encryptedAfter = accountsAfter.find(a => a.name === 'Encrypted')!
       const unprotectedAfter = accountsAfter.find(a => a.name === 'Unprotected')!
 
@@ -698,7 +707,7 @@ describe('Account Management Service', () => {
       await encryptAllAccounts('StrongPassword1!')
 
       // Account keys should be unchanged
-      const accounts = await getAllAccounts()
+      const accounts = await exportEncryptedAccountsForBackup()
       const parsed = JSON.parse(accounts[0]!.encryptedKeys)
       expect(parsed.version).toBe(1)
     })

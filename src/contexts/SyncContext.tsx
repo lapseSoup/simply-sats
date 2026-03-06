@@ -11,7 +11,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useRef, useMemo, type ReactNode, type MutableRefObject } from 'react'
-import type { WalletKeys, UTXO, Ordinal, LockedUTXO, TxHistoryItem } from '../domain/types'
+import type { ActiveWallet, UTXO, Ordinal, LockedUTXO, TxHistoryItem } from '../domain/types'
 import { useSyncStatus } from './NetworkContext'
 
 // Extracted hooks
@@ -67,7 +67,7 @@ interface SyncContextType {
   // Actions
   resetSync: (initialBalance?: number) => void
   performSync: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     isRestore?: boolean,
     forceReset?: boolean,
@@ -76,13 +76,13 @@ interface SyncContextType {
   ) => Promise<void>
   /** Load all data from local DB only (no API calls). Used for instant account switching. */
   fetchDataFromDB: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     onLocksLoaded: (locks: LockedUTXO[]) => void,
     isCancelled?: () => boolean
   ) => Promise<void>
   fetchData: (
-    wallet: WalletKeys,
+    wallet: ActiveWallet,
     activeAccountId: number | null,
     getKnownUnlockedLocks: () => Set<string>,
     onLocksDetected: (locks: { utxos: UTXO[]; shouldClearLocks: boolean; preloadedLocks?: import('../services/wallet').LockedUTXO[] }) => void,

@@ -2,8 +2,8 @@
  * BRC-100 Certificate Operations
  *
  * Delegates certificate operations to the certificate service.
- * WalletKeys is accepted as an explicit first parameter — callers
- * (HTTP handlers) are responsible for resolving keys at the boundary.
+ * Active wallet state is accepted as an explicit first parameter — callers
+ * (HTTP handlers/UI adapters) are responsible for resolving it at the boundary.
  */
 
 import {
@@ -14,13 +14,13 @@ import {
   type CertificateType,
   type AcquireCertificateArgs
 } from '../certificates'
-import type { WalletKeys } from '../wallet'
+import type { ActiveWallet } from '../wallet'
 
 // Re-export needed certificate types for convenience
 export type { Certificate, CertificateType, AcquireCertificateArgs }
 
 // BRC-100 acquireCertificate - delegates to certificate service
-export async function acquireCertificate(keys: WalletKeys | null, args: AcquireCertificateArgs): Promise<Certificate> {
+export async function acquireCertificate(keys: ActiveWallet | null, args: AcquireCertificateArgs): Promise<Certificate> {
   if (!keys) {
     throw new Error('No wallet loaded')
   }
@@ -28,7 +28,7 @@ export async function acquireCertificate(keys: WalletKeys | null, args: AcquireC
 }
 
 // BRC-100 listCertificates - delegates to certificate service
-export async function listCertificates(keys: WalletKeys | null, args: {
+export async function listCertificates(keys: ActiveWallet | null, args: {
   certifiers?: string[]
   types?: CertificateType[]
   limit?: number
@@ -44,7 +44,7 @@ export async function listCertificates(keys: WalletKeys | null, args: {
 }
 
 // BRC-100 proveCertificate - creates a proof of certificate ownership
-export async function proveCertificate(keys: WalletKeys | null, args: {
+export async function proveCertificate(keys: ActiveWallet | null, args: {
   certificate: Certificate
   fieldsToReveal: string[]
   verifier: string

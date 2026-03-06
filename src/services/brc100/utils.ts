@@ -4,7 +4,7 @@
  * Helper functions for BRC-100 operations.
  */
 
-import type { WalletKeys } from '../wallet'
+import type { ActiveWallet } from '../wallet'
 import type { CreateActionRequest } from './types'
 import { getWocClient } from '../../infrastructure/api/wocClient'
 
@@ -36,7 +36,7 @@ export function formatIdentityKey(pubKey: string): string {
 /**
  * Get the identity key in the format apps expect
  */
-export function getIdentityKeyForApp(keys: WalletKeys): {
+export function getIdentityKeyForApp(keys: ActiveWallet): {
   identityKey: string
   identityAddress: string
 } {

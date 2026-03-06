@@ -11,7 +11,7 @@
  */
 
 import { getDatabase } from './database'
-import type { WalletKeys } from './wallet'
+import type { ActiveWallet } from './wallet'
 import type { CertificateRow, SqlParams } from '../infrastructure/database/row-types'
 import { brc100Logger } from './logger'
 import { tauriInvoke } from '../utils/tauri'
@@ -370,7 +370,7 @@ export function isCertificateValid(cert: Certificate): boolean {
  */
 export async function acquireCertificate(
   args: AcquireCertificateArgs,
-  keys: WalletKeys
+  keys: ActiveWallet
 ): Promise<Certificate> {
   if (args.acquisitionProtocol === 'issuance') {
     // External certifier protocol - not yet implemented
@@ -416,7 +416,7 @@ export async function listCertificates(args: {
   types?: CertificateType[]
   limit?: number
   offset?: number
-}, keys: WalletKeys): Promise<{
+}, keys: ActiveWallet): Promise<{
   certificates: Certificate[]
   totalCertificates: number
 }> {
@@ -455,7 +455,7 @@ export async function proveCertificate(args: {
   certificate: Certificate
   fieldsToReveal: string[]
   verifier: string
-}, _keys: WalletKeys): Promise<CertificateProof> {
+}, _keys: ActiveWallet): Promise<CertificateProof> {
   const { certificate, fieldsToReveal, verifier } = args
 
   // Verify we hold this certificate

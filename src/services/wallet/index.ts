@@ -5,8 +5,10 @@
 
 // Types
 export type {
+  ActiveWallet,
   WalletType,
   WalletKeys,
+  SessionWallet,
   PublicWalletKeys,
   KeyType,
   UTXO,
@@ -25,7 +27,12 @@ export type {
 } from './types'
 
 // Key store bridge
-export { getWifForOperation } from './types'
+export {
+  getPublicKeysFromStore,
+  getPrivateKeyForDisplay,
+  toSessionWallet,
+  sanitizeWalletForSession
+} from './types'
 
 // Core wallet operations
 export {
@@ -80,7 +87,6 @@ export {
 export {
   broadcastTransaction,
   sendBSV,
-  getAllSpendableUTXOs,
   sendBSVMultiKey,
   sendBSVMultiOutput,
   consolidateUtxos

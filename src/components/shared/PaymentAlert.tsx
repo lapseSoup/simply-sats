@@ -1,6 +1,6 @@
 import { memo, useCallback } from 'react'
 import { CircleDollarSign } from 'lucide-react'
-import type { PaymentNotification } from '../../services/messageBox'
+import type { PaymentNotification } from '../../domain/messageBox'
 
 interface PaymentAlertProps {
   payment: PaymentNotification | null

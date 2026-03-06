@@ -6,9 +6,9 @@
 //! This is a starting implementation with a simple in-memory transport.
 //! Messages are queued locally; the full HTTP transport will be added later.
 
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use bsv_sdk::auth::certificates::Certificate;
@@ -68,10 +68,7 @@ impl SimpleTransport {
     /// Number of queued outgoing messages.
     #[cfg(test)]
     pub fn outbox_len(&self) -> usize {
-        self.outbox
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .len()
+        self.outbox.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
@@ -118,10 +115,7 @@ impl AuthState {
     }
 
     /// Get or create the Peer, deriving it from the identity WIF in the key store.
-    async fn get_or_create_peer(
-        &self,
-        key_store: &SharedKeyStore,
-    ) -> Result<Arc<Peer>, String> {
+    async fn get_or_create_peer(&self, key_store: &SharedKeyStore) -> Result<Arc<Peer>, String> {
         let mut peer_guard = self.peer.lock().await;
         if let Some(ref peer) = *peer_guard {
             return Ok(Arc::clone(peer));
@@ -203,9 +197,7 @@ pub async fn auth_create_session(
     key_store: tauri::State<'_, SharedKeyStore>,
     peer_pub_key: String,
 ) -> Result<AuthSessionResult, String> {
-    let peer = auth_state
-        .get_or_create_peer(&key_store)
-        .await?;
+    let peer = auth_state.get_or_create_peer(&key_store).await?;
 
     let peer_identity = PublicKey::from_hex(&peer_pub_key)
         .map_err(|e| format!("auth: invalid peer public key: {}", e))?;
@@ -230,9 +222,7 @@ pub async fn auth_send_message(
     peer_pub_key: String,
     payload: Vec<u8>,
 ) -> Result<AuthSendResult, String> {
-    let peer = auth_state
-        .get_or_create_peer(&key_store)
-        .await?;
+    let peer = auth_state.get_or_create_peer(&key_store).await?;
 
     let peer_identity = PublicKey::from_hex(&peer_pub_key)
         .map_err(|e| format!("auth: invalid peer public key: {}", e))?;
@@ -248,11 +238,9 @@ pub async fn auth_send_message(
 /// Parses the hex-encoded binary certificate data and verifies the
 /// certifier's signature using the bsv-auth `Certificate::verify()` method.
 #[tauri::command]
-pub async fn auth_verify_certificate(
-    cert_hex: String,
-) -> Result<AuthCertResult, String> {
-    let cert_bytes = hex::decode(&cert_hex)
-        .map_err(|e| format!("auth: invalid certificate hex: {}", e))?;
+pub async fn auth_verify_certificate(cert_hex: String) -> Result<AuthCertResult, String> {
+    let cert_bytes =
+        hex::decode(&cert_hex).map_err(|e| format!("auth: invalid certificate hex: {}", e))?;
 
     let certificate = Certificate::from_binary(&cert_bytes)
         .map_err(|e| format!("auth: failed to parse certificate: {}", e))?;
@@ -427,9 +415,7 @@ mod tests {
             subject_key.pub_key(),
             certifier_key.pub_key(),
             format!("{}.0", "aa".repeat(32)),
-            std::collections::HashMap::from([
-                ("name".to_string(), "Alice".to_string()),
-            ]),
+            std::collections::HashMap::from([("name".to_string(), "Alice".to_string())]),
         );
 
         // Sign the certificate

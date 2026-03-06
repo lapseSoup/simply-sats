@@ -83,10 +83,7 @@ vi.mock('./logger', () => ({
 
 vi.mock('./wallet', async () => {
   const actual = await vi.importActual('./wallet')
-  return {
-    ...actual,
-    getWifForOperation: vi.fn().mockResolvedValue('L1RrrnXkcKut5DEMwtDthjwRcTTwED36thyL1DebVrKuwvohjMNi'),
-  }
+  return actual
 })
 
 import {

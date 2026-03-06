@@ -4,12 +4,23 @@ import { useWalletState } from '../../../contexts'
 import { useUI } from '../../../contexts/UIContext'
 import { handleKeyDown } from './settingsKeyDown'
 import { SignMessageModal } from '../SignMessageModal'
+import { useWalletPrivateKeyDisplay } from '../../../hooks/useWalletPrivateKeyDisplay'
 
 export function SettingsWallet() {
   const { wallet } = useWalletState()
-  const { copyToClipboard } = useUI()
+  const { copyToClipboard, showToast } = useUI()
   const [showSignMessage, setShowSignMessage] = useState(false)
-  const [showWif, setShowWif] = useState(false)
+  const {
+    showWif,
+    displayWif,
+    loadingWif,
+    handleToggleWif,
+    handleCopyWif
+  } = useWalletPrivateKeyDisplay({
+    wallet,
+    copyToClipboard,
+    showToast
+  })
 
   if (!wallet) return null
 
@@ -74,11 +85,12 @@ export function SettingsWallet() {
           <button
             className="btn btn-secondary"
             style={{ marginBottom: showWif ? '0.75rem' : 0, fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
-            onClick={() => setShowWif(v => !v)}
+            onClick={() => { void handleToggleWif() }}
             aria-expanded={showWif}
             aria-controls="wif-key-panel"
+            disabled={loadingWif}
           >
-            {showWif
+            {loadingWif ? 'Loading...' : showWif
               ? <><EyeOff size={14} strokeWidth={1.75} aria-hidden="true" /> Hide WIF Key</>
               : <><Eye size={14} strokeWidth={1.75} aria-hidden="true" /> Show WIF Key</>
             }
@@ -87,7 +99,7 @@ export function SettingsWallet() {
             <div id="wif-key-panel">
               <textarea
                 readOnly
-                value={wallet.walletWif ?? ''}
+                value={displayWif}
                 rows={2}
                 aria-label="Payment private key (WIF)"
                 style={{
@@ -107,7 +119,7 @@ export function SettingsWallet() {
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
-                onClick={() => wallet.walletWif && copyToClipboard(wallet.walletWif, 'Private key copied!')}
+                onClick={handleCopyWif}
                 aria-label="Copy WIF private key"
               >
                 <Copy size={14} strokeWidth={1.75} aria-hidden="true" /> Copy

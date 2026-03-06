@@ -5,12 +5,7 @@ import { SECURITY } from '../../config'
 import { Modal } from '../shared/Modal'
 import { PasswordInput } from '../shared/PasswordInput'
 import { MnemonicInput } from '../forms/MnemonicInput'
-import { decrypt, type EncryptedData } from '../../services/crypto'
-import {
-  openAndParseBackupFile,
-  restoreWalletFromBackup,
-  importBackupDatabase
-} from '../../services/restore'
+import { useRestoreOperations } from '../../hooks/useRestoreOperations'
 
 interface RestoreModalProps {
   onClose: () => void
@@ -22,6 +17,12 @@ type RestoreMode = 'mnemonic' | 'json' | 'fullbackup'
 export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   const { setWallet, setSessionPassword, performSync, handleRestoreWallet, handleImportJSON, refreshAccounts } = useWalletActions()
   const { showToast } = useUI()
+  const {
+    resolveJsonRestorePayload,
+    openParsedBackupFile,
+    restoreWalletKeysFromBackup,
+    importParsedBackupDatabase,
+  } = useRestoreOperations()
   const [restoreMode, setRestoreMode] = useState<RestoreMode>('mnemonic')
   const [restoreMnemonic, setRestoreMnemonic] = useState('')
   const [restoreJSON, setRestoreJSON] = useState('')
@@ -71,30 +72,14 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
   const handleRestoreFromJSON = async () => {
     if (!validatePasswordFields()) return
     try {
-      let jsonToImport = restoreJSON
       const pwd = skipPassword ? null : password
-      // Check if the pasted JSON is an encrypted key export
-      try {
-        const parsed = JSON.parse(restoreJSON)
-        if (parsed.format === 'simply-sats-keys-encrypted' && parsed.encrypted) {
-          if (!pwd) {
-            showToast('Encrypted backup requires a password to decrypt', 'error')
-            return
-          }
-          const decrypted = await decrypt(parsed.encrypted as EncryptedData, pwd)
-          jsonToImport = decrypted
-        }
-      } catch (_decryptErr) {
-        // If it was explicitly marked as encrypted, decryption failure is a real error
-        try {
-          const check = JSON.parse(restoreJSON)
-          if (check.format === 'simply-sats-keys-encrypted') {
-            showToast('Failed to decrypt backup — wrong password?', 'error')
-            return
-          }
-        } catch { /* not JSON at all, let handleImportJSON deal with it */ }
+      const resolved = await resolveJsonRestorePayload(restoreJSON, pwd)
+      if (!resolved.ok) {
+        showToast(resolved.error, 'error')
+        return
       }
-      const success = await handleImportJSON(jsonToImport, pwd)
+
+      const success = await handleImportJSON(resolved.value, pwd)
       if (success) {
         onSuccess()
       } else {
@@ -111,7 +96,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       const pwd = skipPassword ? null : password
 
       // Step 1: Open and parse backup file (handles decryption)
-      const parseResult = await openAndParseBackupFile(pwd)
+      const parseResult = await openParsedBackupFile(pwd)
       if (!parseResult.ok) {
         switch (parseResult.error) {
           case 'cancelled': return
@@ -133,7 +118,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       const { backup } = parseResult.value
 
       // Step 2: Restore wallet keys
-      const keysResult = await restoreWalletFromBackup(backup, pwd)
+      const keysResult = await restoreWalletKeysFromBackup(backup, pwd)
       if (!keysResult.ok) {
         showToast(keysResult.error, 'error')
         return
@@ -144,7 +129,7 @@ export function RestoreModal({ onClose, onSuccess }: RestoreModalProps) {
       setSessionPassword(sessionPwd)
 
       // Step 3: Import database and discover accounts
-      const stats = await importBackupDatabase(backup, pwd, { refreshAccounts, showToast })
+      const stats = await importParsedBackupDatabase(backup, pwd, { refreshAccounts, showToast })
 
       showToast(`Wallet restored! ${stats.utxoCount} UTXOs, ${stats.txCount} transactions`)
       performSync(false)

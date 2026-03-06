@@ -1,30 +1,38 @@
 import { useState, useEffect, useCallback } from 'react'
 import { HardDrive, ChevronRight } from 'lucide-react'
 import { useUI } from '../../../contexts/UIContext'
-// TODO(A-45): Deep import — expose cache management via wallet barrel or context hook
-import { getCacheStats, resizeOrdinalCache, clearImageCache, clearAllContentCache, formatCacheSize } from '../../../services/wallet/ordinalCacheManager'
+import { useOrdinalCacheManager } from '../../../hooks/useOrdinalCacheManager'
 import { handleKeyDown } from './settingsKeyDown'
 
 export function SettingsCache() {
   const { showToast } = useUI()
+  const {
+    loadCacheStats,
+    resizeCache,
+    clearCachedImages,
+    clearCachedContent,
+    formatCacheSize,
+  } = useOrdinalCacheManager()
 
   const [cacheStats, setCacheStats] = useState<{ totalBytes: number; ordinalCount: number; imageCount: number; textCount: number } | null>(null)
   const [cacheLoading, setCacheLoading] = useState(false)
   const [showCacheOptions, setShowCacheOptions] = useState(false)
 
   useEffect(() => {
-    getCacheStats().then(stats => setCacheStats(stats)).catch(() => { /* Cache stats are non-critical; failure just means the section won't render */ })
-  }, [])
+    loadCacheStats()
+      .then(stats => setCacheStats(stats))
+      .catch(() => { /* Cache stats are non-critical; failure just means the section won't render */ })
+  }, [loadCacheStats])
 
   const refreshCacheStats = useCallback(async () => {
-    const stats = await getCacheStats()
+    const stats = await loadCacheStats()
     setCacheStats(stats)
-  }, [])
+  }, [loadCacheStats])
 
   const handleResizeCache = useCallback(async (maxDim: number) => {
     setCacheLoading(true)
     try {
-      const saved = await resizeOrdinalCache(maxDim)
+      const saved = await resizeCache(maxDim)
       await refreshCacheStats()
       showToast(`Cache resized! Saved ${formatCacheSize(saved)}`)
     } catch {
@@ -32,12 +40,12 @@ export function SettingsCache() {
     }
     setCacheLoading(false)
     setShowCacheOptions(false)
-  }, [refreshCacheStats, showToast])
+  }, [refreshCacheStats, resizeCache, showToast, formatCacheSize])
 
   const handleClearImageCache = useCallback(async () => {
     setCacheLoading(true)
     try {
-      await clearImageCache()
+      await clearCachedImages()
       await refreshCacheStats()
       showToast('Image cache cleared!')
     } catch {
@@ -45,12 +53,12 @@ export function SettingsCache() {
     }
     setCacheLoading(false)
     setShowCacheOptions(false)
-  }, [refreshCacheStats, showToast])
+  }, [refreshCacheStats, clearCachedImages, showToast])
 
   const handleClearAllCache = useCallback(async () => {
     setCacheLoading(true)
     try {
-      await clearAllContentCache()
+      await clearCachedContent()
       await refreshCacheStats()
       showToast('All cached content cleared!')
     } catch {
@@ -58,7 +66,7 @@ export function SettingsCache() {
     }
     setCacheLoading(false)
     setShowCacheOptions(false)
-  }, [refreshCacheStats, showToast])
+  }, [refreshCacheStats, clearCachedContent, showToast])
 
   // Only render when there are cached ordinals
   if (!cacheStats || cacheStats.ordinalCount <= 0) return null

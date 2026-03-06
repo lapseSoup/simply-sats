@@ -162,7 +162,10 @@ pub fn decrypt_ecies(
     let nonce_bytes = &ciphertext_bytes[..12];
     let padding = &ciphertext_bytes[12..32];
     if padding != [0u8; 20] {
-        return Err("Invalid ECIES wire format: non-zero padding (cross-platform ciphertext not supported)".into());
+        return Err(
+            "Invalid ECIES wire format: non-zero padding (cross-platform ciphertext not supported)"
+                .into(),
+        );
     }
     let encrypted_data = &ciphertext_bytes[32..]; // skip 32-byte IV header
 
@@ -211,8 +214,7 @@ mod tests {
         assert!(valid);
 
         // Wrong message should fail
-        let invalid =
-            verify_signature(pubkey, "Wrong message".to_string(), sig).unwrap();
+        let invalid = verify_signature(pubkey, "Wrong message".to_string(), sig).unwrap();
         assert!(!invalid);
     }
 
@@ -229,8 +231,7 @@ mod tests {
         assert!(valid);
 
         // Wrong data should fail
-        let invalid =
-            verify_data_signature(pubkey, vec![9, 10, 11], sig).unwrap();
+        let invalid = verify_data_signature(pubkey, vec![9, 10, 11], sig).unwrap();
         assert!(!invalid);
     }
 

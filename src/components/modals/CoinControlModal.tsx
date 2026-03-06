@@ -1,13 +1,14 @@
 import { useState, useMemo, memo, useCallback } from 'react'
 import { useUI } from '../../contexts/UIContext'
-import { calculateTxFee } from '../../services/wallet'
-import type { UTXO as DatabaseUTXO } from '../../infrastructure/database'
+import { useWalletState } from '../../contexts'
+import { calculateTxFee, DEFAULT_FEE_RATE } from '../../domain/transaction/fees'
+import type { DBUtxo } from '../../domain/types'
 import { useUtxoManagement } from '../../hooks/useUtxoManagement'
 import { Modal } from '../shared/Modal'
 
 interface CoinControlModalProps {
   requiredAmount: number  // Amount being sent + estimated fee
-  onConfirm: (utxos: DatabaseUTXO[]) => void
+  onConfirm: (utxos: DBUtxo[]) => void
   onCancel: () => void
 }
 
@@ -18,9 +19,9 @@ const UTXOSelectRow = memo(function UTXOSelectRow({
   onToggle,
   formatUSD
 }: {
-  utxo: DatabaseUTXO
+  utxo: DBUtxo
   isSelected: boolean
-  onToggle: (utxo: DatabaseUTXO) => void
+  onToggle: (utxo: DBUtxo) => void
   formatUSD: (sats: number) => string
 }) {
   return (
@@ -60,11 +61,13 @@ const UTXOSelectRow = memo(function UTXOSelectRow({
 })
 
 export function CoinControlModal({ requiredAmount, onConfirm, onCancel }: CoinControlModalProps) {
+  const { feeRateKB } = useWalletState()
   const { formatUSD } = useUI()
+  const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : DEFAULT_FEE_RATE
 
   // Load spendable UTXOs via hook
   const spendableFilter = useCallback(
-    (u: DatabaseUTXO) => u.spendable && !u.spentAt && (u.basket === 'default' || u.basket === 'derived'),
+    (u: DBUtxo) => u.spendable && !u.spentAt && (u.basket === 'default' || u.basket === 'derived'),
     []
   )
   const { utxos: rawUtxos, loading } = useUtxoManagement({ filter: spendableFilter })
@@ -72,7 +75,7 @@ export function CoinControlModal({ requiredAmount, onConfirm, onCancel }: CoinCo
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
 
   // Toggle UTXO selection
-  const handleToggle = useCallback((utxo: DatabaseUTXO) => {
+  const handleToggle = useCallback((utxo: DBUtxo) => {
     const key = `${utxo.txid}:${utxo.vout}`
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -104,7 +107,7 @@ export function CoinControlModal({ requiredAmount, onConfirm, onCancel }: CoinCo
   const summary = useMemo(() => {
     const selectedUtxos = utxos.filter(u => selectedIds.has(`${u.txid}:${u.vout}`))
     const totalSelected = selectedUtxos.reduce((sum, u) => sum + u.satoshis, 0)
-    const estimatedFee = calculateTxFee(selectedUtxos.length || 1, 2) // 2 outputs (recipient + change)
+    const estimatedFee = calculateTxFee(selectedUtxos.length || 1, 2, feeRate) // 2 outputs (recipient + change)
     const changeAmount = totalSelected - requiredAmount
 
     return {
@@ -115,7 +118,7 @@ export function CoinControlModal({ requiredAmount, onConfirm, onCancel }: CoinCo
       isEnough: totalSelected >= requiredAmount,
       selectedUtxos
     }
-  }, [utxos, selectedIds, requiredAmount])
+  }, [utxos, selectedIds, requiredAmount, feeRate])
 
   // Confirm selection
   const handleConfirm = () => {

@@ -9,10 +9,10 @@ import { CircleCheck, AlertTriangle } from 'lucide-react'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { OrdinalImage } from '../shared/OrdinalImage'
-import type { Ordinal } from '../../services/wallet'
+import type { Ordinal } from '../../domain/types'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { calculateTxFee } from '../../services/wallet/fees'
+import { calculateTxFee, DEFAULT_FEE_RATE } from '../../domain/transaction/fees'
 import { isOk } from '../../domain/types'
 import { useAddressValidation } from '../../hooks/useAddressValidation'
 
@@ -32,7 +32,8 @@ export function OrdinalTransferModal({
   // Calculate estimated fee dynamically based on current fee rate
   // Ordinal transfer: 1 ordinal input + 1-2 funding inputs, 2 outputs (ordinal + change)
   // Typical: 2 inputs (ordinal + 1 funding), 2 outputs
-  const estimatedFee = calculateTxFee(2, 2)
+  const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : DEFAULT_FEE_RATE
+  const estimatedFee = calculateTxFee(2, 2, feeRate)
   const [toAddress, setToAddress] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -222,4 +223,3 @@ export function OrdinalTransferModal({
     </Modal>
   )
 }
-

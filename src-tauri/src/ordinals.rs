@@ -541,7 +541,10 @@ mod tests {
         assert!(!result.raw_tx.is_empty(), "Raw tx should be non-empty");
         assert_eq!(result.txid.len(), 64, "TXID should be 64 hex chars");
         assert!(result.fee > 0, "Fee should be positive");
-        assert!(!result.spent_outpoints.is_empty(), "Should have spent outpoints");
+        assert!(
+            !result.spent_outpoints.is_empty(),
+            "Should have spent outpoints"
+        );
         assert_eq!(
             result.spent_outpoints.len(),
             2,
@@ -615,7 +618,10 @@ mod tests {
         // Size: 10 + 148 + (8+1+25)*2 = 10 + 148 + 68 = 226
         // Fee at 0.05 sat/byte: ceil(226 * 0.05) = ceil(11.3) = 12
         let fee = estimate_fee(1, &[25, 25]);
-        assert_eq!(fee, 12, "Fee for 1-input 2-output P2PKH tx at 0.05 sat/byte");
+        assert_eq!(
+            fee, 12,
+            "Fee for 1-input 2-output P2PKH tx at 0.05 sat/byte"
+        );
     }
 
     #[test]

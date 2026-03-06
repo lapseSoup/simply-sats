@@ -75,7 +75,7 @@ vi.mock('../domain/transaction/builder', () => ({
   p2pkhLockingScriptHex: vi.fn((addr: string) => `script_for_${addr}`),
 }))
 
-import type { RecoveredAccount } from './backupRecovery'
+import type { RecoveredAccount, RecoveredBackupAccount } from './backupRecovery'
 import {
   readBackupFolder,
   decryptBackupAccount,
@@ -84,6 +84,8 @@ import {
   fetchAllBalances,
   calculateSweepEstimate,
   addRecoveredAccount,
+  addRecoveredAccountFromSession,
+  clearRecoveredAccountSession,
 } from './backupRecovery'
 import type { WalletKeys, UTXO } from './wallet/types'
 
@@ -103,11 +105,19 @@ const testKeys: WalletKeys = {
   identityPubKey: '02ghi',
 }
 
-const makeAccount = (overrides: Partial<RecoveredAccount> = {}): RecoveredAccount => ({
+const makeBackupAccount = (overrides: Partial<RecoveredBackupAccount> = {}): RecoveredBackupAccount => ({
   id: 1,
   name: 'Main Account',
   identityAddress: '1TestAddr',
   encryptedKeys: JSON.stringify({ version: 1, ciphertext: 'enc', iv: 'iv', salt: 'salt', iterations: 600000 }),
+  createdAt: 1700000000000,
+  ...overrides,
+})
+
+const makeRecoveredAccount = (overrides: Partial<RecoveredAccount> = {}): RecoveredAccount => ({
+  id: 1,
+  name: 'Main Account',
+  identityAddress: '1TestAddr',
   createdAt: 1700000000000,
   ...overrides,
 })
@@ -121,6 +131,7 @@ const makeUtxo = (sats: number, txid = 'tx' + sats): UTXO => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearRecoveredAccountSession()
   // Default: Tauri available, keys_from_wif returns valid key info
   mockIsTauri.mockReturnValue(true)
   mockTauriInvoke.mockResolvedValue({ wif: 'test', address: 'testaddr', pubKey: 'testpub' })
@@ -146,7 +157,7 @@ describe('decryptBackupAccount', () => {
   it('should decrypt and return wallet keys', async () => {
     mockDecrypt.mockResolvedValueOnce(JSON.stringify(testKeys))
 
-    const account = makeAccount()
+    const account = makeBackupAccount()
     const keys = await decryptBackupAccount(account, 'password123')
 
     expect(keys).toEqual(testKeys)
@@ -156,7 +167,7 @@ describe('decryptBackupAccount', () => {
   it('should throw for invalid encrypted data format', async () => {
     mockIsEncryptedData.mockReturnValueOnce(false)
 
-    const account = makeAccount({ encryptedKeys: JSON.stringify({ bad: 'data' }) })
+    const account = makeBackupAccount({ encryptedKeys: JSON.stringify({ bad: 'data' }) })
 
     await expect(decryptBackupAccount(account, 'password'))
       .rejects.toThrow('Invalid encrypted data format')
@@ -165,7 +176,7 @@ describe('decryptBackupAccount', () => {
   it('should throw when decrypted keys lack required fields', async () => {
     mockDecrypt.mockResolvedValueOnce(JSON.stringify({ walletWif: 'L123' }))
 
-    const account = makeAccount()
+    const account = makeBackupAccount()
 
     await expect(decryptBackupAccount(account, 'password'))
       .rejects.toThrow('missing required fields')
@@ -174,7 +185,7 @@ describe('decryptBackupAccount', () => {
   it('should propagate decrypt errors (wrong password)', async () => {
     mockDecrypt.mockRejectedValueOnce(new Error('Decryption failed'))
 
-    const account = makeAccount()
+    const account = makeBackupAccount()
 
     await expect(decryptBackupAccount(account, 'wrong-password'))
       .rejects.toThrow('Decryption failed')
@@ -184,15 +195,17 @@ describe('decryptBackupAccount', () => {
 // ---------- decryptAllAccounts ----------
 
 describe('decryptAllAccounts', () => {
-  it('should decrypt all accounts and return them with keys', async () => {
+  it('should decrypt all accounts and return sanitized summaries', async () => {
     mockDecrypt.mockResolvedValue(JSON.stringify(testKeys))
 
-    const accounts = [makeAccount({ id: 1 }), makeAccount({ id: 2, name: 'Second' })]
+    const accounts = [makeBackupAccount({ id: 1 }), makeBackupAccount({ id: 2, name: 'Second' })]
     const result = await decryptAllAccounts(accounts, 'password')
 
     expect(result).toHaveLength(2)
-    expect(result[0]!.decryptedKeys).toEqual(testKeys)
-    expect(result[1]!.decryptedKeys).toEqual(testKeys)
+    expect(result[0]).toMatchObject({ id: 1, name: 'Main Account' })
+    expect(result[1]).toMatchObject({ id: 2, name: 'Second' })
+    expect(result[0]).not.toHaveProperty('decryptedKeys')
+    expect(result[1]).not.toHaveProperty('decryptedKeys')
   })
 
   it('should throw with account name when one fails', async () => {
@@ -201,8 +214,8 @@ describe('decryptAllAccounts', () => {
       .mockRejectedValueOnce(new Error('Decryption failed'))
 
     const accounts = [
-      makeAccount({ id: 1, name: 'Good Account' }),
-      makeAccount({ id: 2, name: 'Bad Account' }),
+      makeBackupAccount({ id: 1, name: 'Good Account' }),
+      makeBackupAccount({ id: 2, name: 'Bad Account' }),
     ]
 
     await expect(decryptAllAccounts(accounts, 'password'))
@@ -254,15 +267,16 @@ describe('fetchAllBalances', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([makeUtxo(3000)])
 
-    const accounts = [makeAccount({ decryptedKeys: testKeys })]
+    mockDecrypt.mockResolvedValueOnce(JSON.stringify(testKeys))
+    const accounts = await decryptAllAccounts([makeBackupAccount()], 'password')
     const result = await fetchAllBalances(accounts)
 
     expect(result[0]!.liveUtxos).toHaveLength(2)
     expect(result[0]!.liveBalance).toBe(8000)
   })
 
-  it('should skip accounts without decrypted keys', async () => {
-    const accounts = [makeAccount()] // no decryptedKeys
+  it('should skip accounts without recovery-session keys', async () => {
+    const accounts = [makeRecoveredAccount()]
     const result = await fetchAllBalances(accounts)
 
     expect(result[0]!.liveUtxos).toBeUndefined()
@@ -273,7 +287,8 @@ describe('fetchAllBalances', () => {
   it('should set balance to 0 when fetch fails', async () => {
     mockGetUtxos.mockRejectedValue(new Error('Network error'))
 
-    const accounts = [makeAccount({ decryptedKeys: testKeys })]
+    mockDecrypt.mockResolvedValueOnce(JSON.stringify(testKeys))
+    const accounts = await decryptAllAccounts([makeBackupAccount()], 'password')
     const result = await fetchAllBalances(accounts)
 
     expect(result[0]!.liveUtxos).toEqual([])
@@ -350,5 +365,29 @@ describe('addRecoveredAccount', () => {
 
     await expect(addRecoveredAccount(testKeys, 'Wallet', 'password'))
       .rejects.toThrow('Failed to create account')
+  })
+})
+
+describe('addRecoveredAccountFromSession', () => {
+  it('creates an account using recovery-session keys', async () => {
+    mockDecrypt.mockResolvedValueOnce(JSON.stringify(testKeys))
+    await decryptAllAccounts([makeBackupAccount()], 'password')
+    mockCreateAccount.mockResolvedValueOnce({ ok: true, value: 99 })
+
+    const id = await addRecoveredAccountFromSession(1, 'Session Wallet', 'currentPassword')
+
+    expect(id).toBe(99)
+    expect(mockCreateAccount).toHaveBeenCalledWith(
+      'Session Wallet (Imported)',
+      testKeys,
+      'currentPassword'
+    )
+  })
+
+  it('throws when recovery-session keys are unavailable', async () => {
+    clearRecoveredAccountSession()
+
+    await expect(addRecoveredAccountFromSession(1, 'Session Wallet', 'currentPassword'))
+      .rejects.toThrow('Recovered account keys are no longer available')
   })
 })

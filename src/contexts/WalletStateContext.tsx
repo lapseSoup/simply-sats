@@ -8,16 +8,16 @@
  */
 
 import { createContext, useContext } from 'react'
-import type { WalletKeys, LockedUTXO, Ordinal, UTXO } from '../domain/types'
+import type { ActiveWallet, LockedUTXO, Ordinal, UTXO } from '../domain/types'
 import type { NetworkInfo } from './NetworkContext'
 import type { TxHistoryItem, BasketBalances, OrdinalContentEntry } from './SyncContext'
+import type { Account } from '../domain/accounts'
 import type { Contact } from '../infrastructure/database'
-import type { Account } from '../services/accounts'
 import type { TokenBalance } from '../services/tokens'
 
 export interface WalletStateContextType {
   // Wallet state
-  wallet: WalletKeys | null
+  wallet: ActiveWallet | null
   balance: number
   ordBalance: number
   usdPrice: number

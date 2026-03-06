@@ -4,7 +4,7 @@
  * Tests for Transaction Service (transactions.ts)
  *
  * Covers: broadcastTransaction, executeBroadcast, sendBSV,
- *         sendBSVMultiKey, consolidateUtxos, getAllSpendableUTXOs
+ *         sendBSVMultiKey, consolidateUtxos
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -29,13 +29,11 @@ const {
   mockConfirmUtxosSpent,
   mockRollbackPendingSpend,
   mockGetSpendableUtxosFromDatabase,
-  mockGetDerivedAddresses,
   mockWithTransaction,
   mockAddUTXO,
   mockResetInactivityTimer,
   mockAcquireSyncLock,
   mockReleaseLock,
-  mockDeriveChildPrivateKey,
 } = vi.hoisted(() => {
   const releaseLock = vi.fn()
   return {
@@ -52,23 +50,17 @@ const {
     mockConfirmUtxosSpent: vi.fn(),
     mockRollbackPendingSpend: vi.fn(),
     mockGetSpendableUtxosFromDatabase: vi.fn(),
-    mockGetDerivedAddresses: vi.fn(),
     mockWithTransaction: vi.fn(async (fn: () => Promise<unknown>) => fn()),
     mockAddUTXO: vi.fn(),
     mockResetInactivityTimer: vi.fn(),
     mockAcquireSyncLock: vi.fn(async () => releaseLock),
     mockReleaseLock: releaseLock,
-    mockDeriveChildPrivateKey: vi.fn(),
   }
 })
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
-
-vi.mock('../keyDerivation', () => ({
-  deriveChildKey: (...args: unknown[]) => mockDeriveChildPrivateKey(...args),
-}))
 
 vi.mock('../../utils/tauri', () => ({
   isTauri: () => true,
@@ -101,7 +93,6 @@ vi.mock('../sync', () => ({
 }))
 
 vi.mock('../database', () => ({
-  getDerivedAddresses: (...args: unknown[]) => mockGetDerivedAddresses(...args),
   withTransaction: (...args: unknown[]) => mockWithTransaction(...(args as [() => Promise<unknown>])),
   addUTXO: (...args: unknown[]) => mockAddUTXO(...args),
 }))
@@ -136,8 +127,9 @@ import {
   executeBroadcast,
   sendBSV,
   sendBSVMultiKey,
+  sendBSVMultiKeyFromStore,
+  sendBSVMultiOutputFromStore,
   consolidateUtxos,
-  getAllSpendableUTXOs,
 } from './transactions'
 
 // ---------------------------------------------------------------------------
@@ -210,7 +202,6 @@ describe('Transaction Service', () => {
     mockRollbackPendingSpend.mockResolvedValue({ ok: true, value: undefined })
     mockRecordSentTransaction.mockResolvedValue(undefined)
     mockAddUTXO.mockResolvedValue({ ok: true, value: 1 })
-    mockGetDerivedAddresses.mockResolvedValue([])
     mockGetSpendableUtxosFromDatabase.mockResolvedValue([])
     mockReleaseLock.mockReset()
     mockAcquireSyncLock.mockResolvedValue(mockReleaseLock)
@@ -575,6 +566,114 @@ describe('Transaction Service', () => {
     })
   })
 
+  describe('sendBSVMultiKeyFromStore', () => {
+    const storeUtxos = [
+      { ...makeUtxo({ satoshis: 6000 }), address: '1WalletAddr' },
+      { ...makeUtxo({ txid: 'bb'.repeat(32), vout: 1, satoshis: 5000 }), address: '1DerivedAddr' },
+    ]
+    const derivedSigners = [
+      { address: '1DerivedAddr', senderPubkey: '02'.padEnd(66, '1'), invoiceNumber: '42' },
+    ]
+
+    beforeEach(() => {
+      mockSelectCoins.mockReturnValue({
+        selected: storeUtxos,
+        total: 11_000,
+        sufficient: true,
+      })
+      mockTauriInvoke.mockImplementation(async (command: string) => {
+        if (command === 'build_resolved_multi_key_p2pkh_tx_from_store') {
+          return {
+            rawTx: 'deadbeef',
+            txid: 'pending-store-send-123',
+            fee: 200,
+            change: 2800,
+            changeAddress: '1WalletAddr',
+            spentOutpoints: storeUtxos.map(({ txid, vout }) => ({ txid, vout })),
+          }
+        }
+        if (command === 'broadcast_transaction') {
+          return { txid: MOCK_TXID, status: 'success' }
+        }
+        throw new Error(`Unexpected command: ${command}`)
+      })
+    })
+
+    it('builds and broadcasts via the store-backed multi-key command', async () => {
+      const result = await sendBSVMultiKeyFromStore(VALID_ADDRESS, 8000, storeUtxos, derivedSigners, 1)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error('Expected ok result')
+      expect(result.value.txid).toBe(MOCK_TXID)
+      expect(mockSelectCoins).toHaveBeenCalledWith(storeUtxos, 8000)
+      expect(mockTauriInvoke).toHaveBeenCalledWith('build_resolved_multi_key_p2pkh_tx_from_store', {
+        toAddress: VALID_ADDRESS,
+        satoshis: 8000,
+        selectedUtxos: [
+          { txid: storeUtxos[0]!.txid, vout: 0, satoshis: 6000, script: '76a914...88ac', address: '1WalletAddr' },
+          { txid: storeUtxos[1]!.txid, vout: 1, satoshis: 5000, script: '76a914...88ac', address: '1DerivedAddr' },
+        ],
+        derivedSigners: [
+          { address: '1DerivedAddr', senderPubKey: '02'.padEnd(66, '1'), invoiceNumber: '42', legacyWif: undefined },
+        ],
+        totalInput: 11_000,
+        feeRate: 0.5,
+      })
+    })
+  })
+
+  describe('sendBSVMultiOutputFromStore', () => {
+    const storeUtxos = [
+      { ...makeUtxo({ satoshis: 12000 }), address: '1WalletAddr' },
+    ]
+    const outputs = [
+      { address: VALID_ADDRESS, satoshis: 5000 },
+      { address: '1dice8EMZmqKvrGE4Qc9bUFf9PX3xaYDp', satoshis: 4000 },
+    ]
+
+    beforeEach(() => {
+      mockSelectCoins.mockReturnValue({
+        selected: storeUtxos,
+        total: 12_000,
+        sufficient: true,
+      })
+      mockTauriInvoke.mockImplementation(async (command: string) => {
+        if (command === 'build_resolved_multi_output_p2pkh_tx_from_store') {
+          return {
+            rawTx: 'cafebabe',
+            txid: 'pending-store-multi-123',
+            fee: 220,
+            change: 2780,
+            changeAddress: '1WalletAddr',
+            spentOutpoints: storeUtxos.map(({ txid, vout }) => ({ txid, vout })),
+          }
+        }
+        if (command === 'broadcast_transaction') {
+          return { txid: MOCK_TXID, status: 'success' }
+        }
+        throw new Error(`Unexpected command: ${command}`)
+      })
+    })
+
+    it('builds multi-output sends via the store-backed command', async () => {
+      const result = await sendBSVMultiOutputFromStore(outputs, storeUtxos, [], 1)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) throw new Error('Expected ok result')
+      expect(result.value.txid).toBe(MOCK_TXID)
+      expect(mockSelectCoins).toHaveBeenCalledWith(storeUtxos, 9000)
+      expect(mockTauriInvoke).toHaveBeenCalledWith('build_resolved_multi_output_p2pkh_tx_from_store', {
+        outputs,
+        selectedUtxos: [
+          { txid: storeUtxos[0]!.txid, vout: 0, satoshis: 12000, script: '76a914...88ac', address: '1WalletAddr' },
+        ],
+        derivedSigners: [],
+        totalInput: 12_000,
+        feeRate: 0.5,
+      })
+    })
+  })
+
   // =========================================================================
   // consolidateUtxos
   // =========================================================================
@@ -700,196 +799,4 @@ describe('Transaction Service', () => {
     })
   })
 
-  // =========================================================================
-  // getAllSpendableUTXOs
-  // =========================================================================
-
-  describe('getAllSpendableUTXOs', () => {
-    const walletWif = 'L1walletWif'
-
-    it('should return empty array when no UTXOs exist', async () => {
-      mockGetSpendableUtxosFromDatabase.mockResolvedValue([])
-      mockGetDerivedAddresses.mockResolvedValue([])
-
-      const result = await getAllSpendableUTXOs(walletWif)
-
-      expect(result).toEqual([])
-      expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('default', undefined)
-      expect(mockGetSpendableUtxosFromDatabase).toHaveBeenCalledWith('derived', undefined)
-    })
-
-    it('should combine default and derived basket UTXOs', async () => {
-      // Default basket UTXOs
-      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
-        if (basket === 'default') {
-          return [
-            { txid: 'tx1', vout: 0, satoshis: 5000, lockingScript: 'script_default' },
-          ]
-        }
-        if (basket === 'derived') {
-          return [
-            { txid: 'tx2', vout: 1, satoshis: 3000, lockingScript: 'script_1DerivedAddr' },
-          ]
-        }
-        return []
-      })
-      mockGetDerivedAddresses.mockResolvedValue([
-        { address: '1DerivedAddr', privateKeyWif: 'L2derivedWif' },
-      ])
-      // p2pkhLockingScriptHex('1DerivedAddr') returns 'script_1DerivedAddr'
-
-      const result = await getAllSpendableUTXOs(walletWif)
-
-      expect(result).toHaveLength(2)
-      // Sorted by satoshis ascending
-      expect(result[0]!.satoshis).toBe(3000)
-      expect(result[0]!.wif).toBe('L2derivedWif')
-      expect(result[0]!.address).toBe('1DerivedAddr')
-      expect(result[1]!.satoshis).toBe(5000)
-      expect(result[1]!.wif).toBe(walletWif)
-    })
-
-    it('should skip derived UTXOs with no matching address entry', async () => {
-      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
-        if (basket === 'default') return []
-        if (basket === 'derived') {
-          return [
-            { txid: 'tx3', vout: 0, satoshis: 2000, lockingScript: 'unknown_script' },
-          ]
-        }
-        return []
-      })
-      mockGetDerivedAddresses.mockResolvedValue([
-        { address: '1OtherAddr', privateKeyWif: 'L3otherWif' },
-      ])
-
-      const result = await getAllSpendableUTXOs(walletWif)
-
-      // The derived UTXO has no matching locking script, so it is skipped
-      expect(result).toHaveLength(0)
-    })
-
-    it('should sort results by satoshis ascending (smallest first)', async () => {
-      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
-        if (basket === 'default') {
-          return [
-            { txid: 'tx1', vout: 0, satoshis: 9000, lockingScript: 'a' },
-            { txid: 'tx2', vout: 0, satoshis: 1000, lockingScript: 'b' },
-            { txid: 'tx3', vout: 0, satoshis: 5000, lockingScript: 'c' },
-          ]
-        }
-        return []
-      })
-      mockGetDerivedAddresses.mockResolvedValue([])
-
-      const result = await getAllSpendableUTXOs(walletWif)
-
-      expect(result.map(u => u.satoshis)).toEqual([1000, 5000, 9000])
-    })
-
-    // -------------------------------------------------------------------------
-    // S-19: re-derivation tests
-    // -------------------------------------------------------------------------
-
-    it('Test A: re-derives child WIF from identityWif + senderPubkey + invoiceNumber', async () => {
-      // The derived UTXO's locking script matches p2pkhLockingScriptHex('1DerivedAddr')
-      // which returns 'script_1DerivedAddr' per the mock.
-      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
-        if (basket === 'default') return []
-        if (basket === 'derived') {
-          return [
-            { txid: 'txS19a', vout: 0, satoshis: 7000, lockingScript: 'script_1DerivedAddr' },
-          ]
-        }
-        return []
-      })
-      mockGetDerivedAddresses.mockResolvedValue([
-        {
-          address: '1DerivedAddr',
-          senderPubkey: 'abcd1234pubkey',
-          invoiceNumber: '42',
-          privateKeyWif: undefined,
-        },
-      ])
-      // Mock deriveChildKey to return a DerivedKeyResult
-      mockDeriveChildPrivateKey.mockResolvedValue({
-        wif: 'L1aChildWif...',
-        address: '1DerivedAddr',
-        pubKey: '02childpubkey',
-      })
-
-      const identityWif = 'L1identityWif'
-      const result = await getAllSpendableUTXOs(walletWif, undefined, identityWif)
-
-      // deriveChildKey must have been called (re-derivation path exercised)
-      expect(mockDeriveChildPrivateKey).toHaveBeenCalledTimes(1)
-      expect(result).toHaveLength(1)
-      expect(result[0]!.wif).toBe('L1aChildWif...')
-      expect(result[0]!.address).toBe('1DerivedAddr')
-      expect(result[0]!.satoshis).toBe(7000)
-    })
-
-    it('Test B: skips UTXO when identityWif is absent and record has no stored privateKeyWif', async () => {
-      // A derived address entry with senderPubkey+invoiceNumber but no stored WIF,
-      // and no identityWif supplied — cannot produce a WIF, so UTXO must be skipped.
-      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
-        if (basket === 'default') return []
-        if (basket === 'derived') {
-          return [
-            { txid: 'txS19b', vout: 0, satoshis: 4000, lockingScript: 'script_1NewDerivedAddr' },
-          ]
-        }
-        return []
-      })
-      mockGetDerivedAddresses.mockResolvedValue([
-        {
-          address: '1NewDerivedAddr',
-          senderPubkey: 'abcd1234pubkey',
-          invoiceNumber: '7',
-          privateKeyWif: undefined, // no stored WIF — new-style record
-        },
-      ])
-
-      // identityWif is NOT provided
-      const result = await getAllSpendableUTXOs(walletWif)
-
-      // UTXO must be skipped — no WIF available
-      expect(result).toHaveLength(0)
-      // deriveChildKey must NOT have been called
-      expect(mockDeriveChildPrivateKey).not.toHaveBeenCalled()
-    })
-
-    it('Test C: includes UTXO with stored privateKeyWif when identityWif is absent (legacy fallback)', async () => {
-      // Legacy record: has a stored WIF. identityWif is not provided.
-      // The legacy fallback path should populate the map and include the UTXO.
-      mockGetSpendableUtxosFromDatabase.mockImplementation(async (basket: string) => {
-        if (basket === 'default') return []
-        if (basket === 'derived') {
-          return [
-            { txid: 'txS19c', vout: 0, satoshis: 2500, lockingScript: 'script_1LegacyAddr' },
-          ]
-        }
-        return []
-      })
-      mockGetDerivedAddresses.mockResolvedValue([
-        {
-          address: '1LegacyAddr',
-          senderPubkey: undefined,   // old record — no senderPubkey
-          invoiceNumber: undefined,  // old record — no invoiceNumber
-          privateKeyWif: 'L3legacyStoredWif',
-        },
-      ])
-
-      // identityWif is NOT provided
-      const result = await getAllSpendableUTXOs(walletWif)
-
-      // Legacy UTXO must be included with the stored WIF
-      expect(result).toHaveLength(1)
-      expect(result[0]!.wif).toBe('L3legacyStoredWif')
-      expect(result[0]!.address).toBe('1LegacyAddr')
-      expect(result[0]!.satoshis).toBe(2500)
-      // re-derivation must NOT have been attempted
-      expect(mockDeriveChildPrivateKey).not.toHaveBeenCalled()
-    })
-  })
 })

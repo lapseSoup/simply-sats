@@ -7,21 +7,10 @@
  * @module platform/PlatformProvider
  */
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import type { PlatformAdapter } from './types'
 import { getPlatform } from './index'
-
-interface PlatformContextValue {
-  platform: PlatformAdapter | null
-  loading: boolean
-  error: string | null
-}
-
-const PlatformContext = createContext<PlatformContextValue>({
-  platform: null,
-  loading: true,
-  error: null,
-})
+import { PlatformContext } from './context'
 
 interface PlatformProviderProps {
   children: ReactNode
@@ -67,46 +56,4 @@ export function PlatformProvider({ children, adapter: providedAdapter }: Platfor
       {children}
     </PlatformContext.Provider>
   )
-}
-
-/**
- * Hook to access the PlatformAdapter.
- *
- * @returns The platform adapter, or null if still loading.
- * @throws Error if used outside PlatformProvider.
- *
- * @example
- * ```tsx
- * function MyComponent() {
- *   const platform = usePlatform()
- *   if (!platform) return <Loading />
- *
- *   const keys = await platform.deriveWalletKeys(mnemonic)
- * }
- * ```
- */
-export function usePlatform(): PlatformAdapter | null {
-  const { platform } = useContext(PlatformContext)
-  return platform
-}
-
-/**
- * Hook that returns the platform adapter or throws if not ready.
- * Use when you know the platform must be loaded (e.g., inside wallet-gated UI).
- */
-export function usePlatformOrThrow(): PlatformAdapter {
-  const { platform, loading, error } = useContext(PlatformContext)
-
-  if (error) throw new Error(`Platform initialization failed: ${error}`)
-  if (loading || !platform) throw new Error('Platform not yet initialized')
-
-  return platform
-}
-
-/**
- * Hook to check platform loading state.
- */
-export function usePlatformStatus(): { loading: boolean; error: string | null } {
-  const { loading, error } = useContext(PlatformContext)
-  return { loading, error }
 }

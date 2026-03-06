@@ -8,8 +8,7 @@
  * Private keys never enter the JavaScript heap.
  */
 
-import type { LockedUTXO } from './types'
-import { getWifForOperation } from './types'
+import type { LockedUTXO, PublicWalletKeys } from './types'
 import { feeFromBytes } from './fees'
 import { broadcastTransaction } from './transactions'
 import { getWocClient } from '../../infrastructure/api/wocClient'
@@ -34,6 +33,10 @@ import { isTauri, tauriInvoke } from '../../utils/tauri'
 async function buildUnlockTransaction(
   lockedUtxo: LockedUTXO
 ): Promise<Result<{ rawTx: string; txid: string; outputSats: number }, AppError>> {
+  if (!isTauri()) {
+    throw new Error('Unlock transaction building requires Tauri runtime')
+  }
+
   // Validate lockingScript is valid hex before using it for fee calculation
   if (!lockedUtxo.lockingScript || !/^[0-9a-fA-F]*$/.test(lockedUtxo.lockingScript) || lockedUtxo.lockingScript.length % 2 !== 0) {
     return err(new AppError(
@@ -43,26 +46,26 @@ async function buildUnlockTransaction(
     ))
   }
 
-  // Get WIF and derive keys via Tauri
-  let wif: string
+  let keyInfo: PublicWalletKeys
   try {
-    wif = await getWifForOperation('wallet', 'unlockBSV')
+    const keys = await tauriInvoke<PublicWalletKeys | null>('get_public_keys')
+    if (!keys) {
+      return err(new AppError(
+        'Wallet is locked — no public keys available',
+        ErrorCodes.INVALID_STATE
+      ))
+    }
+    keyInfo = keys
   } catch (keyErr) {
     const msg = typeof keyErr === 'string' ? keyErr : (keyErr instanceof Error ? keyErr.message : String(keyErr))
-    walletLogger.error('Failed to retrieve WIF for unlock — wallet may be locked', { error: msg })
+    walletLogger.error('Failed to retrieve public keys for unlock — wallet may be locked', { error: msg })
     return err(new AppError(
       msg || 'Wallet is locked — please unlock your wallet first',
-      ErrorCodes.INVALID_PARAMS
+      ErrorCodes.INVALID_STATE
     ))
   }
 
-  if (!isTauri()) {
-    throw new Error('Unlock transaction building requires Tauri runtime')
-  }
-
-  // Derive destination address from WIF via Rust
-  const keyInfo = await tauriInvoke<{ wif: string; address: string; pubKey: string }>('keys_from_wif', { wif })
-  const toAddress = keyInfo.address
+  const toAddress = keyInfo.walletAddress
 
   // Calculate fee for unlock transaction
   const lockingScriptSize = lockedUtxo.lockingScript.length / 2 // hex to bytes

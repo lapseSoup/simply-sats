@@ -37,7 +37,7 @@ export type {
 } from './wallet/types'
 
 // Key store bridge
-export { getWifForOperation } from './wallet/types'
+export { getPublicKeysFromStore, getPrivateKeyForDisplay, toSessionWallet, sanitizeWalletForSession } from './wallet/types'
 
 // Core wallet operations
 export {
@@ -93,7 +93,6 @@ export {
 export {
   broadcastTransaction,
   sendBSV,
-  getAllSpendableUTXOs,
   sendBSVMultiKey,
   consolidateUtxos
 } from './wallet/transactions'

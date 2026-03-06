@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Lock, AlertTriangle } from 'lucide-react'
 import { useWalletState, useWalletActions } from '../../contexts'
 import { useUI } from '../../contexts/UIContext'
-import { calculateLockFee } from '../../services/wallet/fees'
-import { getTimelockScriptSize } from '../../services/wallet'
+import { calculateLockFee, DEFAULT_FEE_RATE } from '../../domain/transaction/fees'
+import { getTimelockScriptSize } from '../../domain/locks/timelockScript'
 import { Modal } from '../shared/Modal'
 import { ConfirmationModal } from '../shared/ConfirmationModal'
 import { btcToSatoshis, satoshisToBtc } from '../../utils/satoshiConversion'
@@ -22,7 +22,7 @@ interface LockModalProps {
 }
 
 export function LockModal({ onClose }: LockModalProps) {
-  const { wallet, balance, utxos, networkInfo } = useWalletState()
+  const { wallet, balance, utxos, networkInfo, feeRateKB } = useWalletState()
   const { handleLock, performSync, fetchData } = useWalletActions()
   const { displayInSats, showToast } = useUI()
 
@@ -41,6 +41,7 @@ export function LockModal({ onClose }: LockModalProps) {
   const blocks = parseInt(lockBlocks || '0')
   const currentHeight = networkInfo?.blockHeight || 0
   const unlockBlock = currentHeight + blocks
+  const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : DEFAULT_FEE_RATE
 
   // Check if this is a short lock (< 1 hour)
   const isShortLock = blocks > 0 && blocks < LOCK.SHORT_LOCK_WARNING_BLOCKS
@@ -83,9 +84,9 @@ export function LockModal({ onClose }: LockModalProps) {
   let fee = 0
   if (wallet && blocks > 0) {
     const scriptSize = getTimelockScriptSize(wallet.walletPubKey, unlockBlock)
-    fee = calculateLockFee(estimatedInputs, scriptSize)
+    fee = calculateLockFee(estimatedInputs, feeRate, scriptSize)
   } else {
-    fee = calculateLockFee(estimatedInputs)
+    fee = calculateLockFee(estimatedInputs, feeRate)
   }
 
   const totalRequired = lockSats + fee

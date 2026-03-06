@@ -23,7 +23,6 @@ const {
   mockSaveWalletUnprotected,
   mockImportDatabase,
   mockDecrypt,
-  mockSetWalletKeys,
   mockMigrateToMultiAccount,
   mockGetActiveAccount,
   mockDiscoverAccounts,
@@ -38,7 +37,6 @@ const {
   mockSaveWalletUnprotected: vi.fn(),
   mockImportDatabase: vi.fn(),
   mockDecrypt: vi.fn(),
-  mockSetWalletKeys: vi.fn(),
   mockMigrateToMultiAccount: vi.fn(),
   mockGetActiveAccount: vi.fn(),
   mockDiscoverAccounts: vi.fn(),
@@ -53,6 +51,16 @@ vi.mock('./wallet', () => ({
   importFromJSON: (...args: unknown[]) => mockImportFromJSON(...args),
   saveWallet: (...args: unknown[]) => mockSaveWallet(...args),
   saveWalletUnprotected: (...args: unknown[]) => mockSaveWalletUnprotected(...args),
+  toSessionWallet: (keys: { walletType: string; walletAddress: string; walletPubKey: string; ordAddress: string; ordPubKey: string; identityAddress: string; identityPubKey: string; accountIndex?: number }) => ({
+    walletType: keys.walletType,
+    walletAddress: keys.walletAddress,
+    walletPubKey: keys.walletPubKey,
+    ordAddress: keys.ordAddress,
+    ordPubKey: keys.ordPubKey,
+    identityAddress: keys.identityAddress,
+    identityPubKey: keys.identityPubKey,
+    accountIndex: keys.accountIndex,
+  }),
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -73,10 +81,6 @@ vi.mock('../infrastructure/database', () => ({
 
 vi.mock('./crypto', () => ({
   decrypt: (...args: unknown[]) => mockDecrypt(...args),
-}))
-
-vi.mock('./brc100', () => ({
-  setWalletKeys: (...args: unknown[]) => mockSetWalletKeys(...args),
 }))
 
 vi.mock('./accounts', () => ({
@@ -194,8 +198,8 @@ describe('Restore Service', () => {
 
       expect(result.ok).toBe(true)
       if (!result.ok) return
-      // Mnemonic should be cleared in returned keys
-      expect(result.value.mnemonic).toBe('')
+      expect(result.value).not.toHaveProperty('mnemonic')
+      expect(result.value).not.toHaveProperty('walletWif')
       expect(result.value.walletAddress).toBe('1WalletAddr')
       expect(mockRestoreWallet).toHaveBeenCalledWith(VALID_MNEMONIC)
     })
@@ -236,15 +240,6 @@ describe('Restore Service', () => {
       expect(mockMigrateToMultiAccount).toHaveBeenCalledWith(
         expect.objectContaining({ mnemonic: VALID_MNEMONIC }),
         'testPassword'
-      )
-    })
-
-    it('should set wallet keys in BRC-100 module', async () => {
-      const backup = makeMnemonicBackup()
-      await restoreWalletFromBackup(backup, 'testPassword')
-
-      expect(mockSetWalletKeys).toHaveBeenCalledWith(
-        expect.objectContaining({ mnemonic: '' })
       )
     })
 
@@ -312,6 +307,8 @@ describe('Restore Service', () => {
 
       expect(result.ok).toBe(true)
       if (!result.ok) return
+      expect(result.value).not.toHaveProperty('mnemonic')
+      expect(result.value).not.toHaveProperty('walletWif')
       expect(mockImportFromJSON).toHaveBeenCalled()
     })
 

@@ -174,8 +174,9 @@ pub fn derive_tagged_key(
     let label_hash = sdk_sha256(label.as_bytes());
     let id_hash = sdk_sha256(id.as_bytes());
 
-    let label_index = u32::from_be_bytes([label_hash[0], label_hash[1], label_hash[2], label_hash[3]])
-        % 2_147_483_648;
+    let label_index =
+        u32::from_be_bytes([label_hash[0], label_hash[1], label_hash[2], label_hash[3]])
+            % 2_147_483_648;
     let id_index =
         u32::from_be_bytes([id_hash[0], id_hash[1], id_hash[2], id_hash[3]]) % 2_147_483_648;
     let derivation_path = format!("m/44'/236'/218'/{}/{}", label_index, id_index);
@@ -193,9 +194,11 @@ pub fn derive_tagged_key(
     );
 
     // Self-derivation: deriveChild(rootPubKey, tagString)
-    let (child_wif, child_address, child_pubkey) = sdk_derive_child_key(&wif,
+    let (child_wif, child_address, child_pubkey) = sdk_derive_child_key(
+        &wif,
         &crate::bsv_sdk_adapter::sdk_pubkey_hex_from_wif(&wif)?,
-        &tag_string)?;
+        &tag_string,
+    )?;
 
     Ok(TaggedKeyResult {
         wif: child_wif,
@@ -260,8 +263,7 @@ pub fn sha256_hash_bytes(data: Vec<u8>) -> String {
 /// This replaces `PublicKey.fromString(hex).toHash()` from @bsv/sdk.
 #[tauri::command]
 pub fn pubkey_to_hash160(pub_key_hex: String) -> Result<String, String> {
-    let pubkey_bytes = hex::decode(&pub_key_hex)
-        .map_err(|e| format!("Invalid hex: {}", e))?;
+    let pubkey_bytes = hex::decode(&pub_key_hex).map_err(|e| format!("Invalid hex: {}", e))?;
     if pubkey_bytes.len() != 33 {
         return Err(format!(
             "Expected 33-byte compressed public key, got {} bytes",
@@ -304,7 +306,11 @@ mod tests {
             "Child WIF: {}",
             result.wif
         );
-        assert!(result.address.starts_with('1'), "Child address: {}", result.address);
+        assert!(
+            result.address.starts_with('1'),
+            "Child address: {}",
+            result.address
+        );
         assert_eq!(result.pub_key.len(), 66);
         assert!(
             result.pub_key.starts_with("02") || result.pub_key.starts_with("03"),
@@ -529,7 +535,7 @@ mod tests {
     fn sha256_hash_works() {
         let hash = sha256_hash("test".to_string());
         assert_eq!(hash.len(), 64); // 32 bytes = 64 hex chars
-        // Known SHA-256 of "test"
+                                    // Known SHA-256 of "test"
         assert_eq!(
             hash,
             "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"

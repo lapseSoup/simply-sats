@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
-import type { WalletKeys, LockedUTXO } from '../domain/types'
+import type { ActiveWallet, LockedUTXO } from '../domain/types'
 import {
   getFeeRatePerKB,
-  setFeeRateFromKB
+  setFeeRateFromKB,
+  sanitizeWalletForSession
 } from '../services/wallet'
-import { setWalletKeys } from '../services/brc100'
 import { useNetwork } from './NetworkContext'
 import { useUI } from './UIContext'
 import { useAnnounce } from '../components/shared/ScreenReaderAnnounce'
-import { useAccounts } from './AccountsContext'
+import { useAccountsState, useAccountOperations } from './AccountsContext'
 import { useSyncContext } from './SyncContext'
 import { useLocksContext } from './LocksContext'
 import { reconcileLocks } from '../services/wallet/lockReconciliation'
@@ -61,7 +61,7 @@ interface WalletProviderProps {
 export function WalletProvider({ children }: WalletProviderProps) {
   const ACCOUNT_SNAPSHOT_CACHE_LIMIT = 3
   // Core wallet state
-  const [wallet, setWalletState] = useState<WalletKeys | null>(null)
+  const [wallet, setWalletState] = useState<ActiveWallet | null>(null)
   // Incremented on account switch to invalidate stale async callbacks
   const fetchVersionRef = useRef(0)
   const accountSnapshotCacheRef = useRef(new AccountSnapshotCache(ACCOUNT_SNAPSHOT_CACHE_LIMIT))
@@ -112,7 +112,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const {
     accounts,
     activeAccount,
-    activeAccountId,
+    activeAccountId
+  } = useAccountsState()
+
+  const {
     switchAccount: accountsSwitchAccount,
     createNewAccount: accountsCreateNewAccount,
     importAccount: accountsImportAccount,
@@ -122,7 +125,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     resetAccounts,
     getKeysForAccount,
     setActiveAccountState
-  } = useAccounts()
+  } = useAccountOperations()
 
   // Always-current account ID ref — avoids stale closure in fetchData after account switch
   const activeAccountIdRef = useRef(activeAccountId)
@@ -178,10 +181,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Settings
   const [feeRateKB, setFeeRateKBState] = useState<number>(() => getFeeRatePerKB())
 
-  // Set wallet and update BRC-100 service
-  const setWallet = useCallback((newWallet: WalletKeys | null) => {
-    setWalletState(newWallet)
-    setWalletKeys(newWallet)
+  // Set wallet state (desktop/Tauri sanitizes secrets before long-lived storage)
+  const setWallet = useCallback((newWallet: ActiveWallet | null) => {
+    const sessionWallet = newWallet ? sanitizeWalletForSession(newWallet) : null
+    setWalletState(sessionWallet)
   }, [])
 
   const applyCachedAccountSnapshot = useCallback((accountId: number): boolean => {
@@ -206,7 +209,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   // Pre-load DB data — called by useWalletLock (before lock screen closes) and
   // useWalletInit (before loading spinner disappears) so cached data is visible
   // the instant the UI transitions.
-  const preloadDataFromDB = useCallback(async (walletKeys: WalletKeys, accountId: number) => {
+  const preloadDataFromDB = useCallback(async (walletKeys: ActiveWallet, accountId: number) => {
     await syncFetchDataFromDB(
       walletKeys,
       accountId,

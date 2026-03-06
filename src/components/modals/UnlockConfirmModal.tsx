@@ -1,7 +1,8 @@
 import { AlertTriangle, Unlock } from 'lucide-react'
 import { Modal } from '../shared/Modal'
-import type { LockedUTXO } from '../../services/wallet'
-import { feeFromBytes } from '../../services/wallet'
+import { useWalletState } from '../../contexts'
+import type { LockedUTXO } from '../../domain/types'
+import { feeFromBytes, DEFAULT_FEE_RATE } from '../../domain/transaction/fees'
 
 interface UnlockConfirmModalProps {
   locks: LockedUTXO[]
@@ -11,11 +12,14 @@ interface UnlockConfirmModalProps {
 }
 
 export function UnlockConfirmModal({ locks, onConfirm, onCancel, unlocking }: UnlockConfirmModalProps) {
+  const { feeRateKB } = useWalletState()
+  const feeRate = feeRateKB > 0 ? feeRateKB / 1000 : DEFAULT_FEE_RATE
+
   // Calculate unlock fee - same as wallet.ts getUnlockFee() logic
   // P2PKH unlock tx: 10 bytes overhead + 148 bytes per input + 34 bytes output
   const getUnlockFee = () => {
     const txSize = 10 + 148 + 34 // Single input, single output
-    return feeFromBytes(txSize)
+    return feeFromBytes(txSize, feeRate)
   }
 
   const totalSats = locks.reduce((sum, l) => sum + l.satoshis, 0)

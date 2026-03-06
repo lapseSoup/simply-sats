@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { isUnprotectedData } from './types'
+import { describe, it, expect, vi } from 'vitest'
+import { isUnprotectedData, sanitizeWalletForSession, toSessionWallet } from './types'
+
+vi.mock('../../utils/tauri', () => ({
+  isTauri: vi.fn()
+}))
 
 describe('isUnprotectedData', () => {
   it('returns true for valid unprotected data', () => {
@@ -33,5 +37,80 @@ describe('isUnprotectedData', () => {
   it('returns false for missing keys', () => {
     const data = { version: 0, mode: 'unprotected' }
     expect(isUnprotectedData(data)).toBe(false)
+  })
+})
+
+describe('sanitizeWalletForSession', () => {
+  it('strips mnemonic and WIFs in Tauri', async () => {
+    const { isTauri } = await import('../../utils/tauri')
+    vi.mocked(isTauri).mockReturnValue(true)
+
+    expect(sanitizeWalletForSession({
+      mnemonic: 'seed words',
+      walletType: 'yours',
+      walletWif: 'wallet-wif',
+      walletAddress: '1wallet',
+      walletPubKey: 'wallet-pub',
+      ordWif: 'ord-wif',
+      ordAddress: '1ord',
+      ordPubKey: 'ord-pub',
+      identityWif: 'identity-wif',
+      identityAddress: '1identity',
+      identityPubKey: 'identity-pub',
+      accountIndex: 2
+    })).toEqual({
+      walletType: 'yours',
+      walletAddress: '1wallet',
+      walletPubKey: 'wallet-pub',
+      ordAddress: '1ord',
+      ordPubKey: 'ord-pub',
+      identityAddress: '1identity',
+      identityPubKey: 'identity-pub',
+      accountIndex: 2
+    })
+  })
+
+  it('preserves keys outside Tauri for browser fallback paths', async () => {
+    const { isTauri } = await import('../../utils/tauri')
+    vi.mocked(isTauri).mockReturnValue(false)
+
+    const keys = {
+      mnemonic: 'seed words',
+      walletType: 'yours' as const,
+      walletWif: 'wallet-wif',
+      walletAddress: '1wallet',
+      walletPubKey: 'wallet-pub',
+      ordWif: 'ord-wif',
+      ordAddress: '1ord',
+      ordPubKey: 'ord-pub',
+      identityWif: 'identity-wif',
+      identityAddress: '1identity',
+      identityPubKey: 'identity-pub'
+    }
+
+    expect(sanitizeWalletForSession(keys)).toBe(keys)
+  })
+})
+
+describe('toSessionWallet', () => {
+  it('maps public keys into the public session wallet shape', () => {
+    expect(toSessionWallet({
+      walletType: 'yours',
+      walletAddress: '1wallet',
+      walletPubKey: 'wallet-pub',
+      ordAddress: '1ord',
+      ordPubKey: 'ord-pub',
+      identityAddress: '1identity',
+      identityPubKey: 'identity-pub'
+    }, 4)).toEqual({
+      walletType: 'yours',
+      walletAddress: '1wallet',
+      walletPubKey: 'wallet-pub',
+      ordAddress: '1ord',
+      ordPubKey: 'ord-pub',
+      identityAddress: '1identity',
+      identityPubKey: 'identity-pub',
+      accountIndex: 4
+    })
   })
 })

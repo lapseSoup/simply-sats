@@ -38,9 +38,7 @@ function validatePrice(priceSats: number): string | null {
  * List an ordinal for sale using an OrdinalLock smart contract.
  * Creates an on-chain lock that anyone can purchase by paying the specified price.
  *
- * @param ordWif - WIF private key for the ordinal address
  * @param ordinalUtxo - The 1-sat ordinal UTXO to list
- * @param paymentWif - WIF private key for fee payment
  * @param paymentUtxos - UTXOs available for paying the listing fee
  * @param payAddress - Address to receive payment when ordinal is purchased
  * @param ordAddress - Address to return ordinal to if listing is cancelled
@@ -48,9 +46,7 @@ function validatePrice(priceSats: number): string | null {
  * @returns Result with the transaction ID on success
  */
 export async function listOrdinal(
-  ordWif: string,
   ordinalUtxo: UTXO,
-  paymentWif: string,
   paymentUtxos: UTXO[],
   payAddress: string,
   ordAddress: string,
@@ -67,10 +63,8 @@ export async function listOrdinal(
   if (priceError) return err(priceError)
 
   try {
-    const result = await tauriInvoke<BuiltTxResult>('create_ordinal_listing', {
-      ordWif,
+    const result = await tauriInvoke<BuiltTxResult>('create_ordinal_listing_from_store', {
       ordinalUtxo: toUtxoInput(ordinalUtxo),
-      paymentWif,
       paymentUtxos: paymentUtxos.map(toUtxoInput),
       payAddress,
       ordAddress,
@@ -86,25 +80,19 @@ export async function listOrdinal(
  * Cancel an ordinal listing by unlocking the OrdinalLock contract.
  * Returns the ordinal to the original ordinal address.
  *
- * @param ordWif - WIF private key for the ordinal address
  * @param listingUtxo - The UTXO of the listed ordinal (in the lock script)
- * @param paymentWif - WIF private key for fee payment
  * @param paymentUtxos - UTXOs available for paying the cancellation fee
  * @returns Result with the transaction ID on success
  */
 export async function cancelOrdinalListing(
-  ordWif: string,
   listingUtxo: UTXO,
-  paymentWif: string,
   paymentUtxos: UTXO[],
 ): Promise<Result<string, string>> {
   if (!isTauri()) return err('Marketplace requires Tauri runtime')
 
   try {
-    const result = await tauriInvoke<BuiltTxResult>('cancel_ordinal_listing', {
-      ordWif,
+    const result = await tauriInvoke<BuiltTxResult>('cancel_ordinal_listing_from_store', {
       listingUtxo: toUtxoInput(listingUtxo),
-      paymentWif,
       paymentUtxos: paymentUtxos.map(toUtxoInput),
     })
     return ok(result.txid)
@@ -119,7 +107,6 @@ export async function cancelOrdinalListing(
  * script) that was embedded in the listing transaction -- this is the
  * counterpart to the seller's `payAddress` and `price` encoded on-chain.
  *
- * @param params.paymentWif    - WIF private key for the funding address
  * @param params.paymentUtxos  - UTXOs available for paying the purchase price + fees
  * @param params.ordAddress    - Address to receive the purchased ordinal
  * @param params.listingUtxo   - The UTXO of the listed ordinal (the locked 1-sat output)
@@ -128,7 +115,6 @@ export async function cancelOrdinalListing(
  * @returns Result with the transaction ID on success
  */
 export async function purchaseOrdinal(params: {
-  paymentWif: string
   paymentUtxos: UTXO[]
   ordAddress: string
   listingUtxo: UTXO
@@ -145,8 +131,7 @@ export async function purchaseOrdinal(params: {
   if (priceError) return err(priceError)
 
   try {
-    const result = await tauriInvoke<BuiltTxResult>('purchase_ordinal', {
-      paymentWif: params.paymentWif,
+    const result = await tauriInvoke<BuiltTxResult>('purchase_ordinal_from_store', {
       paymentUtxos: params.paymentUtxos.map(toUtxoInput),
       ordAddress: params.ordAddress,
       listingUtxo: toUtxoInput(params.listingUtxo),

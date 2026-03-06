@@ -5,7 +5,7 @@
  * and discovering outputs by identity key or attributes.
  */
 
-import type { WalletKeys } from '../wallet'
+import type { ActiveWallet } from '../wallet'
 import {
   getSpendableUTXOs,
   getUTXOsByBasket,
@@ -36,7 +36,7 @@ export function formatLockedOutput(lock: Lock & { utxo: UTXO }, currentHeight: n
 }
 
 /** Resolve the correct public key based on request params */
-export function resolvePublicKey(keys: WalletKeys, params: { identityKey?: boolean; forOrdinals?: boolean }): string {
+export function resolvePublicKey(keys: ActiveWallet, params: { identityKey?: boolean; forOrdinals?: boolean }): string {
   if (params.identityKey) return keys.identityPubKey
   if (params.forOrdinals) return keys.ordPubKey
   return keys.walletPubKey

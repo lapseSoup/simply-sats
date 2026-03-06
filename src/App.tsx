@@ -17,8 +17,6 @@ import { useCheckSync } from './hooks/useCheckSync'
 import { usePaymentListener } from './hooks/usePaymentListener'
 import { useMnemonicAutoClear } from './hooks/useMnemonicAutoClear'
 import { useUnlockHandler } from './hooks/useUnlockHandler'
-import { logger } from './services/logger'
-import { tauriInvoke } from './utils/tauri'
 
 // Tab order for keyboard navigation
 const TAB_ORDER: Tab[] = ['activity', 'ordinals', 'tokens', 'locks', 'search']
@@ -265,19 +263,9 @@ export function WalletApp() {
           <span>🔒 It's been a while since you verified your recovery phrase.</span>
           <button
             className="backup-reminder-btn"
-            onClick={async () => {
-              try {
-                const mnemonic = await tauriInvoke<string | null>('get_mnemonic')
-                if (mnemonic) {
-                  setNewMnemonic(mnemonic)
-                  openModal('mnemonic')
-                } else {
-                  showToast('Mnemonic not available — wallet may have been imported without one', 'warning')
-                }
-              } catch (_err) {
-                logger.error('get_mnemonic failed', { error: String(_err) })
-                showToast('Failed to retrieve recovery phrase', 'error')
-              }
+            onClick={() => {
+              openModal('settings')
+              showToast('Use Test Recovery in Security settings to verify your backup.')
               setShowBackupReminder(false)
             }}
           >

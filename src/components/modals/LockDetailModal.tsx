@@ -1,7 +1,7 @@
 import { Unlock, Sparkles } from 'lucide-react'
 import { openExternalUrl } from '../../utils/opener'
 import { useUI } from '../../contexts/UIContext'
-import type { LockedUTXO } from '../../services/wallet'
+import type { LockedUTXO } from '../../domain/types'
 import { Modal } from '../shared/Modal'
 import { formatTimeRemaining, AVERAGE_BLOCK_TIME_SECONDS } from '../../utils/timeFormatting'
 

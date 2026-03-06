@@ -7,8 +7,19 @@
  */
 
 // Re-export canonical domain types
-export type { WalletKeys, UTXO, ExtendedUTXO, Ordinal, LockedUTXO } from '../../domain/types'
-import type { WalletKeys } from '../../domain/types'
+export type {
+  ActiveWallet,
+  PublicWalletKeys,
+  SessionWallet,
+  WalletKeys,
+  UTXO,
+  ExtendedUTXO,
+  Ordinal,
+  LockedUTXO
+} from '../../domain/types'
+import type { ActiveWallet, PublicWalletKeys, SessionWallet, WalletKeys } from '../../domain/types'
+import { hasPrivateKeyMaterial } from '../../domain/types'
+import { isTauri, tauriInvoke } from '../../utils/tauri'
 
 // Wallet type - simplified to just BRC-100/Yours standard
 export type WalletType = 'yours'
@@ -25,6 +36,18 @@ export interface UnprotectedWalletData {
 }
 
 /**
+ * Strip mnemonic and WIFs before putting wallet data into long-lived React state.
+ *
+ * In Tauri, the Rust key store owns sensitive material. Browser/test environments
+ * keep the original keys so local fallback paths continue to work.
+ */
+export function sanitizeWalletForSession(keys: ActiveWallet): ActiveWallet {
+  if (!isTauri() || !hasPrivateKeyMaterial(keys)) return keys
+
+  return toSessionWallet(keys, keys.accountIndex)
+}
+
+/**
  * Type guard for UnprotectedWalletData
  */
 export function isUnprotectedData(data: unknown): data is UnprotectedWalletData {
@@ -38,31 +61,68 @@ export function isUnprotectedData(data: unknown): data is UnprotectedWalletData 
  */
 export type KeyType = 'wallet' | 'ordinals' | 'identity'
 
+function toPublicWalletKeys(keys: ActiveWallet): PublicWalletKeys {
+  return {
+    walletType: keys.walletType,
+    walletAddress: keys.walletAddress,
+    walletPubKey: keys.walletPubKey,
+    ordAddress: keys.ordAddress,
+    ordPubKey: keys.ordPubKey,
+    identityAddress: keys.identityAddress,
+    identityPubKey: keys.identityPubKey
+  }
+}
+
+export function toSessionWallet(keys: PublicWalletKeys, accountIndex?: number): SessionWallet {
+  return {
+    walletType: keys.walletType as WalletKeys['walletType'],
+    walletAddress: keys.walletAddress,
+    walletPubKey: keys.walletPubKey,
+    ordAddress: keys.ordAddress,
+    ordPubKey: keys.ordPubKey,
+    identityAddress: keys.identityAddress,
+    identityPubKey: keys.identityPubKey,
+    accountIndex
+  }
+}
+
 /**
- * Retrieve a WIF from the Rust key store for a single operation.
+ * Fetch the current public wallet keys from the native store.
  *
- * In Tauri (desktop), this fetches the WIF from Rust memory and returns it
- * for the duration of one operation. The caller MUST NOT persist the value.
- *
- * In browser dev mode, falls back to reading from the WalletKeys object.
- *
- * @param keyType - Which key to retrieve: 'wallet', 'ordinals', or 'identity'
- * @param operation - Descriptive label for audit logging (e.g. 'lockBSV')
- * @param fallbackKeys - WalletKeys object for browser dev mode fallback
+ * In browser/test environments, falls back to the current wallet object.
  */
-export async function getWifForOperation(
-  keyType: KeyType,
-  operation: string,
-  fallbackKeys?: WalletKeys
-): Promise<string> {
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    const { invoke } = await import('@tauri-apps/api/core')
-    return invoke<string>('get_wif_for_operation', { keyType, operation })
+export async function getPublicKeysFromStore(
+  fallbackKeys?: ActiveWallet
+): Promise<PublicWalletKeys> {
+  if (isTauri()) {
+    const keys = await tauriInvoke<PublicWalletKeys | null>('get_public_keys')
+    if (!keys) {
+      throw new Error('Wallet is locked — no public keys available')
+    }
+    return keys
   }
 
-  // Browser dev mode fallback
   if (!fallbackKeys) {
-    throw new Error(`No WIF available for '${operation}' — not in Tauri and no fallback keys provided`)
+    throw new Error('No public keys available — not in Tauri and no fallback keys provided')
+  }
+  return toPublicWalletKeys(fallbackKeys)
+}
+
+/**
+ * Reveal a private key only for explicit display/export UX.
+ *
+ * This uses a dedicated Tauri command rather than the generic operation bridge.
+ */
+export async function getPrivateKeyForDisplay(
+  keyType: KeyType,
+  fallbackKeys?: ActiveWallet
+): Promise<string> {
+  if (isTauri()) {
+    return tauriInvoke<string>('reveal_private_key_from_store', { keyType })
+  }
+
+  if (!hasPrivateKeyMaterial(fallbackKeys)) {
+    throw new Error(`No private key available for display (${keyType})`)
   }
   switch (keyType) {
     case 'wallet': return fallbackKeys.walletWif
@@ -70,21 +130,6 @@ export async function getWifForOperation(
     case 'identity': return fallbackKeys.identityWif
     default: throw new Error(`Invalid key type: ${keyType as string}`)
   }
-}
-
-/**
- * Public-only wallet keys — returned from Rust key store.
- * Contains addresses and public keys but NO private keys or mnemonic.
- * Use _from_store Tauri commands for operations that need private keys.
- */
-export interface PublicWalletKeys {
-  walletType: string
-  walletAddress: string
-  walletPubKey: string
-  ordAddress: string
-  ordPubKey: string
-  identityAddress: string
-  identityPubKey: string
 }
 
 // WhatsOnChain API response types
@@ -193,4 +238,3 @@ export interface OrdinalDetails {
   satoshis?: number
   spend?: string // Spending txid if this ordinal has been spent
 }
-

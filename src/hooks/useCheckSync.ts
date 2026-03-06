@@ -14,8 +14,8 @@
  */
 
 import { useEffect } from 'react'
-import type { WalletKeys } from '../services/wallet'
-import type { Account } from '../services/accounts'
+import type { Account } from '../domain/accounts'
+import type { ActiveWallet } from '../services/wallet'
 import type { SyncPhase } from '../contexts/NetworkContext'
 import type { ToastType } from '../contexts/UIContext'
 import { logger } from '../services/logger'
@@ -33,7 +33,7 @@ interface DiscoveryParams {
 }
 
 interface UseCheckSyncOptions {
-  wallet: WalletKeys | null
+  wallet: ActiveWallet | null
   activeAccountId: number | null
   accounts: Account[]
 

@@ -9,12 +9,16 @@
 
 import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { BookOpen } from 'lucide-react'
-import { getAddressBook, getRecentAddresses } from '../../infrastructure/database'
-import type { AddressBookEntry } from '../../infrastructure/database'
+import { useAddressBook } from '../../hooks/useAddressBook'
 
 interface AddressPickerProps {
   onSelect: (address: string) => void
   accountId: number
+}
+
+interface AddressPickerEntry {
+  address: string
+  label: string
 }
 
 function truncateAddress(addr: string): string {
@@ -24,23 +28,16 @@ function truncateAddress(addr: string): string {
 
 export function AddressPicker({ onSelect, accountId }: AddressPickerProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [recentAddresses, setRecentAddresses] = useState<AddressBookEntry[]>([])
-  const [savedAddresses, setSavedAddresses] = useState<AddressBookEntry[]>([])
+  const [recentAddresses, setRecentAddresses] = useState<AddressPickerEntry[]>([])
+  const [savedAddresses, setSavedAddresses] = useState<AddressPickerEntry[]>([])
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const { loadAddresses: loadAddressesFromStore } = useAddressBook(accountId)
 
   const loadAddresses = useCallback(async () => {
-    const [recentResult, savedResult] = await Promise.all([
-      getRecentAddresses(accountId, 5),
-      getAddressBook(accountId),
-    ])
-
-    if (recentResult.ok) {
-      setRecentAddresses(recentResult.value)
-    }
-    if (savedResult.ok) {
-      setSavedAddresses(savedResult.value)
-    }
-  }, [accountId])
+    const next = await loadAddressesFromStore(5)
+    setRecentAddresses(next.recent)
+    setSavedAddresses(next.saved)
+  }, [loadAddressesFromStore])
 
   // Load addresses on mount
   useEffect(() => {
@@ -164,7 +161,7 @@ const AddressRow = memo(function AddressRow({
   entry,
   onSelect,
 }: {
-  entry: AddressBookEntry
+  entry: AddressPickerEntry
   onSelect: (address: string) => void
 }) {
   const handleClick = useCallback(() => {

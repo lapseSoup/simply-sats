@@ -8,12 +8,12 @@ import {
   setupHttpServerListener
 } from '../services/brc100'
 import { setupDeepLinkListener } from '../services/deeplink'
-import type { WalletKeys } from '../services/wallet'
+import type { ActiveWallet } from '../services/wallet'
 import { brc100Logger } from '../services/logger'
 import { useConnectedApps } from '../contexts/ConnectedAppsContext'
 
 interface UseBrc100HandlerOptions {
-  wallet: WalletKeys | null
+  wallet: ActiveWallet | null
   onRequestReceived?: (request: BRC100Request) => void
 }
 
@@ -38,22 +38,25 @@ export function useBrc100Handler({
 
   // Keep refs to the latest callbacks so the main effect doesn't
   // tear down listeners every time a callback identity changes.
+  const walletRef = useRef(wallet)
   const isTrustedOriginRef = useRef(isTrustedOrigin)
   const onRequestReceivedRef = useRef(onRequestReceived)
   useEffect(() => {
+    walletRef.current = wallet
     isTrustedOriginRef.current = isTrustedOrigin
     onRequestReceivedRef.current = onRequestReceived
-  }, [isTrustedOrigin, onRequestReceived])
+  }, [wallet, isTrustedOrigin, onRequestReceived])
 
   // Set up BRC-100 request handler
   useEffect(() => {
     const handleIncomingRequest = async (request: BRC100Request) => {
       // Check if this is from a trusted origin (auto-approve)
       const isTrusted = request.origin && isTrustedOriginRef.current(request.origin)
+      const currentWallet = walletRef.current
 
-      if (isTrusted && wallet) {
+      if (isTrusted && currentWallet) {
         brc100Logger.info(`Auto-approving request from trusted origin: ${request.origin}`)
-        approveRequest(request.id, wallet)
+        approveRequest(request.id, currentWallet)
         return
       }
 
@@ -75,7 +78,7 @@ export function useBrc100Handler({
       }
     })
 
-    setupHttpServerListener().then(unlisten => {
+    setupHttpServerListener(() => walletRef.current).then(unlisten => {
       if (mounted) {
         unlistenHttp = unlisten
       } else {
@@ -96,18 +99,20 @@ export function useBrc100Handler({
       if (unlistenDeepLink) unlistenDeepLink()
       if (unlistenHttp) unlistenHttp()
     }
-  }, [wallet])
+  }, [])
 
   const handleApprove = useCallback(() => {
-    if (!brc100Request || !wallet) return
+    if (!brc100Request) return
+
+    const currentWallet = walletRef.current
 
     if (brc100Request.origin && !connectedApps.includes(brc100Request.origin)) {
       connectApp(brc100Request.origin)
     }
 
-    approveRequest(brc100Request.id, wallet)
+    approveRequest(brc100Request.id, currentWallet)
     setBrc100Request(null)
-  }, [brc100Request, wallet, connectedApps, connectApp])
+  }, [brc100Request, connectedApps, connectApp])
 
   const handleReject = useCallback(() => {
     if (!brc100Request) return

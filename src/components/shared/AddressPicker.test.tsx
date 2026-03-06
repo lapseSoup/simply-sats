@@ -12,23 +12,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { AddressPicker } from './AddressPicker'
-import type { AddressBookEntry } from '../../infrastructure/database'
 
-// Mock the database module
-const mockGetRecentAddresses = vi.fn()
-const mockGetAddressBook = vi.fn()
+const mockLoadAddresses = vi.fn()
 
-vi.mock('../../infrastructure/database', () => ({
-  getRecentAddresses: (...args: unknown[]) => mockGetRecentAddresses(...args),
-  getAddressBook: (...args: unknown[]) => mockGetAddressBook(...args),
+vi.mock('../../hooks/useAddressBook', () => ({
+  useAddressBook: () => ({
+    loadAddresses: (...args: unknown[]) => mockLoadAddresses(...args),
+  }),
 }))
 
-const sampleRecent: AddressBookEntry[] = [
+const sampleRecent = [
   { id: 1, address: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa', label: 'Alice', lastUsedAt: Date.now(), useCount: 3, accountId: 1 },
   { id: 2, address: '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', label: 'Bob', lastUsedAt: Date.now() - 1000, useCount: 1, accountId: 1 },
 ]
 
-const sampleSaved: AddressBookEntry[] = [
+const sampleSaved = [
   { id: 3, address: '1CounterpartyXXXXXXXXXXXXXXXUWLpVr', label: 'Savings', lastUsedAt: 0, useCount: 0, accountId: 1 },
 ]
 
@@ -38,9 +36,7 @@ describe('AddressPicker', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    // Default: return addresses for both queries
-    mockGetRecentAddresses.mockResolvedValue({ ok: true, value: sampleRecent })
-    mockGetAddressBook.mockResolvedValue({ ok: true, value: sampleSaved })
+    mockLoadAddresses.mockResolvedValue({ recent: sampleRecent, saved: sampleSaved })
   })
 
   it('renders the address book toggle button', async () => {
@@ -48,7 +44,7 @@ describe('AddressPicker', () => {
 
     // Wait for the async loadAddresses on mount to settle
     await waitFor(() => {
-      expect(mockGetRecentAddresses).toHaveBeenCalled()
+      expect(mockLoadAddresses).toHaveBeenCalled()
     })
 
     const toggleBtn = screen.getByLabelText('Open address book')
@@ -107,8 +103,7 @@ describe('AddressPicker', () => {
   })
 
   it('shows empty state when no addresses exist', async () => {
-    mockGetRecentAddresses.mockResolvedValue({ ok: true, value: [] })
-    mockGetAddressBook.mockResolvedValue({ ok: true, value: [] })
+    mockLoadAddresses.mockResolvedValue({ recent: [], saved: [] })
 
     render(<AddressPicker onSelect={mockOnSelect} accountId={accountId} />)
 

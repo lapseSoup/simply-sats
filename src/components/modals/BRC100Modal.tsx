@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { feeFromBytes, DEFAULT_FEE_RATE } from '../../domain/transaction/fees'
-import type { BRC100Request, CreateActionRequest } from '../../services/brc100'
+import type { BRC100Request, CreateActionRequest } from '../../domain/brc100'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { useKeyboardNav } from '../../hooks/useKeyboardNav'
 

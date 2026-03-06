@@ -10,8 +10,8 @@ import { isTauri, tauriInvoke } from '../../utils/tauri'
 import type { UTXO } from './types'
 
 export interface InscribeParams {
-  /** WIF for the payment/funding key */
-  paymentWif: string
+  /** WIF for the payment/funding key (browser fallback only) */
+  paymentWif?: string
   /** UTXOs available to cover the inscription fee */
   paymentUtxos: UTXO[]
   /** Raw bytes of the content to inscribe */
@@ -45,8 +45,7 @@ export async function buildInscriptionTx(params: InscribeParams): Promise<string
     throw new Error('Inscription building requires Tauri runtime')
   }
 
-  const result = await tauriInvoke<InscriptionResult>('build_inscription_tx', {
-    wif: params.paymentWif,
+  const result = await tauriInvoke<InscriptionResult>('build_inscription_tx_from_store', {
     content: Array.from(params.content), // Vec<u8> in Rust
     contentType: params.contentType,
     destAddress: params.destinationAddress,
