@@ -72,13 +72,20 @@ export const ONE_SAT_VALUE_BSV = 0.00000001
  * ```
  */
 export function mapGpItemToOrdinal(item: GpOrdinalItem): Ordinal {
+  const canonicalOrigin = typeof item.origin === 'string'
+    ? item.origin
+    : item.origin?.outpoint
+  const file = typeof item.origin === 'object'
+    ? item.origin?.data?.insc?.file
+    : item.file
+
   return {
-    origin: item.origin?.outpoint || item.outpoint || `${item.txid}_${item.vout}`,
+    origin: canonicalOrigin || item.outpoint || `${item.txid}_${item.vout}`,
     txid: item.txid,
     vout: item.vout,
     satoshis: item.satoshis || 1,
-    contentType: item.origin?.data?.insc?.file?.type,
-    content: item.origin?.data?.insc?.file?.hash,
+    contentType: file?.type,
+    content: file?.hash,
     blockHeight: item.height
   }
 }

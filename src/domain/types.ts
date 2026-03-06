@@ -346,7 +346,11 @@ export interface GpOrdinalItem {
   vout: number
   satoshis?: number
   outpoint?: string
-  origin?: GpOrdinalOrigin
+  origin?: string | GpOrdinalOrigin
+  file?: {
+    type?: string
+    hash?: string
+  }
   height?: number
 }
 

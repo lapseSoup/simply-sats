@@ -59,6 +59,26 @@ describe('Ordinal Parsing', () => {
       expect(result.origin).toBe('abc123_2')
     })
 
+    it('should prefer string origin and top-level file metadata from newer GP responses', () => {
+      const gpItem: GpOrdinalItem = {
+        txid: 'newtx',
+        vout: 0,
+        satoshis: 1,
+        outpoint: 'current-outpoint_0',
+        origin: 'canonical-inscription_7',
+        file: {
+          type: 'image/jpeg',
+          hash: 'hash-from-top-level-file'
+        }
+      }
+
+      const result = mapGpItemToOrdinal(gpItem)
+
+      expect(result.origin).toBe('canonical-inscription_7')
+      expect(result.contentType).toBe('image/jpeg')
+      expect(result.content).toBe('hash-from-top-level-file')
+    })
+
     it('should construct origin from txid_vout when no origin or outpoint', () => {
       const gpItem: GpOrdinalItem = {
         txid: 'def456',
@@ -116,6 +136,18 @@ describe('Ordinal Parsing', () => {
     it('should include items with an origin even if satoshis > 1', () => {
       const items: GpOrdinalItem[] = [
         { txid: 'a', vout: 0, satoshis: 100, origin: { outpoint: 'a_0' } },
+        { txid: 'b', vout: 0, satoshis: 5000 }
+      ]
+
+      const result = filterOneSatOrdinals(items)
+
+      expect(result).toHaveLength(1)
+      expect(result[0]!.txid).toBe('a')
+    })
+
+    it('should include items with a string origin even if satoshis > 1', () => {
+      const items: GpOrdinalItem[] = [
+        { txid: 'a', vout: 0, satoshis: 100, origin: 'canonical-a_0' },
         { txid: 'b', vout: 0, satoshis: 5000 }
       ]
 
