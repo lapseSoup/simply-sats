@@ -234,7 +234,7 @@ describe('useAccountSwitching', () => {
     })
 
     it('uses a cached snapshot for recent accounts and refreshes the DB in the background', async () => {
-      let resolveRefresh: (() => void) | null = null
+      let resolveRefresh!: () => void
       const opts = makeOptions({
         applyCachedAccountSnapshot: vi.fn().mockReturnValue(true),
         fetchDataFromDB: vi.fn().mockImplementation(() => new Promise<void>((resolve) => { resolveRefresh = resolve })),
@@ -252,7 +252,7 @@ describe('useAccountSwitching', () => {
       expect(opts.fetchDataFromDB).toHaveBeenCalledTimes(1)
       expect(opts.resetSync).not.toHaveBeenCalled()
 
-      resolveRefresh?.()
+      resolveRefresh()
     })
 
     it('returns false when target account is not found', async () => {

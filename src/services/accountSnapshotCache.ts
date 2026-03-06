@@ -32,8 +32,11 @@ function cloneSnapshot(snapshot: AccountUISnapshot): AccountUISnapshot {
 
 export class AccountSnapshotCache {
   private readonly snapshots = new Map<number, AccountUISnapshot>()
+  private readonly maxEntries: number
 
-  constructor(private readonly maxEntries: number) {}
+  constructor(maxEntries: number) {
+    this.maxEntries = maxEntries
+  }
 
   get(accountId: number): AccountUISnapshot | null {
     const snapshot = this.snapshots.get(accountId)

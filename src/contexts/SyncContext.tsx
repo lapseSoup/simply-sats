@@ -62,6 +62,7 @@ interface SyncContextType {
   setBasketBalances: (balances: BasketBalances) => void
   setBalance: (balance: number) => void
   setOrdBalance: (balance: number) => void
+  setSyncError: (error: string | null) => void
 
   // Actions
   resetSync: (initialBalance?: number) => void
@@ -204,12 +205,13 @@ export function SyncProvider({ children }: SyncProviderProps) {
     setBasketBalances,
     setBalance,
     setOrdBalance,
+    setSyncError,
     resetSync,
     performSync,
     fetchDataFromDB,
     fetchData,
     fetchOrdinalContentIfMissing
-  }), [utxos, ordinals, txHistory, scopedDataAccountId, basketBalances, balance, ordBalance, syncError, cacheVersion, setUtxos, setOrdinalsWithRef, setTxHistory, setScopedDataAccountId, setBasketBalances, setBalance, setOrdBalance, resetSync, performSync, fetchDataFromDB, fetchData, fetchOrdinalContentIfMissing])
+  }), [utxos, ordinals, txHistory, scopedDataAccountId, basketBalances, balance, ordBalance, syncError, cacheVersion, setUtxos, setOrdinalsWithRef, setTxHistory, setScopedDataAccountId, setBasketBalances, setBalance, setOrdBalance, setSyncError, resetSync, performSync, fetchDataFromDB, fetchData, fetchOrdinalContentIfMissing])
 
   return (
     <SyncContext.Provider value={value}>
