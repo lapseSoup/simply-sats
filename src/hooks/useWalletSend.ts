@@ -20,6 +20,9 @@ import {
   getDerivedAddresses,
   upsertTransaction
 } from '../infrastructure/database'
+import {
+  ensureOrdinalCacheRowForTransferred
+} from '../services/ordinalCache'
 import { deriveChildKey } from '../services/keyDerivation'
 import {
   getSpendableUtxosFromDatabase
@@ -218,6 +221,45 @@ export function useWalletSend({
     )
   }, [activeAccountId])
 
+  const mirrorInternalOrdinalReceive = useCallback(async (
+    txid: string,
+    ordinal: Ordinal,
+    recipientAddress: string
+  ): Promise<void> => {
+    if (activeAccountId == null || !recipientAddress) return
+
+    try {
+      const recipientAccountId = await findLocalAccountIdByAddress(recipientAddress)
+      if (recipientAccountId == null || recipientAccountId === activeAccountId) return
+
+      await ensureOrdinalCacheRowForTransferred(ordinal.origin, recipientAccountId)
+
+      const txResult = await upsertTransaction({
+        txid,
+        description: `Received ordinal ${ordinal.origin} (internal transfer)`,
+        createdAt: Date.now(),
+        status: 'pending',
+        amount: 1,
+        labels: ['ordinal', 'receive', 'internal']
+      }, recipientAccountId)
+
+      if (!txResult.ok) {
+        walletLogger.warn('Failed to mirror internal ordinal receive transaction', {
+          txid,
+          recipientAccountId,
+          origin: ordinal.origin,
+          error: txResult.error.message
+        })
+      }
+    } catch (e) {
+      walletLogger.warn('Internal ordinal transfer lookup failed', {
+        address: recipientAddress,
+        origin: ordinal.origin,
+        error: String(e)
+      })
+    }
+  }, [activeAccountId])
+
   const handleSend = useCallback(async (address: string, amountSats: number, selectedUtxos?: DatabaseUTXO[]): Promise<WalletResult> => {
     if (!wallet) return err('No wallet loaded')
 
@@ -334,13 +376,14 @@ export function useWalletSend({
       // so the count drops right away without waiting for the next full sync.
       setOrdinals(getOrdinals().filter(o => !(o.txid === ordinal.txid && o.vout === ordinal.vout)))
 
+      await mirrorInternalOrdinalReceive(txid, ordinal, toAddress)
       await fetchData()
       syncInactiveAccountsBackground?.()
       return ok({ txid })
     } catch (e) {
       return err(e instanceof Error ? e.message : 'Transfer failed')
     }
-  }, [wallet, activeAccountId, fetchData, setOrdinals, getOrdinals, syncInactiveAccountsBackground])
+  }, [wallet, activeAccountId, fetchData, setOrdinals, getOrdinals, syncInactiveAccountsBackground, mirrorInternalOrdinalReceive])
 
   const handleListOrdinal = useCallback(async (
     ordinal: Ordinal,

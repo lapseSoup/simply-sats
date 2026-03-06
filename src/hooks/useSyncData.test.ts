@@ -669,6 +669,18 @@ describe('useSyncData', () => {
       expect(lastArg).toBe(true)
     })
 
+    it('preloads cached ordinal content globally so transfers between local accounts keep previews', async () => {
+      mockedGetOrdinals.mockResolvedValue([])
+      const opts = makeOptions()
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchData(makeWalletKeys(), 4, () => new Set(), vi.fn())
+      })
+
+      expect(mockedGetAllCachedOrdinalOrigins).toHaveBeenCalledWith()
+    })
+
     it('calls cacheOrdinalsInBackground with allApiCallsSucceeded=false when some fail', async () => {
       mockedGetOrdinals
         .mockResolvedValueOnce([])
@@ -836,6 +848,32 @@ describe('useSyncData', () => {
       expect(opts.setOrdinalsWithRef).toHaveBeenCalledTimes(1)
       const onlyCall = opts.setOrdinalsWithRef.mock.calls[0]!
       expect((onlyCall[0] as Ordinal[])[0]!.origin).toBe('api-ord')
+    })
+
+    it('treats live ordinals without block height as pending receives in activity history', async () => {
+      mockedGetOrdinals
+        .mockResolvedValueOnce([makeOrdinal({ txid: 'pending-ord', blockHeight: undefined })])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+
+      const opts = makeOptions()
+      const { result } = renderHook(() => useSyncData(opts))
+
+      await act(async () => {
+        await result.current.fetchData(makeWalletKeys(), 1, () => new Set(), vi.fn())
+      })
+
+      const lastHistoryCall = opts.setTxHistory.mock.calls[opts.setTxHistory.mock.calls.length - 1]!
+      const history = lastHistoryCall[0] as TxHistoryItem[]
+      expect(history).toEqual([
+        expect.objectContaining({
+          tx_hash: 'pending-ord',
+          height: 0,
+          amount: 1
+        })
+      ])
+      expect(history[0]!.createdAt).toBeTypeOf('number')
+      expect((history[0]!.createdAt ?? 0) > 0).toBe(true)
     })
 
     it('replaces non-overlapping preloaded ordinals with DB ordinals (account switch safety)', async () => {

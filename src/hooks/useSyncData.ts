@@ -402,9 +402,11 @@ export function useSyncData({
         }
 
         // Load cached content from DB for instant previews.
-        // Use getAllCachedOrdinalOrigins (includes transferred=1 rows) so that
-        // activity tab thumbnails work even for ordinals no longer owned.
-        const allCachedOrigins = await getAllCachedOrdinalOrigins(activeAccountId)
+        // Content is immutable and keyed by inscription origin, so it is safe to
+        // preload globally. This avoids losing thumbnails when an ordinal moves
+        // between local accounts but the shared cache row still belongs to the
+        // previous account.
+        const allCachedOrigins = await getAllCachedOrdinalOrigins()
         if (checkCancelled()) return
         const newCache = await getBatchOrdinalContent(allCachedOrigins)
         if (newCache.size > 0) {
@@ -496,10 +498,16 @@ export function useSyncData({
           let historyChanged = false
           for (const ord of allOrdinals) {
             if (!liveTxidSet.has(ord.txid)) {
-              // blockHeight may not exist if allOrdinals came from DB fallback (getOrdinalsFromDatabase)
-              // rather than from API. Use -1 sentinel as fallback.
-              const blockHeight = ord.blockHeight ?? -1
-              mergedHistory.push({ tx_hash: ord.txid, height: blockHeight, amount: 1, createdAt: 0 })
+              // Live API ordinals with no block height are true pending receives and
+              // should sort like unconfirmed txs. DB fallback rows are handled by the
+              // earlier mergeOrdinalTxEntries path and keep the -1 sentinel instead.
+              const isPendingReceive = ord.blockHeight == null
+              mergedHistory.push({
+                tx_hash: ord.txid,
+                height: isPendingReceive ? 0 : ord.blockHeight ?? 0,
+                amount: 1,
+                createdAt: isPendingReceive ? Date.now() : 0
+              })
               liveTxidSet.add(ord.txid)
               historyChanged = true
             }
