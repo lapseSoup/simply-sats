@@ -36,6 +36,14 @@ describe('syncHelpers', () => {
       expect(compareTxByHeight(confirmed, unconfirmed)).toBe(1)
     })
 
+    it('synthetic pending txs (height=-1) also sort before confirmed txs', () => {
+      const syntheticPending: TxHistoryItem = { tx_hash: 'a', height: -1, amount: 1 }
+      const confirmed: TxHistoryItem = { tx_hash: 'b', height: 800000, amount: 200 }
+
+      expect(compareTxByHeight(syntheticPending, confirmed)).toBe(-1)
+      expect(compareTxByHeight(confirmed, syntheticPending)).toBe(1)
+    })
+
     it('higher blocks sort before lower blocks', () => {
       const higher: TxHistoryItem = { tx_hash: 'a', height: 900000, amount: 100 }
       const lower: TxHistoryItem = { tx_hash: 'b', height: 800000, amount: 200 }

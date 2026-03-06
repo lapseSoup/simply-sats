@@ -21,6 +21,7 @@ interface ActivityRowData {
     ordinalContentType?: string
     ordinalCachedContent?: { contentData?: Uint8Array; contentText?: string; contentType?: string }
   }
+  onOrdinalContentNeeded: (origin: string, contentType?: string) => void
   handleTxClick: (tx: TxHistoryItem) => void
   formatUSD: (sats: number) => string
   displayInSats: boolean
@@ -44,7 +45,7 @@ interface ActivityRowData {
  */
 function ActivityRow({
   index, style,
-  txHistory, getTxTypeAndIcon, getOrdinalProps, handleTxClick,
+  txHistory, getTxTypeAndIcon, getOrdinalProps, onOrdinalContentNeeded, handleTxClick,
   formatUSD, displayInSats, formatBSVShort, currentHeight
 }: { index: number; style: CSSProperties; ariaAttributes?: Record<string, unknown> } & ActivityRowData) {
   const tx = txHistory[index]!
@@ -60,6 +61,7 @@ function ActivityRow({
         formatUSD={formatUSD}
         displayInSats={displayInSats}
         formatBSVShort={formatBSVShort}
+        onOrdinalContentNeeded={onOrdinalContentNeeded}
         currentHeight={currentHeight}
         {...ordinalProps}
       />
@@ -170,6 +172,10 @@ export const ActivityTab = memo(function ActivityTab() {
       void fetchOrdinalContentIfMissing(origin, contentType, activeAccountId ?? undefined)
     }
   }, [missingTransferOrigins, fetchOrdinalContentIfMissing, activeAccountId])
+
+  const handleOrdinalContentNeeded = useCallback((origin: string, contentType?: string) => {
+    void fetchOrdinalContentIfMissing(origin, contentType, activeAccountId ?? undefined)
+  }, [fetchOrdinalContentIfMissing, activeAccountId])
 
   const getTxTypeAndIcon = useCallback((tx: { tx_hash: string; amount?: number; description?: string }) => {
     // Check active locks from context + historical lock labels from DB
@@ -282,6 +288,7 @@ export const ActivityTab = memo(function ActivityTab() {
             rowHeight={TX_ITEM_HEIGHT}
             rowProps={{
               txHistory, getTxTypeAndIcon, getOrdinalProps, handleTxClick,
+              onOrdinalContentNeeded: handleOrdinalContentNeeded,
               formatUSD, displayInSats, formatBSVShort, currentHeight
             }}
             overscanCount={5}
@@ -317,6 +324,7 @@ export const ActivityTab = memo(function ActivityTab() {
               formatUSD={formatUSD}
               displayInSats={displayInSats}
               formatBSVShort={formatBSVShort}
+              onOrdinalContentNeeded={handleOrdinalContentNeeded}
               currentHeight={currentHeight}
               {...ordinalProps}
             />

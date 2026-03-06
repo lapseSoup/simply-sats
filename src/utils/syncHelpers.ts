@@ -12,9 +12,11 @@ import type { TxHistoryItem } from '../contexts/SyncContext'
 /** Sort transactions: unconfirmed first, then by block height descending, createdAt tiebreaker */
 export function compareTxByHeight(a: TxHistoryItem, b: TxHistoryItem): number {
   const aH = a.height || 0, bH = b.height || 0
-  if (aH === 0 && bH !== 0) return -1
-  if (bH === 0 && aH !== 0) return 1
-  if (aH === 0 && bH === 0) return (b.createdAt ?? 0) - (a.createdAt ?? 0)
+  const aPending = aH <= 0
+  const bPending = bH <= 0
+  if (aPending && !bPending) return -1
+  if (bPending && !aPending) return 1
+  if (aPending && bPending) return (b.createdAt ?? 0) - (a.createdAt ?? 0)
   return bH - aH
 }
 

@@ -41,6 +41,7 @@ export const TransactionItemRow = memo(function TransactionItemRow({
   ordinalOrigin,
   ordinalContentType,
   ordinalCachedContent,
+  onOrdinalContentNeeded,
   currentHeight
 }: {
   tx: TxHistoryItem
@@ -53,6 +54,7 @@ export const TransactionItemRow = memo(function TransactionItemRow({
   ordinalOrigin?: string
   ordinalContentType?: string
   ordinalCachedContent?: { contentData?: Uint8Array; contentText?: string; contentType?: string }
+  onOrdinalContentNeeded?: (origin: string, contentType?: string) => void
   currentHeight: number
 }) {
   const dateStr = formatTxDate(tx.height, currentHeight, tx.createdAt)
@@ -74,6 +76,7 @@ export const TransactionItemRow = memo(function TransactionItemRow({
           alt="Ordinal"
           lazy={false}
           cachedContent={ordinalCachedContent}
+          onContentNeeded={onOrdinalContentNeeded}
         />
       ) : (
         <div className="tx-icon" aria-hidden="true">
