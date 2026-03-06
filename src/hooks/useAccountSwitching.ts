@@ -55,6 +55,8 @@ interface UseAccountSwitchingOptions {
   storeKeysInRust: (mnemonic: string, accountIndex: number) => Promise<void>
   refreshAccounts: () => Promise<void>
   setActiveAccountState: (account: Account | null, accountId: number | null) => void
+  /** Apply a hot in-memory snapshot for recently used accounts, if available. */
+  applyCachedAccountSnapshot: (accountId: number) => boolean
   /** DB-only data loader from SyncContext — loads all cached data without API calls */
   fetchDataFromDB: (
     wallet: WalletKeys,
@@ -130,6 +132,7 @@ export function useAccountSwitching({
   storeKeysInRust,
   refreshAccounts,
   setActiveAccountState,
+  applyCachedAccountSnapshot,
   fetchDataFromDB,
   wallet: _wallet,
   accounts
@@ -139,6 +142,46 @@ export function useAccountSwitching({
   const switchingRef = useRef(false)
   // Queue the latest switch request when one is already in progress
   const pendingSwitchRef = useRef<number | null>(null)
+
+  const loadAccountDataFromDB = useCallback(async (
+    keys: WalletKeys,
+    accountId: number,
+    clearOnFailure: boolean
+  ): Promise<boolean> => {
+    const preloadVersion = fetchVersionRef.current
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await fetchDataFromDB(
+          keys,
+          accountId,
+          (loadedLocks) => {
+            if (fetchVersionRef.current !== preloadVersion) return
+            setLocks(loadedLocks)
+          },
+          () => fetchVersionRef.current !== preloadVersion
+        )
+        return true
+      } catch (e) {
+        walletLogger.warn('Account switch DB preload failed', {
+          accountId,
+          attempt,
+          error: String(e),
+          clearOnFailure
+        })
+        if (attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, 75))
+        }
+      }
+    }
+
+    if (clearOnFailure) {
+      resetSync()
+      setLocks([])
+    }
+
+    return false
+  }, [fetchDataFromDB, fetchVersionRef, resetSync, setLocks])
 
   const switchAccount = useCallback(async (accountId: number): Promise<boolean> => {
     if (switchingRef.current) {
@@ -231,40 +274,20 @@ export function useAccountSwitching({
         setWallet({ ...keys, mnemonic: '' })
         setIsLocked(false)
 
-        // Load all cached data from DB in one call (balance, txHistory, locks,
-        // ordinals, UTXOs). This populates the UI instantly without API calls.
-        const preloadVersion = fetchVersionRef.current
-        let preloadSucceeded = false
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          try {
-            await fetchDataFromDB(
-              keys,
-              accountId,
-              (loadedLocks) => {
-                if (fetchVersionRef.current !== preloadVersion) return
-                setLocks(loadedLocks)
-              },
-              () => fetchVersionRef.current !== preloadVersion
-            )
-            preloadSucceeded = true
-            break
-          } catch (e) {
-            walletLogger.warn('Account switch DB preload failed', {
-              accountId,
-              attempt,
-              error: String(e)
-            })
-            if (attempt < 2) {
-              await new Promise(resolve => setTimeout(resolve, 75))
-            }
-          }
-        }
+        const hydratedFromCache = applyCachedAccountSnapshot(accountId)
+        _lastSwitchDiag += hydratedFromCache ? ' | cache HIT' : ' | cache MISS'
 
-        if (!preloadSucceeded) {
-          _lastSwitchDiag += ' | preload failed'
-          // Do not leave previous account data visible under the new account.
-          resetSync()
-          setLocks([])
+        if (hydratedFromCache) {
+          // Recent-account switches should feel instant. Refresh from the DB in
+          // the background so the in-memory snapshot stays honest.
+          void loadAccountDataFromDB(keys, accountId, false)
+        } else {
+          // Cold account: fall back to the DB preload path before exposing the
+          // new active account, so the UI never mixes accounts.
+          const preloadSucceeded = await loadAccountDataFromDB(keys, accountId, true)
+          if (!preloadSucceeded) {
+            _lastSwitchDiag += ' | preload failed'
+          }
         }
 
         // Rotate session token for new account in the background.
@@ -311,7 +334,7 @@ export function useAccountSwitching({
         switchAccount(pendingId).catch(e => walletLogger.error('Queued switch failed', e))
       }
     }
-  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, setLocks, resetSync, resetKnownUnlockedLocks, storeKeysInRust, fetchVersionRef, setIsLocked, fetchDataFromDB])
+  }, [accounts, accountsSwitchAccount, refreshAccounts, setActiveAccountState, setWallet, resetKnownUnlockedLocks, storeKeysInRust, setIsLocked, applyCachedAccountSnapshot, loadAccountDataFromDB])
 
   const createNewAccount = useCallback(async (name: string): Promise<boolean> => {
     if (switchingRef.current) {

@@ -126,6 +126,7 @@ function makeOptions(overrides: Partial<Parameters<typeof useAccountSwitching>[0
     storeKeysInRust: vi.fn().mockResolvedValue(undefined),
     refreshAccounts: vi.fn().mockResolvedValue(undefined),
     setActiveAccountState: vi.fn(),
+    applyCachedAccountSnapshot: vi.fn().mockReturnValue(false),
     fetchDataFromDB: vi.fn().mockResolvedValue(undefined),
     wallet: null,
     accounts: [makeAccount({ id: 1 }), makeAccount({ id: 2, name: 'Account 2', derivationIndex: 1 })],
@@ -230,6 +231,28 @@ describe('useAccountSwitching', () => {
       const [keys, accountId] = vi.mocked(opts.fetchDataFromDB).mock.calls[0]!
       expect(keys.walletAddress).toBe('1WalletAddress')
       expect(accountId).toBe(2)
+    })
+
+    it('uses a cached snapshot for recent accounts and refreshes the DB in the background', async () => {
+      let resolveRefresh: (() => void) | null = null
+      const opts = makeOptions({
+        applyCachedAccountSnapshot: vi.fn().mockReturnValue(true),
+        fetchDataFromDB: vi.fn().mockImplementation(() => new Promise<void>((resolve) => { resolveRefresh = resolve })),
+      })
+      const { result } = renderHook(() => useAccountSwitching(opts))
+
+      let success = false
+      await act(async () => {
+        success = await result.current.switchAccount(2)
+      })
+
+      expect(success).toBe(true)
+      expect(opts.applyCachedAccountSnapshot).toHaveBeenCalledWith(2)
+      expect(opts.setActiveAccountState).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }), 2)
+      expect(opts.fetchDataFromDB).toHaveBeenCalledTimes(1)
+      expect(opts.resetSync).not.toHaveBeenCalled()
+
+      resolveRefresh?.()
     })
 
     it('returns false when target account is not found', async () => {

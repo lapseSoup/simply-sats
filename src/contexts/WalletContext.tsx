@@ -28,6 +28,7 @@ import { hasPassword } from '../services/wallet/storage'
 import { getAccountKeys } from '../services/accounts'
 import { getSessionPassword } from '../services/sessionPasswordStore'
 import { syncWallet } from '../services/sync'
+import { AccountSnapshotCache } from '../services/accountSnapshotCache'
 
 // Split context objects
 import { WalletStateContext, useWalletState, type WalletStateContextType } from './WalletStateContext'
@@ -58,16 +59,25 @@ interface WalletProviderProps {
 }
 
 export function WalletProvider({ children }: WalletProviderProps) {
+  const ACCOUNT_SNAPSHOT_CACHE_LIMIT = 3
   // Core wallet state
   const [wallet, setWalletState] = useState<WalletKeys | null>(null)
   // Incremented on account switch to invalidate stale async callbacks
   const fetchVersionRef = useRef(0)
+  const accountSnapshotCacheRef = useRef(new AccountSnapshotCache(ACCOUNT_SNAPSHOT_CACHE_LIMIT))
 
   // Get sync state from SyncContext
   const {
     utxos,
     ordinals,
+    setUtxos,
     setOrdinals,
+    setTxHistory,
+    setBasketBalances,
+    setBalance,
+    setOrdBalance,
+    setScopedDataAccountId,
+    setSyncError,
     contentCacheRef,
     cacheVersion,
     txHistory,
@@ -120,6 +130,20 @@ export function WalletProvider({ children }: WalletProviderProps) {
     activeAccountIdRef.current = activeAccountId
   }, [activeAccountId])
 
+  useEffect(() => {
+    if (activeAccountId == null || scopedDataAccountId !== activeAccountId) return
+
+    accountSnapshotCacheRef.current.set(activeAccountId, {
+      balance,
+      ordBalance,
+      utxos,
+      ordinals,
+      txHistory,
+      locks,
+      basketBalances
+    })
+  }, [activeAccountId, scopedDataAccountId, balance, ordBalance, utxos, ordinals, txHistory, locks, basketBalances])
+
   // Token state from TokensContext
   const {
     tokenBalances,
@@ -159,6 +183,23 @@ export function WalletProvider({ children }: WalletProviderProps) {
     setWalletState(newWallet)
     setWalletKeys(newWallet)
   }, [])
+
+  const applyCachedAccountSnapshot = useCallback((accountId: number): boolean => {
+    const snapshot = accountSnapshotCacheRef.current.get(accountId)
+    if (!snapshot) return false
+
+    setBalance(snapshot.balance)
+    setOrdBalance(snapshot.ordBalance)
+    setUtxos(snapshot.utxos)
+    setOrdinals(snapshot.ordinals)
+    setTxHistory(snapshot.txHistory)
+    setBasketBalances(snapshot.basketBalances)
+    setLocks(snapshot.locks)
+    setSyncError(null)
+    setScopedDataAccountId(accountId)
+
+    return true
+  }, [setBalance, setOrdBalance, setUtxos, setOrdinals, setTxHistory, setBasketBalances, setLocks, setSyncError, setScopedDataAccountId])
 
   // --- Extracted hooks ---
 
@@ -245,6 +286,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     refreshAccounts,
     setActiveAccountState,
     fetchDataFromDB: syncFetchDataFromDB,
+    applyCachedAccountSnapshot,
     wallet,
     accounts
   })
